@@ -2622,7 +2622,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         std::map<String, String> parts_postpone_reasons_map;
         for (const auto & [part_name, postpone_reason] : current_parts_postpone_reasons)
         {
-            if (part_name == "all")
+            if (part_name == PostponeReasons::ALL_PARTS_KEY)
             {
                 chassert(current_parts_postpone_reasons.size() == 1);
                 parts_postpone_reasons_map[part_name] = postpone_reason;

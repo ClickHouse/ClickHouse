@@ -19,6 +19,9 @@ namespace PostponeReasons
     inline constexpr auto NO_FREE_THREADS = "No free threads in pool";
     inline constexpr auto EXCEED_MAX_PART_SIZE = "Exceed max source part size";
     inline constexpr auto HIT_MUTATION_BACKOFF = "Hit mutation backoff policy";
+
+    /// Special key in parts_postpone_reasons map indicating the reason applies to all parts
+    inline constexpr auto ALL_PARTS_KEY = "all_parts";
 }
 
 struct MergeTreeMutationStatus

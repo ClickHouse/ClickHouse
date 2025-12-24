@@ -1039,7 +1039,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         std::map<String, String> parts_postpone_reasons_map;
         for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
         {
-            if (part_name == "all")
+            if (part_name == PostponeReasons::ALL_PARTS_KEY)
             {
                 parts_postpone_reasons_map[part_name] = postpone_reason;
                 chassert(current_parts_postpone_reasons.size() == 1);
@@ -1439,7 +1439,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             log,
             "Not enough idle threads to apply mutations at the moment. See settings 'number_of_free_entries_in_pool_to_execute_mutation' "
             "and 'background_pool_size'");
-        current_parts_postpone_reasons["all"] = PostponeReasons::NO_FREE_THREADS;
+        current_parts_postpone_reasons[PostponeReasons::ALL_PARTS_KEY] = PostponeReasons::NO_FREE_THREADS;
         return {};
     }
 
