@@ -137,6 +137,13 @@ std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
     return *std::max_element(schema_files_with_versions.begin(), schema_files_with_versions.end());
 }
 
+std::pair<Int32, String> PaimonTableClient::getTableSchemaInfoById(Int32 schema_id) const
+{
+    std::filesystem::path schema_path
+        = std::filesystem::path(table_location) / PAIMON_SCHEMA_DIR / fmt::format("{}{}", PAIMON_SCHEMA_PREFIX, schema_id);
+    return {schema_id, schema_path};
+}
+
 /// schema
 Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info)
 {
