@@ -735,6 +735,7 @@ private:
     }
 
     /// Same logic as `getLeaf`, but const.
+    /// Using non-move copy on the returned node will make a full copy of all underlying children.
     Node tryGetLeaf(std::string_view path, Level level_ = Level::GLOBAL_LEVEL, bool return_parent_node = false) const
     {
         /// The implementation of this function is almost the same as `getLeaf`.
