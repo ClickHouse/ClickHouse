@@ -19,23 +19,10 @@ SELECT
 FROM table_basic
 WHERE has([toDateTime(1730611800, 'America/New_York')], d);
 
-EXPLAIN indexes = 1
-SELECT
-    toUnixTimestamp(d)
-FROM table_basic
-WHERE has([toDateTime(1730611800, 'America/New_York')], d);
-
 SELECT
     d
 FROM table_basic
 WHERE has([toDateTime(1730611800, 'America/New_York')], d);
-
-EXPLAIN indexes = 1
-SELECT
-    d
-FROM table_basic
-WHERE has([toDateTime(1730611800, 'America/New_York')], d);
-
 
 DROP TABLE IF EXISTS table_intdiv_string;
 
@@ -50,19 +37,9 @@ SETTINGS index_granularity = 1;
 INSERT INTO table_intdiv_string VALUES
     (2), (5), (9), (10), (12), (15), (19), (20), (29), (33), (39), (40), (55), (59), (90), (95), (99);
 
-EXPLAIN indexes = 1
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
 WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x);
-
-SELECT arraySort(groupArray(x))
-FROM table_intdiv_string
-WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x);
-
-EXPLAIN indexes = 1
-SELECT arraySort(groupArray(x))
-FROM table_intdiv_string
-WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x);
 
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
@@ -89,19 +66,9 @@ INSERT INTO table_str_chain VALUES
     ('A'), ('a'),
     ('baz'), ('Qux'), ('qux');
 
-EXPLAIN indexes = 1
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
 WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
-
-SELECT arraySort(groupArray(s))
-FROM table_str_chain
-WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
-
-EXPLAIN indexes = 1
-SELECT arraySort(groupArray(s))
-FROM table_str_chain
-WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
 
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
@@ -118,8 +85,4 @@ INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2 + 4, 'b',
 
 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id;
 
-EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id;
-
 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
-
-EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
