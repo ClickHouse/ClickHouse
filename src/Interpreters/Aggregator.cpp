@@ -2782,7 +2782,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             if (use_thread_pool)
-                runner([&converter, thread_id]() { return converter(thread_id); }, Priority{});
+                runner.enqueueAndKeepTrack([&converter, thread_id]() { return converter(thread_id); }, Priority{});
             else
                 converter(thread_id);
         }
@@ -3760,7 +3760,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 {
                     result.aggregates_pools.push_back(std::make_shared<Arena>());
                     Arena * aggregates_pool = result.aggregates_pools.back().get();
-                    runner([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
+                    runner.enqueueAndKeepTrack([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); });
                 }
             }
             catch (...)

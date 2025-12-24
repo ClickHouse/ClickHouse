@@ -136,7 +136,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
     };
     FunctionDocumentation::IntroducedIn introduced_in_filesystemAvailable = {20, 1};
     FunctionDocumentation::Category category_filesystemAvailable = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_filesystemAvailable = {description_filesystemAvailable, syntax_filesystemAvailable, arguments_filesystemAvailable, returned_value_filesystemAvailable, examples_filesystemAvailable, introduced_in_filesystemAvailable, category_filesystemAvailable};
+    FunctionDocumentation documentation_filesystemAvailable = {description_filesystemAvailable, syntax_filesystemAvailable, arguments_filesystemAvailable, {}, returned_value_filesystemAvailable, examples_filesystemAvailable, introduced_in_filesystemAvailable, category_filesystemAvailable};
 
     factory.registerFunction<FilesystemImpl<FilesystemAvailable>>(documentation_filesystemAvailable);
 
@@ -164,7 +164,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
     };
     FunctionDocumentation::IntroducedIn introduced_in_filesystemCapacity = {20, 1};
     FunctionDocumentation::Category category_filesystemCapacity = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_filesystemCapacity = {description_filesystemCapacity, syntax_filesystemCapacity, arguments_filesystemCapacity, returned_value_filesystemCapacity, examples_filesystemCapacity, introduced_in_filesystemCapacity, category_filesystemCapacity};
+    FunctionDocumentation documentation_filesystemCapacity = {description_filesystemCapacity, syntax_filesystemCapacity, arguments_filesystemCapacity, {}, returned_value_filesystemCapacity, examples_filesystemCapacity, introduced_in_filesystemCapacity, category_filesystemCapacity};
 
     factory.registerFunction<FilesystemImpl<FilesystemCapacity>>(documentation_filesystemCapacity);
 
@@ -192,7 +192,7 @@ SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
     };
     FunctionDocumentation::IntroducedIn introduced_in_filesystemUnreserved = {22, 12};
     FunctionDocumentation::Category category_filesystemUnreserved = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_filesystemUnreserved = {description_filesystemUnreserved, syntax_filesystemUnreserved, arguments_filesystemUnreserved, returned_value_filesystemUnreserved, examples_filesystemUnreserved, introduced_in_filesystemUnreserved, category_filesystemUnreserved};
+    FunctionDocumentation documentation_filesystemUnreserved = {description_filesystemUnreserved, syntax_filesystemUnreserved, arguments_filesystemUnreserved, {}, returned_value_filesystemUnreserved, examples_filesystemUnreserved, introduced_in_filesystemUnreserved, category_filesystemUnreserved};
 
     factory.registerFunction<FilesystemImpl<FilesystemUnreserved>>(documentation_filesystemUnreserved);
 }

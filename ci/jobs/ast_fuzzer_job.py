@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
@@ -98,14 +99,11 @@ def run_fuzz_job(check_name: str):
             server_exit_code = int(server_exit_code)
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
-        result.set_status(Result.Status.ERROR)
-        result.set_info("Unknown error in fuzzer runner script")
-        result.complete_job()
-        sys.exit(1)
+        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
+        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
 
     # parse runner script exit status
     status = Result.Status.FAILED
-    result_name = ""
     info = []
     is_failed = True
     if server_died:
@@ -175,7 +173,7 @@ def run_fuzz_job(check_name: str):
                 workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
             ),
         )
-        parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
 
         if parsed_name:
             results.append(
@@ -183,6 +181,7 @@ def run_fuzz_job(check_name: str):
                     name=parsed_name,
                     info=parsed_info,
                     status=Result.StatusExtended.FAIL,
+                    files=files,
                 )
             )
 
