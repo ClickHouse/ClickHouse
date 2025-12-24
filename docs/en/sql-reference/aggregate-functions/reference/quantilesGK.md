@@ -7,7 +7,7 @@ doc_type: 'reference'
 
 # quantilesGK {#quantilesgk}
 
-`quantilesGK` to similarly with `quantileGK` but allows us to calculate quantities at different levels simultaneously and returns an array.
+`quantilesGK` works similarly to `quantileGK` but allows us to calculate quantities at different levels simultaneously and returns an array.
 
 **Syntax**
 

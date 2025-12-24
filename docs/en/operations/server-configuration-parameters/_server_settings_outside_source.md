@@ -110,7 +110,7 @@ Contains information about all background tasks that are executed via various ba
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <!-- Only tasks longer then duration_threshold_milliseconds will be logged. Zero means log everything -->
+    <!-- Only tasks longer than duration_threshold_milliseconds will be logged. Zero means log everything -->
     <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
 </background_schedule_pool_log>
 ```
