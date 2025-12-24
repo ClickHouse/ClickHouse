@@ -201,7 +201,8 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     auto * create_aggregate_states_function = llvm::Function::Create(create_aggregate_states_function_type, llvm::Function::ExternalLinkage, name, module);
 
     auto * arguments = create_aggregate_states_function->args().begin();
-    llvm::Value * aggregate_data_place_arg = arguments++;
+    llvm::Value * aggregate_data_place_arg = arguments;
+    ++arguments;
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", create_aggregate_states_function);
     b.SetInsertPoint(entry);
