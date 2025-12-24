@@ -1998,7 +1998,7 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
             && connections.hasClickHouseExtraServerConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
-            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
+            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); /// give more probability
         }
     }
     b.peer_table
