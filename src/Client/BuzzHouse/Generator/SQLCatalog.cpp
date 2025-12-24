@@ -716,6 +716,12 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
                 PARTITION_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
         }
+        /// Replace glob for number
+        const size_t glob_pos = res.rfind('*');
+        if (glob_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(glob_pos, 1, std::to_string(rg.randomInt<uint32_t>(0, 100)));
+        }
         /// Use globs
         const size_t slash_pos = res.rfind('/');
         if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
