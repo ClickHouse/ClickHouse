@@ -700,7 +700,8 @@ TokenPostingsInfo PostingListBlockCodec::serializePostings(MergeTreeIndexWriterS
     info.cardinality = size();
     info.header |= CompressedPostings;
 
-    postings->serialize(postings_stream.plain_hashing, info);
+    postings->hasOwnWriteBuffer() ? postings->serialize(info) : postings->serialize(postings_stream.plain_hashing, info);
+    chassert(info.cardinality == size());
     return info;
 }
 

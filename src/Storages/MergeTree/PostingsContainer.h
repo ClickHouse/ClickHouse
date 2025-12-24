@@ -177,8 +177,16 @@ public:
         current.reserve(kBlockSize);
     }
 
+    explicit PostingsContainerImpl(WriteBuffer & write_buffer_, size_t postings_list_block_size)
+        : write_buffer(&write_buffer_)
+        , postings_list_segment_size((postings_list_block_size + kBlockSize - 1) & ~(kBlockSize - 1))
+    {
+        current.reserve(kBlockSize);
+    }
+
     size_t size() const { return cardinality; }
     bool empty() const { return cardinality == 0; }
+    bool hasOwnWriteBuffer() const { return write_buffer != nullptr; }
 
     void add(T value)
     {
@@ -237,12 +245,19 @@ public:
 
     /// Serializes posting list to a WriteBuffer-like output.
     template<typename Out>
-    size_t serialize(Out & out, TokenPostingsInfo & info)
+    void serialize(Out & out, TokenPostingsInfo & info)
     {
         if (!current.empty())
             compressBlock(current, temp_compression_data_buffer);
 
-        return serializeTo(out, info);
+        serializeTo(out, info);
+    }
+
+    void serialize(TokenPostingsInfo & info)
+    {
+        flushSegment();
+        info.offsets = token_info.offsets;
+        info.ranges = token_info.ranges;
     }
 
     /// Reads postings data back from an Input buffer (ReadBuffer).
@@ -261,13 +276,13 @@ public:
         }
     }
 
-
     void clear()
     {
         reset();
         cardinality = 0;
         compressed_data.clear();
         segments.clear();
+        token_info = {};
     }
     size_t getSizeInBytes() const { return compressed_data.size(); }
 private:
@@ -283,13 +298,23 @@ private:
        chassert(total <= postings_list_segment_size);
        if (!current.empty())
            compressBlock(current, temp_compression_data_buffer);
+
+        if (write_buffer)
+        {
+            chassert(write_buffer && segments.size() == 1);
+            auto & segment_desc = segments.back();
+            token_info.offsets.emplace_back(write_buffer->count());
+            token_info.ranges.emplace_back(segment_desc.header.base_value, segment_desc.last_value);
+            internal::CodecUtils<ValueType>::writeContainerHeader(segment_desc.header, *write_buffer);
+            write_buffer->write(compressed_data.data() + segment_desc.compressed_data_offset, segment_desc.compressed_data_size);
+            segments.clear();
+        }
         reset();
     }
 
     template<typename Out>
-    size_t serializeTo(Out & out, TokenPostingsInfo & info) const
+    void serializeTo(Out & out, TokenPostingsInfo & info) const
     {
-        auto offset = out.count();
         for (auto & segment_desc : segments)
         {
             info.offsets.emplace_back(out.count());
@@ -297,7 +322,6 @@ private:
             internal::CodecUtils<ValueType>::writeContainerHeader(segment_desc.header, out);
             out.write(compressed_data.data() + segment_desc.compressed_data_offset, segment_desc.compressed_data_size);
         }
-        return out.count() - offset;
     }
 
     template<typename In>
@@ -321,9 +345,10 @@ private:
         internal::CodecUtils<ValueType>::writeBlockHeader(block_header, compressed_buffer);
         compressed_buffer.write(temp_compression_data.data(), bytes);
         compressed_buffer.finalize();
-        segments.back().compressed_data_size = compressed_data.size() - segments.back().compressed_data_offset;
+        size_t compressed_block_data_size = compressed_data.size() - segments.back().compressed_data_offset;
+        segments.back().compressed_data_size = compressed_block_data_size;
+        compressed_block_sizes.emplace_back(compressed_block_data_size);
     }
-
 
     static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
     {
@@ -334,6 +359,9 @@ private:
     }
 
     std::string compressed_data;
+    WriteBuffer * write_buffer = nullptr;
+    TokenPostingsInfo token_info;
+    std::vector<size_t> compressed_block_sizes;
     std::string temp_compression_data_buffer;
     ValueType prev_value = {};
     size_t total = 0;
@@ -543,19 +571,20 @@ void mergePostingsVariadic(Out & out, std::vector<StreamPostingsContainer> & str
     }
 }
 }
+
 /// PostingsContainerStreamView — Read-only streaming view over serialized
 /// postings data stored in a ReadBuffer. Supports lazy, block-by-block
 /// decoding without loading the entire postings into memory.
 /// Typically used for on-disk postings iteration when merging parts.
 template<typename StreamType, typename T>
-class PostingsContainerStreamViewImpl
+class PostingsContainerViewImpl
 {
 public:
     using ValueType = T;
     using IteratorType = internal::Iterator<StreamType, ValueType>;
     /// Constructs a streaming postings view backed by the given ReadBuffer.
     /// Reads the header (block_count, total, data_size) but does not decompress any postings.
-    explicit PostingsContainerStreamViewImpl(StreamType & stream_, const MergedPartOffsets & merged_part_offsets_, size_t index_, const TokenPostingsInfo & info_)
+    explicit PostingsContainerViewImpl(StreamType & stream_, const MergedPartOffsets & merged_part_offsets_, size_t index_, const TokenPostingsInfo & info_)
         : stream(stream_)
         , merged_part_offsets(merged_part_offsets_)
         , index(index_)

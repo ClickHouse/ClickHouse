@@ -381,30 +381,19 @@ bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
     const auto & input_str = assert_cast<const ColumnString &>(*inputs[cursor->order].tokens);
     const auto & output_str = assert_cast<const ColumnString &>(*output_tokens);
 
-    std::vector<std::string> debug_outputs, debug_inputs;
-    for (size_t i = 0; i < output_str.size(); i++)
-    {
-        debug_outputs.emplace_back(output_str.getDataAt(i));
-        LOG_DEBUG(&Poco::Logger::get("FUCK"), "output tokens[{}] = {}", i, output_str.getDataAt(i));
-    }
-    for (size_t i = 0; i < input_str.size(); i++)
-    {
-        debug_inputs.emplace_back(input_str.getDataAt(i));
-        LOG_DEBUG(&Poco::Logger::get("FUCK"), "input {} tokens[{}] = {}", cursor->order, i, input_str.getDataAt(i));
-    }
     return output_str.empty() || input_str.compareAt(cursor->getRow(), output_str.size() - 1, output_str, 1) != 0;
 }
 
 void MergeTextIndexesTask::mergePostings()
 {
     chassert(params.enable_postings_compression);
-    std::vector<PostingsContainerStreamViewImpl<MergeTreeIndexReaderStream, UInt32> > posting_streams;
+    std::vector<PostingsContainerViewImpl<MergeTreeIndexReaderStream, UInt32> > posting_streams;
     for (const auto &[source_num, token_info]: stream_and_tokens)
     {
         auto *stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
         posting_streams.emplace_back(*stream, *merged_part_offsets, source_num, token_info);
     }
-    auto &output = std::get<PostingsContainer32>(output_postings);
+    auto & output = std::get<PostingsContainer32>(output_postings);
     mergePostingsContainers(output, posting_streams);
     stream_and_tokens.clear();
 }
@@ -415,7 +404,10 @@ bool MergeTextIndexesTask::executeStep()
     {
         is_initialized = true;
         if (params.enable_postings_compression)
-            output_postings.emplace<PostingsContainer32>(params.posting_list_block_size);
+        {
+            auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+            output_postings.emplace<PostingsContainer32>(postings_stream->plain_hashing, params.posting_list_block_size);
+        }
         else
             output_postings.emplace<PostingList>();
         initializeQueue();
