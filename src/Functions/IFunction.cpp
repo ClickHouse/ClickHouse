@@ -1,4 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -45,6 +46,7 @@ namespace Setting
 {
 extern const SettingsBool short_circuit_function_evaluation_for_nulls;
 extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
 }
 
 namespace ErrorCodes
@@ -666,6 +668,56 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 for (size_t i = 0; i < arguments.size(); ++i)
                     data_types[i] = arguments[i].type;
                 return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
+    /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
+    if (useDefaultImplementationForVariant())
+    {
+        checkNumberOfArguments(arguments.size());
+
+        bool has_variant = false;
+        for (const auto & arg : arguments)
+        {
+            if (isVariant(arg.type))
+            {
+                has_variant = true;
+                break;
+            }
+        }
+
+        if (has_variant)
+        {
+            /// For comparison functions, check setting to allow disabling Variant adaptor for compatibility
+            bool skip_variant_adaptor = false;
+            auto name = getName();
+            if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
+                || name == "lessOrEquals" || name == "greaterOrEquals")
+            {
+                try
+                {
+                    if (auto query_context = CurrentThread::get().getQueryContext())
+                    {
+                        const auto & settings = query_context->getSettingsRef();
+                        /// If setting is disabled, skip the Variant adaptor to use built-in comparison
+                        if (!settings[Setting::use_variant_default_implementation_for_comparisons])
+                            skip_variant_adaptor = true;
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                }
+            }
+
+            if (!skip_variant_adaptor)
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
             }
         }
     }
