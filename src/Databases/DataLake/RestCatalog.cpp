@@ -529,6 +529,8 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
+    LOG_DEBUG(log, "Received tables response: {}", json_str);
+
     try
     {
         Poco::JSON::Parser parser;
@@ -579,9 +581,9 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (...)
+    catch (const DB::Exception & ex)
     {
-        DB::tryLogCurrentException(log);
+        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
         return false;
     }
 }
@@ -625,6 +627,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
+    LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
