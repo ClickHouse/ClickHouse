@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <roaring/roaring.hh>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Core/SortCursor.h>
 
 #pragma clang optimize off
 namespace DB
@@ -371,25 +372,6 @@ static void deserializePostings(In & in, PostingList & postings)
     pc.deserialize(in, postings);
 }
 
-template<typename Out>
-size_t serializePostings(Out & out, const PostingList & in)
-{
-    std::vector<uint32_t> postings_data;
-    postings_data.resize(in.cardinality());
-    in.toUint32Array(postings_data.data());
-    PostingsContainer32 pc;
-    return pc.serialize(postings_data, out);
-}
-
-template<typename Out, size_t N>
-size_t serializePostings(Out & out, const std::array<uint32_t, N> & small, size_t size)
-{
-    chassert(size <= N);
-    std::vector<uint32_t> postings_data(small.begin(), small.begin() + size);
-    PostingsContainer32 pc;
-    return pc.serialize(postings_data, out);
-}
-
 namespace internal
 {
 template<typename Stream, typename T>
@@ -500,170 +482,78 @@ private:
     size_t index = 0;
 };
 
-template<typename Out, typename IteratorLeft, typename IteratorRight>
-void mergePostingsTwo(Out & out, IteratorLeft left_begin, const IteratorLeft left_end, IteratorRight right_begin, const IteratorRight right_end, const MergedPartOffsets & merged_part_offsets)
-{
-    using ValueType = Out::ValueType;
-    bool has_left = (left_begin != left_end);
-    bool has_right = (right_begin != right_end);
-    ValueType left_val = 0;
-    ValueType right_val = 0;
-    size_t lindex = left_begin.getIndex();
-    size_t rindex = right_begin.getIndex();
-    if (has_left)
-        left_val = merged_part_offsets[lindex, *left_begin];
-    if (has_right)
-        right_val = merged_part_offsets[rindex, *right_begin];
-
-    while (has_left && has_right)
-    {
-        if (left_val < right_val)
-        {
-            out.add(left_val);
-            ++left_begin;
-            has_left = left_begin != left_end;
-            if (has_left)
-                left_val = merged_part_offsets[lindex, *left_begin];
-        }
-        else if (right_val < left_val)
-        {
-            out.add(right_val);
-            ++right_begin;
-            has_right = right_begin != right_end;
-            if (has_right)
-                right_val = merged_part_offsets[rindex, *right_begin];
-        }
-        else
-        {
-            out.add(left_val);
-            ++left_begin;
-            ++right_begin;
-            has_left = left_begin != left_end;
-            has_right = right_begin != right_end;
-            if (has_left)
-                left_val = merged_part_offsets[lindex, *left_begin];
-            if (has_right)
-                right_val = merged_part_offsets[rindex, *right_begin];
-        }
-    }
-
-    while (has_left)
-    {
-        out.add(left_val);
-        ++left_begin;
-        has_left = left_begin != left_end;
-        if (has_left)
-            left_val = merged_part_offsets[lindex, *left_begin];
-    }
-
-    while (has_right)
-    {
-        out.add(right_val);
-        ++right_begin;
-        has_right = right_begin != right_end;
-        if (has_right)
-            right_val = merged_part_offsets[rindex, *right_begin];
-    }
-}
-
 template<typename ValueType>
-struct PQItem
+struct PostingCursor
 {
     ValueType value;
     std::size_t idx;
-    [[maybe_unused]] bool operator<(const PQItem & other) const noexcept
+    [[maybe_unused]] bool operator<(const PostingCursor & other) const noexcept
     {
         return value > other.value;
     }
 };
 
-template<class Iterator>
-struct PostingsRange
+template <typename Out, typename StreamPostingsContainer>
+void mergePostingsTwo(Out & out, StreamPostingsContainer & left, StreamPostingsContainer & right)
 {
-    using ValueType = Iterator::ValueType;
-    Iterator cur;
-    Iterator end;
-    ValueType value = 0;
-    bool valid = false;
-    size_t index = 0;
-    const MergedPartOffsets & merged_part_offsets;
-
-    PostingsRange() = default;
-
-    PostingsRange(Iterator b, Iterator e, const MergedPartOffsets & merged_part_offsets_)
-        : cur(b)
-        , end(e)
-        , index(b.getIndex())
-        , merged_part_offsets(merged_part_offsets_)
+    while (left.valid() && right.valid())
     {
-        chassert(b.getIndex() == e.getIndex());
-        if (cur != end)
+        if (left.value() < right.value())
         {
-            value = merged_part_offsets[index, static_cast<ValueType>(*cur)];
-            valid = true;
+            out.add(left.value());
+            left.next();
+        }
+        else
+        {
+            out.add(right.value());
+            right.next();
         }
     }
 
-    bool next()
+    while (left.valid())
     {
-        if (!valid)
-            return false;
-        ++cur;
-        if (cur == end)
-        {
-            valid = false;
-            return false;
-        }
-        value = merged_part_offsets[index, static_cast<ValueType>(*cur)];
-        return true;
+        out.add(left.value());
+        left.next();
     }
-};
 
-template <typename Out, typename PostingsContainer>
-void mergePostingsVariadic(Out & out, const std::vector<PostingsContainer> & streams, const MergedPartOffsets & merged_part_offsets)
+    while (right.valid())
+    {
+        out.add(right.value());
+        right.next();
+    }
+}
+
+template <typename Out, typename StreamPostingsContainer>
+void mergePostingsVariadic(Out & out, std::vector<StreamPostingsContainer> & streams)
 {
-    using ValueType = typename Out::ValueType;
-    using IteratorType = typename PostingsContainer::IteratorType;
+    using ValueType = Out::ValueType;
 
     if (streams.empty())
         return;
 
-    std::vector<PostingsRange<IteratorType>> ranges;
-    ranges.reserve(streams.size());
-    for (const auto & c : streams)
-        ranges.emplace_back(std::begin(c), std::end(c), merged_part_offsets);
-
-    std::priority_queue<PQItem<ValueType>> pq;
-    for (std::size_t i = 0; i < ranges.size(); ++i)
+    std::priority_queue<PostingCursor<ValueType>> pq;
+    for (std::size_t i = 0; i < streams.size(); ++i)
     {
-        if (ranges[i].valid)
-            pq.push(PQItem<ValueType>{ranges[i].value, i});
+        if (streams[i].valid())
+            pq.push(PostingCursor<ValueType>{streams[i].value(), i});
     }
 
     if (pq.empty())
         return;
-
-    uint32_t last_written = 0;
-    bool has_last = false;
 
     while (!pq.empty())
     {
         auto top = pq.top();
         pq.pop();
 
-        const uint32_t v = top.value;
+        const ValueType v = top.value;
         const std::size_t idx = top.idx;
 
-        if (!has_last || v != last_written)
-        {
-            out.add(v);
-            last_written = v;
-            has_last = true;
-        }
+        out.add(v);
 
-        auto & rng = ranges[idx];
+        auto & rng = streams[idx];
         if (rng.next())
-            pq.push(PQItem<ValueType>{rng.value, idx});
+            pq.push(PostingCursor<ValueType>{rng.value(), idx});
     }
 }
 }
@@ -679,23 +569,36 @@ public:
     using IteratorType = internal::Iterator<StreamType, ValueType>;
     /// Constructs a streaming postings view backed by the given ReadBuffer.
     /// Reads the header (block_count, total, data_size) but does not decompress any postings.
-    explicit PostingsContainerStreamViewImpl(StreamType & stream_, size_t index_, const TokenPostingsInfo & info_) : stream(stream_), index(index_), info(info_)
+    explicit PostingsContainerStreamViewImpl(StreamType & stream_, const MergedPartOffsets & merged_part_offsets_, size_t index_, const TokenPostingsInfo & info_)
+        : stream(stream_)
+        , merged_part_offsets(merged_part_offsets_)
+        , index(index_)
+        , info(info_)
+        , cur(begin())
+        , stream_end(end())
     {
+        if (cur != stream_end)
+        {
+            current_value = merged_part_offsets[index, *cur];
+            is_valid = true;
+        }
     }
 
-    /// Returns a forward iterator that lazily decodes postings
-    /// directly from the underlying ReadBuffer as needed.
-    /// The iterator consumes the buffer in a single forward pass.
-    auto begin() const
+    bool next()
     {
-        return internal::Iterator<StreamType, ValueType>(stream, index, info, false);
-    }
-    auto end() const
-    {
-        return internal::Iterator<StreamType, ValueType>(stream, index, info, true);
+        if (!is_valid)
+            return false;
+        ++cur;
+        if (cur == stream_end)
+        {
+            is_valid = false;
+            return false;
+        }
+        current_value = merged_part_offsets[index, *cur];
+        return true;
     }
 
-   void deserialize(PostingsContainerImpl<T> & target, const MergedPartOffsets & merged_part_offsets)
+   void deserialize(PostingsContainerImpl<T> & target)
     {
         std::string temp_buffer;
         std::vector<ValueType> temp_compress_buffer;
@@ -718,25 +621,44 @@ public:
             }
         }
     }
+    ValueType value() const
+    {
+        return current_value;
+    }
+    bool valid() const { return is_valid; }
 private:
+    /// Returns a forward iterator that lazily decodes postings
+    /// directly from the underlying ReadBuffer as needed.
+    /// The iterator consumes the buffer in a single forward pass.
+    auto begin() const
+    {
+        return internal::Iterator<StreamType, ValueType>(stream, index, info, false);
+    }
+    auto end() const
+    {
+        return internal::Iterator<StreamType, ValueType>(stream, index, info, true);
+    }
     StreamType & stream;
+    const MergedPartOffsets & merged_part_offsets;
     size_t index = 0;
     const TokenPostingsInfo & info;
+
+    IteratorType cur;
+    IteratorType stream_end;
+    ValueType current_value = 0;
+    bool is_valid = false;
 };
 
 /// This is useful when merging inverted index postings from multiple parts into single one.
 template <typename Out, typename StreamPostingsContainer>
-static void mergePostingsContainers(Out & out, std::vector<StreamPostingsContainer> & containers, const MergedPartOffsets & merged_part_offsets)
+static void mergePostingsContainers(Out & out, std::vector<StreamPostingsContainer> & containers)
 {
-    if (containers.size() == 2)
-        internal::mergePostingsTwo(out, containers[0].begin(), containers[0].end(), containers[1].begin(), containers[1].end(), merged_part_offsets);
+    if (containers.size() == 1)
+        containers.back().deserialize(out);
+    else if (containers.size() == 2)
+        internal::mergePostingsTwo(out, containers[0], containers[1]);
     else
-        internal::mergePostingsVariadic(out, containers, merged_part_offsets);
+        internal::mergePostingsVariadic(out, containers);
 }
 
-template <typename Out, typename StreamPostingsContainer>
-static void transformSinglePostingsContainer(Out & out, StreamPostingsContainer & container, const MergedPartOffsets & merged_part_offsets)
-{
-    container.deserialize(out, merged_part_offsets);
-}
 }

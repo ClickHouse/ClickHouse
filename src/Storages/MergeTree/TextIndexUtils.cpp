@@ -328,7 +328,6 @@ void MergeTextIndexesTask::flushPostingList()
     }
     output_infos.push_back(token_info);
     std::visit([] (auto & codec) { codec.clear(); }, output_postings);
-    //output_postings.clear();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -382,6 +381,17 @@ bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
     const auto & input_str = assert_cast<const ColumnString &>(*inputs[cursor->order].tokens);
     const auto & output_str = assert_cast<const ColumnString &>(*output_tokens);
 
+    std::vector<std::string> debug_outputs, debug_inputs;
+    for (size_t i = 0; i < output_str.size(); i++)
+    {
+        debug_outputs.emplace_back(output_str.getDataAt(i));
+        LOG_DEBUG(&Poco::Logger::get("FUCK"), "output tokens[{}] = {}", i, output_str.getDataAt(i));
+    }
+    for (size_t i = 0; i < input_str.size(); i++)
+    {
+        debug_inputs.emplace_back(input_str.getDataAt(i));
+        LOG_DEBUG(&Poco::Logger::get("FUCK"), "input {} tokens[{}] = {}", cursor->order, i, input_str.getDataAt(i));
+    }
     return output_str.empty() || input_str.compareAt(cursor->getRow(), output_str.size() - 1, output_str, 1) != 0;
 }
 
@@ -392,13 +402,10 @@ void MergeTextIndexesTask::mergePostings()
     for (const auto &[source_num, token_info]: stream_and_tokens)
     {
         auto *stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-        posting_streams.emplace_back(*stream, source_num, token_info);
+        posting_streams.emplace_back(*stream, *merged_part_offsets, source_num, token_info);
     }
     auto &output = std::get<PostingsContainer32>(output_postings);
-    if (posting_streams.size() == 1)
-        transformSinglePostingsContainer(output, posting_streams.front(), *merged_part_offsets);
-    else
-        mergePostingsContainers(output, posting_streams, *merged_part_offsets);
+    mergePostingsContainers(output, posting_streams);
     stream_and_tokens.clear();
 }
 
@@ -467,7 +474,7 @@ bool MergeTextIndexesTask::executeStep()
             queue.removeTop();
             readDictionaryBlock(current->order);
         }
-    } while (queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
+    } while (queue.isValid() /* &&  watch.elapsedMilliseconds() < step_time_ms*/);
 
     return true;
 }
