@@ -27,7 +27,7 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         if (settings.enable_heuristic_to_remove_small_parts_at_right)
             while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
@@ -44,7 +44,7 @@ public:
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
         }
 
-        ranges.emplace_back(range_it, begin, end, sum_size, current_score);
+        ranges.emplace_back(range_it, begin, end, sum_size, sum_rows, current_score);
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -67,7 +67,7 @@ public:
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    std::optional<PartsRange> buildMergeRange(size_t max_total_size_to_merge)
+    std::optional<PartsRange> buildMergeRange(const MergeConstraint & constraint)
     {
         constexpr static auto range_compare = [](const ScoredRange & lhs, const ScoredRange & rhs)
         {
@@ -85,10 +85,10 @@ public:
         while (!ranges.empty())
         {
             std::pop_heap(ranges.begin(), ranges.end(), range_compare);
-            const auto [range_it, range_begin, range_end, size, _] = std::move(ranges.back());
+            const auto [range_it, range_begin, range_end, bytes, rows, _] = std::move(ranges.back());
             ranges.pop_back();
 
-            if (size <= max_total_size_to_merge && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
+            if (bytes <= constraint.max_size_bytes && rows <= constraint.max_size_rows && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
                 return PartsRange(range_begin, range_end);
         }
 
@@ -101,7 +101,8 @@ private:
         RangesIterator range_it;
         PartsIterator range_begin;
         PartsIterator range_end;
-        size_t size = 0;
+        size_t bytes = 0;
+        size_t rows = 0;
         double score;
     };
 
@@ -297,6 +298,7 @@ void selectWithinPartsRange(
                     range_begin,
                     range_end,
                     sum_size,
+                    sum_rows,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     settings);
         }
@@ -323,7 +325,7 @@ PartsRanges SimpleMergeSelector::select(
     PartsRanges result;
     for (const auto & constraint : merge_constraints)
     {
-        if (auto range = estimator.buildMergeRange(constraint.max_size_bytes))
+        if (auto range = estimator.buildMergeRange(constraint))
             result.push_back(std::move(range.value()));
         else
             break;
