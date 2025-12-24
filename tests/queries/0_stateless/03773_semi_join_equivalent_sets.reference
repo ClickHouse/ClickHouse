@@ -1,13 +1,7 @@
-Expression ((Project names + Projection))
-  Filter (WHERE)
-    Expression (Post Join Actions)
-      Join (JOIN FillRightFirst)
-        Expression (Left Pre Join Actions)
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (default.users)
-        Expression (Right Pre Join Actions)
-          Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-            ReadFromSystemNumbers
+  Filter column: equals(__table2.number, 0_UInt8) (removed)
+      Type: LEFT
+      Strictness: ANY
+            ReadType: Default
 Expression ((Project names + (Projection + )))
 Actions: INPUT : 0 -> __table1.uid UInt64 : 0
          INPUT : 1 -> __table1.name String : 1
@@ -67,3 +61,26 @@ Positions: 4 0 1 2
                  ALIAS number :: 1 -> __table2.number UInt64 : 2
         Positions: 3 2
           ReadFromSystemNumbers
+    Type: LEFT
+    Strictness: SEMI
+          ReadType: Default
+            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+--
+    Type: LEFT
+    Strictness: SEMI
+          ReadType: Default
+            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+--
+    Type: RIGHT
+    Strictness: SEMI
+          ReadType: Default
+            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+--
+    Type: RIGHT
+    Strictness: SEMI
+          ReadType: Default
+            Prewhere filter column: equals(__table1.uid, 1_UInt8) (removed)
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
