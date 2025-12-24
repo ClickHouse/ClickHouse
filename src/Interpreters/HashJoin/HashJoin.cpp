@@ -1818,7 +1818,6 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                         col.insertFrom(*(it->columns_info->columns[i]), it->row_num);
                     }
                 }
-                new_rows = columns.at(0)->size();
             }
             size_t new_rows = columns_info.columns.at(0)->size();
             if (new_rows > start_row)
