@@ -949,4 +949,9 @@ bool DataPartStorageOnDiskBase::hasActiveTransaction() const
     return transaction != nullptr;
 }
 
+bool DataPartStorageOnDiskBase::isCaseInsensitive() const
+{
+    return getDisk()->isCaseInsensitive();
+}
+
 }
