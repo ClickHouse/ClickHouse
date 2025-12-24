@@ -23,7 +23,7 @@ def load_files(files_arg):
     # CLI --files takes precedence; else env; else 'all'
     env_target = files_arg or os.environ.get("KEEPER_SCENARIO_FILE", "all")
     files = []
-    if env_target.lower() in ("all", "auto", "*"):
+    if env_target.lower() == "all":
         files = sorted(
             p
             for p in SCN_BASE.glob("*.yaml")
@@ -61,21 +61,17 @@ def main():
     ap.add_argument(
         "--total-shards",
         type=int,
-        default=int(
-            os.environ.get("KEEPER_TOTAL_SHARDS") or os.environ.get("KEEPER_TOTAL", "1")
-        ),
+        default=int(os.environ.get("KEEPER_TOTAL_SHARDS", "1") or "1"),
     )
     ap.add_argument(
         "--shard-index",
         type=int,
-        default=int(
-            os.environ.get("KEEPER_SHARD_INDEX") or os.environ.get("KEEPER_INDEX", "0")
-        ),
+        default=int(os.environ.get("KEEPER_SHARD_INDEX", "0") or "0"),
     )
-    ap.add_argument("--matrix-backends", default=os.environ.get("KEEPER_BACKENDS", ""))
+    ap.add_argument("--matrix-backends", default=os.environ.get("KEEPER_MATRIX_BACKENDS", ""))
     # TLS dimension removed
     ap.add_argument(
-        "--matrix-topologies", default=os.environ.get("KEEPER_TOPOLOGIES", "")
+        "--matrix-topologies", default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", "")
     )
     args = ap.parse_args()
 

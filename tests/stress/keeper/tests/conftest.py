@@ -17,26 +17,22 @@ def pytest_addoption(parser):
     pa(
         "--total-shards",
         type=int,
-        default=int(
-            os.environ.get("KEEPER_TOTAL_SHARDS") or os.environ.get("KEEPER_TOTAL", "1")
-        ),
+        default=int(os.environ.get("KEEPER_TOTAL_SHARDS", "1") or "1"),
     )
     pa(
         "--shard-index",
         type=int,
-        default=int(
-            os.environ.get("KEEPER_SHARD_INDEX") or os.environ.get("KEEPER_INDEX", "0")
-        ),
+        default=int(os.environ.get("KEEPER_SHARD_INDEX", "0") or "0"),
     )
     pa(
         "--matrix-backends",
         action="store",
-        default=os.environ.get("KEEPER_BACKENDS", ""),
+        default=os.environ.get("KEEPER_MATRIX_BACKENDS", ""),
     )
     pa(
         "--matrix-topologies",
         action="store",
-        default=os.environ.get("KEEPER_TOPOLOGIES", ""),
+        default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", ""),
     )
     pa("--seed", type=int, default=int(os.environ.get("KEEPER_SEED", "0")))
     pa(

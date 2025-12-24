@@ -155,7 +155,7 @@ def pytest_generate_tests(metafunc):
     # Load primary scenario file(s) + optional extras
     # Default: full modular suite (exclude legacy keeper_e2e.yaml)
     env_target = os.environ.get("KEEPER_SCENARIO_FILE", "all")
-    if env_target.lower() in ("all", "auto", "*"):
+    if env_target.lower() == "all":
         files = sorted(
             p
             for p in _SCN_BASE.glob("*.yaml")

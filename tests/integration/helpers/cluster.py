@@ -2577,6 +2577,16 @@ class ClickHouseCluster:
             ],
         )
 
+    def remove_directory_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm -rf {}".format(path),
+            ],
+        )
+
     def wait_for_url(
         self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
     ):
@@ -4899,7 +4909,12 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def grep_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log", after=None
+        self,
+        substring,
+        from_host=False,
+        filename="clickhouse-server.log",
+        after=None,
+        only_latest=False,
     ):
         logging.debug(f"grep in log called %s", substring)
         if after is not None:
@@ -4912,7 +4927,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}{"" if only_latest else "*"} || true',
                 ]
             )
         else:
@@ -4920,7 +4935,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}{"" if only_latest else "*"} || true',
                 ]
             )
         logging.debug("grep result %s", result)
@@ -5017,6 +5032,9 @@ class ClickHouseInstance:
 
     def remove_file_from_container(self, path):
         return self.cluster.remove_file_from_container(self.docker_id, path)
+
+    def remove_directory_from_container(self, path):
+        return self.cluster.remove_directory_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
