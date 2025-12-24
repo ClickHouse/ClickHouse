@@ -378,35 +378,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         return available_input_columns_for_filter;
     };
 
-    auto get_available_columns_from_equivalent_sets = [&](bool push_to_left_stream)
-    {
-        Names available_columns_from_equivalent_sets;
-
-        const auto & equivalent_map = push_to_left_stream
-            ? equivalent_left_stream_column_to_right_stream_column
-            : equivalent_right_stream_column_to_left_stream_column;
-
-        const auto & input_header = push_to_left_stream ? left_stream_input_header : right_stream_input_header;
-        const auto & input_columns_names = input_header->getNames();
-
-        for (const auto & name : input_columns_names)
-        {
-            if (!join_header->has(name))
-                continue;
-
-            if (!equivalent_map.contains(name))
-                continue;
-
-            /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_header->getByName(name).type->equals(*join_header->getByName(name).type))
-                continue;
-
-            available_columns_from_equivalent_sets.push_back(name);
-        }
-
-        return available_columns_from_equivalent_sets;
-    };
-
     bool left_stream_filter_push_down_input_columns_available = true;
     bool right_stream_filter_push_down_input_columns_available = true;
 
@@ -452,6 +423,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
+    {
+        /// In this case we can also push down to left side of JOIN using equivalent sets.
+        for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
+            equivalent_columns_to_push_down.push_back(name);
+    }
 
     if (right_stream_filter_push_down_input_columns_available)
     {
@@ -460,13 +437,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// In this case we can push down only to left side of JOIN.
-        /// But we can use equivalent columns from right side to push down to left side.
-        for (const auto & [name, column] : equivalent_right_stream_column_to_left_stream_column)
-            equivalent_columns_to_push_down.push_back(column.name);
-
-        left_stream_available_columns_to_push_down = get_available_columns_from_equivalent_sets(true /*push_to_left_stream*/);
-        right_stream_available_columns_to_push_down = get_available_columns_from_equivalent_sets(false);
+        /// In this case we can also push down to right side of JOIN using equivalent sets.
+        for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
+            equivalent_columns_to_push_down.push_back(name);
     }
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);

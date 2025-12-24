@@ -5,7 +5,7 @@ INSERT INTO users VALUES (6666, 'Ksenia', 48);
 INSERT INTO users VALUES (8888, 'Alice', 50);
 
 EXPLAIN
-SELECT * FROM users LEFT ANY JOIN (SELECT number FROM numbers(10)) as t2 ON users.uid = t2.number WHERE t2.number = 1;
+SELECT * FROM users LEFT ANY JOIN (SELECT number FROM numbers(10)) as t2 ON users.uid = t2.number WHERE t2.number = 0;
 
-EXPLAIN actions = 1, keep_logical_steps = 1
+EXPLAIN actions = 1
 SELECT * FROM users LEFT SEMI JOIN (SELECT number FROM numbers(10)) as t2 ON users.uid = t2.number WHERE t2.number = 1;
