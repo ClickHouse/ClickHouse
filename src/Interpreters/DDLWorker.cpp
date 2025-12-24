@@ -1348,6 +1348,32 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     }
 }
 
+void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
+{
+    auto replicas = zookeeper->getChildren(replicas_dir);
+    static constexpr Int64 REPLICA_MAX_INACTIVE_SECONDS = 86400;
+    for (const auto & replica : replicas)
+    {
+        auto replica_path = fs::path(replicas_dir) / replica;
+        auto responses = zookeeper->tryGet({replica_path, fs::path(replica_path) / "active"});
+        /// Replica not active
+        if (responses[1].error == Coordination::Error::ZNONODE)
+        {
+            auto stat = responses[0].stat;
+            /// Replica was not active for too long, let's cleanup to avoid polluting Keeper with
+            /// removed replicas
+            if (stat.mtime / 1000 + REPLICA_MAX_INACTIVE_SECONDS < current_time_seconds)
+            {
+                LOG_INFO(log, "Replica {} is stale, removing it", replica);
+                auto code = zookeeper->tryRemove(replica_path, -1);
+                if (code != Coordination::Error::ZOK)
+                    LOG_WARNING(log, "Cannot remove stale replica {}, code {}", replica, Coordination::errorMessage(code));
+            }
+        }
+    }
+
+}
+
 void DDLWorker::runCleanupThread()
 {
     setThreadName("DDLWorkerClnr");
@@ -1375,6 +1401,7 @@ void DDLWorker::runCleanupThread()
                 continue;
 
             cleanupQueue(current_time_seconds, zookeeper);
+            cleanupStaleReplicas(current_time_seconds, zookeeper);
             last_cleanup_time_seconds = current_time_seconds;
         }
         catch (...)
