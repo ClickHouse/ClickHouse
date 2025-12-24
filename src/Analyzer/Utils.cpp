@@ -1219,14 +1219,20 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
         }
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::DateTime64:
+        case TypeIndex::DateTime:
         {
             /// for DateTime64 and DateTime, we must NOT use text serialization because formatted datetime strings
             /// are ambiguous during DST transitions (the same local time can correspond to
             /// two different UTC timestamps, different by 1 hour). Instead we return raw numeric value which
             /// is wrapped in CAST() by ConstantNode::toASTImpl, so timestamp will be not ambiguous
-            return (*column)[row];
+            const auto & datetime_col = assert_cast<const ColumnVector<UInt32> &>(*column);
+            return Field(datetime_col.getData()[row]);
+        }
+        case TypeIndex::DateTime64:
+        {
+            /// See the comment above
+            const auto & datetime64_col = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
+            return Field(datetime64_col.getData()[row].value);
         }
         case TypeIndex::UInt8:
         {
