@@ -174,7 +174,11 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
         readVarUInt(cur_data.num_rows, buf);
         cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
         for (auto & offset : cur_data.offsets)
+        {
             readVarUInt(offset, buf);
+            if (offset > cur_data.data_size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", offset, cur_data.data_size);
+        }
     }
 }
 
