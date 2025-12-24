@@ -33,6 +33,13 @@ INSERT INTO tab_local VALUES
 
 
 SELECT '# Direct query on local table - expect index usage';
+EXPLAIN indexes = 1
+SELECT
+    id
+FROM tab_local
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3;
+
 SELECT
     id
 FROM tab_local
@@ -43,7 +50,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 
+SELECT
     ProfileEvents['SelectedRows'] as SelectedRows -- 1 vector similarity granule -> 2 merge tree granules -> 6 rows
 FROM system.query_log
 WHERE
@@ -52,6 +59,12 @@ WHERE
     type = 2;
 
 SELECT '# Direct query on remote() - expect index usage';
+EXPLAIN indexes = 1
+SELECT
+    id
+FROM remote('127.{1,2}', currentDatabase(), tab_local)
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3;
 SELECT 
     id 
 FROM remote('127.{1,2}', currentDatabase(), tab_local)
