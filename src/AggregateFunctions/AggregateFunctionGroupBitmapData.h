@@ -6,6 +6,7 @@
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
+#include <Common/OutOfMemorySafeContainers.h>
 #include <Common/PODArray.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
@@ -46,7 +47,7 @@ class RoaringBitmapWithSmallSet : private boost::noncopyable
 private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
-    using ValueBuffer = std::vector<T>;
+    using ValueBuffer = SafeVector<T>;
     using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
     using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
@@ -534,7 +535,7 @@ public:
 
         if (isSmall())
         {
-            std::vector<T> answer;
+            SafeVector<T> answer;
             for (const auto & x : small)
             {
                 T val = x.getValue();

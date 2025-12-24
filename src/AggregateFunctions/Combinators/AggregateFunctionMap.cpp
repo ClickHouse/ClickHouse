@@ -298,7 +298,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
 
         // sort the keys
-        std::vector<KeyType> keys;
+        SafeVector<KeyType> keys;
         keys.reserve(merged_maps.size());
         for (auto & it : merged_maps)
         {

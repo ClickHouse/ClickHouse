@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/OutOfMemorySafeContainers.h>
+
 #include <memory>
 #include <vector>
 

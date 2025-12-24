@@ -229,7 +229,7 @@ public:
         const auto & buckets = Base::data(place)->buckets;
 
         std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        SafeVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
         Float64 accumulated_resets_in_window = 0;
 
         /// Resets must be take into account for `rate` function because it expects counter timeseries that only increase.

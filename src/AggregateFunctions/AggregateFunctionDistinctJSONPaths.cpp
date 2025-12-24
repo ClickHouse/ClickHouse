@@ -105,7 +105,7 @@ struct AggregateFunctionDistinctJSONPathsData
         /// Insert paths in sorted order for better output.
         auto & array_column = assert_cast<ColumnArray &>(column);
         auto & string_column = assert_cast<ColumnString &>(array_column.getData());
-        std::vector<String> sorted_data(data.begin(), data.end());
+        SafeVector<String> sorted_data(data.begin(), data.end());
         std::sort(sorted_data.begin(), sorted_data.end());
         for (const auto & path : sorted_data)
             string_column.insertData(path.data(), path.size());
@@ -230,11 +230,11 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         auto & key_column = assert_cast<ColumnString &>(tuple_column.getColumn(0));
         auto & value_column = assert_cast<ColumnArray &>(tuple_column.getColumn(1));
         auto & value_column_data = assert_cast<ColumnString &>(value_column.getData());
-        std::vector<std::pair<String, std::vector<String>>> sorted_data;
+        SafeVector<std::pair<String, SafeVector<String>>> sorted_data;
         sorted_data.reserve(data.size());
         for (const auto & [path, types] : data)
         {
-            std::vector<String> sorted_types(types.begin(), types.end());
+            SafeVector<String> sorted_types(types.begin(), types.end());
             std::sort(sorted_types.begin(), sorted_types.end());
             sorted_data.emplace_back(path, std::move(sorted_types));
         }

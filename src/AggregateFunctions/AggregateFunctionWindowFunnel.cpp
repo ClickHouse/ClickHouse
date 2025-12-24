@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/range.h>
-#include <Common/OutOfMemorySafeContainers.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -376,7 +375,7 @@ private:
         /// For example: for events 'start', 'a', 'b', 'a', 'end'.
         /// The second occurrence of 'a' should be counted only once in one sequence.
         /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
-        std::vector<SafeList<EventMatchTimeWindow>> event_sequences(events_size);
+        SafeVector<SafeList<EventMatchTimeWindow>> event_sequences(events_size);
 
         bool has_first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)

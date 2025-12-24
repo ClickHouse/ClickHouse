@@ -172,7 +172,7 @@ public:
         const auto & buckets = Base::data(place)->buckets;
 
         std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        SafeVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets
