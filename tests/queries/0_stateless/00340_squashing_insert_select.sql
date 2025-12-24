@@ -14,6 +14,7 @@ set max_insert_threads = 1;
 INSERT INTO numbers_squashed SELECT * FROM system.numbers LIMIT 10000000;
 SELECT blockSize() AS b, count() / b AS c FROM numbers_squashed GROUP BY blockSize() ORDER BY c DESC;
 
+SET min_insert_block_size_rows = 0;
 SET min_insert_block_size_bytes = 1000000;
 INSERT INTO numbers_squashed SELECT * FROM system.numbers LIMIT 10000000;
 SELECT blockSize() AS b, count() / b AS c FROM numbers_squashed GROUP BY blockSize() ORDER BY c DESC;

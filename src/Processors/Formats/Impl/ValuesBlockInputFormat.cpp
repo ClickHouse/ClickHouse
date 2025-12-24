@@ -1,22 +1,22 @@
-#include <IO/ReadHelpers.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/Context.h>
-#include <Parsers/TokenIterator.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
-#include <base/find_symbols.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Parsers/ASTLiteral.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/TokenIterator.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <base/find_symbols.h>
+#include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -106,6 +106,8 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
 
 Chunk ValuesBlockInputFormat::read()
 {
+    LOG_TRACE(getLogger("Bytes in a block"), "??????????????????????? Entered READ");
+
     if (total_rows == 0)
         readPrefix();
 
@@ -115,7 +117,25 @@ Chunk ValuesBlockInputFormat::read()
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     size_t rows_in_block = 0;
-    for (; rows_in_block < params.max_block_size; ++rows_in_block)
+    size_t bytes_in_block = 0;
+    const size_t max_block_size_bytes = params.max_block_size_bytes;
+    const size_t max_block_size_rows = params.max_block_size_rows;
+    const size_t min_block_size_rows = params.min_block_size_rows;
+    const size_t min_block_size_bytes = params.min_block_size_bytes;
+
+    auto larger_min_block_size_exists = [&](size_t rows, size_t bytes)-> bool
+    {
+        return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+    };
+
+    auto smaller_max_block_size_each = [&](size_t rows, size_t bytes)-> bool
+    {
+        return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
+    };
+
+    for (; larger_min_block_size_exists(rows_in_block, bytes_in_block) &&
+           smaller_max_block_size_each(rows_in_block, bytes_in_block)
+         ; ++rows_in_block)
     {
         try
         {
@@ -125,7 +145,16 @@ Chunk ValuesBlockInputFormat::read()
             if (need_only_count)
                 skipToNextRow(buf.get(), 1, 0);
             else
+            {
                 readRow(columns, rows_in_block);
+
+                if (min_block_size_bytes || max_block_size_bytes)
+                {
+                    bytes_in_block = 0;
+                    for (const auto & column : columns)
+                        bytes_in_block += column->byteSize();
+                }
+            }
         }
         catch (Exception & e)
         {

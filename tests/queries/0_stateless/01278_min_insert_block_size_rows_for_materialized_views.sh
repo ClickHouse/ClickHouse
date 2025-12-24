@@ -92,10 +92,10 @@ from numbers(500000);" > /dev/null 2>&1
 echo "Should throw 1"
 execute_insert
 echo "Should throw 2"
-execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=1048449
+execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 --min_insert_block_size_rows_for_materialized_views=1048449
 
 # passes
 echo "Should pass 1"
-execute_insert --min_insert_block_size_rows=10
+execute_insert --min_insert_block_size_rows=10 --min_insert_block_size_bytes=0
 echo "Should pass 2"
-execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=10
+execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_bytes=0 --min_insert_block_size_rows_for_materialized_views=10

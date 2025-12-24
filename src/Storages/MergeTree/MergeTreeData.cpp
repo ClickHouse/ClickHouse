@@ -207,6 +207,8 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_storage_snapshot_sleep_ms;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics_cache;
@@ -9655,10 +9657,13 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute lightweight update with uninitialized pipeline");
 
     pipeline_builder.resize(1);
+    const auto & settings = query_context->getSettingsRef();
     pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
         pipeline_builder.getSharedHeader(),
-        query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
-        query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
+        settings[Setting::min_insert_block_size_rows],
+        settings[Setting::min_insert_block_size_bytes],
+        settings[Setting::min_insert_block_size_rows],
+        settings[Setting::min_insert_block_size_bytes]));
 
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr

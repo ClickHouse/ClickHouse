@@ -12,9 +12,11 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::PlanSquashingTransform(
-    SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
+    size_t max_block_size_rows, size_t max_block_size_bytes)
     : ExceptionKeepingTransform(header_, header_, false)
-    , squashing(header_, min_block_size_rows, min_block_size_bytes)
+    , squashing(header_, min_block_size_rows, min_block_size_bytes,
+                max_block_size_rows, max_block_size_bytes)
 {
 }
 

@@ -6,46 +6,46 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/CurrentThread.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/SettingsChanges.h>
-#include <Common/setThreadName.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <QueryPipeline/ProfileInfo.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/parseQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/Session.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
+#include <base/range.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <base/range.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/SettingsChanges.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <absl/base/log_severity.h>
 #include <absl/log/globals.h>
@@ -75,6 +75,9 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -1138,8 +1141,18 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
-        auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
+
+        const Settings & settings = query_context->getSettingsRef();
+
+        auto source = query_context->getInputFormat(
+            input_format,
+            *read_buffer,
+            header,
+            settings[Setting::max_insert_block_size],
+            std::nullopt,
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1206,8 +1219,21 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
+                    const Settings & settings = external_table_context->getSettingsRef();
+                    UInt64 max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
+                    UInt64 max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+                    UInt64 min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+                    UInt64 min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
+
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
+                        format,
+                        *buf,
+                        metadata_snapshot->getSampleBlock(),
+                        max_insert_block_size_rows_setting,
+                        std::nullopt,
+                        max_insert_block_size_bytes_setting,
+                        min_insert_block_size_rows_setting,
+                        min_insert_block_size_bytes_setting);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));

@@ -1,9 +1,10 @@
 #include <numeric>
 
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionsTimeWindow.h>
-#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -11,50 +12,49 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sources/BlocksSource.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/WatermarkTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/BlocksSource.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/WatermarkTransform.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <Common/DateLUTImpl.h>
-#include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <boost/algorithm/string/replace.hpp>
+#include <Common/typeid_cast.h>
 
 #include <Storages/WindowView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -76,6 +76,9 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds wait_for_window_view_fire_signal_timeout;
     extern const SettingsSeconds window_view_clean_interval;
@@ -650,10 +653,13 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
+            const auto & settings = getContext()->getSettingsRef();
             return std::make_shared<SquashingTransform>(
                 current_header,
-                getContext()->getSettingsRef()[Setting::min_insert_block_size_rows],
-                getContext()->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes],
+                settings[Setting::max_insert_block_size],
+                settings[Setting::max_insert_block_size_bytes]);
         });
 
     auto header = builder.getHeader();
@@ -1622,10 +1628,13 @@ void StorageWindowView::writeIntoWindowView(
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
+            const auto & settings = local_context->getSettingsRef();
             return std::make_shared<SquashingTransform>(
                 current_header,
-                local_context->getSettingsRef()[Setting::min_insert_block_size_rows],
-                local_context->getSettingsRef()[Setting::min_insert_block_size_bytes]);
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes],
+                settings[Setting::max_insert_block_size],
+                settings[Setting::max_insert_block_size_bytes]);
         });
 
     if (!window_view.is_proctime)

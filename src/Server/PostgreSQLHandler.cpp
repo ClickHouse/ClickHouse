@@ -1,27 +1,27 @@
 #include <memory>
-#include <Server/PostgreSQLHandler.h>
+#include <Core/PostgreSQLProtocol.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTCopyQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/Util/LayeredConfiguration.h>
+#include <Server/PostgreSQLHandler.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
-#include <Common/Exception.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Core/PostgreSQLProtocol.h>
-#include <Parsers/ASTCopyQuery.h>
-#include <Parsers/ParserCopyQuery.h>
-#include <Core/Settings.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -51,6 +51,9 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -450,7 +453,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
         String format;
         switch (copy_query->format)
         {
@@ -465,6 +467,12 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             break;
         }
 
+        const Settings & settings = query_context->getSettingsRef();
+        auto max_insert_block_size_rows_setting = settings[Setting::max_insert_block_size];
+        auto max_insert_block_size_bytes_setting = settings[Setting::max_insert_block_size_bytes];
+        auto min_insert_block_size_rows_setting = settings[Setting::min_insert_block_size_rows];
+        auto min_insert_block_size_bytes_setting = settings[Setting::min_insert_block_size_bytes];
+
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();
         while (true)
@@ -477,7 +485,21 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
                 ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
+                auto format_ptr = FormatFactory::instance().getInput(
+                    format,
+                    buf,
+                    io.pipeline.getHeader(),
+                    query_context,
+                    max_insert_block_size_rows_setting,
+                    std::nullopt,
+                    nullptr,
+                    nullptr,
+                    false,
+                    CompressionMethod::None,
+                    false,
+                    max_insert_block_size_bytes_setting,
+                    min_insert_block_size_rows_setting,
+                    min_insert_block_size_bytes_setting);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();

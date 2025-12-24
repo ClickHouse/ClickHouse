@@ -14,9 +14,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
+Squashing::Squashing(
+    SharedHeader header_,
+    size_t min_block_size_rows_,
+    size_t min_block_size_bytes_,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
+    , max_block_size_rows(max_block_size_rows_)
+    , max_block_size_bytes(max_block_size_bytes_)
     , header(header_)
 {
 }
@@ -187,9 +194,9 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
 
 bool Squashing::isEnoughSize(size_t rows, size_t bytes) const
 {
-    return (!min_block_size_rows && !min_block_size_bytes)
-        || (min_block_size_rows && rows >= min_block_size_rows)
-        || (min_block_size_bytes && bytes >= min_block_size_bytes);
+    bool larger_or_eq_than_all_min = min_block_size_rows <= rows && min_block_size_bytes <= bytes;
+    bool larger_or_eq_than_one_max = (max_block_size_rows && max_block_size_rows <= rows) || (max_block_size_bytes && max_block_size_bytes <= bytes);
+    return larger_or_eq_than_all_min || larger_or_eq_than_one_max;
 }
 
 bool Squashing::isEnoughSize() const

@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS t1;
 
 CREATE TABLE t0 (c0 JSON) ENGINE = MergeTree() PRIMARY KEY tuple();
 CREATE TABLE t1 (c0 Bool, c1 FixedString(42)) ENGINE = Buffer(currentDatabase(), t0, 71, 5, 379, 74, 221, 238, 858, 34, 55);
-SET min_insert_block_size_bytes = 4;
+SET min_insert_block_size_bytes = 4, min_insert_block_size_rows = 0;
 INSERT INTO TABLE t1 (c0, c1) SETTINGS optimize_trivial_insert_select = 1 SELECT c0, c1 FROM generateRandom('c0 Bool, c1 FixedString(42)', 9090224004680416777, 6350, 9) LIMIT 187;
 SET input_format_max_block_size_bytes = 4, min_insert_block_size_rows = 32, min_insert_block_size_bytes = 0;
 INSERT INTO TABLE FUNCTION file('$path', 'CSV', 'c1 FixedString(42), c0 Bool') SELECT c1, c0 FROM t1 FINAL;

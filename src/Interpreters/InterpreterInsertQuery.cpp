@@ -73,9 +73,11 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
     extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool parallel_view_processing;
     extern const SettingsBool use_concurrency_control;
@@ -452,7 +454,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                    settings[Setting::max_insert_block_size],
+                    settings[Setting::max_insert_block_size_bytes]);
             });
     }
 
@@ -781,7 +785,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto planing = std::make_shared<PlanSquashingTransform>(
             chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+            settings[Setting::max_insert_block_size],
+            settings[Setting::max_insert_block_size_bytes]);
         chain.addSource(std::move(planing));
     }
 
