@@ -89,7 +89,7 @@ TEST_CONFIGS = [
     # TC("test_server_reload/", True, "no idea why i'm sequential"),
     # TC("test_storage_kafka/", True, "no idea why i'm sequential"),
     # TC("test_storage_kerberized_kafka/", True, "no idea why i'm sequential"),
-    # TC("test_storage_rabbitmq/", True, "no idea why i'm sequential"),
+    TC("test_storage_rabbitmq/", True, "no idea why i'm sequential"),
     # TC("test_storage_s3_queue/", True, "no idea why i'm sequential"),
     # TC("test_system_flush_logs/", True, "no idea why i'm sequential"),
     # TC("test_system_logs/", True, "no idea why i'm sequential"),
@@ -101,7 +101,7 @@ TEST_CONFIGS = [
     ),
     # TC("test_database_delta/test.py", True, "no idea why i'm sequential"),
     # TC("test_keeper_ipv4_fallback/test.py", True, "no idea why i'm sequential"),
-    # TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
     # TC("test_storage_iceberg_with_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
     # TC(
