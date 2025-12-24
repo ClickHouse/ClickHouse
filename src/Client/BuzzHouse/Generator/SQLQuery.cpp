@@ -445,8 +445,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         if (sfunc || afunc || lfunc)
         {
-            SettingValues * svs = nullptr;
-            const auto & engineSettings = allTableSettings.at(t.teng);
+            const auto & engineSettings = allTableSettings.at(
+                t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
 
             if (sfunc)
             {
@@ -462,8 +462,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             }
             if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
             {
-                svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values());
-                generateSettingValues(rg, engineSettings, svs);
+                generateSettingValues(
+                    rg,
+                    engineSettings,
+                    sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values()));
             }
         }
     }
