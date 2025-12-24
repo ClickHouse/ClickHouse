@@ -42,12 +42,14 @@ class ClusterBuilder:
         if parse_bool(os.environ.get("KEEPER_USE_S3")):
             use_minio = True
 
-        cluster = ClickHouseCluster(
-            self.file_anchor, name=os.environ.get("KEEPER_CLUSTER_NAME", "keeper")
-        )
+        # Derive unique cluster name per xdist worker to avoid docker-compose collisions
+        worker = (os.environ.get("PYTEST_XDIST_WORKER", "") or "").strip()
+        cbase = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
+        cname = f"{cbase}_{worker}" if worker else cbase
+
+        cluster = ClickHouseCluster(self.file_anchor, name=cname)
         base_dir = pathlib.Path(cluster.base_dir)
         # Use a unique configs subdir per cluster name to avoid xdist collisions
-        cname = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
         conf_dir = base_dir / "configs" / cname
         try:
             if conf_dir.exists():
