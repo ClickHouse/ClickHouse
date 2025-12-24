@@ -71,7 +71,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
-    GetPriorityForLoadBalancing::Func priority_func_)
+    GetPriorityForLoadBalancing::Func priority_func_,
+    bool async_cancel_)
     : header(header_)
     , query(query_)
     , query_plan(std::move(query_plan_))
@@ -82,6 +83,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , extension(extension_)
     , priority_func(priority_func_)
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
+    , async_cancel(async_cancel_)
 {
     if (stage == QueryProcessingStage::QueryPlan && !query_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan is not passed for QueryPlan processing stage");
@@ -97,8 +99,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_,
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
+    bool async_cancel_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_, {}, async_cancel_)
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
@@ -160,8 +163,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
+    std::optional<Extension> extension_,
+    bool async_cancel_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_, {}, async_cancel_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
     {
@@ -182,8 +186,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
-    std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
+    std::optional<Extension> extension_,
+    bool async_cancel_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, {}, async_cancel_)
 {
     create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
     {
@@ -205,8 +210,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
-    GetPriorityForLoadBalancing::Func priority_func_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
+    GetPriorityForLoadBalancing::Func priority_func_,
+    bool async_cancel_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_, async_cancel_)
 {
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -774,7 +780,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
-void RemoteQueryExecutor::finish()
+bool RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
@@ -786,7 +792,7 @@ void RemoteQueryExecutor::finish()
       * then you do not need to read anything.
       */
     if (!isQueryPending() || hasThrownException())
-        return;
+        return false;
 
     /** If you have not read all the data yet, but they are no longer needed.
       * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
@@ -797,55 +803,65 @@ void RemoteQueryExecutor::finish()
 
     /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
     if (!connections || !sent_query || finished)
-        return;
+        return false;
 
-    /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
-    /// packets that had been sent before the connection is fully finished in order to have final statistics of what
-    /// was executed in the remote queries
-    while (connections->hasActiveConnections() && !finished)
+#if defined (OS_LINUX)
+    if (!async_cancel)
+#endif
     {
-        Packet packet = connections->receivePacket();
-
-        switch (packet.type)
+        /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
+        /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
+        /// packets that had been sent before the connection is fully finished in order to have final statistics of what
+        /// was executed in the remote queries
+        while (connections->hasActiveConnections() && !finished)
         {
-            case Protocol::Server::EndOfStream:
-                finished = true;
-                break;
+            Packet packet = connections->receivePacket();
 
-            case Protocol::Server::Exception:
-                got_exception_from_replica = true;
-                packet.exception->rethrow();
-                break;
+            switch (packet.type)
+            {
+                case Protocol::Server::EndOfStream:
+                    finished = true;
+                    break;
 
-            case Protocol::Server::Log:
-                /// Pass logs from remote server to client
-                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                    log_queue->pushBlock(std::move(packet.block));
-                break;
+                case Protocol::Server::Exception:
+                    got_exception_from_replica = true;
+                    packet.exception->rethrow();
+                    break;
 
-            case Protocol::Server::ProfileEvents:
-                /// Pass profile events from remote server to client
-                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                    if (!profile_queue->emplace(std::move(packet.block)))
-                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
-                break;
+                case Protocol::Server::Log:
+                    /// Pass logs from remote server to client
+                    if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                        log_queue->pushBlock(std::move(packet.block));
+                    break;
 
-            case Protocol::Server::ProfileInfo:
-                /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
-                if (profile_info_callback)
-                    profile_info_callback(packet.profile_info);
-                break;
+                case Protocol::Server::ProfileEvents:
+                    /// Pass profile events from remote server to client
+                    if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+                        if (!profile_queue->emplace(std::move(packet.block)))
+                            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+                    break;
 
-            case Protocol::Server::Progress:
-                if (progress_callback)
-                    progress_callback(packet.progress);
-                break;
+                case Protocol::Server::ProfileInfo:
+                    /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+                    if (profile_info_callback)
+                        profile_info_callback(packet.profile_info);
+                    break;
 
-            default:
-                break;
+                case Protocol::Server::Progress:
+                    if (progress_callback)
+                        progress_callback(packet.progress);
+                    break;
+
+                default:
+                    break;
+            }
         }
+        return false;
     }
+
+#if defined (OS_LINUX)
+    return true;
+#endif
 }
 
 void RemoteQueryExecutor::cancel()
@@ -943,20 +959,36 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (was_cancelled)
         return;
 
-    was_cancelled = true;
-
-    if (read_context)
-        read_context->cancel();
-
-    /// Query could be cancelled during connection creation, query sending or data receiving.
-    /// We should send cancel request if connections were already created, query were sent
-    /// and remote query is not finished.
-    if (connections && sent_query && !finished)
+#if defined (OS_LINUX)
+    if (!async_cancel)
+#endif
     {
-        connections->sendCancel();
-        if (log)
-            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        was_cancelled = true;
+
+        if (read_context)
+            read_context->cancel();
+
+        /// Query could be cancelled during connection creation, query sending or data receiving.
+        /// We should send cancel request if connections were already created, query were sent
+        /// and remote query is not finished.
+        if (connections && sent_query && !finished)
+        {
+            connections->sendCancel();
+            if (log)
+                LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        }
     }
+#if defined (OS_LINUX)
+    else if (connections && sent_query && !finished)
+    {
+        read_context->asyncCancel();
+        if (log)
+        {
+            connections_addresses = connections->dumpAddresses();
+            LOG_TRACE(log, "({}) {}", connections_addresses, reason);
+        }
+    }
+#endif
 }
 
 bool RemoteQueryExecutor::isQueryPending() const
@@ -1024,4 +1056,26 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     return false;
 }
+
+#if defined(OS_LINUX)
+bool RemoteQueryExecutor::hasDrainingPackets()
+{
+    chassert(connections);
+    return connections->hasActiveConnections() && !finished;
+}
+
+void RemoteQueryExecutor::finalizeAsyncCancel()
+{
+    std::lock_guard guard(was_cancelled_mutex);
+    if (was_cancelled)
+        return;
+
+    was_cancelled = true;
+    chassert(read_context && connections);
+    read_context->cancel();
+    if (log)
+        LOG_TRACE(log, "consumed all of the remaining packets after sendCancel from {}", connections_addresses);
+}
+#endif
+
 }
