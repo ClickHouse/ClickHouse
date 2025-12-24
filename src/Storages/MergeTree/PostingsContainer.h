@@ -253,10 +253,12 @@ public:
         deserializeFrom(in, header);
         prev_value = header.base_value;
         std::string temp_buffer;
-        std::vector<T> temp_compress_buffer;
-        temp_compress_buffer.reserve(kBlockSize);
+        current.reserve(kBlockSize);
         for (size_t i = 0; i < static_cast<size_t>(header.block_count); ++i)
-            decompressBlock(in, temp_buffer, temp_compress_buffer, [&out] (auto & temp) { out.addMany(temp.size(), temp.data()); });
+        {
+            internal::CodecUtils<ValueType>::decodeOneBlock(in, prev_value, current, temp_buffer);
+            out.addMany(current.size(), current.data());
+        }
     }
 
 
@@ -283,6 +285,7 @@ private:
            compressBlock(current, temp_compression_data_buffer);
         reset();
     }
+
     template<typename Out>
     size_t serializeTo(Out & out, TokenPostingsInfo & info) const
     {
@@ -330,28 +333,6 @@ private:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "compressed/decompressed mismatch");
     }
 
-    template<typename In, typename Consumer>
-    void decompressBlock(In & in, std::string & temp_buffer, std::vector<T> & temp, Consumer &&consumer)
-    {
-        /// Decode block header and read the compressed posting list data.
-        BlockHeader block_header;
-        internal::CodecUtils<ValueType>::readBlockHeader(block_header, in);
-        temp.resize(block_header.count);
-        temp_buffer.resize(block_header.bytes);
-        in.readStrict(temp_buffer.data(), block_header.bytes);
-
-        /// Decode postings to buffer named temp.
-        unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
-        auto used = CodecTraits<T>::decode(p, block_header.count, block_header.max_bits, temp.data());
-        if (used != block_header.bytes)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", block_header.bytes, used);
-        chassert(block_header.count == temp.size());
-
-        /// Restore the original array from the decompressed delta values.
-        std::inclusive_scan(temp.begin(), temp.end(), temp.begin(), std::plus<T>{}, prev_value);
-        prev_value = temp.empty() ? prev_value : temp.back();
-        consumer(temp);
-    }
     std::string compressed_data;
     std::string temp_compression_data_buffer;
     ValueType prev_value = {};
