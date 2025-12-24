@@ -58,7 +58,59 @@ void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory & fact
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileExactHigh::name, createAggregateFunctionQuantile<FuncQuantileExactHigh>);
+    FunctionDocumentation::Description description = R"(
+Similar to [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+
+To get the exact value, all the passed values are combined into an array, which is then fully sorted.
+The sorting algorithm's complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
+
+The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the higher median value for an even number of elements and the middle median value for an odd number of elements.
+Median is calculated similarly to the [`median_high`](https://docs.python.org/3/library/statistics.html#statistics.median_high) implementation which is used in python.
+
+For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles) function.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+quantileExactHigh(level)(expr)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the quantile of the specified level.", {"Float64", "Date", "DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing exact high quantile",
+        R"(
+SELECT quantileExactHigh(number) FROM numbers(10);
+        )",
+        R"(
+┌─quantileExactHigh(number)─┐
+│                         5 │
+└───────────────────────────┘
+        )"
+    },
+    {
+        "Computing specific quantile level",
+        R"(
+SELECT quantileExactHigh(0.1)(number) FROM numbers(10);
+        )",
+        R"(
+┌─quantileExactHigh(0.1)(number)─┐
+│                              1 │
+└────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(NameQuantileExactHigh::name, {createAggregateFunctionQuantile<FuncQuantileExactHigh>, {}, documentation});
     factory.registerFunction(NameQuantilesExactHigh::name, { createAggregateFunctionQuantile<FuncQuantilesExactHigh>, properties });
 
     /// 'median' is an alias for 'quantile'

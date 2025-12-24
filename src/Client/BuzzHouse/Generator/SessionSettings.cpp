@@ -967,6 +967,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'UTF-8'" : "'ASCII'"; }, {}, false)},
     {"output_format_pretty_highlight_digit_groups", trueOrFalseSettingNoOracle},
     {"output_format_pretty_multiline_fields", trueOrFalseSettingNoOracle},
+    {"output_format_pretty_named_tuples_as_json", trueOrFalseSettingNoOracle},
     {"output_format_pretty_row_numbers", trueOrFalseSettingNoOracle},
     {"output_format_protobuf_nullables_with_google_wrappers", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_include_column_names", trueOrFalseSettingNoOracle},
