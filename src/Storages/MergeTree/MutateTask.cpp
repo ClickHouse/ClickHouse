@@ -442,11 +442,19 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::UPDATE)
+            {
+                for_interpreter.push_back(command);
+
+                /// Update column can change the set of substreams for column if it
+                /// changes serialization (for example from Sparse to not Sparse).
+                /// We add it "for renames" because these set of commands also removes redundant files
+                for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -2882,7 +2890,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
-            ctx->commands_for_part,
+            ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension);
 
