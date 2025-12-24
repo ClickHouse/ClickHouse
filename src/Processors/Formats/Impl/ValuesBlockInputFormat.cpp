@@ -115,25 +115,7 @@ Chunk ValuesBlockInputFormat::read()
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     size_t rows_in_block = 0;
-    size_t bytes_in_block = 0;
-    const size_t max_block_size_bytes = params.max_block_size_bytes;
-    const size_t max_block_size_rows = params.max_block_size_rows;
-    const size_t min_block_size_rows = params.min_block_size_rows;
-    const size_t min_block_size_bytes = params.min_block_size_bytes;
-
-    auto below_some_min_threshold = [&](size_t rows, size_t bytes)-> bool
-    {
-        return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
-    };
-
-    auto below_any_max_threshold = [&](size_t rows, size_t bytes)-> bool
-    {
-        return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
-    };
-
-    for (; below_some_min_threshold(rows_in_block, bytes_in_block) &&
-           below_any_max_threshold(rows_in_block, bytes_in_block)
-         ; ++rows_in_block)
+    for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
         try
         {
@@ -143,16 +125,7 @@ Chunk ValuesBlockInputFormat::read()
             if (need_only_count)
                 skipToNextRow(buf.get(), 1, 0);
             else
-            {
                 readRow(columns, rows_in_block);
-
-                if (min_block_size_bytes || max_block_size_bytes)
-                {
-                    bytes_in_block = 0;
-                    for (const auto & column : columns)
-                        bytes_in_block += column->byteSize();
-                }
-            }
         }
         catch (Exception & e)
         {

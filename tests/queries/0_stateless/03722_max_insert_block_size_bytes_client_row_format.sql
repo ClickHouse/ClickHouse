@@ -59,16 +59,6 @@ INSERT INTO test_max_insert_bytes FORMAT CSV
 7
 8
 
-INSERT INTO test_max_insert_bytes FORMAT Values
-(11),
-(21),
-(31),
-(41),
-(51),
-(61),
-(71),
-(81);
-
 -- Disable max_insert_block_bytes 
 SET max_insert_block_size_bytes = 0;
 -- Set min_insert_block_size_rows and min_insert_block_size_bytes to 2 and 16 so that blocks are formed by 2
@@ -85,16 +75,6 @@ INSERT INTO test_min_insert_rows_bytes FORMAT CSV
 7
 8
 
-INSERT INTO test_min_insert_rows_bytes FORMAT Values
-(11),
-(21),
-(31),
-(41),
-(51),
-(61),
-(71),
-(81);
-
 -- Disable min_insert_block_size_bytes
 -- Set min_insert_block_size_rows to 4
 SET min_insert_block_size_rows = 4;
@@ -109,16 +89,6 @@ INSERT INTO test_min_insert_rows FORMAT CSV
 6
 7
 8
-
-INSERT INTO test_min_insert_rows FORMAT Values
-(11),
-(21),
-(31),
-(41),
-(51),
-(61),
-(71),
-(81);
 
 -- Disable min_insert_block_size_rows
 -- Set min_insert_block_size_bytes to 32
@@ -135,16 +105,6 @@ INSERT INTO test_min_insert_bytes FORMAT CSV
 7
 8
 
-INSERT INTO test_min_insert_bytes FORMAT Values
-(11),
-(21),
-(31),
-(41),
-(51),
-(61),
-(71),
-(81);
-
 SYSTEM FLUSH LOGS query_log, part_log;
 
 -- We expect to see 8 parts inserted
@@ -156,17 +116,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time) 
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_max_insert_bytes FORMAT CSV%' 
-    AND current_database = currentDatabase() 
-));
-
-SELECT count()  
-FROM system.part_log 
-WHERE table = 'test_max_insert_bytes' 
-AND event_type = 'NewPart' 
-AND (query_id = (
-    SELECT argMax(query_id, event_time) 
-    FROM system.query_log 
-    WHERE query LIKE '%INSERT INTO test_max_insert_bytes FORMAT Values%' 
+    AND type = 'QueryFinish'
     AND current_database = currentDatabase() 
 ));
 
@@ -179,17 +129,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes FORMAT CSV%' 
-    AND current_database = currentDatabase() 
-));
-
-SELECT count()  
-FROM system.part_log 
-WHERE table = 'test_min_insert_rows_bytes' 
-AND event_type = 'NewPart' 
-AND (query_id = (
-    SELECT argMax(query_id, event_time)  
-    FROM system.query_log 
-    WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes FORMAT Values%' 
+    AND type = 'QueryFinish'
     AND current_database = currentDatabase() 
 ));
 
@@ -202,17 +142,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_rows FORMAT CSV%' 
-    AND current_database = currentDatabase() 
-));
-
-SELECT count()  
-FROM system.part_log 
-WHERE table = 'test_min_insert_rows' 
-AND event_type = 'NewPart' 
-AND (query_id = (
-    SELECT argMax(query_id, event_time)  
-    FROM system.query_log 
-    WHERE query LIKE '%INSERT INTO test_min_insert_rows FORMAT Values%' 
+    AND type = 'QueryFinish'
     AND current_database = currentDatabase() 
 ));
 
@@ -225,17 +155,7 @@ AND (query_id = (
     SELECT argMax(query_id, event_time)  
     FROM system.query_log 
     WHERE query LIKE '%INSERT INTO test_min_insert_bytes FORMAT CSV%' 
-    AND current_database = currentDatabase() 
-));
-
-SELECT count()  
-FROM system.part_log 
-WHERE table = 'test_min_insert_bytes' 
-AND event_type = 'NewPart' 
-AND (query_id = (
-    SELECT argMax(query_id, event_time)  
-    FROM system.query_log 
-    WHERE query LIKE '%INSERT INTO test_min_insert_bytes FORMAT Values%' 
+    AND type = 'QueryFinish'
     AND current_database = currentDatabase() 
 ));
 
