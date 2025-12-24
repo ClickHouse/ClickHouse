@@ -155,10 +155,16 @@ def count_paths(nodes, prefixes):
     hosts = [h.strip() for h in (servers_arg(nodes) or "").split() if h.strip()]
     hostlist = ",".join(hosts) if hosts else "localhost:9181"
     zk = None
+    results = []
+    connected = False
     try:
         zk = KazooClient(hosts=hostlist, timeout=10.0)
         zk.start(timeout=10.0)
-        results = []
+        connected = True
+    except Exception:
+        connected = False
+
+    if connected:
         for p in (prefixes or []):
             try:
                 cnt = _zk_count_descendants(zk, str(p))
@@ -167,18 +173,20 @@ def count_paths(nodes, prefixes):
             except Exception:
                 print(f"[keeper] count_paths prefix={p} count=0")
                 results.append((str(p), 0))
-        try:
-            repo_root = Path(__file__).parents[4]
-            out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_counts.txt"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            with open(out, "w", encoding="utf-8") as f:
-                for p, c in results:
-                    f.write(f"{p},{c}\n")
-        except Exception:
-            pass
-        return
+    else:
+        for p in (prefixes or []):
+            print(f"[keeper] count_paths prefix={p} count=0 (no_zk_conn)")
+            results.append((str(p), 0))
+
+    try:
+        repo_root = Path(__file__).parents[4]
+        out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_counts.txt"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            for p, c in results:
+                f.write(f"{p},{c}\n")
     except Exception:
-        return
+        pass
     finally:
         try:
             if zk is not None:
@@ -186,6 +194,7 @@ def count_paths(nodes, prefixes):
                 zk.close()
         except Exception:
             pass
+    return
 
 
 def election_time_le(ctx, max_s=10.0):
