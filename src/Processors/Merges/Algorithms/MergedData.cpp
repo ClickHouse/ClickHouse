@@ -31,7 +31,7 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         /// Sometimes header can contain Sparse columns, we don't support Sparse in merge algorithms.
         columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
         if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i], max_dynamic_subcolumns);
     }
 }
 
