@@ -234,6 +234,7 @@ void LazilyMaterializingTransform::prepareMainChunk()
     {
         Stopwatch squashing_watch;
 
+        /// call private method squash without handling ChunkInfos
         result_chunk = Squashing::squash(std::move(chunks));
         chunks.clear();
         squash_ms = squashing_watch.elapsedMilliseconds();
@@ -323,6 +324,7 @@ void LazilyMaterializingTransform::prepareLazyChunk()
     {
         Stopwatch squash_watch;
 
+        /// call private method squash without handling ChunkInfos
         chunk = Squashing::squash(std::move(chunks));
         chunks.clear();
 

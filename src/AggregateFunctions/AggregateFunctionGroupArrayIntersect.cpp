@@ -434,9 +434,46 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Return an intersection of given arrays (Return all items of arrays, that are in all given arrays).
+    )";
+    FunctionDocumentation::Syntax syntax = "groupArrayIntersect(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Argument (column name or expression).", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array that contains elements that are in all arrays.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+-- Create table with Memory engine
+CREATE TABLE numbers (
+    a Array(Int32)
+) ENGINE = Memory;
+
+-- Insert sample data
+INSERT INTO numbers VALUES
+    ([1,2,4]),
+    ([1,5,2,8,-1,0]),
+    ([1,5,7,5,8,2]);
+
+SELECT groupArrayIntersect(a) AS intersection FROM numbers;
+            )",
+            R"(
+┌─intersection──────┐
+│ [1, 2]            │
+└───────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties });
+    factory.registerFunction("groupArrayIntersect", {createAggregateFunctionGroupArrayIntersect, properties, documentation});
 }
 
 }

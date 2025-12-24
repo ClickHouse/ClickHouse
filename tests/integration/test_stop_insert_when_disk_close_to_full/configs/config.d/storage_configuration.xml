@@ -3,7 +3,7 @@
         <disks>
             <disk1>
                 <type>local</type>
-                <path>/disk1/</path>
+                <path>/test_stop_insert_when_disk1/</path>
             </disk1>
         </disks>
         <policies>

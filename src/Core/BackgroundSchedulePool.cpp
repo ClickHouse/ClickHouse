@@ -119,7 +119,7 @@ std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
     return std::unique_lock{exec_mutex};
 }
 
-void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
+bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
 {
     CurrentMetrics::Increment metric_increment(pool.tasks_metric);
 
@@ -133,7 +133,7 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
         std::lock_guard lock_schedule(schedule_mutex);
 
         if (deactivated)
-            return;
+            return false;
 
         scheduled = false;
         executing = true;
@@ -213,9 +213,13 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
         /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
         /// on the queue. We don't call the function again here because this way all tasks
         /// will have their chance to execute
-
         if (scheduled)
+        {
             pool.scheduleTask(*this);
+            return true;
+        }
+        else
+            return false;
     }
 }
 
@@ -324,8 +328,14 @@ void BackgroundSchedulePool::join()
         shutdown = true;
 
         /// Unlock threads
-        tasks_cond_var.notify_all();
-        delayed_tasks_cond_var.notify_all();
+        {
+            std::lock_guard tasks_lock(tasks_mutex);
+            tasks_cond_var.notify_all();
+        }
+        {
+            std::lock_guard tasks_lock(delayed_tasks_mutex);
+            delayed_tasks_cond_var.notify_all();
+        }
 
         /// Join all worker threads to avoid any recursive calls to schedule()/scheduleAfter() from the task callbacks
         {
@@ -381,12 +391,14 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
         /// Get a pointer to the task function and use it as an identifier of the task type
         UInt64 task_type = getFunctionID(task_info.function);
         auto & group = task_groups[task_type];
-        group.tasks.emplace_back(task_info.shared_from_this());
+        auto task_ptr = task_info.shared_from_this();
+        group.tasks.emplace_back(task_ptr);
         if (!group.runnable_list_pos && group.num_running < max_parallel_tasks_per_type)
         {
             group.runnable_list_pos = runnable_task_types.size();
             runnable_task_types.push_back(task_type);
         }
+        running_tasks.erase(task_ptr);
     }
 
     tasks_cond_var.notify_one();
@@ -455,6 +467,7 @@ void BackgroundSchedulePool::threadFunction()
             chassert(group.num_running < max_parallel_tasks_per_type);
 
             task = group.tasks.front();
+            running_tasks.insert(task);
             group.tasks.pop_front();
             ++group.num_running;
 
@@ -473,9 +486,12 @@ void BackgroundSchedulePool::threadFunction()
 
         if (task)
         {
-            task->execute(*this);
+            bool scheduled = task->execute(*this);
 
             UniqueLock tasks_lock(tasks_mutex);
+            /// In case it was scheduled, the task will be removed in scheduleTask() from running_tasks
+            if (!scheduled)
+                running_tasks.erase(task);
             auto & group = task_groups[task_type_to_run];
             chassert(group.num_running);
             --group.num_running;
@@ -558,6 +574,11 @@ std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::ge
             {
                 unique_tasks.insert(task);
             }
+        }
+
+        for (const auto & task : running_tasks)
+        {
+            unique_tasks.insert(task);
         }
     }
 

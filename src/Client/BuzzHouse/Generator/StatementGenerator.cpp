@@ -307,8 +307,9 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
         sv->set_property(next);
         sv->set_value(
-            (create && ov.contains("0")) ? "1"
-                                         : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
+            (create && ov.size() == 2 && ov.contains("0") && ov.contains("1"))
+                ? "1"
+                : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
     }
     this->ids.clear();
 }
@@ -559,27 +560,26 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         const bool has_to
             = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
 
-        chassert(this->entries.empty());
-        for (uint32_t i = 0; i < view_ncols; i++)
-        {
-            std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
-            entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
-        }
         if (!has_to)
         {
+            chassert(this->entries.empty());
+            for (uint32_t i = 0; i < view_ncols; i++)
+            {
+                std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
+                entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
+            }
             for (uint32_t i = 0; i < view_ncols; i++)
             {
                 next.cols.insert(i);
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
+            if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
+            {
+                generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
+            }
+            this->entries.clear();
         }
-        if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
-        {
-            generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
-        }
-        this->entries.clear();
-
-        if (has_to)
+        else
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(next.has_with_cols ? table_to_lambda : attached_tables));
@@ -814,6 +814,12 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4));
     ot->set_use_force(rg.nextBool());
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        ot->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
@@ -874,7 +880,12 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
     }
-    ct->set_single_result(rg.nextSmallNumber() < 4);
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        ct->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 bool StatementGenerator::tableOrFunctionRef(
@@ -906,7 +917,7 @@ bool StatementGenerator::tableOrFunctionRef(
 
     /// Only schema, table declarations are allowed inside cluster and remote functions
     const uint32_t engine_func
-        = (10 + (70 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
+        = (10 + (170 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
     const uint32_t url_func = 5 * static_cast<uint32_t>(!cluster_or_remote);
     const uint32_t simple_est = 85;
     const uint32_t prob_space2 = engine_func + url_func + simple_est;
@@ -1047,6 +1058,12 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
             sv->set_property("describe_include_subcolumns");
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
+    }
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        dt->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
     }
 }
 
@@ -4123,6 +4140,12 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+    }
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        st->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
     }
 }
 

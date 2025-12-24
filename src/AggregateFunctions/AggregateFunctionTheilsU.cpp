@@ -54,13 +54,52 @@ struct TheilsUData : CrossTabData
 
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction(TheilsUData::getName(),
+    FunctionDocumentation::Description description = R"(
+The `theilsU` function calculates the [Theil's U uncertainty coefficient](https://en.wikipedia.org/wiki/Contingency_table#Uncertainty_coefficient), a value that measures the association between two columns in a table.
+Its values range from −1.0 (100% negative association, or perfect inversion) to +1.0 (100% positive association, or perfect agreement).
+A value of 0.0 indicates the absence of association.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+theilsU(column1, column2)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"column1", "First column to be compared.", {"Any"}},
+        {"column2", "Second column to be compared.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns a value between -1 and 1.", {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT theilsU(a, b)
+FROM (
+    SELECT
+        number % 10 AS a,
+        number % 4 AS b
+    FROM
+        numbers(150)
+);
+        )",
+        R"(
+┌────────theilsU(a, b)─┐
+│ -0.30195720557678846 │
+└──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(TheilsUData::getName(), {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
-        });
+        }, {}, documentation});
 }
 
 }

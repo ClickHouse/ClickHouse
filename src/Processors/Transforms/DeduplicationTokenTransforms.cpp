@@ -1,12 +1,12 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Common/Logger.h>
+#include <Common/ErrorCodes.h>
 
-#include <IO/WriteHelpers.h>
-#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
-#include <Common/Exception.h>
-#include <Common/SipHash.h>
-#include <fmt/format.h>
-
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -14,221 +14,140 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+};
+
+
+RestoreChunkInfosTransform::RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
+    , chunk_infos(std::move(chunk_infos_))
+{
 }
+
 
 void RestoreChunkInfosTransform::transform(Chunk & chunk)
 {
-    chunk.getChunkInfos().appendIfUniq(chunk_infos.clone());
-}
-
-namespace DeduplicationToken
-{
-
-String TokenInfo::getToken() const
-{
-    if (!isDefined())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is not defined, stage {}, token {}", stage, debugToken());
-
-    return getTokenImpl();
-}
-
-String TokenInfo::getTokenImpl() const
-{
-    String result;
-    result.reserve(getTotalSize());
-
-    for (const auto & part : parts)
+    if (auto info = chunk.getChunkInfos().get<DeduplicationInfo>())
     {
-        if (!result.empty())
-            result.append(":");
-        result.append(part);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Chunk already has DeduplicationInfo when restoring chunk infos, existing deduplication info debug: {}, restoring chunk infos: {}",
+            info->debug(),
+            chunk_infos.debug());
     }
 
-    return result;
+    auto old_infos = std::move(chunk.getChunkInfos());
+    chunk.setChunkInfos(chunk_infos.clone());
+    chunk.getChunkInfos().appendIfUniq(std::move(old_infos));
+
+    LOG_TEST(getLogger("RestoreChunks"), "Restoring chunk infos, result: {}",
+        chunk.getChunkInfos().debug());
 }
 
-String TokenInfo::debugToken() const
+
+UpdateDeduplicationInfoWithViewIDTransform::UpdateDeduplicationInfoWithViewIDTransform(StorageIDMaybeEmpty view_id_, SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
+    , view_id(std::move(view_id_))
 {
-    return getTokenImpl();
 }
 
-void TokenInfo::addChunkHash(String part)
+
+void UpdateDeduplicationInfoWithViewIDTransform::transform(Chunk & chunk)
 {
-    if (stage == UNDEFINED && empty())
-        stage = DEFINE_SOURCE_WITH_HASHES;
-
-    if (stage != DEFINE_SOURCE_WITH_HASHES)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
-
-    addTokenPart(std::move(part));
+    auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
+    info->setViewID(view_id);
+    info->setViewBlockNumber(block_number++);
 }
 
-void TokenInfo::finishChunkHashes()
+
+SelectPartitionTransform::SelectPartitionTransform(std::string partition_id_, StorageMetadataPtr metadata_snapshot_, ContextPtr contex_, SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
+    , partition_id(std::move(partition_id_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
+    , context(std::move(contex_))
 {
-    if (stage == UNDEFINED && empty())
-        stage = DEFINE_SOURCE_WITH_HASHES;
-
-    if (stage != DEFINE_SOURCE_WITH_HASHES)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
-
-    stage = DEFINED;
 }
 
-void TokenInfo::setUserToken(const String & token)
+
+void SelectPartitionTransform::transform(Chunk & chunk)
 {
-    if (stage == UNDEFINED && empty())
-        stage = DEFINE_SOURCE_USER_TOKEN;
+    auto rows_in_source_chunk = chunk.getNumRows();
 
-    if (stage != DEFINE_SOURCE_USER_TOKEN)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    addTokenPart(fmt::format("user-token-{}", token));
-}
+    size_t max_parts = 0; // do not limit here part count
+    BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts, metadata_snapshot, context);
 
-void TokenInfo::setSourceWithUserToken(size_t block_number)
-{
-    if (stage != DEFINE_SOURCE_USER_TOKEN)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
+    std::vector<std::string> all_partitions;
+    for (const auto & current_block : part_blocks)
+        all_partitions.push_back(current_block.partition_id + "size=" + DB::toString(current_block.block->rows()));
 
-    addTokenPart(fmt::format("source-number-{}", block_number));
-
-    stage = DEFINED;
-}
-
-void TokenInfo::setViewID(const String & id)
-{
-    if (stage == DEFINED)
-        stage = DEFINE_VIEW;
-
-    if (stage != DEFINE_VIEW)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
-
-    addTokenPart(fmt::format("view-id-{}", id));
-}
-
-void TokenInfo::setViewBlockNumber(size_t block_number)
-{
-    if (stage != DEFINE_VIEW)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "token is in wrong stage {}, token {}", stage, debugToken());
-
-    addTokenPart(fmt::format("view-block-{}", block_number));
-
-    stage = DEFINED;
-}
-
-void TokenInfo::reset()
-{
-    stage = UNDEFINED;
-    parts.clear();
-}
-
-void TokenInfo::addTokenPart(String part)
-{
-    parts.push_back(std::move(part));
-}
-
-size_t TokenInfo::getTotalSize() const
-{
-    if (parts.empty())
-        return 0;
-
-    size_t size = 0;
-    for (const auto & part : parts)
-        size += part.size();
-
-    // we reserve more size here to be able to add delimenter between parts.
-    return size + parts.size() - 1;
-}
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-void CheckTokenTransform::transform(Chunk & chunk)
-{
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-
-    if (!token_info)
+    Chunk result_chunk;
+    for (auto & current_block : part_blocks)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk has to have DedupTokenInfo as ChunkInfo, {}", debug);
+        if (current_block.partition_id == partition_id)
+        {
+            result_chunk = Chunk(current_block.block->getColumns(), current_block.block->rows());
+            result_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
+            break;
+        }
     }
-}
-#endif
 
-String DefineSourceWithChunkHashTransform::getChunkHash(const Chunk & chunk)
+    LOG_DEBUG(getLogger("Deduplication::SelectPartitionTransform"),
+        "Selecting partition '{}' with {} rows from chunk with rows {}, total partitions in chunk: {}, partitions: {}",
+        partition_id,
+        result_chunk.getNumRows(),
+        rows_in_source_chunk,
+        all_partitions.size(),
+        fmt::join(all_partitions, ","));
+
+    result_chunk.getChunkInfos().appendIfUniq(std::move(chunk.getChunkInfos()));
+
+    chunk = std::move(result_chunk);
+}
+
+
+AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
 {
-    SipHash hash;
-    for (const auto & colunm : chunk.getColumns())
-        colunm->updateHashFast(hash);
-
-    const auto hash_value = hash.get128();
-    return toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 
 
-void DefineSourceWithChunkHashTransform::transform(Chunk & chunk)
+AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(
+    InsertDependenciesBuilderConstPtr insert_dependencies_, StorageIDMaybeEmpty root_view_id_, std::string user_token_, SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
+    , insert_dependencies(std::move(insert_dependencies_))
+    , root_view_id(std::move(root_view_id_))
+    , user_token(std::move(user_token_))
 {
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-
-    if (!token_info)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in DefineSourceWithChunkHashesTransform");
-
-    if (token_info->isDefined())
-        return;
-
-    token_info->addChunkHash(getChunkHash(chunk));
-    token_info->finishChunkHashes();
 }
 
-void SetUserTokenTransform::transform(Chunk & chunk)
+
+void AddDeduplicationInfoTransform::transform(Chunk & chunk)
 {
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    if (!token_info)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in SetUserTokenTransform");
-    token_info->setUserToken(user_token);
+    if (!chunk.getChunkInfos().has<DeduplicationInfo>())
+    {
+        auto info = DeduplicationInfo::create(false);
+        info->setUserToken(user_token, chunk.getNumRows());
+        chunk.getChunkInfos().add(info);
+    }
+
+    auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
+    info->setInsertDependencies(insert_dependencies);
+    info->setRootViewID(root_view_id);
+    info->setSourceBlockNumber(block_number++);
+    info->updateOriginalBlock(chunk, getInputPort().getSharedHeader());
 }
 
-void SetSourceBlockNumberTransform::transform(Chunk & chunk)
+RedefineDeduplicationInfoWithDataHashTransform::RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_)
+    : ISimpleTransform(header_, header_, true)
 {
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    if (!token_info)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in SetSourceBlockNumberTransform");
-    token_info->setSourceWithUserToken(block_number++);
 }
 
-void SetViewIDTransform::transform(Chunk & chunk)
+void RedefineDeduplicationInfoWithDataHashTransform::transform(Chunk & chunk)
 {
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    if (!token_info)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in SetViewIDTransform");
-    token_info->setViewID(view_id);
-}
+    auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
 
-void SetViewBlockNumberTransform::transform(Chunk & chunk)
-{
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    if (!token_info)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in SetViewBlockNumberTransform");
-    token_info->setViewBlockNumber(block_number++);
-}
-
-void ResetTokenTransform::transform(Chunk & chunk)
-{
-    auto token_info = chunk.getChunkInfos().get<TokenInfo>();
-    if (!token_info)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in ResetTokenTransform");
-
-    (*token_info).reset();
-}
-
+    // part hash is used only for the deduplication for one part in the target table partition
+    info->redefineTokensWithDataHash();
 }
 }

@@ -426,7 +426,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     if (background_schedule_pool_log)
     {
-        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 0);
+        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
         background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
     }
 }

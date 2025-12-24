@@ -226,11 +226,14 @@ def main():
             "min_bytes_for_wide_part",
             "min_rows_for_full_part_storage",
             "min_rows_for_wide_part",
+            "ratio_of_defaults_for_sparse_serialization",
             "remove_empty_parts",
+            "string_serialization_version",
             "ttl_only_drop_parts",
             "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
             "vertical_merge_algorithm_min_rows_to_activate",
+            "vertical_merge_algorithm_min_columns_to_activate"
         ],
     }
     with open(buzz_config_file, "w") as outfile:

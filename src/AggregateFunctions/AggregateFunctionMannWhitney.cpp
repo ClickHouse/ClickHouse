@@ -274,7 +274,49 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("mannWhitneyUTest", createAggregateFunctionMannWhitneyUTest);
+    FunctionDocumentation::Description description = R"(
+Applies the Mann-Whitney rank test to samples from two populations.
+
+Values of both samples are in the `sample_data` column.
+If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population.
+Otherwise it belongs to the sample from the second population.
+The null hypothesis is that two populations are stochastically equal.
+Also one-sided hypotheses can be tested.
+This test does not assume that data have normal distribution.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_index)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"sample_data", "Sample data.", {"(U)Int*", "Float*", "Decimal*"}},
+        {"sample_index", "Sample index.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"alternative", "Optional. Alternative hypothesis. 'two-sided' (default): two populations are not stochastically equal. 'greater': values in the first sample are stochastically greater than those in the second sample. 'less': values in the first sample are stochastically less than those in the second sample.", {"String"}},
+        {"continuity_correction", "Optional. If not 0 then continuity correction in the normal approximation for the p-value is applied. The default value is 1.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with two elements: calculated U-statistic and calculated p-value.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Mann-Whitney U test example",
+        R"(
+CREATE TABLE mww_ttest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
+INSERT INTO mww_ttest VALUES (10, 0), (11, 0), (12, 0), (1, 1), (2, 1), (3, 1);
+
+SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
+        )",
+        R"(
+┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
+│ (9,0.04042779918503192)                                │
+└────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, {}, documentation});
 }
 
 }

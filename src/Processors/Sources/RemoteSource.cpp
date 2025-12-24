@@ -93,8 +93,11 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
-    if (executor_finished)
+    if (query_executor->isFinished())
+    {
+        getPort().finish();
         return Status::Finished;
+    }
 
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
@@ -126,7 +129,6 @@ void RemoteSource::work()
     if (need_drain)
     {
         query_executor->finish();
-        executor_finished = true;
         return;
     }
 
@@ -248,9 +250,7 @@ void RemoteSource::onCancel() noexcept
 void RemoteSource::onUpdatePorts()
 {
     if (getPort().isFinished())
-    {
         query_executor->finish();
-    }
 }
 
 

@@ -39,3 +39,27 @@ ALTER TABLE t ADD PROJECTION p2 (SELECT x ORDER BY x) WITH SETTINGS (index_granu
 ALTER TABLE t ADD PROJECTION p3 (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 2, index_granularity_bytes = 4096); -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t;
+
+-- Check if projection with settings can be created and checked properly.
+
+CREATE TABLE t(
+    x UInt64,
+    y String,
+    PROJECTION p1 (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 2, index_granularity_bytes = 999999999)
+)
+ENGINE = MergeTree()
+ORDER BY x SETTINGS index_granularity = 999999999, index_granularity_bytes = 99999999999, use_const_adaptive_granularity = 0, min_bytes_for_wide_part = 0;
+
+DETACH TABLE t SYNC;
+ATTACH TABLE t;
+
+DROP TABLE t;
+
+CREATE TABLE t(
+    x UInt64,
+    y String,
+    PROJECTION p1 (SELECT x ORDER BY x) WITH SETTINGS (index_granularity = 2)
+)
+ENGINE = MergeTree()
+ORDER BY x
+SETTINGS index_granularity_bytes = 0; -- { serverError SUPPORT_IS_DISABLED }

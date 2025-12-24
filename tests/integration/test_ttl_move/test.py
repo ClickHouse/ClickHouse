@@ -26,7 +26,7 @@ node1 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
+    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
     macros={"shard": 0, "replica": 1},
     stay_alive=True,
 )
@@ -40,7 +40,7 @@ node2 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
+    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
     macros={"shard": 0, "replica": 2},
 )
 

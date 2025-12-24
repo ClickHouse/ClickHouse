@@ -1961,3 +1961,29 @@ def test_mv_false_cyclic_dependency(started_cluster):
     )
     # Cleanup
     main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_ignore_cluster_name_setting(started_cluster):
+    db_name = "test_cluster_name"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    for node in [main_node, dummy_node]:
+        node.query(f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')")
+
+    create_query = f"""
+        CREATE TABLE {db_name}.replicated_table ON CLUSTER 'some_cluster' (d Date, k UInt64, i32 Int32)
+        ENGINE=ReplicatedMergeTree('/clickhouse/{db_name}/{{table}}/{{shard}}', '{{replica}}') ORDER BY k PARTITION BY toYYYYMM(d);
+        """
+
+    assert (
+        "Requested cluster 'some_cluster' not found"
+        in main_node.query_and_get_error(create_query)
+    )
+
+    node.query(create_query, settings={"ignore_on_cluster_for_replicated_database": 1})
+
+    # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

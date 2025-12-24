@@ -381,12 +381,17 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     Block block;
     if (read_result.num_rows != 0)
     {
-        for (const auto & column : read_result.columns)
+        for (auto & column : read_result.columns)
         {
-            /// We may have columns that has other references, usually it is a constant column that has been created during analysis
-            /// (that will not be const here anymore, i.e. after materialize()), and we do not need to shrink it anyway.
+            /// We may have columns that have other references, usually it is a constant column that has been created during analysis
+            /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
+            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
             if (column->use_count() == 1)
-                column->assumeMutableRef().shrinkToFit();
+            {
+                auto mutable_column = IColumn::mutate(std::move(column));
+                mutable_column->shrinkToFit();
+                column = std::move(mutable_column);
+            }
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }

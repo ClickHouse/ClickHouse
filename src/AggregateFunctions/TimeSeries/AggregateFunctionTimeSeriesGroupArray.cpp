@@ -91,7 +91,64 @@ namespace
 
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("timeSeriesGroupArray", createAggregateFunctionTimeseriesGroupArray);
+    FunctionDocumentation::Description description = R"(
+Sorts time series data by timestamp in ascending order.
+
+:::note
+This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+timeSeriesGroupArray(timestamp, value)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"timestamp", "Timestamp of the sample.", {"DateTime", "UInt32", "UInt64"}},
+        {"value", "Value of the time series corresponding to the timestamp.", {"(U)Int*", "Float*", "Decimal"}},
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples `(timestamp, value)` sorted by timestamp in ascending order. If there are multiple values for the same timestamp then the function chooses the greatest of these values.", {"Array(Tuple(T1, T2))"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage with individual values",
+        R"(
+WITH
+    [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
+    [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
+SELECT timeSeriesGroupArray(timestamp, value)
+FROM
+(
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesGroupArray(timestamp, value)───────────────┐
+│ [(100, 5), (110, 1), (120, 6), (130, 8), (140, 19)]  │
+└──────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Passing multiple samples of timestamps and values as arrays of equal size",
+        R"(
+WITH
+    [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
+    [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
+SELECT timeSeriesGroupArray(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesGroupArray(timestamps, values)──────────────┐
+│ [(100, 5), (110, 1), (120, 6), (130, 8), (140, 19)]   │
+└───────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("timeSeriesGroupArray", {createAggregateFunctionTimeseriesGroupArray, {}, documentation});
 }
 
 }

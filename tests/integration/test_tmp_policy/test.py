@@ -10,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 node_local = cluster.add_instance(
     "node_local",
     main_configs=["configs/config.d/storage_configuration.xml"],
-    tmpfs=["/disk1:size=100M", "/disk2:size=100M"],
+    tmpfs=["/test_tmp_policy_disk1:size=100M", "/test_tmp_policy_disk2:size=100M"],
     stay_alive=True,
 )
 
@@ -49,10 +49,10 @@ def test_multiple_local_disk():
 
     node_local.query(query, settings=settings)
     assert node_local.contains_in_log(
-        "Writing part of aggregation data into temporary file.*/disk1/"
+        "Writing part of aggregation data into temporary file.*/test_tmp_policy_disk1/"
     )
     assert node_local.contains_in_log(
-        "Writing part of aggregation data into temporary file.*/disk2/"
+        "Writing part of aggregation data into temporary file.*/test_tmp_policy_disk2/"
     )
 
 

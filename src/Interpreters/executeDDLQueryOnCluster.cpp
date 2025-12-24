@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsBool ignore_on_cluster_for_replicated_database;
 }
 
 namespace ServerSetting
@@ -235,12 +236,11 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
         database_name = context->getCurrentDatabase();
 
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
-    if (database_name != query_on_cluster->cluster)
-        return false;
-
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (database && database->shouldReplicateQuery(context, query_ptr))
     {
+        if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database] && database_name != query_on_cluster->cluster)
+            return false;
         /// It's Replicated database and query is replicated on database level,
         /// so ON CLUSTER clause is redundant.
         query_on_cluster->cluster.clear();

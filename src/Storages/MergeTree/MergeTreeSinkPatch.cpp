@@ -35,13 +35,16 @@ void MergeTreeSinkPatch::finishDelayedChunk()
         partition.temp_part->finalize();
 
         auto & part = partition.temp_part->part;
-        bool added = commitPart(part, partition.block_dedup_token);
 
-        if (!added)
+        const std::vector<String> block_ids = partition.deduplication_info->getBlockIds(part->info.getPartitionId(), storage.getDeduplicationLog() != nullptr);
+
+        auto conflicts = commitPart(part, block_ids);
+
+        if (!conflicts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), {partition.block_dedup_token});
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), block_ids);
         StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
@@ -53,12 +56,12 @@ void MergeTreeSinkPatch::finishDelayedChunk()
 
 TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block)
 {
-    storage.throwLightweightUpdateIfNeeded(block.block.bytes());
+    storage.throwLightweightUpdateIfNeeded(block.block->bytes());
 
     auto partition_id = getPartitionIdForPatch(block.partition);
     UInt64 block_number = update_holder.block_holder->block.number;
 
-    auto source_parts_set = buildSourceSetForPatch(block.block, block_number);
+    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number);
     return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }
 

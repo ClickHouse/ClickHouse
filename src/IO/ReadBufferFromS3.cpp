@@ -377,10 +377,13 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
     if (file_size)
         return file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
-
-    file_size = object_size;
+    file_size = getObjectSizeFromS3();
     return file_size;
+}
+
+size_t ReadBufferFromS3::getObjectSizeFromS3() const
+{
+    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
 off_t ReadBufferFromS3::getPosition()

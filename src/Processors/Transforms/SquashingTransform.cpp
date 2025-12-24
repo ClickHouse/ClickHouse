@@ -20,7 +20,9 @@ SquashingTransform::SquashingTransform(
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = Squashing::squash(squashing.add(std::move(chunk)));
+    cur_chunk = Squashing::squash(
+        squashing.add(std::move(chunk)),
+        getInputPort().getSharedHeader());
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -33,7 +35,7 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 void SquashingTransform::onFinish()
 {
-    finish_chunk = Squashing::squash(squashing.flush());
+    finish_chunk = Squashing::squash(squashing.flush(), getInputPort().getSharedHeader());
 }
 
 void SquashingTransform::work()
@@ -63,7 +65,7 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)));
+    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)), getOutputPort().getSharedHeader());
 }
 
 Chunk SimpleSquashingChunksTransform::generate()
@@ -83,7 +85,7 @@ bool SimpleSquashingChunksTransform::canGenerate()
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
 {
-    return Squashing::squash(squashing.flush());
+    return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
 }
 
 }

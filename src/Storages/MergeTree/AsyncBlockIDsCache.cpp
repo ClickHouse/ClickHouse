@@ -97,6 +97,14 @@ void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
         LOG_TRACE(log, "Task is already scheduled, will wait for update for {}ms", update_wait.count());
 }
 
+template <typename TStorage>
+void AsyncBlockIDsCache<TStorage>::truncate()
+{
+    std::lock_guard lock(mu);
+    cache_ptr.reset();
+    version = 0;
+}
+
 /// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
 template <typename TStorage>
 Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UInt64 & last_version)

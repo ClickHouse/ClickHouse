@@ -706,6 +706,18 @@ ENGINE = engine
 COMMENT 'Comment'
 ```
 
+:::note
+The `COMMENT` clause must be specified **after** any storage-specific clauses such as `PARTITION BY`, `ORDER BY`, and storage-specific `SETTINGS`.
+
+After the `COMMENT` clause, only query-specific `SETTINGS` (like `max_threads`, etc.) will be parsed, not storage-related settings.
+
+This means the correct clause order is:
+- `ENGINE`
+- storage clauses
+- `COMMENT`
+- query settings (if any)
+:::
+
 **Example**
 
 Query:

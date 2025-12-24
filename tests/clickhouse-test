@@ -1540,10 +1540,12 @@ class TestCase:
         for setting in random_settings:
             if setting in self.random_settings_limits:
                 min_value = self.random_settings_limits[setting][0]
-                if min_value and random_settings[setting] < min_value:
+                # min_value can be 0
+                if min_value != None and random_settings[setting] < min_value:
                     random_settings[setting] = min_value
                 max_value = self.random_settings_limits[setting][1]
-                if max_value and random_settings[setting] > max_value:
+                # max_value can be 0
+                if max_value != None and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
     def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):

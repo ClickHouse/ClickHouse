@@ -375,9 +375,16 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         if (values_per_block == 0 || values_per_block % 128 != 0 || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header");
 
-        /// Sanity-check total_values_remaining: each value takes at least one bit.
-        /// This is useful to avoid allocating lots of memory if the input is corrupted.
-        requireRemainingBytes((total_values_remaining + 7)/8);
+        /// Sanity-check total_values_remaining to avoid huge memory allocations from corrupted data.
+        /// Each block requires at least miniblocks_per_block bytes (for the bit-width array) plus
+        /// 1 byte for min_delta varint. Even with 0-bit encoding (all identical deltas), this is
+        /// the minimum. The first value is encoded separately, so +1.
+        size_t remaining_bytes = end - data;
+        size_t min_bytes_per_block = miniblocks_per_block + 1;
+        size_t max_blocks = remaining_bytes / min_bytes_per_block;
+        size_t max_values = max_blocks * values_per_block + 1;
+        if (total_values_remaining > max_values)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values but data can contain at most {}", total_values_remaining, max_values);
     }
 
     void nextBlock()
@@ -618,10 +625,11 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 col_str->getOffsets().clear();
                 col_str->getChars().clear();
             }
-            col_str->reserve(col_str->size() + num_values);
+            size_t initial_size = col_str->size();
+            col_str->reserve(initial_size + num_values);
 
             decodeImpl<false, false>(num_values, col_str, nullptr);
-            chassert(col_str->size() == num_values);
+            chassert(col_str->size() == initial_size + num_values);
 
             if (!direct)
                 string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);

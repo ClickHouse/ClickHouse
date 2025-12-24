@@ -778,6 +778,9 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
+    /// To make sure finish is only called once
+    SCOPE_EXIT({ finished = true; });
+
     /** If one of:
       * - nothing started to do;
       * - received all packets before EndOfStream;

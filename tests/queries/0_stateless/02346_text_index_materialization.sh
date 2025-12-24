@@ -45,7 +45,7 @@ $CLICKHOUSE_CLIENT -q "
         text String
     )
     ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024;
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, merge_max_block_size = 8192;
 
     INSERT INTO t_text_index_materialization SELECT number, 'v' || toString(number) FROM numbers(100000);
 

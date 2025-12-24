@@ -15,8 +15,8 @@ Positions: 3 0 1
            FUNCTION equals(__table1.uid : 0, __table2 :: 3) -> equals(__table1.uid, __table2) Nullable(UInt8) : 4
   Positions: 4 0 1 2
     JoinLogical
-    Join: R0 ⋈ Memory[3]
-    ResultRows: unknown
+    Join: R0[3] ⋈ Memory[3]
+    ResultRows: 3
     Type: INNER
     Strictness: ALL
     Locality: UNSPECIFIED

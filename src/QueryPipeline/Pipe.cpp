@@ -670,7 +670,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
-        auto added_processors = Chain::getProcessors(std::move(chains[i]));
+        auto added_processors = std::move(chains[i].getProcessors());
         for (auto & transform : added_processors)
         {
             if (collected_processors)

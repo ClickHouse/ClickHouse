@@ -9,6 +9,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/iter_find.hpp>
+
 #include <cfloat>
 #include <random>
 
@@ -276,7 +279,10 @@
     M(DistributedDelayedInserts, "Number of times the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.", ValueType::Number) \
     M(DistributedRejectedInserts, "Number of times the INSERT of a block to a Distributed table was rejected with 'Too many bytes' exception due to high number of pending bytes.", ValueType::Number) \
     M(DistributedDelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a Distributed table was throttled due to high number of pending bytes.", ValueType::Milliseconds) \
-    M(DuplicatedInsertedBlocks, "Number of times the INSERTed block to a ReplicatedMergeTree table was deduplicated.", ValueType::Number) \
+    M(DuplicatedInsertedBlocks, "Number of the synchronios inserts to a *MergeTree table was deduplicated.", ValueType::Number) \
+    M(SelfDuplicatedAsyncInserts, "Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was self deduplicated.", ValueType::Number) \
+    M(DuplicatedAsyncInserts, "Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was deduplicated.", ValueType::Number) \
+    M(DuplicationElapsedMicroseconds, "Total time spent checking for duplication of INSERTed blocks to *MergeTree tables.", ValueType::Microseconds) \
     \
     M(ZooKeeperInit, "Number of times connection with ZooKeeper has been established.", ValueType::Number) \
     M(ZooKeeperTransactions, "Number of ZooKeeper operations, which include both read and write operations as well as multi-transactions.", ValueType::Number) \
@@ -1328,7 +1334,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
-    , trace_profile_events(src.trace_profile_events.load(std::memory_order_relaxed))
+    , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
 }
@@ -1360,29 +1366,53 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-std::string_view getName(Event event)
+static const std::array<std::string_view, END> names =
 {
-    static std::string_view strings[] =
-    {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
-        APPLY_FOR_EVENTS(M)
-    #undef M
-    };
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
 
-    return strings[event];
+const std::string_view & getName(Event event)
+{
+    return names[event];
 }
 
-const char * getDocumentation(Event event)
+static const std::array<std::string_view, END> docs =
 {
-    static std::string_view strings[] =
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+    APPLY_FOR_EVENTS(M)
+#undef M
+};
+
+const std::string_view & getDocumentation(Event event)
+{
+    return docs[event];
+}
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    static std::unordered_map<std::string_view, Event> map =
     {
-    #define M(NAME, DOCUMENTATION, VALUE_TYPE) DOCUMENTATION,
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
         APPLY_FOR_EVENTS(M)
-    #undef M
+#undef M
     };
 
-    return strings[event].data();
+    return map.at(name);
 }
+
+void Counters::setTraceProfileEvents(const String & events_list)
+{
+    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
+        it != decltype(it)();
+        ++it)
+    {
+        setTraceProfileEvent(getByName(std::string_view(*it)));
+    }
+}
+
 
 ValueType getValueType(Event event)
 {
@@ -1477,8 +1507,10 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        send_to_trace_log |= current->trace_profile_events.load(std::memory_order_relaxed);
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        send_to_trace_log |= current->counters[event].should_trace;
+        send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
+
         current = current->parent;
     } while (current != nullptr);
 

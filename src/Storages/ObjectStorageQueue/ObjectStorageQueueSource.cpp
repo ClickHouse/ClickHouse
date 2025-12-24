@@ -552,6 +552,7 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     for (auto & [processor, holders] : bucket_holders)
     {
         std::string buckets_str;
+        size_t released_holders = 0;
         for (auto it = holders.begin(); it != holders.end();)
         {
             const auto & holder = *it;
@@ -571,6 +572,7 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 
             /// Release bucket lock.
             holder->release();
+            ++released_holders;
 
             /// Reset bucket processor in cached state.
             auto cached_info = listed_keys_cache.find(bucket);
@@ -583,7 +585,10 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 
             it = holders.erase(it);
         }
-        LOG_TRACE(log, "Released {} bucket holders for processor {} ({})", holders.size(), processor, buckets_str);
+        LOG_TRACE(log, "Released {} bucket holders for processor {} "
+                  "(released buckets: {}, remaining holders: {}, remaining bucket: {})",
+                  released_holders, processor, buckets_str,
+                  holders.size(), holders.empty() ? "" : toString(holders.front()->getBucketInfo()->bucket));
     }
 }
 
@@ -652,16 +657,26 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// Check correctness just in case.
                 if (!bucket_processor.has_value())
                 {
+                    LOG_TRACE(log, "Set processor {} for bucket {}", current_processor, bucket);
                     bucket_processor = current_processor;
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
+                    std::optional<std::string> processor_info;
+                    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+                    {
+                        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                        processor_info = current_bucket_holder->getProcessorInfo(zk_client);
+                    });
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Expected current processor {} to be equal to {} for bucket {} ({})",
+                        "Expected current processor {} to be equal to {} for bucket {} "
+                        "(current bucket: {}, owner: {}, bucket holders: {})",
                         current_processor,
                         bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                        bucket, bucketHoldersToString());
+                        bucket,
+                        current_bucket_holder->getBucketInfo()->toString(),
+                        processor_info.value_or("None"), bucketHoldersToString());
                 }
 
                 if (!bucket_keys.empty())

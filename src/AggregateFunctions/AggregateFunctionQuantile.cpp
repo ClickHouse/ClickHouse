@@ -152,8 +152,89 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantile::name, createAggregateFunctionQuantile<FuncQuantile>);
-    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties });
+    FunctionDocumentation::Description description = R"(
+Computes an approximate [`quantile`](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling.
+The result is non-deterministic.
+To get an exact quantile, use the [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact) function.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
+In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+
+Note that for an empty numeric sequence, `quantile` will return NaN, but its `quantile*` variants will return either NaN or a default value for the sequence type, depending on the variant.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+quantile(level)(expr)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level.", {"Float64", "Date", "DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing quantile",
+        R"(
+CREATE TABLE t (val UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (1), (1), (2), (3);
+
+SELECT quantile(val) FROM t;
+        )",
+        R"(
+┌─quantile(val)─┐
+│           1.5 │
+└───────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, {}, documentation});
+
+    FunctionDocumentation::Description description_quantiles = R"(
+Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
+
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling.
+The result is non-deterministic.
+
+Using `quantiles` is more efficient than calling multiple individual `quantile` functions when you need multiple quantile values, as all quantiles are calculated in a single pass through the data.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles = R"(
+quantiles(level1, level2, ...)(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles = {
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles = {
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
+    FunctionDocumentation::Examples examples_quantiles = {
+    {
+        "Computing multiple quantiles efficiently",
+        R"(
+CREATE TABLE t (val UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (1), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+
+SELECT quantiles(0.25, 0.5, 0.75, 0.9)(val) FROM t;
+        )",
+        R"(
+┌─quantiles(0.25, 0.5, 0.75, 0.9)(val)─┐
+│ [3, 5.5, 8, 9.5]                     │
+└──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};
+    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
+
+    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties, documentation_quantiles });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);

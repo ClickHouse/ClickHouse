@@ -460,68 +460,6 @@ public:
         rb.ignore(sizeof(HashValue) * size);
     }
 
-    void writeText(DB::WriteBuffer & wb) const
-    {
-        if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
-
-        DB::writeIntText(skip_degree, wb);
-        wb.write(",", 1);
-        DB::writeIntText(m_size, wb);
-
-        if (has_zero)
-            wb.write(",0", 2);
-
-        for (size_t i = 0; i < buf_size(); ++i)
-        {
-            if (buf[i])
-            {
-                wb.write(",", 1);
-                DB::writeIntText(buf[i], wb);
-            }
-        }
-    }
-
-    void readText(DB::ReadBuffer & rb)
-    {
-        has_zero = false;
-
-        DB::readIntText(skip_degree, rb);
-        DB::assertChar(',', rb);
-        DB::readIntText(m_size, rb);
-
-        if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
-
-        free();
-
-        UInt8 new_size_degree = m_size <= 1
-             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
-             : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
-
-        alloc(new_size_degree);
-
-        for (size_t i = 0; i < m_size; ++i)
-        {
-            HashValue x = 0;
-            DB::assertChar(',', rb);
-            DB::readIntText(x, rb);
-            if (x == 0)
-                has_zero = true;
-            else
-                reinsertImpl(x);
-        }
-    }
-
-    void insertHash(HashValue hash_value)
-    {
-        if (!good(hash_value))
-            return;
-
-        insertImpl(hash_value);
-        shrinkIfNeed();
-    }
-
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     size_t getCollisions() const
     {

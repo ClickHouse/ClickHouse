@@ -52,7 +52,42 @@ void registerAggregateFunctionsQuantileDD(AggregateFunctionFactory & factory)
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileDD::name, createAggregateFunctionQuantile<FuncQuantileDD>);
+    FunctionDocumentation::Description description = R"(
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees.
+It works by building a [DD](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+quantileDD(relative_accuracy, [level])(expr)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Column with numeric data.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"relative_accuracy", "Relative accuracy of the quantile. Possible values are in the range from 0 to 1. The size of the sketch depends on the range of the data and the relative accuracy. The larger the range and the smaller the relative accuracy, the larger the sketch. The rough memory size of the sketch is `log(max_value/min_value)/relative_accuracy`. The recommended value is 0.001 or higher.", {"Float*"}},
+        {"level", "Optional. Level of quantile. Possible values are in the range from 0 to 1. Default value: 0.5.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing quantile with DD sketch",
+        R"(
+CREATE TABLE example_table (a UInt32, b Float32) ENGINE = Memory;
+INSERT INTO example_table VALUES (1, 1.001), (2, 1.002), (3, 1.003), (4, 1.004);
+
+SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
+        )",
+        R"(
+┌─quantileDD(0.01, 0.75)(a)─┬─quantileDD(0.01, 0.75)(b)─┐
+│        2.974233423476717  │                      1.01 │
+└───────────────────────────┴───────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(NameQuantileDD::name, {createAggregateFunctionQuantile<FuncQuantileDD>, {}, documentation});
     factory.registerFunction(NameQuantilesDD::name, { createAggregateFunctionQuantile<FuncQuantilesDD>, properties });
 
     /// 'median' is an alias for 'quantile'

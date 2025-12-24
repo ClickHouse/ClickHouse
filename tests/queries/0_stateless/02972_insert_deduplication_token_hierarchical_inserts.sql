@@ -111,9 +111,10 @@ SELECT sleep(3);
 
 INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10) ORDER BY ALL;
 
+--- INSERT_WAS_DEDUPLICATED = 389
 SYSTEM FLUSH LOGS part_log;
 SELECT table, name, error FROM system.part_log
-WHERE database = currentDatabase()
+WHERE database = currentDatabase() and error != 389
 ORDER BY table, name;
 
 SELECT count() FROM landing;

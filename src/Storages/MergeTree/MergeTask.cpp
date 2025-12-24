@@ -334,6 +334,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         /// stage and other indexes on horizonatal stage of merge.
         if (index.type == "text")
         {
+            if (index_columns.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index {} has {} source columns, expected 1", index.name, index_columns.size());
+
             global_ctx->text_indexes_to_merge.push_back(index);
         }
         else if (index_columns.size() == 1)
@@ -535,6 +538,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         !patch_parts.empty() ||
         global_ctx->cleanup ||
         global_ctx->deduplicate ||
+        hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     prepareProjectionsToMergeAndRebuild();
@@ -802,6 +806,23 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
     global_ctx->gathering_columns.emplace_back(name, type);
 }
 
+bool MergeTask::hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part)
+{
+    for (const auto & part : future_part->parts)
+    {
+        if (part->hasLightweightDelete())
+            return true;
+    }
+
+    for (const auto & patch_part : future_part->patch_parts)
+    {
+        if (patch_part->hasLightweightDelete())
+            return true;
+    }
+
+    return false;
+}
+
 bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx)
 {
     if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
@@ -813,27 +834,7 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_lightweight_delete])
         return false;
 
-    bool has_lightweight_delete = false;
-
-    for (const auto & part : global_ctx.future_part->parts)
-    {
-        if (part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    for (const auto & patch_part : global_ctx.future_part->patch_parts)
-    {
-        if (patch_part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    return has_lightweight_delete;
+    return hasLightweightDelete(global_ctx.future_part);
 }
 
 
@@ -969,7 +970,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
             return;
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
-        Chunk squashed_chunk = Squashing::squash(projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}));
+        Chunk squashed_chunk = Squashing::squash(
+            projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
+            projection_squash_plan.getHeader());
+
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -990,7 +994,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
         auto & projection_squash_plan = ctx->projection_squashes[i];
-        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
+        auto squashed_chunk = Squashing::squash(
+            projection_squash_plan.flush(),
+            projection_squash_plan.getHeader());
+
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -1512,7 +1519,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
-    if (global_ctx->merged_part_offsets && !global_ctx->projections_to_merge.empty())
+    if (global_ctx->merged_part_offsets && !global_ctx->merged_part_offsets->isFinalized())
         global_ctx->merged_part_offsets->flush();
 
     for (const auto & projection : global_ctx->projections_to_merge)
@@ -1699,6 +1706,21 @@ void MergeTask::MergeTextIndexStage::cancel() noexcept
         task->cancel();
 }
 
+std::vector<TextIndexSegment> MergeTask::MergeTextIndexStage::getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const
+{
+    auto it = global_ctx->build_text_index_transforms.find(part_name);
+    if (it == global_ctx->build_text_index_transforms.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", part_name);
+
+    for (const auto & transform : it->second)
+    {
+        if (transform->hasIndex(index_name))
+            return transform->getSegments(index_name, part_idx);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index transform for index {} and part {} not found", index_name, part_name);
+}
+
 bool MergeTask::MergeTextIndexStage::prepare() const
 {
     if (global_ctx->parent_part)
@@ -1721,20 +1743,15 @@ bool MergeTask::MergeTextIndexStage::prepare() const
 
     auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
-    for (size_t index_idx = 0; index_idx < global_ctx->text_indexes_to_merge.size(); ++index_idx)
+    for (const auto & index : global_ctx->text_indexes_to_merge)
     {
-        const auto & index = global_ctx->text_indexes_to_merge[index_idx];
         auto index_ptr = MergeTreeIndexFactory::instance().get(index);
         std::vector<TextIndexSegment> segments;
 
         if (global_ctx->merge_may_reduce_rows)
         {
             /// Text index was built for the resulting part.
-            auto it = global_ctx->build_text_index_transforms.find(global_ctx->new_data_part->name);
-            if (it == global_ctx->build_text_index_transforms.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", global_ctx->new_data_part->name);
-
-            segments = it->second->getSegments(index_idx, 0);
+            segments = getTextIndexSegments(global_ctx->new_data_part->name, index.name, 0);
         }
         else
         {
@@ -1751,11 +1768,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 {
                     /// Otherwise, it should be materialized on merge.
                     /// Take the segments from the build text index transform.
-                    auto it = global_ctx->build_text_index_transforms.find(part->name);
-                    if (it == global_ctx->build_text_index_transforms.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", part->name);
-
-                    auto part_segments = it->second->getSegments(index_idx, part_idx);
+                    auto part_segments = getTextIndexSegments(part->name, index.name, part_idx);
                     std::move(part_segments.begin(), part_segments.end(), std::back_inserter(segments));
                 }
             }
@@ -2211,7 +2224,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     auto build_text_index_step = std::make_unique<BuildTextIndexStep>(header, transform);
     /// Save transform to the context to be able to take segments for merging from it later.
-    global_ctx->build_text_index_transforms.emplace(data_part.name, transform);
+    global_ctx->build_text_index_transforms[data_part.name].push_back(std::move(transform));
     plan.addStep(std::move(build_text_index_step));
 }
 

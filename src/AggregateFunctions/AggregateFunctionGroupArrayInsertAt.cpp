@@ -231,7 +231,74 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupArrayInsertAt", createAggregateFunctionGroupArrayInsertAt);
+    FunctionDocumentation::Description description = R"(
+Inserts a value into the array at the specified position.
+
+If in one query several values are inserted into the same position, the function behaves in the following ways:
+- If a query is executed in a single thread, the first one of the inserted values is used.
+- If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
+    )";
+    FunctionDocumentation::Syntax syntax = "groupArrayInsertAt(default_x, size)([x, pos])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Value to be inserted.", {"Any"}},
+        {"pos", "Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero.", {"UInt32"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"default_x", "Optional. Default value for substituting in empty positions.", {"Any"}},
+        {"size", "Optional. Length of the resulting array. When using this parameter, the default value `default_x` must be specified.", {"UInt32"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Array with inserted values.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage without parameters",
+        R"(
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+        )",
+        R"(
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Usage with default value parameter",
+        R"(
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+        )",
+        R"(
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Usage with default value and size parameters",
+        R"(
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+        )",
+        R"(
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Multi-threaded insertion into same position",
+        R"(
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+        )",
+        R"(
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, {}, documentation});
 }
 
 }

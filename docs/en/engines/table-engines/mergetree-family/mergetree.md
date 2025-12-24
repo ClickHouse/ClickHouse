@@ -488,7 +488,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Supports full-text search, see [here](invertedindexes.md) for details.
+Supports full-text search, see [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 

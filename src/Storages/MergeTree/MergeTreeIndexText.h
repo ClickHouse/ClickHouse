@@ -8,7 +8,6 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
 #include <Formats/MarkInCompressedFile.h>
-#include <Interpreters/ITokenExtractor.h>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -320,6 +319,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
 };
+
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
 
 struct MergeTreeIndexTextGranuleBuilder
 {

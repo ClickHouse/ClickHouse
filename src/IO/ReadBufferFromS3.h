@@ -86,6 +86,8 @@ public:
 
     std::string getStopReason() const { return stop_reason; }
 
+    size_t getObjectSizeFromS3() const;
+
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 

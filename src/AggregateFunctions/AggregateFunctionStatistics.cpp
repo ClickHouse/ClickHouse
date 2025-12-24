@@ -478,18 +478,115 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("varSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    /// varSampStable documentation
+    FunctionDocumentation::Description description_varSampStable = R"(
+Calculate the sample variance of a data set. Unlike [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
+
+The sample variance is calculated using the same formula as [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp):
+
+$$\frac{\Sigma{(x - \bar{x})^2}}{n-1}$$
+
+Where:
+- $x$ is each individual data point in the data set
+- $\bar{x}$ is the arithmetic mean of the data set
+- $n$ is the number of data points in the data set
+    )";
+    FunctionDocumentation::Syntax syntax_varSampStable = R"(
+varSampStable(x)
+    )";
+    FunctionDocumentation::Arguments arguments_varSampStable = {
+        {"x", "The population for which you want to calculate the sample variance.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_varSampStable = {"Returns the sample variance of the input data set.", {"Float64"}};
+    FunctionDocumentation::Examples examples_varSampStable = {
     {
-        assertNoParameters(name, parameters);
-        assertUnary(name, argument_types);
-        return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
+        "Computing stable sample variance",
+        R"(
+DROP TABLE IF EXISTS test_data;
+CREATE TABLE test_data
+(
+    x Float64
+)
+ENGINE = Memory;
+
+INSERT INTO test_data VALUES (10.5), (12.3), (9.8), (11.2), (10.7);
+
+SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
+        )",
+        R"(
+┌─var_samp_stable─┐
+│           0.865 │
+└─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_varSampStable = {1, 1};
+    FunctionDocumentation::Category category_varSampStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_varSampStable = {description_varSampStable, syntax_varSampStable, arguments_varSampStable, {}, returned_value_varSampStable, examples_varSampStable, introduced_in_varSampStable, category_varSampStable};
+
+    factory.registerFunction("varSampStable",
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertUnary(name, argument_types);
+            return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
+        },
+        {},
+        documentation_varSampStable
     });
 
-    factory.registerFunction("varPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    /// varPopStable documentation
+    FunctionDocumentation::Description description_varPopStable = R"(
+Returns the population variance.
+Unlike [`varPop`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
+It works slower but provides a lower computational error.
+    )";
+    FunctionDocumentation::Syntax syntax_varPopStable = R"(
+varPopStable(x)
+    )";
+    FunctionDocumentation::Arguments arguments_varPopStable = {
+        {"x", "Population of values to find the population variance of.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_varPopStable = {"Returns the population variance of `x`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_varPopStable = {
     {
-        assertNoParameters(name, parameters);
-        assertUnary(name, argument_types);
-        return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
+        "Computing stable population variance",
+        R"(
+DROP TABLE IF EXISTS test_data;
+CREATE TABLE test_data
+(
+    x UInt8,
+)
+ENGINE = Memory;
+
+INSERT INTO test_data VALUES (3),(3),(3),(4),(4),(5),(5),(7),(11),(15);
+
+SELECT
+    varPopStable(x) AS var_pop_stable
+FROM test_data;
+        )",
+        R"(
+┌─var_pop_stable─┐
+│           14.4 │
+└────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_varPopStable = {1, 1};
+    FunctionDocumentation::Category category_varPopStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_varPopStable = {description_varPopStable, syntax_varPopStable, arguments_varPopStable, {}, returned_value_varPopStable, examples_varPopStable, introduced_in_varPopStable, category_varPopStable};
+
+    factory.registerFunction("varPopStable",
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertUnary(name, argument_types);
+            return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
+        },
+        {},
+        documentation_varPopStable
     });
 
     factory.registerFunction("stddevSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -506,25 +603,182 @@ void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & facto
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
     });
 
-    factory.registerFunction("covarSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    FunctionDocumentation::Description covarSampStable_description = R"(
+Calculates the sample covariance:
+
+$$
+\frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n - 1}
+$$
+
+It is similar to [`covarSamp`](../reference/covarsamp.md) but uses a numerically stable algorithm.
+As a result, `covarSampStable` is slower than `covarSamp` but provides a lower computational error.
+    )";
+    FunctionDocumentation::Syntax covarSampStable_syntax = "covarSampStable(x, y)";
+    FunctionDocumentation::Arguments covarSampStable_arguments = {
+        {"x", "First variable.", {"(U)Int*", "Float*", "Decimal"}},
+        {"y", "Second variable.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::Parameters covarSampStable_parameters = {};
+    FunctionDocumentation::ReturnedValue covarSampStable_returned_value = {"Returns the sample covariance between `x` and `y`. For `n <= 1`, `inf` is returned.", {"Float64"}};
+    FunctionDocumentation::Examples covarSampStable_examples = {
     {
-        assertNoParameters(name, parameters);
-        assertBinary(name, argument_types);
-        return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
+        "Basic sample covariance calculation with stable algorithm",
+        R"(
+DROP TABLE IF EXISTS series;
+CREATE TABLE series(i UInt32, x_value Float64, y_value Float64) ENGINE = Memory;
+INSERT INTO series(i, x_value, y_value) VALUES (1, 5.6,-4.4),(2, -9.6,3),(3, -1.3,-4),(4, 5.3,9.7),(5, 4.4,0.037),(6, -8.6,-7.8),(7, 5.1,9.3),(8, 7.9,-3.6),(9, -8.2,0.62),(10, -3,7.3);
+
+SELECT covarSampStable(x_value, y_value)
+FROM
+(
+    SELECT
+        x_value,
+        y_value
+    FROM series
+);
+        )",
+        R"(
+┌─covarSampStable(x_value, y_value)─┐
+│                 7.206275555555556 │
+└───────────────────────────────────┘
+        )"
+    },
+    {
+        "Single value returns inf",
+        R"(
+SELECT covarSampStable(x_value, y_value)
+FROM
+(
+    SELECT
+        x_value,
+        y_value
+    FROM series LIMIT 1
+);
+        )",
+        R"(
+┌─covarSampStable(x_value, y_value)─┐
+│                               inf │
+└───────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category covarSampStable_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn covarSampStable_introduced_in = {1, 1};
+    FunctionDocumentation covarSampStable_documentation = {covarSampStable_description, covarSampStable_syntax, covarSampStable_arguments, covarSampStable_parameters, covarSampStable_returned_value, covarSampStable_examples, covarSampStable_introduced_in, covarSampStable_category};
+    factory.registerFunction("covarSampStable",
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertBinary(name, argument_types);
+            return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
+        },
+        {},
+        covarSampStable_documentation
     });
 
-    factory.registerFunction("covarPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    FunctionDocumentation::Description covarPopStable_description = R"(
+Calculates the population covariance:
+
+$$\frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n}$$
+
+It is similar to the [`covarPop`](../reference/covarpop.md) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
+    )";
+    FunctionDocumentation::Syntax covarPopStable_syntax = "covarPopStable(x, y)";
+    FunctionDocumentation::Arguments covarPopStable_arguments = {
+        {"x", "First variable.", {"(U)Int*", "Float*", "Decimal"}},
+        {"y", "Second variable.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::Parameters covarPopStable_parameters = {};
+    FunctionDocumentation::ReturnedValue covarPopStable_returned_value = {"Returns the population covariance between `x` and `y`.", {"Float64"}};
+    FunctionDocumentation::Examples covarPopStable_examples = {
     {
-        assertNoParameters(name, parameters);
-        assertBinary(name, argument_types);
-        return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
+        "Basic population covariance calculation with stable algorithm",
+        R"(
+DROP TABLE IF EXISTS series;
+CREATE TABLE series(i UInt32, x_value Float64, y_value Float64) ENGINE = Memory;
+INSERT INTO series(i, x_value, y_value) VALUES (1, 5.6,-4.4),(2, -9.6,3),(3, -1.3,-4),(4, 5.3,9.7),(5, 4.4,0.037),(6, -8.6,-7.8),(7, 5.1,9.3),(8, 7.9,-3.6),(9, -8.2,0.62),(10, -3,7.3);
+
+SELECT covarPopStable(x_value, y_value)
+FROM series
+        )",
+        R"(
+┌─covarPopStable(x_value, y_value)─┐
+│                         6.485648 │
+└──────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category covarPopStable_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn covarPopStable_introduced_in = {1, 1};
+    FunctionDocumentation covarPopStable_documentation = {covarPopStable_description, covarPopStable_syntax, covarPopStable_arguments, covarPopStable_parameters, covarPopStable_returned_value, covarPopStable_examples, covarPopStable_introduced_in, covarPopStable_category};
+    factory.registerFunction("covarPopStable",
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertBinary(name, argument_types);
+            return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
+        },
+        {},
+        covarPopStable_documentation
     });
 
-    factory.registerFunction("corrStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    FunctionDocumentation::Description corrStable_description = R"(
+Calculates the [Pearson correlation coefficient](https://en.wikipedia.org/wiki/Pearson_correlation_coefficient):
+
+$$
+\frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{\sqrt{\Sigma{(x - \bar{x})^2} * \Sigma{(y - \bar{y})^2}}}
+$$
+
+Similar to the [`corr`](../reference/corr.md) function, but uses a numerically stable algorithm.
+As a result, `corrStable` is slower than `corr` but produces a more accurate result.
+    )";
+    FunctionDocumentation::Syntax corrStable_syntax = "corrStable(x, y)";
+    FunctionDocumentation::Arguments corrStable_arguments = {
+        {"x", "First variable.", {"(U)Int*", "Float*", "Decimal"}},
+        {"y", "Second variable.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::Parameters corrStable_parameters = {};
+    FunctionDocumentation::ReturnedValue corrStable_returned_value = {"Returns the Pearson correlation coefficient.", {"Float64"}};
+    FunctionDocumentation::Examples corrStable_examples = {
     {
-        assertNoParameters(name, parameters);
-        assertBinary(name, argument_types);
-        return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
+        "Basic correlation calculation with stable algorithm",
+        R"(
+DROP TABLE IF EXISTS series;
+CREATE TABLE series
+(
+    i UInt32,
+    x_value Float64,
+    y_value Float64
+)
+ENGINE = Memory;
+INSERT INTO series(i, x_value, y_value) VALUES (1, 5.6, -4.4),(2, -9.6, 3),(3, -1.3, -4),(4, 5.3, 9.7),(5, 4.4, 0.037),(6, -8.6, -7.8),(7, 5.1, 9.3),(8, 7.9, -3.6),(9, -8.2, 0.62),(10, -3, 7.3);
+
+SELECT corrStable(x_value, y_value)
+FROM series
+        )",
+        R"(
+┌─corrStable(x_value, y_value)─┐
+│          0.17302657554532558 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category corrStable_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn corrStable_introduced_in = {1, 1};
+    FunctionDocumentation corrStable_documentation = {corrStable_description, corrStable_syntax, corrStable_arguments, corrStable_parameters, corrStable_returned_value, corrStable_examples, corrStable_introduced_in, corrStable_category};
+
+    factory.registerFunction("corrStable",
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertBinary(name, argument_types);
+            return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
+        },
+        AggregateFunctionProperties{},
+        corrStable_documentation
     });
 }
 

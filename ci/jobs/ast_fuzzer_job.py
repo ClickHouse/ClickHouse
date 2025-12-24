@@ -173,7 +173,7 @@ def run_fuzz_job(check_name: str):
                 workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
             ),
         )
-        parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
 
         if parsed_name:
             results.append(
@@ -181,6 +181,7 @@ def run_fuzz_job(check_name: str):
                     name=parsed_name,
                     info=parsed_info,
                     status=Result.StatusExtended.FAIL,
+                    files=files,
                 )
             )
 
