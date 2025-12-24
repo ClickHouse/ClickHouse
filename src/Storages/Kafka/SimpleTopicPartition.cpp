@@ -1,5 +1,6 @@
-#include "SimpleTopicPartition.h"
+#include <Storages/Kafka/SimpleTopicPartition.h>
 #include <Common/SipHash.h>
+#include <tuple>
 
 namespace DB
 {

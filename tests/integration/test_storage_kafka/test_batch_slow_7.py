@@ -2,6 +2,7 @@
 
 from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
+import pandas as pd
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -134,7 +135,7 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
         create_query_generator
     )
 
-    with k.kafka_topic(admin_client, topic_name):
+    with k.kafka_topic(admin_client, topic_name, num_partitions=6):
 
         k.kafka_produce(
             kafka_cluster,
@@ -169,15 +170,32 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
 
         time.sleep(5)
 
-        latency = int(
-            instance.query(
-                f"""
-            SELECT now() - assignments.produce_time[1] AS assignments_produce_time
+        latency_array = instance.query(
+            f"""
+            SELECT now()::UInt64, arrayMap(x -> now() - x, assignments.produce_time), assignments.current_offset
             FROM system.kafka_consumers WHERE database='test' and table='{kafka_table}';
-            """
-            )
-        )
-        assert latency > 3 and latency < 20
+            """,
+            parse=True,
+        ).to_dict("records")[0]
+
+        now = int(list(latency_array.values())[0])
+        timestamps = pd.eval(list(latency_array.values())[1])
+        offsets = pd.eval(list(latency_array.values())[2])
+        logging.info(f"offsets {offsets}")
+        logging.info(f"timestamps {timestamps}")
+
+        total_offset = 0
+        for i in range(len(offsets)):
+            if offsets[i] > 0:
+                total_offset += offsets[i]
+                # non zero timestamp
+                assert timestamps[i] < 100
+            else:
+                # no messages in this TopicPartition, timestamp is zero
+                assert timestamps[i] > 100
+
+        # We sent 4 messages
+        assert total_offset == 4
 
         instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
         instance.query(f"DROP TABLE test.{kafka_table}")
