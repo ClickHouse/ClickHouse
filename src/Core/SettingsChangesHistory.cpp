@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"deduplicate_insert_select", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_PROSSIBLE"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -89,6 +90,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
+            {"deduplicate_insert_select", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES, DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES, "New setting, replace insert_select_deduplicate"},
+
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
