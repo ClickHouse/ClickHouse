@@ -266,6 +266,25 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
 
 }
 
+HTTPAuthClientParams HTTPAuthClientParams::createDefault(const String & uri_, size_t max_tries_)
+{
+    constexpr size_t connection_timeout_ms = 1000;
+    constexpr size_t receive_timeout_ms = 1000;
+    constexpr size_t send_timeout_ms = 1000;
+
+    return HTTPAuthClientParams{
+        .uri = Poco::URI(uri_),
+        .timeouts = ConnectionTimeouts()
+                        .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+                        .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
+                        .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000)),
+        .max_tries = max_tries_,
+        .retry_initial_backoff_ms = 50,
+        .retry_max_backoff_ms = 1000,
+        .forward_headers = {}
+    };
+}
+
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     parseLDAPSearchParams(params, config, prefix);
