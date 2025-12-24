@@ -26,6 +26,9 @@ struct JSONExtractInsertSettings
     /// Skipped fields are treated as missing and use default/null values.
     /// Only applies to JSON type columns with typed paths, not general JSON parsing.
     bool skip_invalid_typed_paths = false;
+    /// Use partial match instead of full to skip paths using regular expressions specified
+    /// in JSON data type using SKIP REGEXP.
+    bool use_partial_match_to_skip_paths_by_regexp = true;
 };
 
 template <typename JSONParser>
