@@ -7253,6 +7253,9 @@ Serialize String values during aggregation with zero byte at the end. Enable to 
 Maximum number of `_path` values that can be extracted from query filters to use for file iteration
 instead of glob listing. 0 means disabled.
 )", 0) \
+    DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
+Always ignore ON CLUSTER clause for DDL queries with replicated databases.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
