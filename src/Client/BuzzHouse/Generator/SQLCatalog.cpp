@@ -590,6 +590,10 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                     next_bucket_path += PARTITION_STR;
                 }
                 next_bucket_path += !add_before ? std::to_string(tname) : "";
+                if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
+                {
+                    next_bucket_path += "/";
+                }
             }
             if (rg.nextBool())
             {
