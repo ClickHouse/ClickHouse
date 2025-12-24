@@ -31,8 +31,7 @@ class ClusterBuilder:
             b = (backend or "default").strip().lower()
         except Exception:
             b = "default"
-        if b in ("rocks", "rockskeeper", "rocksdb", "rk"):
-            feature_flags.setdefault("experimental_use_rocksdb", 1)
+        rocks_backend = (b == "rocks")
         coord_overrides_xml = opts.get("coord_overrides_xml", "")
         use_minio = bool(MINIO_ENDPOINT)
         # Allow explicit override via env: KEEPER_DISABLE_S3=1 to force local disks
@@ -65,6 +64,11 @@ class ClusterBuilder:
         # Feature flags and extra coordination settings
         # Only include explicit feature_flags from scenarios/backends
         ff = dict(feature_flags or {})
+        # Do not allow experimental_use_rocksdb under <feature_flags>; it belongs to coordination_settings
+        try:
+            ff.pop("experimental_use_rocksdb", None)
+        except Exception:
+            pass
         extra_coord = (
             "<async_replication>1</async_replication>"
             "<compress_logs>false</compress_logs>"
@@ -85,7 +89,8 @@ class ClusterBuilder:
             "<session_timeout_ms>30000</session_timeout_ms>"
             "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
             "<shutdown_timeout>5000</shutdown_timeout>"
-            "</coordination_settings>"
+            + ("<experimental_use_rocksdb>1</experimental_use_rocksdb>" if rocks_backend else "")
+            + "</coordination_settings>"
         )
         feature_flags_xml = ""
         if ff:

@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 import os
+import sys
 import argparse
 import subprocess
 import time
 from pathlib import Path
+
+# Ensure local invocations can import praktika without requiring PYTHONPATH
+try:
+    _repo_dir = str(Path(__file__).resolve().parents[2])
+    if _repo_dir not in sys.path:
+        sys.path.insert(0, _repo_dir)
+    _ci_dir = os.path.join(_repo_dir, "ci")
+    if _ci_dir not in sys.path:
+        sys.path.insert(0, _ci_dir)
+except Exception:
+    pass
 
 from praktika.result import Result
 from praktika.utils import Shell, Utils
@@ -79,8 +91,10 @@ def main():
 
     # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
     install_cmd = (
+        # Ensure deterministic pytest stack compatible with --report-log
         "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
-        "|| PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir pyyaml requests pytest pytest-timeout pytest-xdist pytest-reportlog"
+        "&& PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir 'pytest<9' pytest-xdist pytest-timeout pytest-reportlog "
+        "|| PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir pyyaml requests 'pytest<9' pytest-timeout pytest-xdist pytest-reportlog"
     )
     results.append(
         Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
