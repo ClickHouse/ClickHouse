@@ -560,27 +560,26 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         const bool has_to
             = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
 
-        chassert(this->entries.empty());
-        for (uint32_t i = 0; i < view_ncols; i++)
-        {
-            std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
-            entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
-        }
         if (!has_to)
         {
+            chassert(this->entries.empty());
+            for (uint32_t i = 0; i < view_ncols; i++)
+            {
+                std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
+                entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
+            }
             for (uint32_t i = 0; i < view_ncols; i++)
             {
                 next.cols.insert(i);
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
+            if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
+            {
+                generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
+            }
+            this->entries.clear();
         }
-        if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
-        {
-            generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
-        }
-        this->entries.clear();
-
-        if (has_to)
+        else
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(next.has_with_cols ? table_to_lambda : attached_tables));
