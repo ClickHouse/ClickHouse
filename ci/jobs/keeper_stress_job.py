@@ -40,6 +40,10 @@ def main():
     os.environ.setdefault("KEEPER_DURATION", "120")
     # Run both default and rocks backends by default to compare behavior
     os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
+    # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
+    os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
+    # Default to running tests with pytest-xdist workers (can be overridden)
+    os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
 
     # Apply custom KEY=VALUE envs passed via --param to mirror integration jobs UX
     if args.param:
@@ -168,8 +172,9 @@ def main():
         ready_val = 120
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
     extra.append(f"--timeout={timeout_val}")
-    if is_pr:
-        extra.append("--maxfail=1")
+    # Always run with pytest-xdist (safe per-worker isolation is implemented in the framework)
+    xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "auto").strip() or "auto"
+    extra.append(f"-n {xdist_workers}")
     cmd = f"-s -vv {tests_target} --durations=0{dur_arg} {' '.join(extra)}".rstrip()
 
     # Prepare env for pytest
