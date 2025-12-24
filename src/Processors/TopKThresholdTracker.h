@@ -1,5 +1,6 @@
 #pragma once
-#include <shared_mutex>
+#include <atomic>
+#include <mutex>
 #include <Core/Field.h>
 #include <Common/SharedMutex.h>
 
@@ -18,58 +19,55 @@ struct TopKThresholdTracker
 
     void testAndSet(const Field & value)
     {
-        std::unique_lock lock(mutex);
-        if (!is_set)
+        std::lock_guard lock(mutex);
+        const auto cur = active_idx.load(std::__1::memory_order::acquire);
+        const auto next = 1 - cur;
+
+        if (!is_set.load(std::memory_order_acquire))
         {
-            threshold = value;
-            is_set = true;
+            thresholds[next] = value;
+            active_idx.store(next, std::memory_order_release);
+            is_set.store(true, std::memory_order_release);
             return;
         }
-        if (direction == 1) /// ASC
+
+        const auto & threshold = thresholds[cur];
+        if ((direction == 1 /* ASC */ && value < threshold) || (direction == -1 /* DESC */ && value > threshold))
         {
-            if (value < threshold)
-            {
-                threshold = value;
-            }
-        }
-        else if (direction == -1) /// DESC
-        {
-            if (value > threshold)
-            {
-                threshold = value;
-            }
+            thresholds[next] = value;
+            active_idx.store(next, std::memory_order_release);
         }
     }
 
     bool isValueInsideThreshold(const Field & value) const
     {
-        if (!is_set)
+        if (!is_set.load(std::memory_order_acquire))
             return true;
 
-        std::shared_lock lock(mutex);
-        if (direction == 1 && value >= threshold) /// ASC
-            return false;
-        else if (direction == -1 && value <= threshold) /// DESC
-            return false;
+        const auto idx = active_idx.load(std::memory_order_acquire);
+        const auto & threshold = thresholds[idx];
 
-        return true;
+        return ((direction == 1 /* ASC */ && value < threshold) || (direction == -1 /* DESC */ && value > threshold));
     }
 
     Field getValue() const
     {
-        std::shared_lock lock(mutex);
-        auto ret = threshold;
-        return ret;
+        const auto idx = active_idx.load(std::memory_order_acquire);
+        return thresholds[idx];
     }
 
-    bool isSet() const { return is_set; } /// unlocked read is fine
+    bool isSet() const { return is_set.load(std::memory_order_acquire); }
 
     int getDirection() const { return direction; }
 
 private:
-    Field threshold;
+    /// The current threshold is double buffered: one value at `active_idx` is "published", which threads can
+    /// freely read without locking, while writers must lock, write to the other index, then swap `active_idx`.
+    /// This avoids shared lock contention -- cache line ping-ponging -- for concurrent readers.
+    Field thresholds[2];
     mutable SharedMutex mutex;
     std::atomic<bool> is_set{false};
+    std::atomic<uint8_t> active_idx{0};
     int direction{0};
 };
 

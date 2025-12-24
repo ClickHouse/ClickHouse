@@ -144,7 +144,7 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
 {
     if (index_read_result && index_read_result->skip_index_read_result)
     {
-        auto skip_index_read_result = index_read_result->skip_index_read_result;
+        auto & skip_index_read_result = index_read_result->skip_index_read_result;
         chassert(mark < skip_index_read_result->granules_selected.size());
 
         if (!skip_index_read_result->granules_selected.at(mark))
