@@ -23,10 +23,11 @@ def main():
     jn = os.environ.get("JOB_NAME", "")
     is_pr = (wf == "PR") or ("(PR)" in jn)
     if is_pr:
-        os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
-        # Run a single representative scenario on PRs unless explicitly overridden
-        os.environ.setdefault("KEEPER_INCLUDE_IDS", "CHA-01")
-        # Make PR runs snappy and predictable
+        # Run full suite on CI by default (including @weekly scenarios)
+        os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
+        # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
+        os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
+        # Keep PR runs predictable; users can override via --duration/--param
         os.environ.setdefault("KEEPER_READY_TIMEOUT", "60")
         os.environ.setdefault("KEEPER_BENCH_CLIENTS", "32")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
@@ -34,8 +35,8 @@ def main():
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
     # Always keep containers/logs on fail for local/CI triage unless explicitly disabled
     os.environ.setdefault("KEEPER_KEEP_ON_FAIL", "1")
-    # Keep PR job fast/reliable by default; can be overridden via env
-    os.environ.setdefault("KEEPER_FAULTS", "off")
+    # Enable faults by default on CI; can be overridden via env/CLI
+    os.environ.setdefault("KEEPER_FAULTS", "on")
     os.environ.setdefault("KEEPER_DURATION", "120")
 
     # Apply custom KEY=VALUE envs passed via --param to mirror integration jobs UX
