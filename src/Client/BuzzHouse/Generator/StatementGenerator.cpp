@@ -815,6 +815,12 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4));
     ot->set_use_force(rg.nextBool());
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        ot->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
@@ -875,7 +881,12 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
     }
-    ct->set_single_result(rg.nextSmallNumber() < 4);
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        ct->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 bool StatementGenerator::tableOrFunctionRef(
@@ -1048,6 +1059,12 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
             sv->set_property("describe_include_subcolumns");
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
+    }
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        dt->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
     }
 }
 
@@ -4124,6 +4141,12 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, st->mutable_setting_values());
+    }
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        st->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
     }
 }
 
