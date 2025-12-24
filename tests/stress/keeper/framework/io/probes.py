@@ -103,6 +103,30 @@ def lgif(node):
     return kv
 
 
+def srvr_kv(node):
+    out = four(node, "srvr")
+    kv = {}
+    for line in out.splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        k = k.strip().lower()
+        v = v.strip().split()[0]
+        try:
+            val = float(v)
+        except Exception:
+            continue
+        if k.startswith("connections"):
+            kv["connections"] = val
+        elif k.startswith("outstanding"):
+            kv["outstanding"] = val
+        elif k.startswith("received"):
+            kv["received"] = val
+        elif k.startswith("sent"):
+            kv["sent"] = val
+    return kv
+
+
 def prom_metrics(node):
     return sh(node, f"curl -sf http://127.0.0.1:{PROM_PORT}/metrics")["out"]
 

@@ -2,7 +2,7 @@ import threading
 import time
 
 from ..core.settings import SAMPLER_FLUSH_EVERY, SAMPLER_ROW_FLUSH_THRESHOLD
-from ..io.probes import lgif, mntr, prom_metrics, dirs
+from ..io.probes import lgif, mntr, prom_metrics, dirs, srvr_kv
 from ..io.prom_parse import parse_prometheus_text
 from ..io.sink import sink_clickhouse
 
@@ -102,6 +102,36 @@ class MetricsSampler:
                     entry = dict(cache.get(n.name) or {})
                     entry["dirs_lines"] = d_lines
                     entry["dirs_bytes"] = d_bytes
+                    cache[n.name] = entry
+            except Exception:
+                pass
+            # Sample 4LW 'srvr' counters
+            try:
+                sk = srvr_kv(n) or {}
+                for k, v in sk.items():
+                    try:
+                        val = float(v)
+                    except Exception:
+                        continue
+                    self._metrics_ts_rows.append(
+                        {
+                            "run_id": self.run_id,
+                            "commit_sha": self.run_meta.get("commit_sha", "local"),
+                            "backend": self.run_meta.get("backend", "default"),
+                            "scenario": self.scenario_id,
+                            "topology": self.topology,
+                            "node": n.name,
+                            "stage": self.stage_prefix,
+                            "source": "srvr",
+                            "name": str(k),
+                            "value": val,
+                            "labels_json": "{}",
+                        }
+                    )
+                if self._ctx is not None:
+                    cache = self._ctx.setdefault("_metrics_cache", {})
+                    entry = dict(cache.get(n.name) or {})
+                    entry["srvr"] = sk
                     cache[n.name] = entry
             except Exception:
                 pass

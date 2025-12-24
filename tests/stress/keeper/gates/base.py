@@ -14,6 +14,7 @@ from ..framework.io.probes import (
     mntr,
     prom_metrics,
     ready,
+    srvr_kv,
     wchs_total,
 )
 from ..framework.io.prom_parse import parse_prometheus_text
@@ -135,6 +136,65 @@ def error_rate_le(summary, max_ratio=DEFAULT_ERROR_RATE):
     except Exception:
         return
 
+
+def srvr_thresholds_le(nodes, metrics, aggregate="sum"):
+    try:
+        targets = dict(metrics or {})
+        if not targets:
+            return
+        agg = str(aggregate or "sum").strip().lower()
+        totals = {k: 0.0 for k in targets.keys()}
+        for n in nodes or []:
+            try:
+                sk = srvr_kv(n) or {}
+                for k, thr in targets.items():
+                    if k not in sk:
+                        continue
+                    try:
+                        val = float(sk.get(k, 0.0))
+                    except Exception:
+                        val = 0.0
+                    if agg == "max":
+                        totals[k] = max(totals.get(k, 0.0), val)
+                    else:  # sum by default
+                        totals[k] = totals.get(k, 0.0) + val
+            except Exception:
+                continue
+        # Validate <= threshold
+        for k, thr in targets.items():
+            try:
+                if float(totals.get(k, 0.0)) <= float(thr):
+                    continue
+                else:
+                    raise AssertionError(
+                        f"srvr_thresholds_le: {k}={totals.get(k, 0.0)} exceeds {float(thr)}"
+                    )
+            except Exception:
+                return
+    except Exception:
+        return
+
+
+def rps_ge(summary, min_rps=0.0):
+    try:
+        dur = float(summary.get("duration_s", 0) or 0)
+        ops = float(summary.get("ops", 0) or 0)
+        rps = (ops / dur) if (dur and dur > 0) else 0.0
+        if rps >= float(min_rps):
+            return
+        raise AssertionError(f"rps_ge: {rps:.3f} < {float(min_rps):.3f}")
+    except Exception:
+        return
+
+
+def ops_ge(summary, min_ops=0.0):
+    try:
+        ops = float(summary.get("ops", 0) or 0)
+        if ops >= float(min_ops):
+            return
+        raise AssertionError(f"ops_ge: {ops:.0f} < {float(min_ops):.0f}")
+    except Exception:
+        return
 
 def _zk_count_descendants(zk, path):
     try:
@@ -489,6 +549,16 @@ def apply_gate(gate, nodes, leader, ctx, summary):
             gate.get("metrics") or {},
             aggregate=str(gate.get("aggregate", "sum")),
         )
+    if gtype == "srvr_thresholds_le":
+        return srvr_thresholds_le(
+            nodes,
+            gate.get("metrics") or {},
+            aggregate=str(gate.get("aggregate", "sum")),
+        )
+    if gtype == "rps_ge":
+        return rps_ge(summary or {}, min_rps=float(gate.get("min_rps", 0)))
+    if gtype == "ops_ge":
+        return ops_ge(summary or {}, min_ops=float(gate.get("min_ops", 0)))
     if gtype == "count_paths":
         return count_paths(nodes, gate.get("prefixes") or [])
     if gtype == "mntr_print":
