@@ -1,6 +1,5 @@
 ---
 description: 'Sorts time series by timestamp in ascending order.'
-sidebar_position: 146
 slug: /sql-reference/aggregate-functions/reference/timeSeriesGroupArray
 title: 'timeSeriesGroupArray'
 doc_type: 'reference'

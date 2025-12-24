@@ -1,6 +1,5 @@
 ---
 description: 'Similar to quantileExact, this computes the exact quantile of a numeric data sequence.'
-sidebar_position: 173
 slug: /sql-reference/aggregate-functions/reference/quantileExactHigh
 title: 'quantileExactHigh'
 doc_type: 'reference'

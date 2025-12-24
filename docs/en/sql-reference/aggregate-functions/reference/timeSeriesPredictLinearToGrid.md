@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that calculates PromQL-like linear prediction over time series data on the specified grid.'
-sidebar_position: 228
 slug: /sql-reference/aggregate-functions/reference/timeSeriesPredictLinearToGrid
 title: 'timeSeriesPredictLinearToGrid'
 doc_type: 'reference'

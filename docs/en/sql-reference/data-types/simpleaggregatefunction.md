@@ -59,7 +59,7 @@ The following aggregate functions are supported:
 - [`groupBitOr`](/sql-reference/aggregate-functions/reference/groupBitOr.md)
 - [`groupBitXor`](/sql-reference/aggregate-functions/reference/groupBitXor.md)
 - [`groupArrayArray`](/sql-reference/aggregate-functions/reference/groupArrayArray.md)
-- [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupUniqArrayArray.md)
+- [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupUniqArray.md)
 - [`groupUniqArrayArrayMap`](../../sql-reference/aggregate-functions/combinators#-map)
 - [`sumMap`](/sql-reference/aggregate-functions/reference/sumMap.md)
 - [`minMap`](/sql-reference/aggregate-functions/reference/minMap.md)

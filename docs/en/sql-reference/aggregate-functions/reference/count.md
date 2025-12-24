@@ -1,6 +1,5 @@
 ---
 description: 'Counts the number of rows or not-NULL values.'
-sidebar_position: 120
 slug: /sql-reference/aggregate-functions/reference/count
 title: 'count'
 doc_type: 'reference'
@@ -31,7 +30,7 @@ In both cases the type of the returned value is [UInt64](../../../sql-reference/
 
 **Details**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#count_distinct_implementation) setting. It defines which of the [uniq\*](/sql-reference/aggregate-functions/reference/uniq) functions is used to perform the operation. The default is the [uniqExact](/sql-reference/aggregate-functions/reference/uniqExact) function.
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#count_distinct_implementation) setting. It defines which of the [uniq\*](/sql-reference/aggregate-functions/reference/uniq) functions is used to perform the operation. The default is the [uniqExact](/sql-reference/aggregate-functions/reference/uniqExact.md) function.
 
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree. If you need to use row-level security, disable optimization using the [optimize_trivial_count_query](/operations/settings/settings#optimize_trivial_count_query) setting.
 

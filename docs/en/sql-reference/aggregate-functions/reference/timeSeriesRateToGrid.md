@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that calculates PromQL-like rate over time series data on the specified grid.'
-sidebar_position: 225
 slug: /sql-reference/aggregate-functions/reference/timeSeriesRateToGrid
 title: 'timeSeriesRateToGrid'
 doc_type: 'reference'

@@ -1,7 +1,6 @@
 ---
 description: 'Applies the Largest-Triangle-Three-Buckets algorithm to the input data.'
 sidebar_label: 'largestTriangleThreeBuckets'
-sidebar_position: 159
 slug: /sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
 title: 'largestTriangleThreeBuckets'
 doc_type: 'reference'

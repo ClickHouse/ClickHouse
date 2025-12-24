@@ -1,6 +1,5 @@
 ---
 description: 'The result is equal to the square root of varSamp'
-sidebar_position: 190
 slug: /sql-reference/aggregate-functions/reference/stddevsamp
 title: 'stddevSamp'
 doc_type: 'reference'
@@ -8,7 +7,7 @@ doc_type: 'reference'
 
 # stddevSamp
 
-The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md).
+The result is equal to the square root of [varSamp](./varSamp.md).
 
 Alias: `STDDEV_SAMP`.
 

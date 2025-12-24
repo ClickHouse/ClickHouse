@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that re-samples time series data to the specified grid.'
-sidebar_position: 226
 slug: /sql-reference/aggregate-functions/reference/timeSeriesResampleToGridWithStaleness
 title: 'timeSeriesResampleToGridWithStaleness'
 doc_type: 'reference'

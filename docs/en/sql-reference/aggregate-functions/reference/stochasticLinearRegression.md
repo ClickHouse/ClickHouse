@@ -2,7 +2,6 @@
 description: 'This function implements stochastic linear regression. It supports custom
   parameters for learning rate, L2 regularization coefficient, mini-batch size, and
   has a few methods for updating weights (Adam, simple SGD, Momentum, Nesterov.)'
-sidebar_position: 192
 slug: /sql-reference/aggregate-functions/reference/stochasticlinearregression
 title: 'stochasticLinearRegression'
 doc_type: 'reference'

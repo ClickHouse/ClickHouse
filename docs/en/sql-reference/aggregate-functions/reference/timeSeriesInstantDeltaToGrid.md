@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function that calculates PromQL-like idelta over time series data on the specified grid.'
-sidebar_position: 222
 slug: /sql-reference/aggregate-functions/reference/timeSeriesInstantDeltaToGrid
 title: 'timeSeriesInstantDeltaToGrid'
 doc_type: 'reference'

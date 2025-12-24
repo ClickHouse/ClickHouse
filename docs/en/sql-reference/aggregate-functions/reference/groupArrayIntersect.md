@@ -1,7 +1,6 @@
 ---
 description: 'Return an intersection of given arrays (Return all items of arrays,
   that are in all given arrays).'
-sidebar_position: 141
 slug: /sql-reference/aggregate-functions/reference/grouparrayintersect
 title: 'groupArrayIntersect'
 doc_type: 'reference'

@@ -3,7 +3,6 @@ description: 'The `contingency` function calculates the contingency coefficient,
   value that measures the association between two columns in a table. The computation
   is similar to the `cramersV` function but with a different denominator in the square
   root.'
-sidebar_position: 116
 slug: /sql-reference/aggregate-functions/reference/contingency
 title: 'contingency'
 doc_type: 'reference'

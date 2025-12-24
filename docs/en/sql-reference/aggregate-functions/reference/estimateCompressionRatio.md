@@ -1,7 +1,6 @@
 ---
 description: 'Estimates the compression ratio of a given column without compressing
   it.'
-sidebar_position: 132
 slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
 title: 'estimateCompressionRatio'
 doc_type: 'reference'

@@ -2,7 +2,6 @@
 description: 'Totals one or more `value` arrays according to the keys specified in the `key`
   array. Returns a tuple of arrays: keys in sorted order, followed by values summed for
   the corresponding keys without overflow.'
-sidebar_position: 198
 slug: /sql-reference/aggregate-functions/reference/summap
 title: 'sumMap'
 doc_type: 'reference'
