@@ -1430,6 +1430,17 @@ Possible values:
 
 - Any positive even integer.
 )", 0) \
+    DECLARE(UInt64, merge_tree_exclusion_search_max_steps, 0, R"(
+When filtering by primary key columns other than the first column, ClickHouse performs an iterative generic exclusion search algorithm. This setting limits the number of steps the algorithm spends dividing key ranges for granule pruning.
+
+Using fewer steps can speed up index analysis with high cardinality primary keys, but the result of index analysis may include more granules that do not match the filter. For this reason, this setting is only recommended when you notice performance issues with certain queries, and you cannot optimize the ORDER BY key of the table to have lower cardinality.
+
+The (default) value 0 means unlimited steps.
+
+Possible values:
+
+- 0 for unlimited steps, or any positive integer.
+)", 0) \
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
