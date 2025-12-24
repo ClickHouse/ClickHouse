@@ -1611,7 +1611,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     size_t key_args_count = 0;
 
     analyzeKeyExpressionForSetIndex(
-        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation, &out.disable_exact_set_evaluation);
+        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation, &out.relaxed);
 
     if (indexes_mapping.empty())
         return false;
@@ -3643,7 +3643,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             /// In this case, can_be_false is not reliable because the set values were transformed by non-injective
             /// deterministic functions (e.g. hash functions).
-            if (element.disable_exact_set_evaluation)
+            if (element.relaxed)
             {
                 rpn_stack.back().can_be_false = true;
             }
