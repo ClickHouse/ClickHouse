@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # maxIntersectionsPosition
 
-Aggregate function that calculates the positions of the occurrences of the [`maxIntersections` function](./maxintersections.md).
+Aggregate function that calculates the positions of the occurrences of the [`maxIntersections` function](./maxIntersections.md).
 
 The syntax is:
 

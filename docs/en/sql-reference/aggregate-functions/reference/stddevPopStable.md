@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # stddevPopStable
 
-The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varpop.md). Unlike [`stddevPop`](../reference/stddevpop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varpop.md). Unlike [`stddevPop`](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 
 **Syntax**
 

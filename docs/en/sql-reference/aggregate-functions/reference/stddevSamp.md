@@ -8,12 +8,12 @@ doc_type: 'reference'
 
 # stddevSamp
 
-The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varsamp.md).
+The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md).
 
 Alias: `STDDEV_SAMP`.
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevSampStable`](../reference/stdDevSampStable.md) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`stddevSampStable`](../reference/stddevSampStable.md) function. It works slower but provides a lower computational error.
 :::
 
 **Syntax**

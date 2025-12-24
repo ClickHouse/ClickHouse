@@ -14,7 +14,7 @@ doc_type: 'reference'
 [Cramer's V](https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V) (sometimes referred to as Cramer's phi) is a measure of association between two columns in a table. The result of the `cramersV` function ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other. It may be viewed as the association between two variables as a percentage of their maximum possible variation.
 
 :::note
-For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramersvbiascorrected.md)
+For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramersVBiasCorrected.md)
 :::
 
 **Syntax**

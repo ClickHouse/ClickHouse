@@ -36,7 +36,7 @@ The `uniqCombined64` function:
 - Provides the result deterministically (it does not depend on the query processing order).
 
 :::note
-Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md) does, which uses a 32-bit hash for non-`String` types.
+Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqCombined.md) does, which uses a 32-bit hash for non-`String` types.
 :::
 
 Compared to the [uniq](/sql-reference/aggregate-functions/reference/uniq) function, the `uniqCombined64` function:
