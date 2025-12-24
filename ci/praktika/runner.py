@@ -583,7 +583,7 @@ class Runner:
                         if not test_case_result.is_ok():
                             test_case_result.set_clickable_label(
                                 "cidb",
-                                ci_db.get_link_to_test_case_statistics(
+                                CIDB.build_link_to_test_case_statistics(
                                     test_case_result.name,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
