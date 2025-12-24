@@ -113,7 +113,7 @@ class WriteBuffer;
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
-    M(CLASS_NAME, InsertSelectDeduplicateMode)
+    M(CLASS_NAME, DeduplicateInsertSelectMode)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

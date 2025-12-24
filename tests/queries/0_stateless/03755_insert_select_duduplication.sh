@@ -17,13 +17,13 @@ EOF
 # insert_deduplicate=1 -- to enable deduplication feature
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --async_insert=0 --insert_deduplicate=1"
 
-echo "insert_select_deduplicate=force_enable with non-stable select, exception expected"
-${CLICKHOUSE_CLIENT} --insert_select_deduplicate=force_enable -q "
+echo "deduplicate_insert_select=force_enable with non-stable select, exception expected"
+${CLICKHOUSE_CLIENT} --deduplicate_insert_select=force_enable -q "
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10);
 " 2>&1 | grep -o "DEDUPLICATION_IS_NOT_POSSIBLE" | uniq
 
-echo "insert_select_deduplicate=force_enable with stable select, deduplication happens"
-${CLICKHOUSE_CLIENT} --insert_select_deduplicate=force_enable -q "
+echo "deduplicate_insert_select=force_enable with stable select, deduplication happens"
+${CLICKHOUSE_CLIENT} --deduplicate_insert_select=force_enable -q "
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10) ORDER BY all;
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10) ORDER BY all;
     SELECT count() FROM dst;
@@ -32,8 +32,8 @@ ${CLICKHOUSE_CLIENT} --insert_select_deduplicate=force_enable -q "
 
 CH_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/--send_logs_level=[^ ]*//')
 
-echo "insert_select_deduplicate=enable_when_possible and insert_deduplicate=1 with non-stable select, warning expected, deduplication disabled"
-${CH_CLIENT} --insert_select_deduplicate='enable_when_possible' --send_logs_level='information' -q "
+echo "deduplicate_insert_select=enable_when_possible and insert_deduplicate=1 with non-stable select, warning expected, deduplication disabled"
+${CH_CLIENT} --deduplicate_insert_select='enable_when_possible' --send_logs_level='information' -q "
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10);
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10);
 " 2>&1 | grep -o "INSERT SELECT deduplication is disabled because SELECT is not stable" | uniq
@@ -43,32 +43,32 @@ ${CLICKHOUSE_CLIENT} -q "
     TRUNCATE TABLE dst;
 "
 
-echo "insert_select_deduplicate=enable_when_possible and insert_deduplicate=1 with stable select, deduplication happens"
-${CLICKHOUSE_CLIENT} --insert_select_deduplicate='enable_when_possible' -q "
+echo "deduplicate_insert_select=enable_when_possible and insert_deduplicate=1 with stable select, deduplication happens"
+${CLICKHOUSE_CLIENT} --deduplicate_insert_select='enable_when_possible' -q "
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10) ORDER BY all;
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10) ORDER BY all;
     SELECT count() FROM dst;
     TRUNCATE TABLE dst;
 "
 
-echo "insert_select_deduplicate=disable and insert_deduplicate=1 with stable select, deduplication disabled"
-${CLICKHOUSE_CLIENT} --insert_select_deduplicate=disable -q "
+echo "deduplicate_insert_select=disable and insert_deduplicate=1 with stable select, deduplication disabled"
+${CLICKHOUSE_CLIENT} --deduplicate_insert_select=disable -q "
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10) ORDER BY all;
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10) ORDER BY all;
     SELECT count() FROM dst;
     TRUNCATE TABLE dst;
 "
 
-echo "insert_select_deduplicate=force_enable and insert_deduplicate=1 with stable select, deduplication happens"
-${CLICKHOUSE_CLIENT} --insert_select_deduplicate=force_enable -q "
+echo "deduplicate_insert_select=force_enable and insert_deduplicate=1 with stable select, deduplication happens"
+${CLICKHOUSE_CLIENT} --deduplicate_insert_select=force_enable -q "
     INSERT INTO dst SELECT 1, 'one' ORDER BY all;
     INSERT INTO dst SELECT 1, 'one' ORDER BY all;
     SELECT count() FROM dst;
     TRUNCATE TABLE dst;
 "
 
-echo "insert_select_deduplicate=enable_even_for_bad_queries and insert_deduplicate=1 with non-stable select, deduplication happens"
-${CLICKHOUSE_CLIENT} --insert_select_deduplicate='enable_when_possible' -q "
+echo "deduplicate_insert_select=enable_even_for_bad_queries and insert_deduplicate=1 with non-stable select, deduplication happens"
+${CLICKHOUSE_CLIENT} --deduplicate_insert_select='enable_when_possible' -q "
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10);
     INSERT INTO dst SELECT number AS id, toString(number) AS data FROM numbers(10);
     SELECT count() FROM dst;
