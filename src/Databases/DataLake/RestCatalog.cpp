@@ -654,7 +654,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
-    LOG_DEBUG(log, "Recieving table metadata {} {}", table_name, json_str);
+    LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
