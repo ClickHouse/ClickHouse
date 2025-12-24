@@ -38,6 +38,8 @@ def main():
     # Enable faults by default on CI; can be overridden via env/CLI
     os.environ.setdefault("KEEPER_FAULTS", "on")
     os.environ.setdefault("KEEPER_DURATION", "120")
+    # Run both default and rocks backends by default to compare behavior
+    os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
 
     # Apply custom KEY=VALUE envs passed via --param to mirror integration jobs UX
     if args.param:
@@ -73,8 +75,8 @@ def main():
 
     # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
     install_cmd = (
-        "python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
-        "|| python3 -m pip install --no-cache-dir pyyaml requests"
+        "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
+        "|| PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir pyyaml requests pytest pytest-timeout pytest-xdist pytest-reportlog"
     )
     results.append(
         Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
@@ -134,10 +136,11 @@ def main():
         Result.from_commands_run(
             name="Install ClickHouse binary",
             command=[
-                f"cp -f {ch_path} {final_ch}",
-                f"chmod +x {final_ch}",
+                # Skip cp if source and destination resolve to the same file
+                f"[ \"$(readlink -f {ch_path})\" = \"$(readlink -f {final_ch})\" ] && echo 'ClickHouse binary already installed at {final_ch}' || cp -f {ch_path} {final_ch}",
+                f"chmod +x {final_ch} || true",
                 f"{final_ch} --version",
-                f"ln -sf {final_ch} /usr/local/bin/clickhouse-client",
+                f"ln -sf {final_ch} /usr/local/bin/clickhouse-client || true",
             ],
         )
     )
@@ -181,6 +184,27 @@ def main():
     env["CLICKHOUSE_BINARY"] = ch_path
     env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
     env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
+    # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
+    repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
+    cur_pp = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        repo_pythonpath if not cur_pp else f"{repo_pythonpath}:{cur_pp}"
+    )
+    # Propagate commit sha for tagging metrics/checks
+    try:
+        if not env.get("COMMIT_SHA"):
+            sha = env.get("GITHUB_SHA") or env.get("SHA") or "local"
+            env["COMMIT_SHA"] = sha
+    except Exception:
+        pass
+    # Avoid pytest collecting generated _instances-* dirs which may be non-readable
+    try:
+        addopts = env.get("PYTEST_ADDOPTS", "")
+        ig = "--ignore-glob=tests/stress/keeper/tests/_instances-*"
+        if ig not in addopts:
+            env["PYTEST_ADDOPTS"] = (addopts + " " + ig).strip()
+    except Exception:
+        pass
 
     # Quick preflight to aid debugging in CI artifacts
     results.append(
