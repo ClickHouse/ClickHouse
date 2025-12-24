@@ -861,7 +861,7 @@ class JobConfigs:
     # Nightly Keeper stress job (simple pytest suite in integration-tests-runner)
     keeper_stress_job = Job.Config(
         name="Keeper Stress",
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        runs_on=RunnerLabels.AMD_LARGE,
         command=(
             "python3 ./ci/jobs/keeper_stress_job.py"
         ),

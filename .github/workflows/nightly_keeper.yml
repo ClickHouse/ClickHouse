@@ -135,7 +135,7 @@ jobs:
           fi
 
   keeper_stress:
-    runs-on: [self-hosted, arm-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'S2VlcGVyIFN0cmVzcw==') }}
     name: "Keeper Stress"
@@ -177,7 +177,7 @@ jobs:
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, keeper_stress]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

@@ -147,7 +147,7 @@ workflow = Workflow.Config(
             command=JobConfigs.keeper_stress_job.command,
             run_in_docker=JobConfigs.keeper_stress_job.run_in_docker,
             digest_config=JobConfigs.keeper_stress_job.digest_config,
-            requires=[ArtifactNames.CH_ARM_BINARY],
+            requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         # --- /TEMP ---
     ],
