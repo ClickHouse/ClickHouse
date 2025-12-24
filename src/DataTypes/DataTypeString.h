@@ -41,6 +41,7 @@ public:
     void updateHashImpl(SipHash &) const override {}
 
     SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
 };
 
 }

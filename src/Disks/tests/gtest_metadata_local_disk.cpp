@@ -6,7 +6,8 @@
 #include <mutex>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/ObjectStorageKey.h>
@@ -61,7 +62,8 @@ private:
         fs::create_directories(local_disk_metadata_dir);
 
         auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
-        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path);
+        auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
+        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator);
 
         return metadata;
     }
@@ -77,7 +79,7 @@ TEST_F(MetadataLocalDiskTest, TestHardlinkRewrite)
 
     {
         auto transaction = metadata->createTransaction();
-        transaction->createMetadataFile("original_file", DB::ObjectStorageKey::createAsAbsolute("key1"), 111);
+        transaction->createMetadataFile("original_file", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("key1").serialize(), "original_file", 111)});
         transaction->commit();
     }
 
@@ -97,7 +99,7 @@ TEST_F(MetadataLocalDiskTest, TestHardlinkRewrite)
 
     {
         auto transaction = metadata->createTransaction();
-        transaction->createMetadataFile("hardlinked_file", DB::ObjectStorageKey::createAsAbsolute("key2"), 222);
+        transaction->createMetadataFile("hardlinked_file", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("key2").serialize(), "hardlinked_file", 222)});
         transaction->commit();
     }
 
@@ -141,8 +143,8 @@ TEST_F(MetadataLocalDiskTest, TestValidAddBlob)
     {
         auto transaction = metadata->createTransaction();
 
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "hello"), 1000);
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsAbsolute("world"), 2000);
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "hello").serialize(), "f.txt", 1000));
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("world").serialize(), "f.txt", 2000));
         transaction->commit();
     }
 
@@ -158,8 +160,8 @@ TEST_F(MetadataLocalDiskTest, TestValidAddBlob)
     {
         auto transaction = metadata->createTransaction();
 
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "goodbye"), 300);
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsAbsolute("everybody"), 400);
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "goodbye").serialize(), "f.txt", 300));
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("everybody").serialize(), "f.txt", 400));
         transaction->commit();
     }
 
@@ -181,12 +183,12 @@ TEST_F(MetadataLocalDiskTest, TestValidAddBlob)
 
         transaction->moveFile("f.txt", "fff.txt");
 
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "I've"), 500);
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "got"), 600);
-        transaction->addBlobToMetadata("f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "to go"), 700);
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "I've").serialize(), "f.txt", 500));
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "got").serialize(), "f.txt", 600));
+        transaction->addBlobToMetadata("f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "to go").serialize(), "f.txt", 700));
 
-        transaction->addBlobToMetadata("fff.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "goodbye"), 700);
-        transaction->addBlobToMetadata("fff.txt", DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "everybody"), 800);
+        transaction->addBlobToMetadata("fff.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "goodbye").serialize(), "fff.txt", 700));
+        transaction->addBlobToMetadata("fff.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidAddBlob", "everybody").serialize(), "fff.txt", 800));
 
         transaction->commit();
     }
@@ -223,24 +225,24 @@ TEST_F(MetadataLocalDiskTest, TestValidCreateMetadataAddBlob)
     {
         auto transaction = metadata->createTransaction();
         transaction->createDirectory("tmp_part");
-        transaction->createMetadataFile("tmp_part/f.txt.tmp", DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "hello"), 1000);
+        transaction->createMetadataFile("tmp_part/f.txt.tmp", {DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "hello").serialize(), "tmp_part/f.txt.tmp", 1000)});
         transaction->moveFile("tmp_part/f.txt.tmp", "tmp_part/f.txt");
         transaction->moveDirectory("tmp_part", "part");
-        transaction->addBlobToMetadata("part/f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "world"), 2000);
+        transaction->addBlobToMetadata("part/f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "world").serialize(), "part/f.txt", 2000));
         transaction->commit();
     }
 
     {
         auto transaction = metadata->createTransaction();
 
-        transaction->addBlobToMetadata("part/f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "goodbye"), 300);
+        transaction->addBlobToMetadata("part/f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "goodbye").serialize(), "part/f.txt", 300));
         transaction->commit();
     }
 
     {
         auto transaction = metadata->createTransaction();
 
-        transaction->addBlobToMetadata("part/f.txt", DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "everybody"), 400);
+        transaction->addBlobToMetadata("part/f.txt", DB::StoredObject(DB::ObjectStorageKey::createAsRelative("/TestValidCreateMetadataAddBlob", "everybody").serialize(), "part/f.txt", 400));
         transaction->commit();
     }
 
@@ -343,10 +345,10 @@ TEST_F(MetadataLocalDiskTest, TestValidUnlinkMetadata)
         auto tx = metadata->createTransaction();
 
         /// Create a file with 1 reference
-        tx->createEmptyMetadataFile("a");
+        tx->createMetadataFile("a", /*objects=*/{});
 
         /// Create another file and make a hardlink to it
-        tx->createEmptyMetadataFile("b");
+        tx->createMetadataFile("b", /*objects=*/{});
         tx->createHardLink("b", "bb");
 
         tx->commit();
@@ -359,7 +361,7 @@ TEST_F(MetadataLocalDiskTest, TestValidUnlinkMetadata)
         auto unlink_outcome_b = tx->unlinkMetadata("b");
 
         /// Create a file and remove it in the same Tx
-        tx->createEmptyMetadataFile("c");
+        tx->createMetadataFile("c", /*objects=*/{});
         auto unlink_outcome_c = tx->unlinkMetadata("c");
 
         tx->commit();
@@ -383,7 +385,7 @@ TEST_F(MetadataLocalDiskTest, TestValidUnlinkMetadata)
         auto unlink_outcome_bb = tx->unlinkMetadata("bb");
 
         /// Create another file and make a hardlink to it
-        tx->createEmptyMetadataFile("d");
+        tx->createMetadataFile("d", /*objects=*/{});
         tx->createHardLink("d", "dd");
         auto unlink_outcome_d = tx->unlinkMetadata("d");
         auto unlink_outcome_dd = tx->unlinkMetadata("dd");
@@ -1125,7 +1127,7 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackHardlinks)
 
     {
         auto tx = metadata->createTransaction();
-        tx->createEmptyMetadataFile("file");
+        tx->createMetadataFile("file", /*objects=*/{});
         tx->createHardLink("file", "file-link-1");
         tx->createHardLink("file", "file-link-2");
         tx->commit();
@@ -1138,7 +1140,7 @@ TEST_F(MetadataLocalDiskTest, TestUnlinkRollbackHardlinks)
         auto tx = metadata->createTransaction();
         tx->unlinkFile("file-link-1");
         tx->unlinkFile("file");
-        tx->createEmptyMetadataFile("non-existing/fail-tx");
+        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
         EXPECT_THROW(tx->commit(), std::exception);
     }
 
@@ -1165,7 +1167,7 @@ TEST_F(MetadataLocalDiskTest, TestFoldedRemoveRecursiveRollback)
         tx_2->removeRecursive("a/b/c/d");
         tx_2->removeRecursive("a/b/c");
         tx_2->removeRecursive("a/b");
-        tx_2->createEmptyMetadataFile("non-existing/fail-tx");
+        tx_2->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
         EXPECT_THROW(tx_2->commit(), std::exception);
 
         EXPECT_EQ(metadata->readFileToString("a/b/c/d/e/truth"), "Reality is an illusion, the universe is a hologram");
@@ -1201,10 +1203,10 @@ TEST_F(MetadataLocalDiskTest, TestTruncate)
 
     {
         auto tx = metadata->createTransaction();
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-1"), 100);
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-2"), 200);
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-3"), 100);
-        tx->addBlobToMetadata("file", DB::ObjectStorageKey::createAsAbsolute("blob-4"), 400);
+        tx->addBlobToMetadata("file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("blob-1").serialize(), "file", 100));
+        tx->addBlobToMetadata("file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("blob-2").serialize(), "file", 200));
+        tx->addBlobToMetadata("file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("blob-3").serialize(), "file", 100));
+        tx->addBlobToMetadata("file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("blob-4").serialize(), "file", 400));
         tx->commit();
     }
 
@@ -1266,7 +1268,7 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)
     {
         auto transaction = metadata->createTransaction();
         transaction->createDirectory("dir");
-        transaction->createEmptyMetadataFile("file.txt");
+        transaction->createMetadataFile("file.txt", /*objects=*/{});
         transaction->commit();
         EXPECT_TRUE(metadata->existsDirectory("dir"));
         EXPECT_TRUE(metadata->existsFile("file.txt"));
@@ -1275,7 +1277,7 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)
     {
         auto transaction = metadata->createTransaction();
         EXPECT_THROW({
-                transaction->createEmptyMetadataFile("non-existing/file.txt");
+                transaction->createMetadataFile("non-existing/file.txt", /*objects=*/{});
                 transaction->commit();
             }, std::exception);
     }
@@ -1283,7 +1285,7 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)
     {
         auto transaction = metadata->createTransaction();
         EXPECT_THROW({
-                transaction->createMetadataFile("non-existing/file.txt", DB::ObjectStorageKey::createAsAbsolute("blob_name"), 42);
+                transaction->createMetadataFile("non-existing/file.txt", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("blob_name").serialize(), "non-existing/file.txt", 42)});
                 transaction->commit();
             }, std::exception);
     }

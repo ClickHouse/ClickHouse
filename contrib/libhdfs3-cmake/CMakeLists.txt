@@ -98,6 +98,7 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/RawErasureDecoder.cpp"
     "${HDFS3_SOURCE_DIR}/client/RawErasureEncoder.cpp"
     "${HDFS3_SOURCE_DIR}/client/StatefulStripeReader.cpp"
+    "${HDFS3_SOURCE_DIR}/client/PositionStripeReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripeReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"

@@ -133,7 +133,32 @@ public:
 
 REGISTER_FUNCTION(Stem)
 {
-    factory.registerFunction<FunctionStem>();
+    FunctionDocumentation::Description description = R"(
+Performs stemming on a given word.
+)";
+    FunctionDocumentation::Syntax syntax = "stem(lang, word)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lang", "Language which rules will be applied. Use the two letter ISO 639-1 code.", {"String"}},
+        {"word", "Lowercase word that needs to be stemmed.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the stemmed form of the word", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "English stemming",
+        R"(
+SELECT arrayMap(x -> stem('en', x),
+['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) AS res
+        )",
+        R"(
+['I','think','it','is','a','bless','in','disguis']
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionStem>(documentation);
 }
 
 }

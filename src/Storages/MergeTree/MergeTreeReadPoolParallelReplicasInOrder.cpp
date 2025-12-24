@@ -29,6 +29,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     const IndexReadTasks & index_read_tasks_,
     bool has_limit_below_one_block_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -42,6 +43,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         std::move(shared_virtual_fields_),
         index_read_tasks_,
         storage_snapshot_,
+        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -184,18 +186,31 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    std::optional<ParallelReadResponse> response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
-    if (response)
+    if (failed_to_get_task)
+        return nullptr;
+
+    std::optional<ParallelReadResponse> response;
+    try
     {
-        LOG_DEBUG(log, "Got response: {}", response->describe());
-        if (response->description.empty() || response->finish)
+        response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
+        if (response)
+        {
+            LOG_DEBUG(log, "Got response: {}", response->describe());
+            if (response->description.empty() || response->finish)
+                no_more_tasks = true;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Got no response");
             no_more_tasks = true;
+        }
     }
-    else
+    catch (...)
     {
-        LOG_DEBUG(log, "Got no response");
-        no_more_tasks = true;
+        failed_to_get_task = true;
+        throw;
     }
+
     if (no_more_tasks)
         return nullptr;
 

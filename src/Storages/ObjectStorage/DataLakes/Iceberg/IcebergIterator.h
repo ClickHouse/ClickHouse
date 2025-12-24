@@ -9,7 +9,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -42,7 +42,6 @@ public:
         ContextPtr local_context_,
         FilesGenerator files_generator_,
         Iceberg::ManifestFileContentType manifest_file_content_type_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
         const ActionsDAG * filter_dag_,
         TableStateSnapshotPtr table_snapshot_,
         IcebergDataSnapshotPtr data_snapshot_,
@@ -58,7 +57,6 @@ private:
     ContextPtr local_context;
     Iceberg::TableStateSnapshotPtr table_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
-    StorageObjectStorageConfigurationWeakPtr configuration;
     bool use_partition_pruning;
     PersistentTableComponents persistent_components;
     FilesGenerator files_generator;
@@ -86,7 +84,6 @@ public:
     explicit IcebergIterator(
         ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
         const ActionsDAG * filter_dag_,
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::TableStateSnapshotPtr table_snapshot_,
@@ -106,7 +103,7 @@ private:
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
-    BackgroundSchedulePool::TaskHolder producer_task;
+    std::optional<ThreadFromGlobalPool> producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;

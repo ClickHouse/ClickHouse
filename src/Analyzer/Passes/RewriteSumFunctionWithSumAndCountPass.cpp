@@ -85,6 +85,7 @@ public:
         resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName());
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
+        rhs->markAsOperator();
         rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);
         rhs->getArguments().getNodes().push_back(rhs_count);
         resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());
