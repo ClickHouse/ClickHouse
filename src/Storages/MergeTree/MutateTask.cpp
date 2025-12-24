@@ -635,7 +635,7 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
+        if (!settings.canUseSparseSerialization(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
