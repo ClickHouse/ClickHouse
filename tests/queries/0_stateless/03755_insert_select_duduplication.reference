@@ -1,15 +1,15 @@
-insert_select_deduplicate=force_enable with non-stable select, exception expected
+deduplicate_insert_select=force_enable with non-stable select, exception expected
 DEDUPLICATION_IS_NOT_POSSIBLE
-insert_select_deduplicate=force_enable with stable select, deduplication happens
+deduplicate_insert_select=force_enable with stable select, deduplication happens
 10
-insert_select_deduplicate=enable_when_possible and insert_deduplicate=1 with non-stable select, warning expected, deduplication disabled
+deduplicate_insert_select=enable_when_possible and insert_deduplicate=1 with non-stable select, warning expected, deduplication disabled
 INSERT SELECT deduplication is disabled because SELECT is not stable
 20
-insert_select_deduplicate=enable_when_possible and insert_deduplicate=1 with stable select, deduplication happens
+deduplicate_insert_select=enable_when_possible and insert_deduplicate=1 with stable select, deduplication happens
 10
-insert_select_deduplicate=disable and insert_deduplicate=1 with stable select, deduplication disabled
+deduplicate_insert_select=disable and insert_deduplicate=1 with stable select, deduplication disabled
 20
-insert_select_deduplicate=force_enable and insert_deduplicate=1 with stable select, deduplication happens
+deduplicate_insert_select=force_enable and insert_deduplicate=1 with stable select, deduplication happens
 1
-insert_select_deduplicate=enable_even_for_bad_queries and insert_deduplicate=1 with non-stable select, deduplication happens
+deduplicate_insert_select=enable_even_for_bad_queries and insert_deduplicate=1 with non-stable select, deduplication happens
 20
