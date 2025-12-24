@@ -95,6 +95,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
+        //LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
         if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
         {
             auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
@@ -125,6 +126,7 @@ Chunk ParquetV3BlockInputFormat::read()
         parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
+        //LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
         if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
         {
             auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
@@ -195,6 +197,14 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
     auto log = getLogger("ParquetMetadataCache");
+    if (format_settings.parquet.metadata_cache_key)
+    {
+        LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
+    }
+    else
+    {
+        LOG_DEBUG(log, "cache key is not set");
+    }
     if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
     {
         auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();

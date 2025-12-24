@@ -638,6 +638,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
  
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
         {
+            auto cache_log = getLogger("ParquetMetadataCache");
+            LOG_DEBUG(cache_log, "cache is enabled");
             if (isParquetFormat(object_info, configuration)
                 && !object_info->getObjectMetadata()->etag.empty())
             {
@@ -646,11 +648,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     format_settings_with_metadata_cache_key.emplace(getFormatSettings(context_));
                 }
+                LOG_DEBUG(cache_log, "creating cache key {} : {}", object_info->getPath(), object_info->getObjectMetadata()->etag);
                 std::pair<std::string, std::string> cache_key = std::make_pair(
                     object_info->getPath(),
                     object_info->getObjectMetadata()->etag);
                 format_settings_with_metadata_cache_key->parquet.metadata_cache_key = cache_key;
-                auto input_format_with_metadata_cache_key = FormatFactory::instance().getInput(
+                if (format_settings_with_metadata_cache_key->parquet.metadata_cache_key)
+                {
+                    LOG_DEBUG(cache_log, "successfully set cache key");
+                }
+                else
+                {
+                    LOG_DEBUG(cache_log, "failed to set cache key");
+                }
+                input_format = FormatFactory::instance().getInput(
                 object_info->getFileFormat().value_or(configuration->format),
                 *read_buf,
                 initial_header,
@@ -662,6 +673,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 true /* is_remote_fs */,
                 compression_method,
                 need_only_count);
+            }
+            else
+            {
+                LOG_DEBUG(cache_log, "failed format check or etag is empty");
             }
         } 
 

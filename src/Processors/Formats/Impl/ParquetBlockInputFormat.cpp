@@ -1401,7 +1401,6 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 void registerInputFormatParquet(FormatFactory & factory)
 {
     auto log = getLogger("ParquetMetadataCache");
-    LOG_DEBUG(log, "checking for v3 reader setting in format factory");
     factory.registerFileBucketInfo(
         "Parquet",
         []
@@ -1421,7 +1420,6 @@ void registerInputFormatParquet(FormatFactory & factory)
            FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
-            LOG_DEBUG(lambda_logger, "checking for v3 reader setting in format factory lambda");
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
             if (settings.parquet.use_native_reader_v3)
