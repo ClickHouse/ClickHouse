@@ -1223,7 +1223,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::DateTime64:
         {
             /// for DateTime64 and DateTime, we must NOT use text serialization because formatted datetime strings
-            /// are ambiguous during DST transitions (the same local time can correspond to 
+            /// are ambiguous during DST transitions (the same local time can correspond to
             /// two different UTC timestamps, different by 1 hour). Instead we return raw numeric value which
             /// is wrapped in CAST() by ConstantNode::toASTImpl, so timestamp will be not ambiguous
             return (*column)[row];
