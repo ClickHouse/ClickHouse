@@ -608,7 +608,7 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const Exception & ex)
+    catch (const DB::Exception & ex)
     {
         LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
         return false;
