@@ -25,7 +25,14 @@ class ClusterBuilder:
         self.file_anchor = file_anchor
 
     def build(self, topology, backend, opts):
-        feature_flags = opts.get("feature_flags", {})
+        feature_flags = dict(opts.get("feature_flags", {}) or {})
+        # Backend-specific defaults
+        try:
+            b = (backend or "default").strip().lower()
+        except Exception:
+            b = "default"
+        if b in ("rocks", "rockskeeper", "rocksdb", "rk"):
+            feature_flags.setdefault("experimental_use_rocksdb", 1)
         coord_overrides_xml = opts.get("coord_overrides_xml", "")
         use_minio = bool(MINIO_ENDPOINT)
         # Allow explicit override via env: KEEPER_DISABLE_S3=1 to force local disks
@@ -54,8 +61,8 @@ class ClusterBuilder:
 
         # Build shared fragments in-memory (no more separate files)
         # Feature flags and extra coordination settings
-        ff = {"check_not_exists": 1, "create_if_not_exists": 1, "remove_recursive": 1}
-        ff.update(feature_flags or {})
+        # Only include explicit feature_flags from scenarios/backends
+        ff = dict(feature_flags or {})
         extra_coord = (
             "<async_replication>1</async_replication>"
             "<compress_logs>false</compress_logs>"
@@ -79,6 +86,23 @@ class ClusterBuilder:
             "</coordination_settings>"
         )
         feature_flags_xml = ""
+        if ff:
+            try:
+                parts = []
+                for k, v in ff.items():
+                    try:
+                        if isinstance(v, (bool, int)):
+                            val = int(v)
+                        elif isinstance(v, float) and v.is_integer():
+                            val = int(v)
+                        else:
+                            val = v
+                    except Exception:
+                        val = v
+                    parts.append(f"<{k}>{val}</{k}>")
+                feature_flags_xml = "<feature_flags>" + "".join(parts) + "</feature_flags>"
+            except Exception:
+                feature_flags_xml = ""
         enable_ctrl = bool(CONTROL_PORT) and parse_bool(
             os.environ.get("KEEPER_ENABLE_CONTROL", "0")
         )
@@ -165,6 +189,7 @@ class ClusterBuilder:
                 f"<server_id>{i}</server_id>"
                 + path_block
                 + http_ctrl
+                + extra_coord
                 + coord_settings
                 + feature_flags_xml
                 + "<raft_configuration>\n"
