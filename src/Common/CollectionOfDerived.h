@@ -98,11 +98,43 @@ public:
         assert(isUniqTypes());
     }
 
+    void mergeWith(Self && other)
+    {
+        std::move(other.records.begin(), other.records.end(), std::back_inserter(records));
+        // merge is stable
+        std::inplace_merge(records.begin(), records.begin() + (records.size() - other.records.size()), records.end());
+
+        auto it = records.begin();
+        while (it != records.end())
+        {
+            auto start_range = it++;
+            for (; it != records.end() && start_range->type_idx == it->type_idx; ++it)
+            {
+                /// merged state is stored in start_range
+                start_range->ptr = start_range->ptr->merge(it->ptr);
+            }
+        }
+
+        // remove duplicates
+        records.erase(std::unique(records.begin(), records.end()), records.end());
+
+        assert(std::is_sorted(records.begin(), records.end()));
+        assert(isUniqTypes());
+    }
+
     template <class T>
     void add(std::shared_ptr<T> info)
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         return addImpl(std::type_index(typeid(T)), std::move(info));
+    }
+
+    template <class T>
+    bool has() const
+    {
+        static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
+        auto it = getImpl(std::type_index(typeid(T)));
+        return it != records.cend();
     }
 
     template <class T>
@@ -112,6 +144,18 @@ public:
         auto it = getImpl(std::type_index(typeid(T)));
         if (it == records.cend())
             return nullptr;
+        auto cast = std::dynamic_pointer_cast<T>(it->ptr);
+        chassert(cast);
+        return cast;
+    }
+
+    template <class T>
+    std::shared_ptr<T> getSafe() const
+    {
+        static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
+        auto it = getImpl(std::type_index(typeid(T)));
+        if (it == records.cend())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Item of type {} is not found in collection", typeid(T).name());
         auto cast = std::dynamic_pointer_cast<T>(it->ptr);
         chassert(cast);
         return cast;
