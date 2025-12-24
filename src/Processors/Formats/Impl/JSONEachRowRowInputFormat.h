@@ -46,10 +46,10 @@ private:
     bool supportsCustomSerializations() const override { return true; }
 
     const String & columnName(size_t i) const;
-    size_t columnIndex(StringRef name, size_t key_index);
+    size_t columnIndex(std::string_view name, size_t key_index);
     bool advanceToNextKey(size_t key_index);
-    void skipUnknownField(StringRef name_ref);
-    StringRef readColumnName(ReadBuffer & buf);
+    void skipUnknownField(std::string_view name_ref);
+    std::string_view readColumnName(ReadBuffer & buf);
     void readField(size_t index, MutableColumns & columns);
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);

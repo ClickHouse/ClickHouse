@@ -1,6 +1,6 @@
 services:
     mysql80:
-        image: mysql:8.0
+        image: clickhouse/test-mysql80:${DOCKER_TEST_MYSQL80_TAG:-latest}
         stop_grace_period: 5s
         restart: always
         environment:
@@ -26,3 +26,6 @@ services:
               target: /var/log/mysql/
             - ../helpers/mysql_cert:/etc/mysql/certs
         user: ${MYSQL8_DOCKER_USER}
+        cap_add:
+          - NET_ADMIN
+        privileged: true

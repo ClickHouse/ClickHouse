@@ -1,0 +1,4 @@
+0000000000	(UPDATE num = num + 1 WHERE 1)	['all_0_0_0']	['all_0_0_0']	0
+0000000000	(UPDATE num = num + 1 WHERE 1)	[]	[]	1
+0000000001	(UPDATE num = num + 2 WHERE 1)	['all_0_0_0_1']	['all_0_0_0_1']	0
+0000000002	(UPDATE num = num + 3 WHERE 1)	['all_0_0_0_1']	['all_0_0_0_1']	0

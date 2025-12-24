@@ -204,7 +204,7 @@ SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggr
     };
     FunctionDocumentation::IntroducedIn introduced_in_initializeAggregation = {20, 6};
     FunctionDocumentation::Category category_initializeAggregation = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_initializeAggregation = {description_initializeAggregation, syntax_initializeAggregation, arguments_initializeAggregation, returned_value_initializeAggregation, examples_initializeAggregation, introduced_in_initializeAggregation, category_initializeAggregation};
+    FunctionDocumentation documentation_initializeAggregation = {description_initializeAggregation, syntax_initializeAggregation, arguments_initializeAggregation, {}, returned_value_initializeAggregation, examples_initializeAggregation, introduced_in_initializeAggregation, category_initializeAggregation};
 
     factory.registerFunction<FunctionInitializeAggregation>(documentation_initializeAggregation);
 }

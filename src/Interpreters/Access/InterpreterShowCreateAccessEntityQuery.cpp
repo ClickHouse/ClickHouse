@@ -7,6 +7,7 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
@@ -22,6 +23,7 @@
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
+#include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
 #include <Core/Defines.h>
@@ -37,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -337,6 +340,10 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
             }
         }
     }
+    else if (show_query.type == AccessEntityType::MASKING_POLICY)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
+    }
     else
     {
         for (const String & name : show_query.names)
@@ -417,6 +424,11 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::QUOTA:
         {
             res.emplace_back(AccessType::SHOW_QUOTAS);
+            return res;
+        }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            res.emplace_back(AccessType::SHOW_MASKING_POLICIES);
             return res;
         }
         case AccessEntityType::MAX:

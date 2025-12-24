@@ -132,10 +132,8 @@ set(SRCS
 )
 
 add_library(_libarchive ${SRCS})
-target_include_directories(_libarchive PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    "${LIBRARY_DIR}/libarchive"
-)
+target_include_directories(_libarchive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(_libarchive PUBLIC "${LIBRARY_DIR}/libarchive")
 
 target_compile_definitions(_libarchive PUBLIC
     HAVE_CONFIG_H

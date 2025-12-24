@@ -153,6 +153,7 @@ public:
 
     std::shared_ptr<ActionsDAG> getActionsDAG() const;
 
+    void resetNodeSources(NodeToSourceMapping expression_sources);
     void setNodeSources(const NodeToSourceMapping & expression_sources);
     std::pair<ActionsDAG, NodeToSourceMapping> detachActionsDAG();
 

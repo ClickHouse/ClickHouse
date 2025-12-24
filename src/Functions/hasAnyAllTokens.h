@@ -53,7 +53,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
-    const bool allow_experimental_full_text_index;
+    const bool enable_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
     std::optional<TokensWithPosition> search_tokens;
 };

@@ -2,6 +2,7 @@
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
@@ -379,12 +380,8 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             writeString(EXCEPTION_MARKER, out);
             writeCString("\r\n", out);
 
-            // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
-            {
                 compression_buffer->next();
-                compression_buffer->finalize();
-            }
             next();
 
             LOG_DEBUG(

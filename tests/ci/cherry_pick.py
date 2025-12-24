@@ -51,6 +51,10 @@ from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
 
 
+class BackportException(Exception):
+    pass
+
+
 class ReleaseBranch:
     STALE_THRESHOLD = 24 * 3600
     CHERRYPICK_DESCRIPTION = f"""## Do not merge this PR manually
@@ -179,7 +183,7 @@ close it.
                 )
                 return
             self.create_cherrypick()
-        assert self.cherrypick_pr, "BUG!"
+        assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
             if dry_run:
@@ -408,8 +412,6 @@ class BackportPRs:
         self._repo_name = repo
         self.dry_run = dry_run
 
-        self.must_create_backport_labels = [Labels.MUST_BACKPORT]
-
         self._remote = ""
         self._remote_line = ""
 
@@ -499,9 +501,8 @@ class BackportPRs:
     ) -> None:
 
         since_date = since_date or self.oldest_commit_date()
-        labels_to_backport = (
-            labels_to_backport
-            or self.labels_to_backport + self.must_create_backport_labels
+        labels_to_backport = labels_to_backport or (
+            self.labels_to_backport + [Labels.MUST_BACKPORT]
         )
         repo_name = repo_name or self.repo.full_name
         # To not have a possible TZ issues
@@ -539,7 +540,7 @@ class BackportPRs:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if any(label in pr_labels for label in self.must_create_backport_labels):
+        if Labels.MUST_BACKPORT in pr_labels:
             branches = [
                 ReleaseBranch(br, pr, self.repo) for br in self.release_branches
             ]  # type: List[ReleaseBranch]
@@ -560,7 +561,9 @@ class BackportPRs:
                     if label in self.labels_to_backport
                 ]
             ]
-        assert branches, "BUG!"
+        assert (
+            branches
+        ), f"Unable to determine branches for PR {pr.html_url}, check its labels"
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",
@@ -574,13 +577,16 @@ class BackportPRs:
                 for branch in branches
             ]
         )
+
+        # Backport and cherry-pick PRs
         bp_cp_prs = self.gh.get_pulls_from_search(
             query=f"type:pr repo:{self._repo_name} {query_suffix}",
             label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
+        # Check that all
         for br in branches:
             bp_cp_prs = br.pop_prs(bp_cp_prs)
-        assert not bp_cp_prs, "BUG!"
+        assert not bp_cp_prs, f"Some PRs are not processed by backporting: {bp_cp_prs}"
 
         for br in branches:
             br.process(self.dry_run)
@@ -799,8 +805,11 @@ def main():
 
     errors = [e for e in (bpp.error, cpp.error) if e is not None]
     if any(errors):
-        logging.error("Finished successfully, but errors occurred!")
-        raise errors[0]
+        logging.error("Finished successfully, but %s errors occurred!", len(errors))
+        raise BackportException(
+            "Errors occurred during backport process: "
+            + "; ".join(str(e) for e in errors)
+        )
 
 
 if __name__ == "__main__":

@@ -97,7 +97,7 @@ String FieldVisitorToJSONElement::operator() (const Map & x) const
         if (it != x.begin())
             wb << ", ";
         auto pair = it->safeGet<Tuple>();
-        wb << formatString(toString(pair[0]));
+        wb << formatString(fieldToString(pair[0]));
         wb << ": " << applyVisitor(*this, pair[1]);
     }
     wb << '}';

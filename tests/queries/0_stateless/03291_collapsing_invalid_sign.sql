@@ -1,4 +1,5 @@
 SET send_logs_level = 'fatal';
+SET allow_suspicious_primary_key = 1;
 
 DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign;
 

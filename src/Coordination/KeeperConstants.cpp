@@ -269,6 +269,10 @@
     M(KeeperGetRequest) \
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
+    M(KeeperSetWatchesRequest) \
+    M(KeeperCheckWatchRequest) \
+    M(KeeperAddWatchRequest) \
+    M(KeeperRemoveWatchRequest) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \

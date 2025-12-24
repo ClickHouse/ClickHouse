@@ -177,7 +177,37 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 
 void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("entropy", createAggregateFunctionEntropy);
+    FunctionDocumentation::Description description = R"(
+Calculates the [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) for a column of values.
+    )";
+    FunctionDocumentation::Syntax syntax = "entropy(val)";
+    FunctionDocumentation::Arguments arguments = {
+        {"val", "Column of values of any type.", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns Shannon entropy.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic entropy calculation",
+        R"(
+CREATE TABLE entropy (`vals` UInt32,`strings` String)
+ENGINE = Memory;
+
+INSERT INTO entropy VALUES (1, 'A'), (1, 'A'), (1,'A'), (1,'A'), (2,'B'), (2,'B'), (2,'C'), (2,'D');
+
+SELECT entropy(vals), entropy(strings) FROM entropy
+        )",
+        R"(
+┌─entropy(vals)─┬─entropy(strings)─┐
+│             1 │             1.75 │
+└───────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    factory.registerFunction("entropy", {createAggregateFunctionEntropy, {}, documentation});
 }
 
 }

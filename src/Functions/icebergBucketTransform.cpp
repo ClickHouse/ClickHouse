@@ -261,7 +261,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIcebergHash>(documentation);
 }
@@ -353,7 +353,7 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIcebergBucket>(documentation);
 }

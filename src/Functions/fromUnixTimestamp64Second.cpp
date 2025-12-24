@@ -33,7 +33,7 @@ SELECT fromUnixTimestamp64Second(1640995200)
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestamp64Second = {24, 12};
     FunctionDocumentation::Category category_fromUnixTimestamp64Second = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_fromUnixTimestamp64Second = {description_fromUnixTimestamp64Second, syntax_fromUnixTimestamp64Second, arguments_fromUnixTimestamp64Second, returned_value_fromUnixTimestamp64Second, examples_fromUnixTimestamp64Second, introduced_in_fromUnixTimestamp64Second, category_fromUnixTimestamp64Second};
+    FunctionDocumentation documentation_fromUnixTimestamp64Second = {description_fromUnixTimestamp64Second, syntax_fromUnixTimestamp64Second, arguments_fromUnixTimestamp64Second, {}, returned_value_fromUnixTimestamp64Second, examples_fromUnixTimestamp64Second, introduced_in_fromUnixTimestamp64Second, category_fromUnixTimestamp64Second};
 
     factory.registerFunction("fromUnixTimestamp64Second",
         [](ContextPtr context){ return std::make_shared<FunctionFromUnixTimestamp64>(0, "fromUnixTimestamp64Second", context); }, documentation_fromUnixTimestamp64Second);

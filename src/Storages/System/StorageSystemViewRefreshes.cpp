@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Common/Macros.h>
 
 
 namespace DB
@@ -51,11 +50,6 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
 void StorageSystemViewRefreshes::fillData(
     MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto macros = context->getMacros();
-    const auto & server_settings = context->getServerSettings();
-    Macros::MacroExpansionInfo info;
-    auto current_replica_name = context->getMacros()->expand(server_settings[ServerSetting::default_replica_name], info);
-
     auto access = context->getAccess();
     auto valid_access = AccessType::SHOW_TABLES;
     bool check_access_for_tables = !access->isGranted(valid_access);
@@ -107,7 +101,7 @@ void StorageSystemViewRefreshes::fillData(
         if (refresh.refresh_running && retries)
             retries -= 1;
         res_columns[i++]->insert(retries);
-        if (refresh.znode.last_attempt_replica.empty() || current_replica_name == refresh.znode.last_attempt_replica)
+        if (refresh.znode.last_attempt_replica.empty() || refresh.replica_name == refresh.znode.last_attempt_replica)
         {
             res_columns[i++]->insert(Float64(refresh.progress.read_rows) / std::max(refresh.progress.total_rows_to_read, UInt64(1)));
             res_columns[i++]->insert(refresh.progress.read_rows);

@@ -16,6 +16,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 
 namespace CurrentMetrics

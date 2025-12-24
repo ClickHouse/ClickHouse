@@ -45,7 +45,7 @@ void StorageFromMergeTreeProjection::read(
         }
     }
 
-    auto step = MergeTreeDataSelectExecutor(merge_tree)
+    auto step = MergeTreeDataSelectExecutor(merge_tree, projection)
                     .readFromParts(
                         std::make_shared<RangesInDataParts>(projection_parts),
                         snapshot_data.mutations_snapshot->cloneEmpty(),

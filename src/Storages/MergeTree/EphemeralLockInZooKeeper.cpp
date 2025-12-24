@@ -87,7 +87,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         if (e != Coordination::Error::ZOK)
         {
             zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to handle error {} when acquiring ephemeral lock in ZK", toString(e));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to handle error '{}' when acquiring ephemeral lock in ZK", Coordination::errorMessage(e));
         }
 
         path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;

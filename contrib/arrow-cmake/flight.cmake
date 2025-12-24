@@ -10,7 +10,6 @@ if(NOT ENABLE_GRPC)
     message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use ArrowFlight without gRPC")
 endif()
 
-set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include)
 
 set(ARROW_FLIGHT_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/flight)

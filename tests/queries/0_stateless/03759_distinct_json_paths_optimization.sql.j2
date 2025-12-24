@@ -1,0 +1,67 @@
+-- Tags: long
+
+SET enable_analyzer=1;
+
+{% for (min_bytes, shared_data_serialization) in [(0, 'map'), (1000000000, 'map'), (0, 'map_with_buckets'), (1000000000, 'map_with_buckets'), (0, 'advanced'), (1000000000, 'advanced')] -%}
+
+    DROP TABLE IF EXISTS test;
+
+    CREATE TABLE test (json JSON(a0 String, a1 String, max_dynamic_paths=8))
+    ENGINE = MergeTree ORDER BY ()
+    SETTINGS index_granularity=4, min_rows_for_wide_part=1, min_bytes_for_wide_part = {{ min_bytes }}, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='{{ shared_data_serialization }}', object_shared_data_serialization_version_for_zero_level_parts='{{ shared_data_serialization }}';
+
+    INSERT INTO test
+    SELECT
+        toJSONString(arrayMap(x -> tuple('a' || x, 'data' || x), range(20))::Map(String, String))
+    FROM numbers(10);
+
+    SET optimize_functions_to_subcolumns=1;
+    EXPLAIN SYNTAX run_query_tree_passes=1 SELECT distinctJSONPaths(json) FROM test;
+    SELECT distinctJSONPaths(json) FROM test;
+    SET optimize_functions_to_subcolumns=0;
+    EXPLAIN SYNTAX run_query_tree_passes=1 SELECT distinctJSONPaths(json) FROM test;
+    SELECT distinctJSONPaths(json) FROM test;
+
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation) FROM test;
+    SELECT json, arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation) FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0 FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a2 FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a10 FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a2 FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a10 FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a2, json.a10 FROM test;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a2, json.a10 FROM test;
+
+    DROP TABLE test;
+
+    CREATE TABLE test (json JSON(a0 String, a1 String, max_dynamic_paths=8))
+    ENGINE = MergeTree ORDER BY ()
+    SETTINGS min_rows_for_wide_part=1, min_bytes_for_wide_part = {{ min_bytes }}, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='{{ shared_data_serialization }}', object_shared_data_serialization_version_for_zero_level_parts='{{ shared_data_serialization }}';
+
+    INSERT INTO test
+    SELECT
+        toJSONString(arrayMap(x -> tuple('a' || x, 'data' || x), range(20))::Map(String, String))
+    FROM numbers(100000);
+
+    SET optimize_functions_to_subcolumns=1;
+    EXPLAIN SYNTAX run_query_tree_passes=1 SELECT distinctJSONPaths(json) FROM test;
+    SELECT distinctJSONPaths(json) FROM test;
+    SET optimize_functions_to_subcolumns=0;
+    EXPLAIN SYNTAX run_query_tree_passes=1 SELECT distinctJSONPaths(json) FROM test;
+    SELECT distinctJSONPaths(json) FROM test;
+
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation FROM test FORMAT Null;
+    SELECT json, json.__special_subcolumn_name_for_distinct_paths_calculation FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a0 FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a2 FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a10 FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a0, json.a2 FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a0, json.a10 FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a2, json.a10 FROM test FORMAT Null;
+    SELECT json.__special_subcolumn_name_for_distinct_paths_calculation, json.a0, json.a2, json.a10 FROM test FORMAT Null;
+
+    DROP TABLE test;
+
+{% endfor -%}

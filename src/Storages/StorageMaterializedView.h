@@ -118,6 +118,8 @@ public:
         return refresher.ptr->getCoordinationPath();
     }
 
+    bool isRefreshable() const { return refresher.ptr != nullptr; }
+
 private:
     mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor

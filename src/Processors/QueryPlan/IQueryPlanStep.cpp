@@ -37,6 +37,16 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
     updateOutputHeader();
 }
 
+IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
+}
+
+bool IQueryPlanStep::canRemoveColumnsFromOutput() const
+{
+    return false;
+}
+
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());

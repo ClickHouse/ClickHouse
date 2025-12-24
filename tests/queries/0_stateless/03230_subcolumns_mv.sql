@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS raw_to_attributes_mv;
 DROP TABLE IF EXISTS attributes;
 
 SET optimize_functions_to_subcolumns = 1;
+SET allow_suspicious_primary_key = 1;
 
 CREATE TABLE rawtable
 (

@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/setThreadName.h>
 
 namespace CurrentMetrics
 {
@@ -119,7 +120,7 @@ void ObjectStorageQueueFactory::shutdown()
 
     for (const auto & storage : shutdown_storages)
     {
-        runner([&]()
+        runner.enqueueAndKeepTrack([&]()
         {
             DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
         });

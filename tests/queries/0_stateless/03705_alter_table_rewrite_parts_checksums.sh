@@ -8,7 +8,7 @@ set -e
 
 # Firstly write parts with use_const_adaptive_granularity=0 and then enable it and check that index_granularity_bytes_in_memory_allocated=25 (sizeof constant granularity)
 
-$CLICKHOUSE_CLIENT --allow_experimental_full_text_index=1 -nm -q "
+$CLICKHOUSE_CLIENT --enable_full_text_index=1 -nm -q "
 drop table if exists test_materialize;
 create table test_materialize
 (
@@ -45,7 +45,7 @@ select count() from test_materialize;
 "
 
 hashes="$($CLICKHOUSE_CLIENT -q "select (hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files) from system.parts where database = currentDatabase() and table = 'test_materialize'")"
-$CLICKHOUSE_CLIENT --allow_experimental_full_text_index=1 -nm -q "
+$CLICKHOUSE_CLIENT --enable_full_text_index=1 -nm -q "
 -- { echo }
 select rows, index_granularity_bytes_in_memory_allocated>25 from system.parts where database = currentDatabase() and table = 'test_materialize' order by 1;
 alter table test_materialize modify setting use_const_adaptive_granularity;

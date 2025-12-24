@@ -221,6 +221,13 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 if (!ParserExpressionList(false).parse(pos, table_join->using_expression_list, expected))
                     return false;
 
+                if (table_join->using_expression_list->children.empty())
+                {
+                    expected.variants.clear();
+                    expected.add(pos, "column identifier for USING");
+                    return false;
+                }
+
                 if (in_parens)
                 {
                     if (pos->type != TokenType::ClosingRoundBracket)

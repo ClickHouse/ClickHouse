@@ -96,7 +96,33 @@ const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHul
 
 REGISTER_FUNCTION(PolygonConvexHull)
 {
-    factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
+    FunctionDocumentation::Description description = R"(
+Calculates a convex hull. [Reference](https://www.boost.org/doc/libs/1_61_0/libs/geometry/doc/html/geometry/reference/algorithms/convex_hull.html)
+
+Coordinates are in Cartesian coordinate system.
+    )";
+    FunctionDocumentation::Syntax syntax = "polygonConvexHullCartesian(multipolygon)";
+    FunctionDocumentation::Arguments arguments = {
+        {"multipolygon", "A MultiPolygon value.", {"MultiPolygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the convex hull as a Polygon.", {"Polygon"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Conve hull example",
+        R"(
+SELECT wkt(polygonConvexHullCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.), (2., 3.)]]]))
+        )",
+        R"(
+POLYGON((0 0,0 5,5 5,5 0,0 0))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>(function_documentation);
 }
 
 }

@@ -277,7 +277,7 @@ void MergeTreeReaderWide::addStreams(
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     auto context = data_part_info_for_read->getContext();
-    auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
     size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
 
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(

@@ -5,6 +5,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <optional>
+#include <unistd.h>
 
 #include <Core/ServerSettings.h>
 #include <Server/SSH/SSHPtyHandler.h>
@@ -28,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SSH_EXCEPTION;
 }
 
 class SSHPtyHandlerFactory : public TCPServerConnectionFactory
@@ -79,9 +81,11 @@ public:
         LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
         ::ssh::libsshLogger::initialize();
         ::ssh::SSHSession session;
-        session.disableSocketOwning();
         session.disableDefaultConfig();
-        ssh_bind.acceptFd(session, socket.sockfd());
+        int duplicated_fd = dup(socket.sockfd());
+        if (duplicated_fd == -1)
+            throw Exception(ErrorCodes::SSH_EXCEPTION, "Failed to duplicate socket file descriptor");
+        ssh_bind.acceptFd(session, duplicated_fd);
 
         auto options = SSHPtyHandler::Options
         {

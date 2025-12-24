@@ -4,7 +4,7 @@
 -- In search{All,Any} empty needle is different from empty list:
 -- See: 02346_text_index_bug86300
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (

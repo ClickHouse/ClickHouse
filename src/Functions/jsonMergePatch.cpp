@@ -96,7 +96,7 @@ namespace
             auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
-                document.Parse(str_ref.toString().c_str());
+                document.Parse(std::string{str_ref}.c_str());
 
                 if (document.HasParseError())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));
@@ -191,7 +191,7 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
     };
     FunctionDocumentation::IntroducedIn introduced_in_jsonMergePatch = {23, 10};
     FunctionDocumentation::Category category_jsonMergePatch = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_jsonMergePatch = {description_jsonMergePatch, syntax_jsonMergePatch, arguments_jsonMergePatch, returned_value_jsonMergePatch, examples_jsonMergePatch, introduced_in_jsonMergePatch, category_jsonMergePatch};
+    FunctionDocumentation documentation_jsonMergePatch = {description_jsonMergePatch, syntax_jsonMergePatch, arguments_jsonMergePatch, {}, returned_value_jsonMergePatch, examples_jsonMergePatch, introduced_in_jsonMergePatch, category_jsonMergePatch};
 
     factory.registerFunction<FunctionJSONMergePatch>(documentation_jsonMergePatch);
 

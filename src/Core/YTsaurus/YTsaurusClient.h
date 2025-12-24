@@ -72,7 +72,7 @@ public:
 
     SchemaDescription getTableSchema(const String & cypress_path);
 
-    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason);
+    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable);
 private:
     Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
 

@@ -19,13 +19,13 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToTagsGroup(<id>) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
-class FunctionTimeSeriesIdToTagsGroup : public IFunction, private WithContext
+class FunctionTimeSeriesIdToTagsGroup : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToTagsGroup";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesIdToTagsGroup>(context_); }
-    explicit FunctionTimeSeriesIdToTagsGroup(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionTimeSeriesIdToTagsGroup(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -122,7 +122,7 @@ public:
     std::vector<size_t> getGroupsImpl(const IColumn & column_ids) const
     {
         auto ids = extractIDs<IDType>(column_ids);
-        return getContext()->getQueryContext()->getTimeSeriesTagsCollector().getGroupById(ids);
+        return context->getQueryContext()->getTimeSeriesTagsCollector().getGroupById(ids);
     }
 
     /// Extracts identifiers from the column.
@@ -134,6 +134,9 @@ public:
         const IDType * begin = reinterpret_cast<const IDType *>(data.data());
         return std::vector<IDType>(begin, begin + column_ids.size());
     }
+
+private:
+    const ContextPtr context;
 };
 
 
@@ -146,7 +149,7 @@ REGISTER_FUNCTION(TimeSeriesIdToTagsGroup)
     FunctionDocumentation::Examples examples = {{"Example", "SELECT timeSeriesStoreTags(8374283493092, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS id, timeSeriesIdToTagsGroup(id)", "8374283493092    0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSeriesIdToTagsGroup>(documentation);
 }

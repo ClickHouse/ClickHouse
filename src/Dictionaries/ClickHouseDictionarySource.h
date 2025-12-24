@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Poco/Logger.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Context_fwd.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -48,13 +49,13 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    BlockIO loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -74,7 +75,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    QueryPipeline createStreamForQuery(const String & query);
+    BlockIO createStreamForQuery(const String & query);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

@@ -50,6 +50,16 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3_plain_rewritable>
+            <s3_plain_rewritable_cache>
+                <type>cache</type>
+                <disk>s3_plain_rewritable</disk>
+                <path>s3_plain_rewritable_cache/</path>
+                <max_size>128Mi</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <background_download_threads>0</background_download_threads>
+                <background_download_queue_size_limit>0</background_download_queue_size_limit>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </s3_plain_rewritable_cache>
             <!-- local disks -->
             <local_disk>
                 <type>object_storage</type>
@@ -113,6 +123,23 @@
                 <secret_access_key>clickhouse</secret_access_key>
                 <s3_check_objects_after_upload>0</s3_check_objects_after_upload>
             </s3_no_cache>
+            <s3_plain_rewritable_cache_multi>
+                <type>cache</type>
+                <disk>s3_plain_rewritable_cache</disk>
+                <path>s3_plain_rewritable_cache_multi/</path>
+                <max_size>22548578304</max_size>
+            </s3_plain_rewritable_cache_multi>
+            <local_cache_multi>
+                <type>cache</type>
+                <disk>local_cache</disk>
+                <path>local_cache_multi/</path>
+                <max_size>22548578304</max_size>
+            </local_cache_multi>
+            <encrypted_s3_plain_rewritable_cache>
+                <type>encrypted</type>
+                <disk>s3_plain_rewritable_cache</disk>
+                <key>1234567812345678</key>
+            </encrypted_s3_plain_rewritable_cache>
         </disks>
         <policies>
             <local_remote>

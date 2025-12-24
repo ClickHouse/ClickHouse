@@ -284,6 +284,16 @@ public:
             if (function_node->getParametersNode() == child)
                 return false;
         }
+
+        if (auto * query_node = parent->as<QueryNode>())
+        {
+            // Do not visit LIMIT and OFFSET nodes
+            if (query_node->hasLimit() && query_node->getLimit() == child)
+                return false;
+            if (query_node->hasOffset() && query_node->getOffset() == child)
+                return false;
+        }
+
         return true;
     }
 

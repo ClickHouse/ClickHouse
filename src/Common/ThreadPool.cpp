@@ -103,7 +103,7 @@ public:
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
     /// Call stacks of all jobs' schedulings leading to this one
-    std::vector<StackTrace::FramePointers> frame_pointers;
+    std::vector<FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 

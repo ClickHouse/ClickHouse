@@ -8,7 +8,10 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -39,6 +42,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    file_bucket_info = object->file_bucket_info;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -68,6 +72,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<ObjectInfo>(path);
     }
     object->data_lake_metadata = data_lake_metadata;
+    object->file_bucket_info = file_bucket_info;
+
     return object;
 }
 
@@ -85,6 +91,21 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             data_lake_metadata.transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
+    {
+        if (file_bucket_info)
+        {
+            /// Write format name so we can create appropriate file bucket info during deserialization.
+            writeStringBinary(file_bucket_info->getFormatName(), out);
+            file_bucket_info->serialize(out);
+        }
+        else
+        {
+            /// Write empty string as format name if file_bucket_info is not set.
+            writeStringBinary("", out);
+        }
     }
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
@@ -124,6 +145,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         if (!path.empty() && !transform->getInputs().empty())
         {
             data_lake_metadata.transform = std::move(transform);
+        }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO)
+    {
+        String format;
+        readStringBinary(format, in);
+        if (!format.empty())
+        {
+            file_bucket_info = FormatFactory::instance().getFileBucketInfo(format);
+            file_bucket_info->deserialize(in);
         }
     }
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)

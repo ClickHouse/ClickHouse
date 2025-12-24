@@ -1,22 +1,25 @@
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
+#include <Common/MemoryTrackerUtils.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Common/scope_guard_safe.h>
 
 #include <memory>
 #include <optional>
@@ -301,7 +304,7 @@ void SortingStep::finishSorting(
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
+            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
         });
 
     bool increase_sort_description_compile_attempts = true;
@@ -356,7 +359,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_)
+    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
 {
     bool increase_sort_description_compile_attempts = true;
 
@@ -393,7 +396,7 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
-                sort_settings.min_free_disk_space);
+                sort_settings.min_free_disk_space, threshold_tracker);
         });
 }
 
@@ -402,7 +405,8 @@ void SortingStep::fullSortStreams(
     const Settings & sort_settings,
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
-    const bool skip_partial_sort)
+    const bool skip_partial_sort,
+    TopKThresholdTrackerPtr threshold_tracker)
 {
     if (!skip_partial_sort || limit_)
     {
@@ -412,7 +416,7 @@ void SortingStep::fullSortStreams(
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
+                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
             });
 
         StreamLocalLimits limits;
@@ -429,7 +433,7 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
 }
 
 void SortingStep::fullSort(
@@ -437,7 +441,7 @@ void SortingStep::fullSort(
 {
     scatterByPartitionIfNeeded(pipeline);
 
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
+    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
@@ -466,6 +470,9 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (type == Type::MergingSorted)
     {
         mergingSorted(pipeline, result_description, limit);
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
         return;
     }
 
@@ -477,6 +484,9 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
         return;
     }
 
@@ -486,10 +496,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
         return;
     }
 
     fullSort(pipeline, result_description, limit);
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void SortingStep::describeActions(FormatSettings & settings) const

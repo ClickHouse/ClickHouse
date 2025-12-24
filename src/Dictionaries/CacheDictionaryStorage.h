@@ -41,7 +41,7 @@ class CacheDictionaryStorage final : public ICacheDictionaryStorage
     static constexpr size_t max_collision_length = 10;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     explicit CacheDictionaryStorage(
         const DictionaryStructure & dictionary_structure,
@@ -106,7 +106,7 @@ public:
     bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
-        const PaddedPODArray<StringRef> & keys,
+        const PaddedPODArray<std::string_view> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests,
         IColumn::Filter * const default_mask) override
     {
@@ -116,7 +116,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
     }
 
-    void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
+    void insertColumnsForKeys(const PaddedPODArray<std::string_view> & keys, Columns columns) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertColumnsForKeysImpl(keys, columns);
@@ -124,7 +124,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
     }
 
-    void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
+    void insertDefaultKeys(const PaddedPODArray<std::string_view> & keys) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
@@ -132,7 +132,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
     }
 
-    PaddedPODArray<StringRef> getCachedComplexKeys() const override
+    PaddedPODArray<std::string_view> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
@@ -262,13 +262,13 @@ private:
                                 [&](Array & value) { fetched_column.insert(value); },
                                 default_value_provider);
                         }
-                        else if constexpr (std::is_same_v<ValueType, StringRef>)
+                        else if constexpr (std::is_same_v<ValueType, std::string_view>)
                         {
                             getItemsForFetchedKeys<ValueType>(
                                 attribute,
                                 fetched_columns_index,
                                 fetched_keys,
-                                [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
+                                [&](std::string_view value) { fetched_column.insertData(value.data(), value.size()); },
                                 default_value_provider);
                         }
                         else
@@ -319,13 +319,13 @@ private:
                                 [&](Array & value) { fetched_column.insert(value); },
                                 *default_mask);
                         }
-                        else if constexpr (std::is_same_v<ValueType, StringRef>)
+                        else if constexpr (std::is_same_v<ValueType, std::string_view>)
                         {
                             getItemsForFetchedKeysShortCircuit<ValueType>(
                                 attribute,
                                 fetched_columns_index,
                                 fetched_keys,
-                                [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
+                                [&](std::string_view value) { fetched_column.insertData(value.data(), value.size()); },
                                 *default_mask);
                         }
                         else
@@ -369,7 +369,7 @@ private:
 
             if (was_inserted)
             {
-                if constexpr (std::is_same_v<KeyType, StringRef>)
+                if constexpr (std::is_same_v<KeyType, std::string_view>)
                     cell.key = copyStringInArena(arena, key);
                 else
                     cell.key = key;
@@ -391,10 +391,10 @@ private:
                         {
                             container.back() = column_value;
                         }
-                        else if constexpr (std::is_same_v<ElementType, StringRef>)
+                        else if constexpr (std::is_same_v<ElementType, std::string_view>)
                         {
                             const String & string_value = column_value.safeGet<String>();
-                            StringRef inserted_value = copyStringInArena(arena, string_value);
+                            std::string_view inserted_value = copyStringInArena(arena, string_value);
                             container.back() = inserted_value;
                         }
                         else
@@ -410,10 +410,10 @@ private:
             {
                 if (cell.key != key)
                 {
-                    if constexpr (std::is_same_v<KeyType, StringRef>)
+                    if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
-                        char * data = const_cast<char *>(cell.key.data);
-                        arena.free(data, cell.key.size);
+                        char * data = const_cast<char *>(cell.key.data());
+                        arena.free(data, cell.key.size());
                         cell.key = copyStringInArena(arena, key);
                     }
                     else
@@ -437,15 +437,15 @@ private:
                         {
                             container[index_to_use] = column_value;
                         }
-                        else if constexpr (std::is_same_v<ElementType, StringRef>)
+                        else if constexpr (std::is_same_v<ElementType, std::string_view>)
                         {
                             const String & string_value = column_value.safeGet<String>();
-                            StringRef inserted_value = copyStringInArena(arena, string_value);
+                            std::string_view inserted_value = copyStringInArena(arena, string_value);
 
                             if (!cell_was_default)
                             {
-                                StringRef previous_value = container[index_to_use];
-                                arena.free(const_cast<char *>(previous_value.data), previous_value.size);
+                                std::string_view previous_value = container[index_to_use];
+                                arena.free(const_cast<char *>(previous_value.data()), previous_value.size());
                             }
 
                             container[index_to_use] = inserted_value;
@@ -482,7 +482,7 @@ private:
 
             if (was_inserted)
             {
-                if constexpr (std::is_same_v<KeyType, StringRef>)
+                if constexpr (std::is_same_v<KeyType, std::string_view>)
                     cell.key = copyStringInArena(arena, key);
                 else
                     cell.key = key;
@@ -506,12 +506,12 @@ private:
                     {
                         using ElementType = std::decay_t<decltype(container[0])>;
 
-                        if constexpr (std::is_same_v<ElementType, StringRef>)
+                        if constexpr (std::is_same_v<ElementType, std::string_view>)
                         {
                             if (!cell_was_default)
                             {
-                                StringRef previous_value = container[cell.element_index];
-                                arena.free(const_cast<char *>(previous_value.data), previous_value.size);
+                                std::string_view previous_value = container[cell.element_index];
+                                arena.free(const_cast<char *>(previous_value.data()), previous_value.size());
                             }
                         }
                     });
@@ -519,10 +519,10 @@ private:
 
                 if (cell.key != key)
                 {
-                    if constexpr (std::is_same_v<KeyType, StringRef>)
+                    if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
-                        char * data = const_cast<char *>(cell.key.data);
-                        arena.free(data, cell.key.size);
+                        char * data = const_cast<char *>(cell.key.data());
+                        arena.free(data, cell.key.size());
                         cell.key = copyStringInArena(arena, key);
                     }
                     else
@@ -620,7 +620,7 @@ private:
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,
-            ContainerType<StringRef>,
+            ContainerType<std::string_view>,
             ContainerType<Array>,
             ContainerType<Field>> attribute_container;
     };
@@ -647,7 +647,7 @@ private:
                 {
                     value_setter(default_value);
                 }
-                else if constexpr (std::is_same_v<ValueType, StringRef>)
+                else if constexpr (std::is_same_v<ValueType, std::string_view>)
                 {
                     auto & value = default_value.safeGet<String>();
                     value_setter(value);

@@ -464,7 +464,7 @@ If a lambda function `func` is specified, returns the minimum element of the lam
     };
     FunctionDocumentation::IntroducedIn introduced_in_min = {21, 1};
     FunctionDocumentation::Category category_min = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, returned_value_min, examples_min, introduced_in_min, category_min};
+    FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, {}, returned_value_min, examples_min, introduced_in_min, category_min};
 
     factory.registerFunction<FunctionArrayMin>(documentation_min);
 
@@ -486,7 +486,7 @@ If a lambda function `func` is specified, returns the maximum element of the lam
     };
     FunctionDocumentation::IntroducedIn introduced_in_max = {21, 1};
     FunctionDocumentation::Category category_max = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, returned_value_max, examples_max, introduced_in_max, category_max};
+    FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, {}, returned_value_max, examples_max, introduced_in_max, category_max};
 
     factory.registerFunction<FunctionArrayMax>(documentation_max);
 
@@ -508,7 +508,7 @@ If a lambda function `func` is specified, returns the sum of elements of the lam
     };
     FunctionDocumentation::IntroducedIn introduced_in_sum = {21, 1};
     FunctionDocumentation::Category category_sum = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
+    FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, {}, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
 
     factory.registerFunction<FunctionArraySum>(documentation_sum);
 
@@ -530,7 +530,7 @@ If a lambda function `func` is specified, returns the average of elements of the
     };
     FunctionDocumentation::IntroducedIn introduced_in_avg = {21, 1};
     FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
+    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, {}, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
 
     factory.registerFunction<FunctionArrayAverage>(documentation_avg);
 
@@ -552,7 +552,7 @@ If a lambda function `func` is specified, returns the product of elements of the
     };
     FunctionDocumentation::IntroducedIn introduced_in_prod = {21, 1};
     FunctionDocumentation::Category category_prod = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_prod = {description_prod, syntax_prod, arguments_prod, returned_value_prod, examples_prod, introduced_in_prod, category_prod};
+    FunctionDocumentation documentation_prod = {description_prod, syntax_prod, arguments_prod, {}, returned_value_prod, examples_prod, introduced_in_prod, category_prod};
 
     factory.registerFunction<FunctionArrayProduct>(documentation_prod);
 }

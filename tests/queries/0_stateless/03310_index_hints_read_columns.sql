@@ -1,5 +1,8 @@
 -- Tags: no-parallel, no-random-settings, no-object-storage
 
+-- Does additional index analysis round that the test doesn't expect
+set automatic_parallel_replicas_mode=0;
+
 SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_index_hint;
 

@@ -15,6 +15,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -182,7 +183,7 @@ private:
                 }
             };
 
-            runner(std::move(worker));
+            runner.enqueueAndKeepTrack(std::move(worker));
         }
 
         runner.waitForAllToFinishAndRethrowFirstError();

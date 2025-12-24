@@ -20,28 +20,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase : public IFunction, WithContext
+class FunctionGetMaxTableNameLengthForDatabase : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
-    static FunctionPtr create(ContextPtr context_)
-    {
-        return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_);
-    }
-
-    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr context_) : WithContext(context_)
-    {
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(); }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -56,8 +42,6 @@ public:
 
         return std::make_shared<DataTypeUInt64>();
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -75,7 +59,7 @@ public:
         if (database_name.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
-        allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+        allowed_max_length = computeMaxTableNameLength(database_name, Context::getGlobalContextInstance());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 

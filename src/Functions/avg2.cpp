@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 struct NameMidpoint
 {
     static constexpr auto name = "midpoint";
@@ -21,10 +16,7 @@ class Avg2Resolver : public MidpointResolver<SpecializedFunction>
 {
 public:
     static constexpr auto name = "avg2";
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
-    {
-        return std::make_unique<Avg2Resolver<SpecializedFunction>>(context_);
-    }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<Avg2Resolver<SpecializedFunction>>(context_); }
 
     explicit Avg2Resolver(ContextPtr context_)
         : MidpointResolver<SpecializedFunction>(context_)
@@ -33,25 +25,7 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
-    {
-        if (types.size() != 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                name,
-                types.size());
-
-        if (types.size() == 2)
-        {
-            const auto & arg_0_type = types[0];
-            const auto & arg_1_type = types[1];
-            if (isNumber(arg_0_type) && isNumber(arg_1_type))
-                return SpecializedFunction::create(this->context)->getReturnTypeImpl(types);
-        }
-        return FunctionMidpoint::resolveReturnType(types);
-    }
+    bool isVariadic() const override { return false; }
 };
 
 REGISTER_FUNCTION(Avg2)
@@ -113,7 +87,7 @@ SELECT avg2(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toTypeN
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<Avg2Resolver<FunctionMidpointBinary>>(documentation, FunctionFactory::Case::Insensitive);
 }

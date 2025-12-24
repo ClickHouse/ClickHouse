@@ -342,7 +342,7 @@ Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomDistribution<UniformDistribution>>(documentation);
 
@@ -369,7 +369,7 @@ Returns a random Float64 number drawn from a [normal distribution](https://en.wi
     };
     FunctionDocumentation::IntroducedIn introduced_in_normal = {22, 10};
     FunctionDocumentation::Category category_normal = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_normal = {description_normal, syntax_normal, arguments_normal, returned_value_normal, examples_normal, introduced_in_normal, category_normal};
+    FunctionDocumentation documentation_normal = {description_normal, syntax_normal, arguments_normal, {}, returned_value_normal, examples_normal, introduced_in_normal, category_normal};
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(documentation_normal);
 
@@ -397,7 +397,7 @@ Returns a random Float64 number drawn from a [log-normal distribution](https://e
     };
     FunctionDocumentation::IntroducedIn introduced_in_lognormal = {22, 10};
     FunctionDocumentation::Category category_lognormal = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_lognormal = {description_lognormal, syntax_lognormal, arguments_lognormal, returned_value_lognormal, examples_lognormal, introduced_in_lognormal, category_lognormal};
+    FunctionDocumentation documentation_lognormal = {description_lognormal, syntax_lognormal, arguments_lognormal, {}, returned_value_lognormal, examples_lognormal, introduced_in_lognormal, category_lognormal};
 
     factory.registerFunction<FunctionRandomDistribution<LogNormalDistribution>>(documentation_lognormal);
 
@@ -424,7 +424,7 @@ Returns a random Float64 number drawn from an [exponential distribution](https:/
     };
     FunctionDocumentation::IntroducedIn introduced_in_exponential = {22, 10};
     FunctionDocumentation::Category category_exponential = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_exponential = {description_exponential, syntax_exponential, arguments_exponential, returned_value_exponential, examples_exponential, introduced_in_exponential, category_exponential};
+    FunctionDocumentation documentation_exponential = {description_exponential, syntax_exponential, arguments_exponential, {}, returned_value_exponential, examples_exponential, introduced_in_exponential, category_exponential};
 
     factory.registerFunction<FunctionRandomDistribution<ExponentialDistribution>>(documentation_exponential);
 
@@ -451,7 +451,7 @@ Returns a random Float64 number drawn from a [chi-square distribution](https://e
     };
     FunctionDocumentation::IntroducedIn introduced_in_chisquared = {22, 10};
     FunctionDocumentation::Category category_chisquared = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_chisquared = {description_chisquared, syntax_chisquared, arguments_chisquared, returned_value_chisquared, examples_chisquared, introduced_in_chisquared, category_chisquared};
+    FunctionDocumentation documentation_chisquared = {description_chisquared, syntax_chisquared, arguments_chisquared, {}, returned_value_chisquared, examples_chisquared, introduced_in_chisquared, category_chisquared};
 
     factory.registerFunction<FunctionRandomDistribution<ChiSquaredDistribution>>(documentation_chisquared);
 
@@ -477,7 +477,7 @@ Returns a random Float64 number drawn from a [Student's t-distribution](https://
     };
     FunctionDocumentation::IntroducedIn introduced_in_studentt = {22, 10};
     FunctionDocumentation::Category category_studentt = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_studentt = {description_studentt, syntax_studentt, arguments_studentt, returned_value_studentt, examples_studentt, introduced_in_studentt, category_studentt};
+    FunctionDocumentation documentation_studentt = {description_studentt, syntax_studentt, arguments_studentt, {}, returned_value_studentt, examples_studentt, introduced_in_studentt, category_studentt};
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(documentation_studentt);
 
@@ -505,7 +505,7 @@ Returns a random Float64 number drawn from an [F-distribution](https://en.wikipe
     };
     FunctionDocumentation::IntroducedIn introduced_in_fisherf = {22, 10};
     FunctionDocumentation::Category category_fisherf = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_fisherf = {description_fisherf, syntax_fisherf, arguments_fisherf, returned_value_fisherf, examples_fisherf, introduced_in_fisherf, category_fisherf};
+    FunctionDocumentation documentation_fisherf = {description_fisherf, syntax_fisherf, arguments_fisherf, {}, returned_value_fisherf, examples_fisherf, introduced_in_fisherf, category_fisherf};
 
     factory.registerFunction<FunctionRandomDistribution<FisherFDistribution>>(documentation_fisherf);
 
@@ -532,7 +532,7 @@ Returns a random Float64 number drawn from a [Bernoulli distribution](https://en
     };
     FunctionDocumentation::IntroducedIn introduced_in_bernoulli = {22, 10};
     FunctionDocumentation::Category category_bernoulli = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_bernoulli = {description_bernoulli, syntax_bernoulli, arguments_bernoulli, returned_value_bernoulli, examples_bernoulli, introduced_in_bernoulli, category_bernoulli};
+    FunctionDocumentation documentation_bernoulli = {description_bernoulli, syntax_bernoulli, arguments_bernoulli, {}, returned_value_bernoulli, examples_bernoulli, introduced_in_bernoulli, category_bernoulli};
 
     factory.registerFunction<FunctionRandomDistribution<BernoulliDistribution>>(documentation_bernoulli);
 
@@ -560,7 +560,7 @@ Returns a random Float64 number drawn from a [binomial distribution](https://en.
     };
     FunctionDocumentation::IntroducedIn introduced_in_binomial = {22, 10};
     FunctionDocumentation::Category category_binomial = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_binomial = {description_binomial, syntax_binomial, arguments_binomial, returned_value_binomial, examples_binomial, introduced_in_binomial, category_binomial};
+    FunctionDocumentation documentation_binomial = {description_binomial, syntax_binomial, arguments_binomial, {}, returned_value_binomial, examples_binomial, introduced_in_binomial, category_binomial};
 
     factory.registerFunction<FunctionRandomDistribution<BinomialDistribution>>(documentation_binomial);
 
@@ -588,7 +588,7 @@ Returns a random Float64 number drawn from a [negative binomial distribution](ht
     };
     FunctionDocumentation::IntroducedIn introduced_in_negativebinomial = {22, 10};
     FunctionDocumentation::Category category_negativebinomial = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_negativebinomial = {description_negativebinomial, syntax_negativebinomial, arguments_negativebinomial, returned_value_negativebinomial, examples_negativebinomial, introduced_in_negativebinomial, category_negativebinomial};
+    FunctionDocumentation documentation_negativebinomial = {description_negativebinomial, syntax_negativebinomial, arguments_negativebinomial, {}, returned_value_negativebinomial, examples_negativebinomial, introduced_in_negativebinomial, category_negativebinomial};
 
     factory.registerFunction<FunctionRandomDistribution<NegativeBinomialDistribution>>(documentation_negativebinomial);
 
@@ -615,7 +615,7 @@ Returns a random Float64 number drawn from a [Poisson distribution](https://en.w
     };
     FunctionDocumentation::IntroducedIn introduced_in_poisson = {22, 10};
     FunctionDocumentation::Category category_poisson = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_poisson = {description_poisson, syntax_poisson, arguments_poisson, returned_value_poisson, examples_poisson, introduced_in_poisson, category_poisson};
+    FunctionDocumentation documentation_poisson = {description_poisson, syntax_poisson, arguments_poisson, {}, returned_value_poisson, examples_poisson, introduced_in_poisson, category_poisson};
 
     factory.registerFunction<FunctionRandomDistribution<PoissonDistribution>>(documentation_poisson);
 }

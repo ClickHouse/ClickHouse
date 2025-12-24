@@ -239,8 +239,8 @@ namespace
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
             case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags();
-            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+            case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
         }
         chassert(false);
     }
@@ -499,7 +499,8 @@ public:
             ///                /             \
             ///     "" (leaf, USAGE)        "bar" (SELECT)
             const auto & [node, _] = tryGetLeafOrPrefix(name, /* return_parent_node= */ true);
-            return node.flags.contains(flags_to_check);
+            /// Check min_flags_with_children because wildcard allows to grant for all children.
+            return node.min_flags_with_children.contains(flags_to_check);
         }
 
         const auto & [node, final] = tryGetLeafOrPrefix(name);

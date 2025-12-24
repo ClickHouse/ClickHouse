@@ -20,6 +20,7 @@ namespace ErrorCodes
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings)
     : IRowInputFormat(std::move(header_), in_, std::move(params_))
     , parser(std::make_shared<CapnProtoSchemaParser>())
+    , max_message_size(format_settings.capn_proto.max_message_size)
 {
     // Parse the schema and fetch the root object
     schema = parser->getMessageSchema(info.getSchemaInfo());
@@ -59,6 +60,12 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
     // calculate size of message
     const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
     const auto expected_bytes = expected_words * sizeof(capnp::word);
+
+    if (expected_bytes > max_message_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "CapnProto message size {} exceeds maximum allowed size {}. Most likely, data is corrupted or format mismatch occurred",
+            expected_bytes, max_message_size);
+
     const auto data_size = expected_bytes - prefix_size;
     auto msg = kj::heapArray<capnp::word>(expected_words);
     auto msg_chars = msg.asChars();

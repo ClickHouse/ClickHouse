@@ -4,6 +4,7 @@
 
 #include <Core/ServerSettings.h>
 #include <Common/Exception.h>
+#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
 #include <Common/MemoryTracker.h>
@@ -112,7 +113,7 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
 
     try
     {
-        StackTrace::FramePointers frame_pointers;
+        FramePointers frame_pointers;
         auto stacktrace_size = std::min<size_t>(backtrace_length, frame_pointers.size());
         memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *)); // NOLINT(bugprone-bitwise-pointer-cast)
         TraceSender::send(

@@ -79,7 +79,7 @@ class ElOraculoDeTablas:
                 FROM system.tables
                 WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
                 AND NOT is_temporary
-                AND NOT match(engine, '.*View.*|Dictionary|Merge$|GenerateRandom|Memory|.*Set');
+                AND NOT match(engine, '.*View.*|Dictionary|Merge$|GenerateRandom|Memory|Buffer|.*Set');
                 """
             )
             if not isinstance(tables_str, str) or tables_str == "":

@@ -119,7 +119,7 @@ Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
       Expression (Post Join Actions)
-        Join
+        Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)
             Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
               ReadFromSystemNumbers
@@ -166,7 +166,7 @@ Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
       Expression (Post Join Actions)
-        Join
+        Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)
             Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
               ReadFromSystemNumbers

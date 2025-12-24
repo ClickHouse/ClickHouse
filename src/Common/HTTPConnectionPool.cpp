@@ -92,6 +92,7 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
 
@@ -171,6 +172,12 @@ public:
         mute_warning_until = 0;
     }
 
+    HTTPConnectionPools::Limits getLimits() const
+    {
+        std::lock_guard lock(mutex);
+        return limits;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -183,9 +190,15 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate()
+    void atConnectionCreate(std::string host, UInt16 port)
     {
         std::lock_guard lock(mutex);
+
+        if (isHardLimitReached())
+            throw Exception(
+                ErrorCodes::HTTP_CONNECTION_LIMIT_REACHED,
+                "Cannot create new connection to {}:{}, hard limit {} for connections in group {} is reached",
+                host, port, limits.hard_limit, getType());
 
         ++total_connections_in_group;
 
@@ -217,6 +230,11 @@ public:
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
 
 private:
+    bool isHardLimitReached() const TSA_REQUIRES(mutex)
+    {
+        return limits.hard_limit > 0 && total_connections_in_group >= limits.hard_limit;
+    }
+
     const HTTPConnectionGroupType type;
     const IHTTPConnectionPoolForEndpoint::Metrics metrics;
 
@@ -486,8 +504,10 @@ private:
             , group(group_)
             , metrics(std::move(metrics_))
         {
+            // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
+            // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
+            group->atConnectionCreate(Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
-            group->atConnectionCreate();
         }
 
         template <class... Args>
