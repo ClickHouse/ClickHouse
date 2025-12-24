@@ -6,6 +6,8 @@
 namespace DB
 {
 struct ClusterFunctionReadTaskResponse;
+class IConnectionPool;
+using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
 
 /// Base class for working with multiple replicas (connections)
 /// from one shard within a single thread
@@ -76,6 +78,8 @@ public:
     virtual ~IConnections() = default;
 
     virtual void setAsyncCallback(AsyncCallback) {}
+
+    virtual ConnectionPoolPtr getCurrentConnectionPool() const { return nullptr; }
 };
 
 }
