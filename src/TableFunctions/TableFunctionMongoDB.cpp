@@ -80,7 +80,9 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     if ((args.size() < 3 || args.size() > 4) && (args.size() < 6 || args.size() > 8))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Incorrect argument count for table function '{}'. Usage: "
-                        "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]]) or mongodb(uri, collection, structure[, oid_columns]).",
+                        "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]])"
+                        "or mongodb(host, database, collection, user, password, structure[, options[, oid_columns]])"
+                        "or mongodb(uri, collection, structure[, oid_columns]).",
                         getName());
 
     ASTs main_arguments;
@@ -115,10 +117,14 @@ std::pair<String, ASTPtr> getKeyValueMongoDBArgument(const ASTFunction * ast_fun
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
 
     const auto & arg_name = function_args[0]->as<ASTIdentifier>()->name();
-    if (arg_name == "structure" || arg_name == "options")
+    static const std::unordered_set<std::string> allowed_keys = {
+        "structure", "options", "oid_columns",
+        "host", "database", "collection", "user", "password", "uri"
+    };
+    if (allowed_keys.contains(arg_name))
         return std::make_pair(arg_name, function_args[1]);
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected (uri, host, database, collection, user, password, structure, options, oid_columns), got {}", ast_func->formatForErrorMessage());
 }
 
 void registerTableFunctionMongoDB(TableFunctionFactory & factory)
