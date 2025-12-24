@@ -157,7 +157,7 @@ def test_materialized_column_disallow_insert_materialized():
 
         # INSERT INTO TABLE dist (x, y)
         node1.query("TRUNCATE TABLE local ON CLUSTER 'test_cluster'")
-        expected_error = "Cannot insert column y, because it is MATERIALIZED column"
+        expected_error = "No such column y in table"
         assert expected_error in node1.query_and_get_error(
             "INSERT INTO TABLE dist (x, y) VALUES (1, 11), (2, 22), (3, 33)",
             settings=settings,

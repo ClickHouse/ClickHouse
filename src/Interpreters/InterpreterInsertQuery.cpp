@@ -35,6 +35,7 @@
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/MaterializingAliasesTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
@@ -47,6 +48,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
@@ -89,6 +91,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool insert_allow_alias_columns;
 }
 
 namespace MergeTreeSetting
@@ -200,6 +203,17 @@ Block InterpreterInsertQuery::getSampleBlock(
     bool no_destination,
     bool allow_materialized)
 {
+    bool allow_aliases = context_->getSettingsRef()[Setting::insert_allow_alias_columns];
+
+    /// If format supports columns subset we need to add columns as aliases, to let MaterializingAliasesTransform materialize them (and avoid rejecting them)
+    bool add_aliases = false;
+    if (!query.format.empty())
+    {
+        add_aliases = allow_aliases
+            && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(query.format, context_)
+            && metadata_snapshot->getColumns().hasDefaults();
+    }
+
     /// If the query does not include information about columns
     if (!query.columns)
     {
@@ -207,7 +221,16 @@ Block InterpreterInsertQuery::getSampleBlock(
             return window_view->getInputHeader();
         if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
-        return metadata_snapshot->getSampleBlockNonMaterialized();
+
+        auto header = metadata_snapshot->getSampleBlockNonMaterialized();
+        if (add_aliases)
+        {
+            const auto & columns = metadata_snapshot->getColumns();
+            for (const auto & column_with_type_and_name : MaterializingAliasesTransform::getColumnAliases(columns))
+                header.insert(column_with_type_and_name);
+        }
+
+        return header;
     }
 
     /// Form the block based on the column names from the query
@@ -220,7 +243,11 @@ Block InterpreterInsertQuery::getSampleBlock(
         names.emplace_back(std::move(current_name));
     }
 
-    return getSampleBlock(names, table, metadata_snapshot, no_destination, allow_materialized);
+    return getSampleBlock(names, table, metadata_snapshot,
+        /*allow_virtuals=*/ no_destination,
+        /*allow_materialized=*/ allow_materialized,
+        /*allow_aliases=*/ allow_aliases,
+        /*add_aliases=*/ add_aliases);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -228,14 +255,48 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     bool allow_virtuals,
-    bool allow_materialized)
+    bool allow_materialized,
+    bool allow_aliases,
+    bool add_aliases)
 {
-    std::vector<size_t> missing_positions;
-    Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
+    Block sample_block;
+    /// Prepare sample block for INSERT
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        /// Insertable columns
+        if (column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+            sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
+        /// insert_allow_materialized_columns
+        if (allow_materialized && column.default_desc.kind == ColumnDefaultKind::Materialized)
+            sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
+        if (add_aliases && column.default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            const ASTPtr & alias_expression = column.default_desc.expression;
+            if (typeid_cast<const ASTIdentifier *>(alias_expression.get()))
+                sample_block.insert(ColumnWithTypeAndName(column.type, column.name));
+        }
+    }
+    if (allow_virtuals)
+    {
+        Block table_sample_virtuals = table->getVirtualsHeader();
+        for (const auto & column : table_sample_virtuals)
+            sample_block.insert(column);
+    }
 
-    ColumnsWithTypeAndName res{names.size()};
+    NameToNameMap aliases;
+    if (allow_aliases)
+    {
+        /// If we have explicit columns list, for regular INSERTs we need to resolve aliases to columns they point to here,
+        /// to allow INSERTs with formats that does not support columns subset, since for those formats we cannot add new columns,
+        /// i.e. INSERT INTO x (alias) VALUES (y)
+        ///
+        /// And also for other formats we need to add column that aliases points to materialize them later
+        aliases = MaterializingAliasesTransform::getAliasToColumnMap(metadata_snapshot->getColumns().getDefaults());
+    }
+
     std::unordered_set<String> inserted_names;
 
+    ColumnsWithTypeAndName res{names.size()};
     for (size_t i = 0; i < names.size(); i++)
     {
         const auto & current_name = names[i];
@@ -246,45 +307,28 @@ Block InterpreterInsertQuery::getSampleBlock(
                 current_name,
                 table->getStorageID().getNameForLogs());
 
-        const ColumnWithTypeAndName * insertable_col = table_sample_insertable.findByName(current_name);
+        const ColumnWithTypeAndName * insertable_col = sample_block.findByName(current_name);
         if (!insertable_col)
-            missing_positions.emplace_back(i);
+        {
+            if (auto alias_it = aliases.find(current_name); alias_it != aliases.end())
+                insertable_col = sample_block.findByName(alias_it->second);
+        }
+        if (!insertable_col)
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "No such column {} in table {}",
+                current_name,
+                table->getStorageID().getNameForLogs());
         else
             res[i] = *insertable_col;
     }
 
-    if (!missing_positions.empty())
+    if (add_aliases)
     {
-        Block table_sample_physical = metadata_snapshot->getSampleBlock();
-        Block table_sample_virtuals;
-        if (allow_virtuals)
-            table_sample_virtuals = table->getVirtualsHeader();
-
-        /// Columns are not ordinary or ephemeral
-        for (auto pos : missing_positions)
+        for (const auto & [alias, column] : aliases)
         {
-            const auto & current_name = names[pos];
-
-            if (table_sample_physical.has(current_name))
-            {
-                /// Column is materialized
-                if (!allow_materialized)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
-                res[pos] = table_sample_physical.getByName(current_name);
-            }
-            else if (table_sample_virtuals.has(current_name))
-            {
-                res[pos] = table_sample_virtuals.getByName(current_name);
-            }
-            else
-            {
-                /// The table does not have a column with that name
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "No such column {} in table {}",
-                    current_name,
-                    table->getStorageID().getNameForLogs());
-            }
+            if (!inserted_names.contains(column))
+                res.emplace_back(sample_block.getByName(column));
         }
     }
 
