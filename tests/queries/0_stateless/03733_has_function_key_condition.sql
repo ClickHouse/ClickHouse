@@ -1,40 +1,3 @@
--- Tags: no-replicated-database, no-parallel-replicas
--- no-replicated-database: EXPLAIN output differs for replicated database.
--- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
-
-CREATE OR REPLACE FUNCTION 03733_explain_lines AS (pairs) ->
-    arrayMap(t -> trimLeft(t.2), arraySort(pairs));
-
-CREATE OR REPLACE FUNCTION 03733_explain_index_pos AS (pairs, idx) ->
-    arrayFirstIndex(x -> x = idx, 03733_explain_lines(pairs));
-
-CREATE OR REPLACE FUNCTION 03733_explain_index_condition_line AS (pairs, idx) ->
-    arrayFirst(
-        x -> startsWith(x, 'Condition:'),
-        arraySlice(03733_explain_lines(pairs), 03733_explain_index_pos(pairs, idx) + 1)
-    );
-
-CREATE OR REPLACE FUNCTION 03733_explain_index_granules_line AS (pairs, idx) ->
-    arrayFirst(
-        x -> startsWith(x, 'Granules:'),
-        arraySlice(03733_explain_lines(pairs), 03733_explain_index_pos(pairs, idx) + 1)
-    );
-
-CREATE OR REPLACE FUNCTION 03733_explain_index_granules_read AS (pairs, idx) ->
-    toUInt64OrZero(extract(03733_explain_index_granules_line(pairs, idx), 'Granules: ([0-9]+)'));
-
-CREATE OR REPLACE FUNCTION 03733_explain_index_granules_total AS (pairs, idx) ->
-    toUInt64OrZero(extract(03733_explain_index_granules_line(pairs, idx), 'Granules: [0-9]+/([0-9]+)'));
-
-CREATE OR REPLACE FUNCTION 03733_explain_index_granules_pruned AS (pairs, idx) ->
-    03733_explain_index_granules_read(pairs, idx) < 03733_explain_index_granules_total(pairs, idx);
-
-CREATE OR REPLACE FUNCTION 03733_explain_index AS (pairs, idx) ->
-[
-    03733_explain_index_condition_line(pairs, idx),
-    concat('Granules: ', if(03733_explain_index_granules_pruned(pairs, idx), 'read < total_granules', 'read == total_granules'))
-];
-
 -- { echoOn }
 
 DROP TABLE IF EXISTS test_has_idx_simple;
@@ -52,12 +15,10 @@ INSERT INTO test_has_idx_simple
 SELECT number, toString(number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_simple
-    WHERE has([10, 50000, 90000], id)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_simple
+WHERE has([10, 50000, 90000], id);
 
 SELECT count()
 FROM test_has_idx_simple
@@ -67,12 +28,11 @@ SELECT count()
 FROM test_has_idx_simple
 WHERE id IN (10, 50000, 90000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_simple
-    WHERE has([10, 50000, 90000], toUInt64(id + 2))
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_simple
+WHERE has([10, 50000, 90000], toUInt64(id + 2));
 
 SELECT count()
 FROM test_has_idx_simple
@@ -83,23 +43,20 @@ FROM test_has_idx_simple
 WHERE toUInt64(id + 2) IN (10, 50000, 90000);
 
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_simple
-    WHERE has([10, 50000, 90000, NULL, NULL], toUInt64(id + 2))
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_simple
+WHERE has([10, 50000, 90000, NULL, NULL], toUInt64(id + 2));
 
 SELECT count()
 FROM test_has_idx_simple
 WHERE has([10, 50000, 90000, NULL, NULL], toUInt64(id + 2));
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_simple
-    WHERE toUInt64(id + 2) IN (10, 50000, 90000, NULL, NULL)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_simple
+WHERE toUInt64(id + 2) IN (10, 50000, 90000, NULL, NULL);
+
 
 SELECT count()
 FROM test_has_idx_simple
@@ -124,12 +81,10 @@ SELECT number,
        toString(number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_tuple_col
-    WHERE has([(10, 0), (50000, 0)], key_tuple)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_tuple_col
+WHERE has([(10, 0), (50000, 0)], key_tuple);
 
 SELECT count()
 FROM test_has_idx_tuple_col
@@ -162,12 +117,11 @@ SELECT
     toString(number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_tuple_col_nullable_elements
-    WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10), (NULL, 20)], key_tuple)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_tuple_col_nullable_elements
+WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10), (NULL, 20)], key_tuple);
 
 SELECT count()
 FROM test_has_idx_tuple_col_nullable_elements
@@ -197,12 +151,10 @@ SELECT number,
        toString(number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_array_col
-    WHERE has([[10, 11], [50000, 50001]], arr_key)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_array_col
+WHERE has([[10, 11], [50000, 50001]], arr_key);
 
 SELECT count()
 FROM test_has_idx_array_col
@@ -231,12 +183,10 @@ SELECT number,
        toString(number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_tuple_two_cols
-    WHERE has([(10, 0), (50000, 0)], (k1, k2))
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_tuple_two_cols
+WHERE has([(10, 0), (50000, 0)], (k1, k2));
 
 SELECT count()
 FROM test_has_idx_tuple_two_cols
@@ -246,12 +196,11 @@ SELECT count()
 FROM test_has_idx_tuple_two_cols
 WHERE (k1, k2) IN ((10, 0), (50000, 0));
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_tuple_two_cols
-    WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (k1, k2))
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_tuple_two_cols
+WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (k1, k2));
 
 SELECT count()
 FROM test_has_idx_tuple_two_cols
@@ -278,12 +227,10 @@ SELECT number,
        toString((number % 100) + 1000000)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_lowcard
-    WHERE has(['1000010', '1000042', '1000077'], key_lc)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_lowcard
+WHERE has(['1000010', '1000042', '1000077'], key_lc);
 
 SELECT count()
 FROM test_has_idx_lowcard
@@ -310,12 +257,10 @@ SELECT number,
        if(number % 10 = 0, NULL, number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_nullable
-    WHERE has([11, 50000, 90000], key_nullable)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_nullable
+WHERE has([11, 50000, 90000], key_nullable);
 
 SELECT count()
 FROM test_has_idx_nullable
@@ -325,12 +270,11 @@ SELECT count()
 FROM test_has_idx_nullable
 WHERE key_nullable IN (11, 50000, 90000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_nullable
-    WHERE has([11, 50000, 90000, NULL], key_nullable)
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_nullable
+WHERE has([11, 50000, 90000, NULL], key_nullable);
 
 SELECT count()
 FROM test_has_idx_nullable
@@ -359,12 +303,10 @@ SELECT
     toString(number)
 FROM numbers(100000);
 
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT count()
-    FROM test_has_idx_func_key
-    WHERE has([toDate('2020-01-01'), toDate('2020-01-02'), toDate('2020-01-03')], toDate(ts))
-)) AS plan SELECT arrayJoin(03733_explain_index(plan, 'PrimaryKey')) AS explain;
+EXPLAIN indexes = 1
+SELECT count()
+FROM test_has_idx_func_key
+WHERE has([toDate('2020-01-01'), toDate('2020-01-02'), toDate('2020-01-03')], toDate(ts));
 
 SELECT count()
 FROM test_has_idx_func_key

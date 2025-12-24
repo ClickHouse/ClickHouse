@@ -12,33 +12,49 @@ INSERT INTO table_basic VALUES
     (toDateTime(1730611800, 'America/New_York')),
     (toDateTime(1730615400, 'America/New_York'));
 SELECT
-    toUnixTimestamp(d),
+    d,
 FROM table_basic
 WHERE has([toDateTime(1730611800, 'America/New_York')], d);
-1730611800
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT
-        toUnixTimestamp(d),
-    FROM table_basic
-    WHERE has([toDateTime(1730611800, 'America/New_York')], d)
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: (CAST(d, \'String\') in 1-element set)
-Granules: read == total_granules
+2024-11-03 01:30:00
+EXPLAIN indexes = 1
 SELECT
-    toUnixTimestamp(d),
+    d,
 FROM table_basic
-WHERE not has([toDateTime(1730611800, 'America/New_York')], d);
-1730615400
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT
-        toUnixTimestamp(d),
-    FROM table_basic
-    WHERE not has([toDateTime(1730611800, 'America/New_York')], d)
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: not((CAST(d, \'String\') in 1-element set))
-Granules: read == total_granules
+WHERE has([toDateTime(1730611800, 'America/New_York')], d);
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.table_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          CAST(d, \'String\')
+        Condition: (CAST(d, \'String\') in 1-element set)
+        Parts: 1/1
+        Granules: 2/2
+        Search Algorithm: binary search
+      Ranges: 1
+SELECT
+    d,
+FROM table_basic
+WHERE has([toDateTime(1730611800, 'America/New_York')], d);
+2024-11-03 01:30:00
+EXPLAIN indexes = 1
+SELECT
+    d,
+FROM table_basic
+WHERE has([toDateTime(1730611800, 'America/New_York')], d);
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.table_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          CAST(d, \'String\')
+        Condition: (CAST(d, \'String\') in 1-element set)
+        Parts: 1/1
+        Granules: 2/2
+        Search Algorithm: binary search
+      Ranges: 1
 DROP TABLE IF EXISTS table_intdiv_string;
 CREATE TABLE table_intdiv_string
 (
@@ -49,26 +65,46 @@ ORDER BY toString(intDiv(x, 10))
 SETTINGS index_granularity = 1;
 INSERT INTO table_intdiv_string VALUES
     (2), (5), (9), (10), (12), (15), (19), (20), (29), (33), (39), (40), (55), (59), (90), (95), (99);
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT arraySort(groupArray(x))
-    FROM table_intdiv_string
-    WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x)
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: (toString(intDiv(x, 10)) in 5-element set)
-Granules: read < total_granules
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM table_intdiv_string
+WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_intdiv_string)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toString(intDiv(x, 10))
+            Condition: (toString(intDiv(x, 10)) in 5-element set)
+            Parts: 1/1
+            Granules: 14/17
+            Search Algorithm: generic exclusion search
+          Ranges: 3
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
 WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x);
 [2,12,33,95]
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT arraySort(groupArray(x))
-    FROM table_intdiv_string
-    WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x)
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: not((toString(intDiv(x, 10)) in 5-element set))
-Granules: read == total_granules
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM table_intdiv_string
+WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_intdiv_string)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toString(intDiv(x, 10))
+            Condition: not((toString(intDiv(x, 10)) in 5-element set))
+            Parts: 1/1
+            Granules: 17/17
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
 WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x);
@@ -90,26 +126,46 @@ INSERT INTO table_str_chain VALUES
     ('AA'), ('aa'),
     ('A'), ('a'),
     ('baz'), ('Qux'), ('qux');
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT arraySort(groupArray(s))
-    FROM table_str_chain
-    WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: (reverse(lower(s)) in 5-element set)
-Granules: read < total_granules
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(s))
+FROM table_str_chain
+WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_str_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(lower(s))
+            Condition: (reverse(lower(s)) in 5-element set)
+            Parts: 1/1
+            Granules: 13/17
+            Search Algorithm: generic exclusion search
+          Ranges: 3
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
 WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
 ['AA','Abc','Bar','Hello','XYZ']
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1
-    SELECT arraySort(groupArray(s))
-    FROM table_str_chain
-    WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s)
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: not((reverse(lower(s)) in 5-element set))
-Granules: read == total_granules
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(s))
+FROM table_str_chain
+WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_str_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(lower(s))
+            Condition: not((reverse(lower(s)) in 5-element set))
+            Parts: 1/1
+            Granules: 17/17
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 SELECT arraySort(groupArray(s))
 FROM table_str_chain
 WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
@@ -121,15 +177,37 @@ INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2, 'b', 'st
 INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2 + 4, 'b', 'str_' || number % 3 + 4, 'c', range(number % 10))) FROM numbers(4, 4);
 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id;
 0	{"a":0,"b":"str_0","c":[]}
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
-Granules: read < total_granules
+EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'String\')
+            Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
+            Parts: 1/2
+            Granules: 1/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
 2	{"a":0,"b":"str_2","c":[0,1]}
-WITH ( SELECT groupArray((rowNumberInAllBlocks(), explain)) FROM (
-    EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id
-)) AS plan SELECT arrayJoin(03762_explain_index(plan, 'PrimaryKey')) AS explain;
-Condition: and(not((CAST(json.b, \'String\') in 2-element set)), (json.a in [0, 0]))
-Granules: read < total_granules
+EXPLAIN indexes = 1 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'String\')
+            Condition: and(not((CAST(json.b, \'String\') in 2-element set)), (json.a in [0, 0]))
+            Parts: 1/2
+            Granules: 2/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
