@@ -15,11 +15,11 @@ alter table data_{{ id }} detach partition all;
 system flush logs query_log;
 
 select
-  table,
+  parts.table,
   -- make sure that the modification_time is within (query_start_time; query_finish_time) of ALTER query
   abs(dateDiff('seconds', modification_time, query_finish_time)) <= ceil(query_duration_ms/1e3),
-from system.detached_parts
+from system.detached_parts parts
 left join (select tables[1] as table, event_time query_finish_time, query_duration_ms from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_kind = 'Alter') query_log
-  on (query_log.table = database || '.' || table)
+  on (query_log.table = database || '.' || parts.table)
 where database = currentDatabase()
-order by table;
+order by parts.table;
