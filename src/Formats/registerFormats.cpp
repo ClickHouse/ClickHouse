@@ -20,6 +20,7 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
+void registerFileSegmentationEnginePGN(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -109,6 +110,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
+void registerInputFormatPGN(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -154,6 +156,7 @@ void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+void registerPGNSchemaReader(FormatFactory & factory);
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
 void registerOutputFormatGeoJSON(FormatFactory & factory);
@@ -178,6 +181,7 @@ void registerFormats()
 #endif
     registerFileSegmentationEngineLineAsString(factory);
     registerFileSegmentationEngineBSONEachRow(factory);
+    registerFileSegmentationEnginePGN(factory);
 
 
     registerInputFormatNative(factory);
@@ -270,6 +274,7 @@ void registerFormats()
     registerInputFormatParquetMetadata(factory);
     registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
+    registerInputFormatPGN(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -311,6 +316,7 @@ void registerFormats()
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
+    registerPGNSchemaReader(factory);
 }
 
 }
