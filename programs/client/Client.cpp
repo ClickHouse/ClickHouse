@@ -1038,6 +1038,7 @@ void Client::readArguments(
         {
             std::string hostname(argv[1]);
             std::string port;
+            bool has_auth_in_connection_string = false;
 
             try
             {
@@ -1047,6 +1048,8 @@ void Client::readArguments(
                     hostname = host;
                     port = std::to_string(uri.getPort());
                 }
+                /// Check if connection string contains user credentials (e.g., clickhouse://user:password@host)
+                has_auth_in_connection_string = !uri.getUserInfo().empty();
             }
             catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
             {
@@ -1071,8 +1074,8 @@ void Client::readArguments(
                     }
                 }
 
-                /// Only auto-add --login if no authentication credentials provided via command line
-                if (!has_auth_in_cmdline)
+                /// Only auto-add --login if no authentication credentials provided via command line or connection string
+                if (!has_auth_in_cmdline && !has_auth_in_connection_string)
                 {
                     common_arguments.emplace_back("--login");
                     login_was_auto_added = true;
