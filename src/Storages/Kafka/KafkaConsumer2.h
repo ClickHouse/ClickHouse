@@ -4,12 +4,12 @@
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
+#include <Storages/Kafka/SimpleTopicPartition.h>
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition.h>
 #include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
-#include "SimpleTopicPartition.h"
 
 namespace CurrentMetrics
 {

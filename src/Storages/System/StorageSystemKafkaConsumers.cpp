@@ -36,7 +36,7 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>()), "Kafka partition id. Note, that only one consumer can be assigned to a partition."},
         {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()), "Current offset."},
         {"assignments.intent_size", std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())), "The number of pushed, but not yet committed messages in new StorageKafka."},
-        {"assignments.produce_time", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Producing timestamp of the most recent consumed message."},
+        {"assignments.create_time", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Creating timestamp of the most recent consumed message (requires log.message.timestamp.type=CreateTime)"},
         {"exceptions.time", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "Timestamp when the 10 most recent exceptions were generated."},
         {"exceptions.text", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Text of 10 most recent exceptions."},
         {"last_poll_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the most recent poll."},
@@ -77,8 +77,8 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & assignments_intent_size = assert_cast<ColumnNullable &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assignments_intent_size_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
-    auto & assignments_produce_time = assert_cast<ColumnDateTime &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
-    auto & assignments_produce_time_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
+    auto & assignments_create_time = assert_cast<ColumnDateTime &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & assignments_create_time_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
     auto & exceptions_time = assert_cast<ColumnDateTime &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & exceptions_time_offset = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
@@ -203,7 +203,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                     assignments_intent_size.insert(*assign.intent_size);
                 else
                     assignments_intent_size.insertDefault();
-                assignments_produce_time.insert(assign.timestamp);
+                assignments_create_time.insert(assign.timestamp);
             }
             last_assignment_num += num_assignments;
 
@@ -211,7 +211,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             assignments_partition_id_offsets.push_back(last_assignment_num);
             assignments_current_offset_offsets.push_back(last_assignment_num);
             assignments_intent_size_offsets.push_back(last_assignment_num);
-            assignments_produce_time_offsets.push_back(last_assignment_num);
+            assignments_create_time_offsets.push_back(last_assignment_num);
 
             for (const auto & exc : consumer_stat.exceptions_buffer)
             {

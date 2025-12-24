@@ -4,11 +4,11 @@
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
+#include <Storages/Kafka/SimpleTopicPartition.h>
 #include <boost/circular_buffer.hpp>
 #include <cppkafka/cppkafka.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
-#include "SimpleTopicPartition.h"
 
 namespace CurrentMetrics
 {
@@ -166,8 +166,8 @@ private:
     std::atomic<UInt64> last_used_usec = 0;
 
     mutable std::mutex timestamp_mutex;
-    using TopicPartitionTimestamp = std::unordered_map<SimpleTopicPartition, UInt64, SimpleTopicPartitionHash, SimpleTopicPartitionEquality>;
-    mutable TopicPartitionTimestamp TSA_GUARDED_BY(timestamp_mutex) timestamp_per_topic_partition;
+    using TimestampPerTopicPartition = std::unordered_map<SimpleTopicPartition, UInt64, SimpleTopicPartitionHash, SimpleTopicPartitionEquality>;
+    mutable TimestampPerTopicPartition TSA_GUARDED_BY(timestamp_mutex) timestamp_per_topic_partition;
 
     void doPoll();
     void cleanUnprocessed();

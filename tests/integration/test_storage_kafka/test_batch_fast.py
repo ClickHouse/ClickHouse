@@ -3317,7 +3317,7 @@ def test_system_kafka_consumers(
 
             SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
             assignments.current_offset, assignments.intent_size,
-            arrayMap(x -> stable_timestamp(x), assignments.produce_time) AS assignments_produce_time,
+            arrayMap(x -> stable_timestamp(x), assignments.create_time) AS assignments_create_time,
             if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
             if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
             stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
@@ -3339,7 +3339,7 @@ assignments.topic:            ['{topic_name}']
 assignments.partition_id:     [0]
 assignments.current_offset:   [4]
 assignments.intent_size:      [NULL]
-assignments_produce_time:     ['now']
+assignments_create_time:      ['now']
 last_exception_time_:         never
 last_exception_:              no exception
 last_poll_time_:              now

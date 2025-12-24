@@ -572,8 +572,6 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
 
             timestamp = message_info.currentTimestamp64();
         }
-
-
         /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
         if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
         {

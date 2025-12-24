@@ -169,7 +169,6 @@ void KafkaConsumer::memorizeCurrentTimestamp(UInt64 ts64) const
     timestamp_per_topic_partition.insert_or_assign({currentTopic(), currentPartition()}, ts64);
 }
 
-
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
     // messages & assignment should be destroyed before consumer

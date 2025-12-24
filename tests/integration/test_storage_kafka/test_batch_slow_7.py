@@ -172,7 +172,7 @@ def test_system_kafka_consumers_timestamp(kafka_cluster, create_query_generator)
 
         latency_array = instance.query(
             f"""
-            SELECT now()::UInt64, arrayMap(x -> now() - x, assignments.produce_time), assignments.current_offset
+            SELECT now()::UInt64, arrayMap(x -> now() - x, assignments.create_time), assignments.current_offset
             FROM system.kafka_consumers WHERE database='test' and table='{kafka_table}';
             """,
             parse=True,

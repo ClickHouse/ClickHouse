@@ -35,6 +35,8 @@ consumer_id:                   ClickHouse-instance-test-kafka-1caddc7f-f917-4bb1
 assignments.topic:             ['system_kafka_cons']
 assignments.partition_id:      [0]
 assignments.current_offset:    [18446744073709550615]
+assignments.intent_size:       [NULL]
+assignments_create_time:       [2006-11-10 04:39:38]
 exceptions.time:               []
 exceptions.text:               []
 last_poll_time:                2006-11-09 18:47:47
