@@ -3002,7 +3002,6 @@ public:
         if (types.empty())
             return false;
 
-
         if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
             return false;
 
@@ -3060,11 +3059,10 @@ public:
                         auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
-                            /// left type is integer and right type is decimal
+                            /// left type is float and right type is decimal
                             auto * from_type = arguments[0].value->getType();
                             auto * from_value = arguments[0].value;
-                            result
-                                = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
+                            result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
                             result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                         }
                         else
@@ -3082,9 +3080,10 @@ public:
                         auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<RightFieldType>)
                         {
-                            auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
-                            auto * d = llvm::ConstantFP::get(toNativeType(builder, right.getPtr()), static_cast<double>(divider));
-                            result = builder.CreateFDiv(from_value, d);
+                            DataTypePtr double_type = std::make_shared<DataTypeFloat64>();
+                            auto * from_value = nativeCast(builder, arguments[0], double_type);
+                            auto * d = llvm::ConstantFP::get(builder.getDoubleTy(), static_cast<double>(divider));
+                            result = nativeCast(builder, double_type, builder.CreateFDiv(from_value, d), right.getPtr());
                         }
                         else
                         {
@@ -4457,10 +4456,9 @@ public:
                         auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
-                            /// left type is integer and right type is decimal
+                            /// left type is float and right type is decimal
                             auto * from_type = toNativeType(builder, left);
-                            result_value
-                                = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
+                            result_value = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
                             result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                         }
                         else
@@ -4478,9 +4476,10 @@ public:
                         auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<RightFieldType>)
                         {
-                            auto * from_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
-                            auto * d = llvm::ConstantFP::get(toNativeType(builder, right.getPtr()), static_cast<double>(divider));
-                            result_value = builder.CreateFDiv(from_value, d);
+                            DataTypePtr double_type = std::make_shared<DataTypeFloat64>();
+                            auto * from_value = nativeCast(builder, left.getPtr(), input_value, double_type);
+                            auto * d = llvm::ConstantFP::get(builder.getDoubleTy(), static_cast<double>(divider));
+                            result_value = nativeCast(builder, double_type, builder.CreateFDiv(from_value, d), right.getPtr());
                         }
                         else
                         {
