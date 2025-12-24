@@ -485,8 +485,8 @@ private:
 template<typename ValueType>
 struct PostingCursor
 {
-    ValueType value;
-    std::size_t idx;
+    ValueType value {};
+    std::size_t stream_index = 0;
     [[maybe_unused]] bool operator<(const PostingCursor & other) const noexcept
     {
         return value > other.value;
@@ -531,29 +531,34 @@ void mergePostingsVariadic(Out & out, std::vector<StreamPostingsContainer> & str
     if (streams.empty())
         return;
 
-    std::priority_queue<PostingCursor<ValueType>> pq;
+    std::vector<PostingCursor<ValueType>> cursors;
+    cursors.reserve(streams.size());
     for (std::size_t i = 0; i < streams.size(); ++i)
     {
         if (streams[i].valid())
-            pq.push(PostingCursor<ValueType>{streams[i].value(), i});
+            cursors.emplace_back(streams[i].value(), i);
     }
 
-    if (pq.empty())
+    if (cursors.empty())
         return;
 
-    while (!pq.empty())
+    std::make_heap(cursors.begin(), cursors.end());
+    while (!cursors.empty())
     {
-        auto top = pq.top();
-        pq.pop();
+        std::pop_heap(cursors.begin(), cursors.end());
+        auto top = cursors.back();
+        cursors.pop_back();
 
         const ValueType v = top.value;
-        const std::size_t idx = top.idx;
-
         out.add(v);
 
-        auto & rng = streams[idx];
-        if (rng.next())
-            pq.push(PostingCursor<ValueType>{rng.value(), idx});
+        auto & stream= streams[top.stream_index];
+        if (stream.next())
+        {
+            top.value = stream.value();
+            cursors.push_back(top);
+            std::push_heap(cursors.begin(), cursors.end());
+        }
     }
 }
 }
@@ -598,7 +603,7 @@ public:
         return true;
     }
 
-   void deserialize(PostingsContainerImpl<T> & target)
+   void transform(PostingsContainerImpl<T> & target)
     {
         std::string temp_buffer;
         std::vector<ValueType> temp_compress_buffer;
@@ -654,7 +659,7 @@ template <typename Out, typename StreamPostingsContainer>
 static void mergePostingsContainers(Out & out, std::vector<StreamPostingsContainer> & containers)
 {
     if (containers.size() == 1)
-        containers.back().deserialize(out);
+        containers.back().transform(out);
     else if (containers.size() == 2)
         internal::mergePostingsTwo(out, containers[0], containers[1]);
     else
