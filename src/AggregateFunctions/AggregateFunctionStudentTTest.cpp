@@ -94,7 +94,48 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
 
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("studentTTest", createAggregateFunctionStudentTTest);
+    FunctionDocumentation::Description description = R"(
+Applies Student's t-test to samples from two populations.
+
+Values of both samples are in the `sample_data` column.
+If `sample_index` equals 0, then the value in that row belongs to the sample from the first population.
+Otherwise, it belongs to the sample from the second population.
+The null hypothesis is that the means of the populations are equal.
+Normal distribution with equal variances is assumed.
+
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+studentTTest([confidence_level])(sample_data, sample_index)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"sample_data", "Sample data.", {"Integer", "Float", "Decimal"}},
+        {"sample_index", "Sample index.", {"Integer"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"confidence_level", "Optional. Confidence level in order to calculate confidence intervals.", {"Float"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with two or four elements (if the optional `confidence_level` is specified): calculated t-statistic, calculated p-value, and optionally calculated confidence-interval-low and confidence-interval-high.", {"Tuple(Float64, Float64)", "Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Student's t-test on sample data",
+        R"(
+CREATE TABLE student_ttest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
+INSERT INTO student_ttest VALUES (20.3, 0), (21.1, 0), (21.9, 1), (21.7, 0), (19.9, 1), (21.8, 1);
+
+SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
+        )",
+        R"(
+┌─studentTTest(sample_data, sample_index)───┐
+│ (-0.21739130434783777,0.8385421208415731) │
+└───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("studentTTest", {createAggregateFunctionStudentTTest, {}, documentation});
 }
 
 }

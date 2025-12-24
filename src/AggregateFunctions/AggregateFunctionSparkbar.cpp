@@ -375,7 +375,60 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
 
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sparkbar", createAggregateFunctionSparkbar);
+    FunctionDocumentation::Description description = R"(
+The function plots a frequency histogram for values `x` and the repetition rate `y` of these values over the interval `[min_x, max_x]`.
+
+Repetitions for all `x` falling into the same bucket are averaged, so data should be pre-aggregated.
+Negative repetitions are ignored.
+
+If no interval is specified, then the minimum `x` is used as the interval start, and the maximum `x` — as the interval end.
+Otherwise, values outside the interval are ignored.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+sparkbar(buckets[, min_x, max_x])(x, y)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The field with values.", {"UInt*", "Date", "DateTime"}},
+        {"y", "The field with the frequency of values.", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"buckets", "The number of segments. Must be in range [2, 1024].", {"Integer"}},
+        {"min_x", "Optional. The interval start.", {"Same as x"}},
+        {"max_x", "Optional. The interval end.", {"Same as x"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"The frequency histogram.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic sparkbar usage",
+        R"(
+CREATE TABLE spark_bar_data (`value` Int64, `event_date` Date) ENGINE = MergeTree ORDER BY event_date;
+INSERT INTO spark_bar_data VALUES (1,'2020-01-01'), (3,'2020-01-02'), (4,'2020-01-02'), (-3,'2020-01-02'), (5,'2020-01-03'), (2,'2020-01-04'), (3,'2020-01-05'), (7,'2020-01-06'), (6,'2020-01-07'), (8,'2020-01-08'), (2,'2020-01-11');
+
+SELECT sparkbar(9)(event_date,cnt) FROM (SELECT sum(value) as cnt, event_date FROM spark_bar_data GROUP BY event_date);
+        )",
+        R"(
+┌─sparkbar(9)(event_date, cnt)─┐
+│ ▂▅▂▃▆█  ▂                    │
+└──────────────────────────────┘
+        )"
+    },
+    {
+        "Sparkbar with specified interval",
+        R"(
+SELECT sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date,cnt) FROM (SELECT sum(value) as cnt, event_date FROM spark_bar_data GROUP BY event_date);
+        )",
+        R"(
+┌─sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date, cnt)─┐
+│ ▂▅▂▃▇▆█                                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, {}, documentation});
     factory.registerAlias("sparkBar", "sparkbar");
 }
 
