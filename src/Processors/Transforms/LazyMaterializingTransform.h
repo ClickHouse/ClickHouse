@@ -32,14 +32,14 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 /// Then, we prepare the main chunk and fill LazyMaterializingRows state.
 /// Then, we read the lazy port, expecting data is sorted by the global row index.
 /// Then, we prepare lazy columns by restoring the row order.
-class LazilyMaterializingTransform final : public IProcessor
+class LazyMaterializingTransform final : public IProcessor
 {
 public:
-    LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     static Block transformHeader(const Block & main_header, const Block & lazy_header);
 
-    String getName() const override { return "LazilyMaterializingTransform"; }
+    String getName() const override { return "LazyMaterializingTransform"; }
     Status prepare() override;
 
     void work() override;

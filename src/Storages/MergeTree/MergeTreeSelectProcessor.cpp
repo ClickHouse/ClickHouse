@@ -11,7 +11,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
@@ -128,7 +127,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeSelectAlgorithmPtr algorithm_,
     const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
-    const LazilyReadInfoPtr & lazily_read_info_,
     const IndexReadTasks & index_read_tasks_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -146,9 +144,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
           reader_settings_.force_short_circuit_execution))
-    , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
-    , result_header(transformHeader(pool->getHeader(), lazily_read_info, row_level_filter, prewhere_info))
+    , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
@@ -241,8 +238,6 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
     if (res.row_count)
     {
-        injectLazilyReadColumns(res.row_count, res.block, current_task.getInfo().part_index_in_query, lazily_read_info);
-
         /// Reorder the columns according to result_header
         Columns ordered_columns;
         ordered_columns.reserve(result_header.columns());
@@ -347,56 +342,12 @@ void MergeTreeSelectProcessor::cancel() noexcept
         merge_tree_index_build_context->index_reader_pool->cancel();
 }
 
-void MergeTreeSelectProcessor::injectLazilyReadColumns(
-    size_t rows,
-    Block & block,
-    size_t part_index,
-    const LazilyReadInfoPtr & lazily_read_info)
-{
-    if (!lazily_read_info)
-        return;
-
-    ColumnPtr row_num_column;
-    ColumnPtr part_num_column;
-    if (rows)
-    {
-        row_num_column = block.getByName("_part_offset").column;
-        part_num_column = DataTypeUInt64().createColumnConst(rows, part_index)->convertToFullColumnIfConst();
-    }
-    else
-    {
-        row_num_column =  DataTypeUInt64().createColumn();
-        part_num_column = DataTypeUInt64().createColumn();
-    }
-
-    Columns columns{row_num_column, part_num_column};
-    bool create_empty_column_lazy = false;
-    for (auto column_with_type_and_name : lazily_read_info->lazily_read_columns)
-    {
-        if (create_empty_column_lazy)
-        {
-            column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
-        }
-        else
-        {
-            column_with_type_and_name.column = ColumnLazy::create(columns);
-            create_empty_column_lazy = true;
-        }
-        block.insert(column_with_type_and_name);
-    }
-
-    if (lazily_read_info->remove_part_offset_column)
-        block.erase("_part_offset");
-}
-
 Block MergeTreeSelectProcessor::transformHeader(
     Block block,
-    const LazilyReadInfoPtr & lazily_read_info,
     const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info)
 {
     auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), row_level_filter, prewhere_info);
-    injectLazilyReadColumns(0, transformed, -1, lazily_read_info);
     return transformed;
 }
 
