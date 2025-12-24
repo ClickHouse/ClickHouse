@@ -1,0 +1,18 @@
+-- Test 1: DateTime64 local query
+3
+-- Test 2: DateTime64 distributed query via remote()
+3
+-- Test 3: DateTime64 exact match at post-DST time - local
+1
+-- Test 4: DateTime64 exact match at post-DST time - remote
+1
+-- Test 5: DateTime local query
+3
+-- Test 6: DateTime distributed query via remote()
+3
+-- Test 7: DateTime exact match at post-DST time - local
+1
+-- Test 8: DateTime exact match at post-DST time - remote
+1
+-- Test 9: All DateTime rows count via remote
+5

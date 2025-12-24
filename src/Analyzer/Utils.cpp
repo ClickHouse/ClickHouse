@@ -1213,13 +1213,20 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
         }
         case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::DateTime64:
+        case TypeIndex::Date32:
         {
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
+        }
+        case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::DateTime64:
+        {
+            /// for DateTime64 and DateTime, we must NOT use text serialization because formatted datetime strings
+            /// are ambiguous during DST transitions (the same local time can correspond to 
+            /// two different UTC timestamps, different by 1 hour). Instead we return raw numeric value which
+            /// is wrapped in CAST() by ConstantNode::toASTImpl, so timestamp will be not ambiguous
+            return (*column)[row];
         }
         case TypeIndex::UInt8:
         {
