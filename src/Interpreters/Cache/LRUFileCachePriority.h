@@ -45,6 +45,7 @@ public:
         size_t size,
         size_t elements,
         const CachePriorityGuard::Lock &,
+        const OriginInfo&,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
@@ -131,6 +132,12 @@ private:
         const CachePriorityGuard::Lock &,
         const size_t * max_size_ = nullptr,
         const size_t * max_elements_ = nullptr) const;
+
+
+    bool canFit(
+        size_t size,
+        size_t elements,
+        const CachePriorityGuard::Lock & lock) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 

@@ -202,7 +202,7 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
         return origin;
 
     static std::array<std::string, 5> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
-    origin.segment_type = std::find(system_cache_type.begin(), system_cache_type.end(), fs::path(filename).extension()) != system_cache_type.end() ? FileSegmentKeyType::Data : FileSegmentKeyType::System;
+    origin.segment_type = std::find(system_cache_type.begin(), system_cache_type.end(), fs::path(filename).extension()) != system_cache_type.end() ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -1123,7 +1123,7 @@ bool FileCache::tryReserve(
         /// Invalidate and remove queue entries and execute finalize func.
         eviction_candidates.finalize(query_context.get(), cache_lock);
     }
-    else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
+    else if (!main_priority->canFit(size, required_elements_num, cache_lock, origin, queue_iterator))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1580,7 +1580,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     auto lock = lockCache();
                     size_limit = main_priority->getSizeLimit(lock);
 
-                    limits_satisfied = main_priority->canFit(size, 1, lock, nullptr, true);
+                    limits_satisfied = main_priority->canFit(size, 1, lock, origin, nullptr, true);
                     if (limits_satisfied)
                         cache_it = main_priority->add(key_metadata, offset, size, origin, lock, /* best_effort */true);
 

@@ -48,9 +48,10 @@ public:
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::Lock &,
-        IteratorPtr,
-        bool) const override;
+        const CachePriorityGuard::Lock & lock,
+        const OriginInfo& origin,
+        IteratorPtr reserve,
+        bool best_effort) const override;
 
     IteratorPtr
     add( /// NOLINT
@@ -82,7 +83,7 @@ public:
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
-    
+
     Type getType() const override
     {
         return priorities_holder.at(SegmentType::Data)->getType();
@@ -98,7 +99,19 @@ public:
 
     void resetEvictionPos(const CachePriorityGuard::Lock & lock) override;
 
+    protected:
+    size_t getHoldSize() override;
+
+    size_t getHoldElements() override;
+
 private:
+    SegmentType getSegmentTypeForPriority(const SegmentType& segment_type) const
+    {
+        if (segment_type == SegmentType::Data || segment_type == SegmentType::General)
+            return SegmentType::Data;
+        return SegmentType::System;
+    }
+
     PriorityPerType priorities_holder;
     double system_segment_size_ratio;
     size_t max_data_segment_size;

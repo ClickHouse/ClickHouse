@@ -153,6 +153,7 @@ public:
         size_t size,
         size_t elements,
         const CachePriorityGuard::Lock &,
+        const OriginInfo&,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const = 0;
 

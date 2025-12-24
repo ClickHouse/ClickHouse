@@ -161,7 +161,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
 
     count = int(
         node.query(
-            f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='Data'"
+            f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
         )
     )
     assert count > 0
@@ -171,7 +171,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     assert (
         int(
             node.query(
-                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='Data'"
+                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
             )
         )
         == count
@@ -182,7 +182,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     assert (
         int(
             node.query(
-                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='Data'"
+                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
             )
         )
         == count

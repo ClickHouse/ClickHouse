@@ -266,7 +266,16 @@ LRUFileCachePriority::iterateImpl(LRUQueue::iterator start_pos, IterateFunc func
 bool LRUFileCachePriority::canFit( /// NOLINT
     size_t size,
     size_t elements,
+    const CachePriorityGuard::Lock & lock) const
+{
+    return canFit(size, elements, 0, 0, lock);
+}
+
+bool LRUFileCachePriority::canFit( /// NOLINT
+    size_t size,
+    size_t elements,
     const CachePriorityGuard::Lock & lock,
+    const OriginInfo&,
     IteratorPtr,
     bool) const
 {

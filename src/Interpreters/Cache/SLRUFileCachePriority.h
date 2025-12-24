@@ -44,6 +44,7 @@ public:
         size_t size,
         size_t elements,
         const CachePriorityGuard::Lock &,
+        const OriginInfo&,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
@@ -106,7 +107,7 @@ private:
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 
-    void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &);
+    void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &, const OriginInfo&);
 
     bool collectCandidatesForEvictionInProtected(
         size_t size,
