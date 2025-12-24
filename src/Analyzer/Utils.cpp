@@ -1232,9 +1232,20 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         }
         case TypeIndex::DateTime64:
         {
-            /// See the comment above
-            const auto & datetime64_col = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
-            return Field(datetime64_col.getData()[row].value);
+            /// The reason of this: see the comment above.
+            ///
+            /// Logic behind it -- it is complicated to convert DateTime64 to string and then convert it back,
+            /// considering the problem with DST above. Also, it is not possible to convert DT64 from integer
+            /// so we convert DT64 to Decimal64, then we convert Decimal to string and we have '<int>.<frac>'
+            /// This string structure can be converted fine to DT64
+            ///
+            /// This complicated logic is used to avoid bugs regarding DST on remote execution, where we send
+            /// the query in text format to execution node
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+            auto decimal_type = std::make_shared<DataTypeDecimal<Decimal64>>(18, datetime64_type.getScale());
+            WriteBufferFromOwnString buf;
+            decimal_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            return Field(buf.str());
         }
         case TypeIndex::UInt8:
         {
