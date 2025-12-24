@@ -9663,7 +9663,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
+        return std::make_shared<AddDeduplicationInfoTransform>(header);
     });
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
