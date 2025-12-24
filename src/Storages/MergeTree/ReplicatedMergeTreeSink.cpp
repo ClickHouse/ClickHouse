@@ -605,11 +605,6 @@ std::vector<std::string> ReplicatedMergeTreeSink::detectConflictsInAsyncBlockIDs
 namespace
 {
 
-bool contains(const std::vector<std::string> & block_ids, const String & path)
-{
-    return std::find(block_ids.begin(), block_ids.end(), path) != block_ids.end();
-}
-
 std::vector<std::string> getBlockIdsPaths(const String & zookeeper_path, const std::vector<String> & block_ids, bool is_async_insert)
 {
     std::vector<std::string> result;
@@ -1013,7 +1008,7 @@ std::map<std::string, std::string> ReplicatedMergeTreeSink::commitPart(
         auto failed_op_idx = zkutil::getFailedOpIndex(multi_code, responses);
         String failed_op_path = ops[failed_op_idx]->getPath();
 
-        if (multi_code == Coordination::Error::ZNODEEXISTS && !block_id_paths.empty() && contains(block_id_paths, failed_op_path))
+        if (multi_code == Coordination::Error::ZNODEEXISTS && !block_id_paths.empty() && std::ranges::contains(block_id_paths, failed_op_path))
         {
             /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
             LOG_INFO(log, "Block with ID {} already exists (it was just appeared) for part {}. Ignore it.",
