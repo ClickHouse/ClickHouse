@@ -907,7 +907,7 @@ bool StatementGenerator::tableOrFunctionRef(
 
     /// Only schema, table declarations are allowed inside cluster and remote functions
     const uint32_t engine_func
-        = (10 + (70 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
+        = (10 + (170 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
     const uint32_t url_func = 5 * static_cast<uint32_t>(!cluster_or_remote);
     const uint32_t simple_est = 85;
     const uint32_t prob_space2 = engine_func + url_func + simple_est;
