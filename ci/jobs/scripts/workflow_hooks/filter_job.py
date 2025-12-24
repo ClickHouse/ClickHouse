@@ -155,9 +155,6 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no functional tests updates"
 
-    print(f"FIXME DEBUG {_info_cache.pr_body}")
-    print(f"FIXME DEBUG job_name {job_name}")
-    print(f"FIXME DEBUG has_new_integration_tests {has_new_integration_tests(_info_cache.get_changed_files())}")
 #    if (
 #        " Bug Fix" in _info_cache.pr_body
 #        and job_name == JobNames.BUGFIX_VALIDATE_IT
