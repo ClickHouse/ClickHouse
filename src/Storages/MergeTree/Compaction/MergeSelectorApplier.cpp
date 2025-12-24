@@ -74,12 +74,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     if (!ctx.merge_constraints.empty())
     {
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
-        std::vector<MergeConstraint> ttl_constraints;
-        ttl_constraints.reserve(ctx.merge_constraints.size());
-
-        for (const auto & constraint : ctx.merge_constraints)
-            ttl_constraints.emplace_back(std::numeric_limits<size_t>::max(), constraint.max_size_rows);
-
+        std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
         TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
