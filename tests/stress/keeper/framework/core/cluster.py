@@ -172,7 +172,16 @@ class ClusterBuilder:
             else ""
         )
         # Avoid emitting additional top-level sections that may already exist in base config
-        prom_block = ""
+        # Explicitly enable Prometheus endpoint for Keeper metrics collection
+        prom_block = (
+            "<prometheus>"
+            "<endpoint>/metrics</endpoint>"
+            f"<port>{PROM_PORT}</port>"
+            "<metrics>true</metrics>"
+            "<events>true</events>"
+            "<asynchronous_metrics>true</asynchronous_metrics>"
+            "</prometheus>"
+        )
         # Do not inject <zookeeper> for keeper_server tests to avoid collisions with base configs
         zk_block = ""
         for i, name in enumerate(names, start=start_sid):
@@ -204,8 +213,8 @@ class ClusterBuilder:
                 "<listen_host>0.0.0.0</listen_host>"
                 "<listen_try>1</listen_try>"
             )
-            # Emit valid XML document with root <clickhouse>: keeper_server + listen_host (+disks only if using S3)
-            full_xml = "<clickhouse>" + keeper_server + net_block + disks_block + "</clickhouse>"
+            # Emit valid XML document with root <clickhouse>: keeper_server + listen_host + prometheus (+disks only if using S3)
+            full_xml = "<clickhouse>" + keeper_server + net_block + prom_block + disks_block + "</clickhouse>"
             (conf_dir / f"keeper_config_{name}.xml").write_text(full_xml)
             cfgs = [f"configs/{cname}/keeper_config_{name}.xml"]
             inst = cluster.add_instance(

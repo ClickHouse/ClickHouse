@@ -402,6 +402,59 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             summary = kb.run()
         elif ctx.get("bench_summary"):
             summary = ctx.get("bench_summary") or {}
+        # Sink keeper-bench summary to CIDB as scalar metrics tagged to this run
+        try:
+            if sink_url:
+                s = summary or {}
+                if s:
+                    # Compute rps if possible
+                    try:
+                        dur = float(s.get("duration_s") or 0)
+                    except Exception:
+                        dur = 0.0
+                    try:
+                        ops = float(s.get("ops") or 0)
+                    except Exception:
+                        ops = 0.0
+                    rps = (ops / dur) if (dur and dur > 0) else 0.0
+                    names_vals = {
+                        "ops": ops,
+                        "errors": float(s.get("errors") or 0),
+                        "p50_ms": float(s.get("p50_ms") or 0),
+                        "p95_ms": float(s.get("p95_ms") or 0),
+                        "p99_ms": float(s.get("p99_ms") or 0),
+                        "reads": float(s.get("reads") or 0),
+                        "writes": float(s.get("writes") or 0),
+                        "read_ratio": float(s.get("read_ratio") or 0),
+                        "write_ratio": float(s.get("write_ratio") or 0),
+                        "duration_s": dur,
+                        "rps": float(rps),
+                    }
+                    rows = []
+                    for nm, val in names_vals.items():
+                        try:
+                            valf = float(val)
+                        except Exception:
+                            continue
+                        rows.append(
+                            {
+                                "run_id": run_id,
+                                "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                                "backend": run_meta_eff.get("backend", "default"),
+                                "scenario": scenario.get("id", ""),
+                                "topology": topo,
+                                "node": "bench",
+                                "stage": "summary",
+                                "source": "bench",
+                                "name": nm,
+                                "value": valf,
+                                "labels_json": "{}",
+                            }
+                        )
+                    if rows:
+                        sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
+        except Exception:
+            pass
         for gate in scenario.get("gates", []):
             _apply_gate(gate, nodes, leader, ctx, summary)
         _snapshot_and_sink(

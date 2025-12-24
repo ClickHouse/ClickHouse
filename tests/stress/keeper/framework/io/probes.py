@@ -143,3 +143,11 @@ def ch_trace_log(node, limit_rows=500):
         return node.query(q)
     except Exception:
         return ""
+
+
+def dirs(node):
+    """Return raw output of 4LW 'dirs' command (best-effort)."""
+    try:
+        return four(node, "dirs")
+    except Exception:
+        return ""

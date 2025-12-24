@@ -2,7 +2,7 @@ import threading
 import time
 
 from ..core.settings import SAMPLER_FLUSH_EVERY, SAMPLER_ROW_FLUSH_THRESHOLD
-from ..io.probes import lgif, mntr, prom_metrics
+from ..io.probes import lgif, mntr, prom_metrics, dirs
 from ..io.prom_parse import parse_prometheus_text
 from ..io.sink import sink_clickhouse
 
@@ -73,6 +73,35 @@ class MetricsSampler:
                     entry = dict(cache.get(n.name) or {})
                     entry["mntr"] = m
                     entry["lgif"] = l
+                    cache[n.name] = entry
+            except Exception:
+                pass
+            # Sample 4LW 'dirs' in a lightweight way: count lines and bytes
+            try:
+                d_txt = dirs(n)
+                d_lines = len(d_txt.splitlines()) if d_txt else 0
+                d_bytes = len(d_txt.encode("utf-8")) if d_txt else 0
+                for nm, val in ("lines", d_lines), ("bytes", d_bytes):
+                    self._metrics_ts_rows.append(
+                        {
+                            "run_id": self.run_id,
+                            "commit_sha": self.run_meta.get("commit_sha", "local"),
+                            "backend": self.run_meta.get("backend", "default"),
+                            "scenario": self.scenario_id,
+                            "topology": self.topology,
+                            "node": n.name,
+                            "stage": self.stage_prefix,
+                            "source": "dirs",
+                            "name": nm,
+                            "value": float(val),
+                            "labels_json": "{}",
+                        }
+                    )
+                if self._ctx is not None:
+                    cache = self._ctx.setdefault("_metrics_cache", {})
+                    entry = dict(cache.get(n.name) or {})
+                    entry["dirs_lines"] = d_lines
+                    entry["dirs_bytes"] = d_bytes
                     cache[n.name] = entry
             except Exception:
                 pass
