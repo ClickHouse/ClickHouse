@@ -8,6 +8,8 @@ namespace DB
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
+/// Serialization context passed to `IQueryPlanStep::serialize`.
+/// Settings are handled separately via `serializeSettings` method.
 struct IQueryPlanStep::Serialization
 {
     WriteBuffer & out;
@@ -23,6 +25,7 @@ struct IQueryPlanStep::Serialization
 
 struct SerializedSetsRegistry;
 
+/// Deserialization context passed to `IQueryPlanStep::deserialize`.
 struct IQueryPlanStep::Deserialization
 {
     ReadBuffer & in;
