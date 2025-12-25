@@ -224,7 +224,7 @@ static void dumpFlameGraphImpl(
 {
     WriteBufferFromOwnString out;
 
-    std::unordered_map<uintptr_t, size_t> mapping;
+    SafeUnorderedMap<uintptr_t, size_t> mapping;
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     const SymbolIndex & symbol_index = SymbolIndex::instance();

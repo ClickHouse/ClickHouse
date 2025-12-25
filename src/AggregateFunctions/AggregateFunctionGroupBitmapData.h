@@ -672,7 +672,7 @@ public:
         }
         if (isSmall())
         {
-            std::set<UInt32> values;
+            SafeSet<UInt32> values;
             for (const auto & x : small)
                 if ((static_cast<UInt32>(x.getValue()) >> 16) == container_id)
                     values.insert((static_cast<UInt32>(x.getValue()) & 0xFFFFu) + base);
@@ -730,13 +730,13 @@ public:
      *  For larger ones, extracts from Roaring bitmap keys.
      * Returns sorted containers' ID.
      */
-    inline std::set<UInt16> ra_get_all_container_ids() /// NOLINT
+    inline SafeSet<UInt16> ra_get_all_container_ids() /// NOLINT
     {
         if (sizeof(T) >= 8)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         }
-        std::set<UInt16> container_ids;
+        SafeSet<UInt16> container_ids;
         if (isSmall())
         {
             for (const auto & x : small)
@@ -821,7 +821,7 @@ public:
         if (lhs_small && rhs_small)
         {
             /// Case 1: Both are small sets
-            std::set<T> lhs_values;
+            SafeSet<T> lhs_values;
             for (const auto & lhs_value : small)
                 lhs_values.insert(lhs_value.getValue());
             UInt32 num_added = 0;

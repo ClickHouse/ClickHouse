@@ -77,7 +77,7 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        SafeUnorderedSet<size_t> arguments_that_can_be_only_null;
         if (nested_function)
             arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
 

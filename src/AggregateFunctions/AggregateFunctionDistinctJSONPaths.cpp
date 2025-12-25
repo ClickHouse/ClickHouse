@@ -34,9 +34,9 @@ struct AggregateFunctionDistinctJSONPathsData
 {
     static constexpr auto name = "distinctJSONPaths";
 
-    std::unordered_set<String> data;
+    SafeUnorderedSet<String> data;
 
-    void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> &)
+    void add(const ColumnObject & column, size_t row_num, const SafeUnorderedMap<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
@@ -56,7 +56,7 @@ struct AggregateFunctionDistinctJSONPathsData
             data.insert(std::string{shared_data_paths->getDataAt(i)});
     }
 
-    void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> &)
+    void addWholeColumn(const ColumnObject & column, const SafeUnorderedMap<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
@@ -123,9 +123,9 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 {
     static constexpr auto name = "distinctJSONPathsAndTypes";
 
-    std::unordered_map<String, std::unordered_set<String>> data;
+    SafeUnorderedMap<String, std::unordered_set<String>> data;
 
-    void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> & typed_paths_type_names)
+    void add(const ColumnObject & column, size_t row_num, const SafeUnorderedMap<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
@@ -152,7 +152,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         }
     }
 
-    void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> & typed_paths_type_names)
+    void addWholeColumn(const ColumnObject & column, const SafeUnorderedMap<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
@@ -326,7 +326,7 @@ public:
     }
 
 private:
-    std::unordered_map<String, String> typed_paths_type_names;
+    SafeUnorderedMap<String, String> typed_paths_type_names;
 };
 
 template <typename Data>

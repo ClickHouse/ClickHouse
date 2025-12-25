@@ -6,6 +6,9 @@
 #include <list>
 #include <map>
 #include <queue>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -38,5 +41,23 @@ template <typename K, typename V>
 using SafeMap = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K, typename V>
-using SafeMultimap = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using SafeMultiMap = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+
+template <typename K>
+using SafeSet = std::set<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
+
+template <typename K>
+using SafeMultiSet = std::multiset<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
+
+template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using SafeUnorderedMap = std::unordered_map<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+
+template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using SafeUnorderedMultiMap = std::unordered_multimap<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+
+template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using SafeUnorderedSet = std::unordered_set<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+
+template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using SafeUnorderedMultiSet = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
 }

@@ -1058,7 +1058,7 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
+        SafeSet<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = and_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1122,7 +1122,7 @@ public:
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
+        SafeSet<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = lhs_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);

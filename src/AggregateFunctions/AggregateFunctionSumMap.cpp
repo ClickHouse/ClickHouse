@@ -510,7 +510,7 @@ private:
     using Self = AggregateFunctionSumMapFiltered<overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    using ContainerT = std::set<Field>;
+    using ContainerT = SafeSet<Field>;
     ContainerT keys_to_keep;
 
 public:
