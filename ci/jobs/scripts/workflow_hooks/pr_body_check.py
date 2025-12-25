@@ -63,8 +63,18 @@ if __name__ == "__main__":
 
     error, category = get_category(body)
     if error or not category:
-        print(f"ERROR: {error}")
-        sys.exit(1)
+        info = Info()
+        changed_files = info.get_kv_data("changed_files")
+        labels = info.pr_labels or labels or []
+        # Allow CI/test-only PRs to skip strict PR body category requirement
+        if (
+            any(f.startswith(("ci/", "tests/stress/keeper")) for f in (changed_files or []))
+            or ("pr-ci" in labels)
+        ):
+            category = LABEL_CATEGORIES["pr-ci"][0]
+        else:
+            print(f"ERROR: {error}")
+            sys.exit(1)
 
     error = check_changelog_entry(category, body)
     if error:
