@@ -1,0 +1,26 @@
+-- { echoOn }
+
+SELECT
+    toDate(dt) AS dt,
+    count()
+FROM test_pk
+WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
+GROUP BY dt
+ORDER BY dt ASC;
+2001-01-02	850
+SELECT
+    toDate(dt) AS dt,
+    count()
+FROM test_pk_long
+WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
+GROUP BY dt
+ORDER BY dt ASC;
+2001-01-02	850
+SELECT
+    toDate(dt) AS dt,
+    count()
+FROM test_pk_long_back
+WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
+GROUP BY dt
+ORDER BY dt ASC;
+2001-01-02	850
