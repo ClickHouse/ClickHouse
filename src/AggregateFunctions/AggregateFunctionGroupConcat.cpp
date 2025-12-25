@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
+#include <Common/OutOfMemorySafeContainers.h>
 
 namespace DB
 {

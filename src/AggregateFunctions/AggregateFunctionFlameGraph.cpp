@@ -1,19 +1,20 @@
+#include <filesystem>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/SymbolIndex.h>
-#include <Common/ArenaAllocator.h>
-#include <Core/Settings.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <filesystem>
+#include <IO/WriteHelpers.h>
+#include <Common/ArenaAllocator.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/SymbolIndex.h>
 
 namespace DB
 {
@@ -101,7 +102,7 @@ struct AggregateFunctionFlameGraphTree
         return node;
     }
 
-    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
+    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, SafeVector<UInt64> & frame)
     {
         UInt64 prev = offsets.empty() ? 0 : offsets.back();
         offsets.push_back(prev + frame.size());
@@ -111,7 +112,7 @@ struct AggregateFunctionFlameGraphTree
 
     struct Trace
     {
-        using Frames = std::vector<UInt64>;
+        using Frames = SafeVector<UInt64>;
 
         Frames frames;
 
@@ -123,15 +124,15 @@ struct AggregateFunctionFlameGraphTree
         size_t allocated_self = 0;
     };
 
-    using Traces = std::vector<Trace>;
+    using Traces = SafeVector<Trace>;
 
     Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
-        std::vector<size_t> allocated_total;
-        std::vector<size_t> allocated_self;
-        std::vector<ListNode *> nodes;
+        SafeVector<size_t> allocated_total;
+        SafeVector<size_t> allocated_self;
+        SafeVector<ListNode *> nodes;
 
         nodes.push_back(root.children);
         allocated_total.push_back(root.allocated);
@@ -400,7 +401,7 @@ struct AggregateFunctionFlameGraphData
     void merge(const AggregateFunctionFlameGraphTree & other_tree, Arena * arena)
     {
         AggregateFunctionFlameGraphTree::Trace::Frames frames;
-        std::vector<AggregateFunctionFlameGraphTree::ListNode *> nodes;
+        SafeVector<AggregateFunctionFlameGraphTree::ListNode *> nodes;
 
         nodes.push_back(other_tree.root.children);
 

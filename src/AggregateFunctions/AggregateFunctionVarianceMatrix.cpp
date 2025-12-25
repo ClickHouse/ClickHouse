@@ -1,11 +1,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <Columns/ColumnArray.h>
-#include <Common/PODArray_fwd.h>
-#include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Moments.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/PODArray_fwd.h>
 
 
 namespace DB
