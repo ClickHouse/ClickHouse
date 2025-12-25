@@ -26,7 +26,7 @@ main_configs = [
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
-nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs)
+nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs, cpu_limit=10)
 
 node0 = nodes[0]
 
