@@ -11,10 +11,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
-#include <Common/FieldVisitorSum.h>
-#include <Common/assert_cast.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/FieldVisitorSum.h>
+#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/assert_cast.h>
+
 #include <map>
 
 
@@ -37,7 +39,7 @@ namespace
 struct AggregateFunctionMapData
 {
     // Map needs to be ordered to maintain function properties
-    std::map<Field, Array> merged_maps;
+    SafeMap<Field, Array> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -

@@ -1794,7 +1794,7 @@ public:
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
 
-        std::map<IndexType, UInt64> index2value;
+        SafeMap<IndexType, UInt64> index2value;
 
         PaddedPODArray<IndexType> zero_indexes_array;
         zero_indexes->rb_to_array(zero_indexes_array);

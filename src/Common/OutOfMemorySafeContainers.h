@@ -4,6 +4,7 @@
 
 #include <deque>
 #include <list>
+#include <map>
 #include <queue>
 #include <vector>
 
@@ -33,6 +34,9 @@ using SafeDeque = std::deque<T, AllocatorWithMemoryTracking<T>>;
 template <typename T>
 using SafeQueue = std::queue<T, AllocatorWithMemoryTracking<T>>;
 
-// templame <typename K, typename V>
-// using SafeMap = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+template <typename K, typename V>
+using SafeMap = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+
+template <typename K, typename V>
+using SafeMultimap = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 }
