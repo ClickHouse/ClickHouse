@@ -46,20 +46,15 @@ struct AvgFraction
     {
         Float64 numerator_float;
         if constexpr (is_decimal<Numerator>)
-            numerator_float = numerator.value;
+            numerator_float = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
             numerator_float = numerator;
 
         Float64 denominator_float;
         if constexpr (is_decimal<Denominator>)
-            denominator_float = denominator.value;
+            denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
             denominator_float = denominator;
-
-        if constexpr (is_decimal<Numerator>)
-            denominator_float *= static_cast<Float64>(DecimalUtils::scaleMultiplier<Numerator>(num_scale));
-        if constexpr (is_decimal<Denominator>)
-            numerator_float *= static_cast<Float64>(DecimalUtils::scaleMultiplier<Denominator>(num_scale));
 
         return numerator_float / denominator_float;
     }
@@ -243,7 +238,7 @@ public:
             }
 
             auto double_multiplier = nativeCast<Numerator>(b, multiplier_value, result_type);
-            double_denominator = b.CreateFMul(double_denominator, double_multiplier);
+            double_numerator = b.CreateFDiv(double_numerator, double_multiplier);
         }
 
         return b.CreateFDiv(double_numerator, double_denominator);
