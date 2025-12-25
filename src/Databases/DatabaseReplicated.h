@@ -222,7 +222,7 @@ private:
     BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
 
-    const String zookeeper_name = "default";
+    const String zookeeper_name;
     const String zookeeper_path;
     const String shard_name;
     const String replica_name;
