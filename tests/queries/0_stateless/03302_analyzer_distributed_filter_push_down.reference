@@ -109,11 +109,10 @@ Positions: 1
       Positions: 0
         Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Actions: INPUT : 0 -> y UInt32 : 0
-                 INPUT :: 1 -> x UInt32 : 1
-                 ALIAS y :: 0 -> __table1.y UInt32 : 2
-                 ALIAS __table1.y :: 2 -> y UInt32 : 0
-                 ALIAS y :: 0 -> __table1.y UInt32 : 2
-        Positions: 2
+                 ALIAS y :: 0 -> __table1.y UInt32 : 1
+                 ALIAS __table1.y :: 1 -> y UInt32 : 0
+                 ALIAS y :: 0 -> __table1.y UInt32 : 1
+        Positions: 1
           ReadFromMergeTree (default.tab0)
           ReadType: Default
           Parts: 1
@@ -124,8 +123,8 @@ Positions: 1
             Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
             Actions: INPUT : 0 -> x UInt32 : 0
                      COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                     FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
-            Positions: 0 2
+                     FUNCTION equals(x :: 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+            Positions: 2
           Indexes:
             PrimaryKey
               Keys:
