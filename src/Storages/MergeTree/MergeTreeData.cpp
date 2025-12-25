@@ -4,6 +4,7 @@
 
 #include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -13,6 +14,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/Increment.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/Stopwatch.h>
@@ -21,16 +23,15 @@
 #include <Common/escapeForFileName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -69,8 +70,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -95,6 +94,8 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -8216,6 +8217,88 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     return false;
 }
 
+/// Result of filtering/pruning parts based on virtual columns, partition pruning, and minmax index conditions.
+/// Used by getMinMaxCountProjectionBlock and getSkipIndexAggregationBlock.
+struct PartsPruningResult
+{
+    Block virtual_columns_block;
+    size_t rows = 0;
+    ColumnPtr part_name_column;
+    std::optional<PartitionPruner> partition_pruner;
+    std::optional<KeyCondition> minmax_idx_condition;
+    DataTypes minmax_columns_types;
+    bool valid = true;  /// False if filtering resulted in zero rows
+};
+
+/// Prepares parts pruning result for iterating over parts.
+static PartsPruningResult preparePartsPruning(
+    const MergeTreeData & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & required_columns,
+    const ActionsDAG * filter_dag,
+    const RangesInDataParts & parts,
+    ContextPtr query_context)
+{
+    PartsPruningResult result;
+
+    auto virtual_block = storage.getHeaderWithVirtualsForFilter(metadata_snapshot);
+    bool has_virtual_column
+        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
+
+    if (has_virtual_column || filter_dag)
+    {
+        result.virtual_columns_block = storage.getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
+        if (result.virtual_columns_block.rows() == 0)
+        {
+            result.valid = false;
+            return result;
+        }
+    }
+
+    result.rows = parts.size();
+
+    if (filter_dag)
+    {
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            const auto & partition_key = metadata_snapshot->getPartitionKey();
+            auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+            result.minmax_columns_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            result.minmax_idx_condition.emplace(
+                inverted_dag, query_context, minmax_columns_names,
+                MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
+            result.partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
+        }
+
+        const auto * predicate = filter_dag->getOutputs().at(0);
+        VirtualColumnUtils::filterBlockWithPredicate(
+            predicate, result.virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
+
+        result.rows = result.virtual_columns_block.rows();
+        result.part_name_column = result.virtual_columns_block.getByName("_part").column;
+    }
+
+    return result;
+}
+
+/// Helper to insert an aggregate function state into a column
+static void insertAggregateState(ColumnAggregateFunction & column, const Field & value)
+{
+    auto func = column.getAggregateFunction();
+    Arena & arena = column.createOrGetArena();
+    size_t size_of_state = func->sizeOfData();
+    size_t align_of_state = func->alignOfData();
+    auto * place = arena.alignedAlloc(size_of_state, align_of_state);
+    func->create(place);
+
+    auto value_column = func->getArgumentTypes().front()->createColumnConst(1, value)->convertToFullColumnIfConst();
+    const auto * value_column_ptr = value_column.get();
+    func->add(place, &value_column_ptr, 0, &arena);
+    column.insertFrom(place);
+}
+
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
@@ -8258,57 +8341,20 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column.insertFrom(place);
     };
 
-    Block virtual_columns_block;
-    auto virtual_block = getHeaderWithVirtualsForFilter(metadata_snapshot);
-    bool has_virtual_column
-        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
-    if (has_virtual_column || filter_dag)
-    {
-        virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
-        if (virtual_columns_block.rows() == 0)
-            return {};
-    }
-
-    size_t rows = parts.size();
-    ColumnPtr part_name_column;
-    std::optional<PartitionPruner> partition_pruner;
-    std::optional<KeyCondition> minmax_idx_condition;
-    DataTypes minmax_columns_types;
-    if (filter_dag)
-    {
-        if (metadata_snapshot->hasPartitionKey())
-        {
-            const auto & partition_key = metadata_snapshot->getPartitionKey();
-            auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
-            minmax_columns_types = getMinMaxColumnsTypes(partition_key);
-
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            minmax_idx_condition.emplace(
-                inverted_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
-            partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
-        }
-
-        const auto * predicate = filter_dag->getOutputs().at(0);
-
-        // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(
-            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
-
-        rows = virtual_columns_block.rows();
-        part_name_column = virtual_columns_block.getByName("_part").column;
-    }
+    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
+    if (!pruning_result.valid)
+        return {};
 
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
     DataPartsVector real_parts;
-    real_parts.reserve(rows);
-    for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
+    real_parts.reserve(pruning_result.rows);
+    for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
     {
-        if (part_name_column)
+        if (pruning_result.part_name_column)
         {
-            while (parts[part_idx].data_part->name != part_name_column->getDataAt(row))
+            while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
                 ++part_idx;
         }
 
@@ -8329,13 +8375,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+        if (pruning_result.minmax_idx_condition
+            && !pruning_result.minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, pruning_result.minmax_columns_types).can_be_true)
             continue;
 
-        if (partition_pruner)
+        if (pruning_result.partition_pruner)
         {
-            if (partition_pruner->canBePruned(*part))
+            if (pruning_result.partition_pruner->canBePruned(*part))
                 continue;
         }
 
@@ -8353,9 +8399,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         return {};
 
     FilterDescription filter(*filter_column);
-    for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
+    for (size_t i = 0; i < pruning_result.virtual_columns_block.columns(); ++i)
     {
-        ColumnPtr & column = virtual_columns_block.safeGetByPosition(i).column;
+        ColumnPtr & column = pruning_result.virtual_columns_block.safeGetByPosition(i).column;
         column = column->filter(*filter.data, -1);
     }
 
@@ -8437,8 +8483,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     Block res;
     for (const auto & name : required_columns)
     {
-        if (virtual_columns_block.has(name))
-            res.insert(virtual_columns_block.getByName(name));
+        if (pruning_result.virtual_columns_block.has(name))
+            res.insert(pruning_result.virtual_columns_block.getByName(name));
         else if (block.has(name))
             res.insert(block.getByName(name));
         else if (startsWith(name, "count")) // special case to match count(...) variants
@@ -8453,6 +8499,209 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 name);
     }
     return res;
+}
+
+Block MergeTreeData::getSkipIndexAggregationBlock(
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & index_name,
+    const String & index_type,
+    const Names & required_columns,
+    const Names & group_by_keys [[maybe_unused]],
+    const ActionsDAG * filter_dag,
+    const RangesInDataParts & parts,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    ContextPtr query_context) const
+{
+    /// Support minmax index for min/max aggregation and set index for uniq aggregation
+    if (index_type != "minmax" && index_type != "set")
+        return {};
+
+    LOG_TRACE(log, "Attempting skip index aggregation optimization with index '{}' of type '{}'", index_name, index_type);
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    const IndexDescription * index_desc = nullptr;
+    for (const auto & idx : secondary_indices)
+    {
+        if (idx.name == index_name)
+        {
+            index_desc = &idx;
+            break;
+        }
+    }
+
+    if (!index_desc)
+        return {};
+
+    auto skip_index = MergeTreeIndexFactory::instance().get(*index_desc);
+    if (!skip_index)
+        return {};
+
+    if (index_desc->column_names.size() != 1)
+        return {};
+
+    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
+    if (!pruning_result.valid)
+        return {};
+
+    /// Helper to check if a part should be processed
+    auto should_process_part = [&](const DataPartPtr & part)
+    {
+        if (part->isEmpty())
+            return false;
+        if (max_block_numbers_to_read)
+        {
+            auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
+            if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                return false;
+        }
+        if (pruning_result.minmax_idx_condition
+            && !pruning_result.minmax_idx_condition->checkInHyperrectangle(
+                part->minmax_idx->hyperrectangle,
+                pruning_result.minmax_columns_types).can_be_true)
+            return false;
+        if (pruning_result.partition_pruner && pruning_result.partition_pruner->canBePruned(*part))
+            return false;
+        return true;
+    };
+
+    /// Prepare skip index reading parameters for a part
+    auto prepare_skip_index_read = [&](const DataPartPtr & part, MarkRanges & mark_ranges) -> size_t
+    {
+        size_t index_granularity = skip_index->getGranularity();
+        size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+        size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+        if (index_marks_count == 0)
+            return 0;
+        if (!skip_index->getDeserializedFormat(part->checksums, skip_index->getFileName()))
+            return 0;
+        mark_ranges = {{0, index_marks_count}};
+        return index_marks_count;
+    };
+
+    if (index_type == "minmax")
+    {
+        Field global_min;
+        Field global_max;
+        bool has_any_value = false;
+
+        for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
+        {
+            if (pruning_result.part_name_column)
+            {
+                while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
+                    ++part_idx;
+            }
+
+            const auto & part = parts[part_idx].data_part;
+
+            if (!should_process_part(part))
+                continue;
+
+            MarkRanges mark_ranges;
+            size_t index_marks_count = prepare_skip_index_read(part, mark_ranges);
+            if (index_marks_count == 0)
+            {
+                LOG_TRACE(
+                    log,
+                    "Skip index '{}' not available in part '{}', falling back to raw data",
+                    index_name,
+                    part->name);
+                return {};
+            }
+
+            MergeTreeIndexReader reader(
+                skip_index,
+                part,
+                index_marks_count,
+                mark_ranges,
+                query_context->getMarkCache().get(),
+                query_context->getUncompressedCache().get(),
+                nullptr,
+                MergeTreeReaderSettings::createFromContext(query_context));
+
+            for (size_t index_mark = 0; index_mark < index_marks_count; ++index_mark)
+            {
+                MergeTreeIndexGranulePtr granule;
+                reader.read(index_mark, nullptr, granule);
+
+                if (!granule || granule->empty())
+                    continue;
+
+                auto * minmax_granule = dynamic_cast<MergeTreeIndexGranuleMinMax *>(granule.get());
+                if (!minmax_granule)
+                    return {};
+
+                if (minmax_granule->hyperrectangle.empty())
+                    continue;
+
+                const auto & range = minmax_granule->hyperrectangle[0];
+
+                if (!has_any_value)
+                {
+                    global_min = static_cast<const Field &>(range.left);
+                    global_max = static_cast<const Field &>(range.right);
+                    has_any_value = true;
+                }
+                else
+                {
+                    if (accurateLess(range.left, global_min))
+                        global_min = static_cast<const Field &>(range.left);
+                    if (accurateLess(global_max, range.right))
+                        global_max = static_cast<const Field &>(range.right);
+                }
+            }
+        }
+
+        if (!has_any_value)
+            return {};
+
+        Block result;
+        for (const auto & col_name : required_columns)
+        {
+            bool is_min = col_name.starts_with("min");
+            bool is_max = col_name.starts_with("max");
+
+            if (!is_min && !is_max)
+            {
+                if (pruning_result.virtual_columns_block.has(col_name))
+                {
+                    result.insert(pruning_result.virtual_columns_block.getByName(col_name));
+                    continue;
+                }
+                return {};
+            }
+
+            DataTypePtr indexed_column_type = index_desc->data_types[0];
+            AggregateFunctionProperties properties;
+            auto func = AggregateFunctionFactory::instance().get(
+                is_min ? "min" : "max",
+                NullsAction::EMPTY,
+                {indexed_column_type},
+                {},
+                properties);
+
+            auto agg_column = ColumnAggregateFunction::create(func);
+            insertAggregateState(*agg_column, is_min ? global_min : global_max);
+
+            auto agg_type = std::make_shared<DataTypeAggregateFunction>(func, DataTypes{indexed_column_type}, Array{});
+            result.insert({std::move(agg_column), agg_type, col_name});
+        }
+
+        LOG_DEBUG(
+            log,
+            "Skip index aggregation optimization applied for minmax index '{}': global_min={}, global_max={}",
+            index_name,
+            global_min.dump(),
+            global_max.dump());
+
+        return result;
+    }
+    else if (index_type == "set")
+    {
+        /// Todo
+        return {};
+    }
+
+    return {};
 }
 
 ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select)

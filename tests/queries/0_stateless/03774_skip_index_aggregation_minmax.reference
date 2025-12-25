@@ -1,0 +1,14 @@
+ReadFromPreparedSource (skip_minmax_value)
+25	400
+ReadFromPreparedSource (skip_minmax_value)
+50	200
+ReadFromMergeTree (default.test_skip_index_minmax)
+100	200
+ReadFromPreparedSource (skip_minmax_value)
+50	200
+ReadFromPreparedSource (skip_minmax_expr)
+6	400
+ReadFromPreparedSource (skip_minmax_expr)
+10	60
+ReadFromMergeTree (default.test_skip_index_expr_minmax)
+2	10
