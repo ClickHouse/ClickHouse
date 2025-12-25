@@ -29,6 +29,9 @@ class ColumnNode;
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 
+using Names = std::vector<std::string>;
+using UsedColumns = std::optional<Names>;
+
 struct Settings;
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
@@ -117,7 +120,7 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_);
+    explicit QueryAnalyzer(bool only_analyze_, UsedColumns used_column_names_ = {});
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
@@ -253,7 +256,7 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+    NamesAndTypes resolveProjectionExpressionNodeList(QueryNode & query_node, IdentifierResolveScope & scope);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
@@ -319,6 +322,7 @@ private:
     std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     const bool only_analyze;
+    UsedColumns used_column_names;
 };
 
 }

@@ -541,7 +541,7 @@ Union
   Actions: INPUT : 0 -> __table1.n UInt64 : 0
            ALIAS __table1.n :: 0 -> n UInt64 : 1
   Positions: 1
-    Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))
+    Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + Change column names to column identifiers)))))))
     Filter column: equals(__table1.n, 100_UInt8) (removed)
     Actions: INPUT : 0 -> n UInt64 : 0
              COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
@@ -567,7 +567,7 @@ Union
   Actions: INPUT : 0 -> __table1.n UInt64 : 0
            ALIAS __table1.n :: 0 -> n UInt64 : 1
   Positions: 1
-    Filter (( + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + Change column names to column identifiers)))))))
+    Filter (( + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + Materialize constants after VIEW subquery))))
     Filter column: equals(__table1.n, 100_UInt8) (removed)
     Actions: INPUT : 0 -> n UInt64 : 0
              COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
