@@ -46,15 +46,20 @@ struct AvgFraction
     {
         Float64 numerator_float;
         if constexpr (is_decimal<Numerator>)
-            numerator_float = DecimalUtils::convertTo<Float64>(numerator, num_scale);
+            numerator_float = numerator.value;
         else
             numerator_float = numerator;
 
         Float64 denominator_float;
         if constexpr (is_decimal<Denominator>)
-            denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
+            denominator_float = denominator.value;
         else
             denominator_float = denominator;
+
+        if constexpr (is_decimal<Numerator>)
+            denominator_float *= static_cast<Float64>(DecimalUtils::scaleMultiplier<Numerator>(num_scale));
+        if constexpr (is_decimal<Denominator>)
+            numerator_float *= static_cast<Float64>(DecimalUtils::scaleMultiplier<Denominator>(num_scale));
 
         return numerator_float / denominator_float;
     }
@@ -203,6 +208,7 @@ public:
     llvm::Value * compileGetResultImpl(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const
     requires(canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
     {
+        const auto & result_type = this->getResultType();
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * numerator_type = toNativeType<Numerator>(b);
@@ -216,8 +222,8 @@ public:
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
         denominator_value->setAlignment(llvm::Align(alignof(TDenominator)));
 
-        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, this->getResultType());
-        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
+        auto * double_numerator = nativeCast<Numerator>(b, numerator_value, result_type);
+        auto * double_denominator = nativeCast<Denominator>(b, denominator_value, result_type);
 
         /// If numerator is decimal, we need to scale it to the result type
         if constexpr (is_decimal<Numerator>)
@@ -227,14 +233,16 @@ public:
 
             llvm::Value * multiplier_value = nullptr;
             if constexpr (!is_over_big_decimal<Numerator>)
+            {
                 multiplier_value = llvm::ConstantInt::get(numerator_type, static_cast<uint64_t>(multiplier), true);
+            }
             else
             {
                 llvm::APInt value(numerator_type->getIntegerBitWidth(), multiplier.items);
                 multiplier_value = llvm::ConstantInt::get(numerator_type, value);
             }
 
-            auto double_multiplier = nativeCast<Numerator>(b, multiplier_value, this->getResultType());
+            auto double_multiplier = nativeCast<Numerator>(b, multiplier_value, result_type);
             double_denominator = b.CreateFMul(double_denominator, double_multiplier);
         }
 
