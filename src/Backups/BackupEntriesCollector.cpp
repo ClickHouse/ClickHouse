@@ -812,7 +812,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
             if (!table || table->getName() != "MaterializedView")
                 return false;
 
-            auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get());
+            const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get());
             return mv && mv->getTargetTable() == target;
         };
 

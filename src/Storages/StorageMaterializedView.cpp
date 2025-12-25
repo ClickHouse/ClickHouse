@@ -881,7 +881,7 @@ void StorageMaterializedView::finalizeRestoreFromBackup(const RestoreSettings & 
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table;
         insert->select = select;
-        InterpreterInsertQuery interpretor(
+        InterpreterInsertQuery interpreter(
             insert,
             getContext(),
             /* allow_materialized */ false,
@@ -889,7 +889,7 @@ void StorageMaterializedView::finalizeRestoreFromBackup(const RestoreSettings & 
             /* no_destination */ false,
             /* async_isnert */ false);
 
-        auto block_io = interpretor.execute();
+        auto block_io = interpreter.execute();
         QueryPipeline & pipeline = block_io.pipeline;
         {
             CompletedPipelineExecutor executor(pipeline);
