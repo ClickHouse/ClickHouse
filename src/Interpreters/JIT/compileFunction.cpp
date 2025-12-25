@@ -252,7 +252,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     llvm::Value * columns_arg = arguments++;
     llvm::Value * places_arg = arguments++;
 
-    /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
+    /// Initialize ColumnDataPlaceholder LLVM representation of ColumnData
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", add_into_aggregate_states_func);
     b.SetInsertPoint(entry);
@@ -685,7 +685,6 @@ CompiledSortDescriptionFunction compileSortDescription(
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
     {
         .comparator_function = comparator_function,
-
         .compiled_module = std::move(compiled_module)
     };
 

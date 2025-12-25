@@ -69,8 +69,11 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
         return builder.getFloatTy();
     else if constexpr (std::is_same_v<ToType, Float64>)
         return builder.getDoubleTy();
-    else if constexpr (std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> ||
-        std::is_same_v<ToType, Decimal128>)
+    else if constexpr (std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> || std::is_same_v<ToType, Decimal128>)
+    /// There is one problem: LLVM uses "preferred alignment" for this type as 16 bytes,
+    /// and will generate aligned loads/stores by default
+    /// While our Int128, UInt128 types have only 8 bytes alignment.
+    /// When working with values of these types in LLVM, don't forget to do setAlignment(llvm::Align(8)) for all loads/stores.
         return builder.getInt128Ty();
     else if constexpr (std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> || std::is_same_v<ToType, Decimal256>)
         return builder.getIntNTy(256);

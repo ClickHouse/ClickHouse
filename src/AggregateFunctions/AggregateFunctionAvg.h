@@ -170,12 +170,14 @@ public:
 
         auto * numerator_dst_ptr = aggregate_data_dst_ptr;
         auto * numerator_dst_value = b.CreateLoad(numerator_type, numerator_dst_ptr);
+        numerator_dst_value->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * numerator_src_ptr = aggregate_data_src_ptr;
         auto * numerator_src_value = b.CreateLoad(numerator_type, numerator_src_ptr);
+        numerator_src_value->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_dst_value, numerator_src_value) : b.CreateFAdd(numerator_dst_value, numerator_src_value);
-        b.CreateStore(numerator_result_value, numerator_dst_ptr);
+        b.CreateStore(numerator_result_value, numerator_dst_ptr)->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
@@ -183,10 +185,12 @@ public:
         auto * denominator_src_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_src_ptr, denominator_offset);
 
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
+        denominator_dst_value->setAlignment(llvm::Align(alignof(TDenominator)));
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
+        denominator_src_value->setAlignment(llvm::Align(alignof(TDenominator)));
 
         auto * denominator_result_value = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_src_value, denominator_dst_value) : b.CreateFAdd(denominator_src_value, denominator_dst_value);
-        b.CreateStore(denominator_result_value, denominator_dst_ptr);
+        b.CreateStore(denominator_result_value, denominator_dst_ptr)->setAlignment(llvm::Align(alignof(TDenominator)));
     }
 
     void
@@ -204,11 +208,13 @@ public:
         auto * numerator_type = toNativeType<Numerator>(b);
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+        numerator_value->setAlignment(llvm::Align(alignof(TNumerator)));
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
         auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
+        denominator_value->setAlignment(llvm::Align(alignof(TDenominator)));
 
         auto * double_numerator = nativeCast<Numerator>(b, numerator_value, this->getResultType());
         auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
@@ -355,15 +361,18 @@ public:
 
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+        numerator_value->setAlignment(llvm::Align(alignof(Numerator)));
         auto * value_cast_to_numerator = nativeCast(b, arguments[0], toNativeDataType<Numerator>());
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
-        b.CreateStore(numerator_result_value, numerator_ptr);
+        b.CreateStore(numerator_result_value, numerator_ptr)->setAlignment(llvm::Align(alignof(Numerator)));
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
         auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
-        auto * denominator_value_updated = b.CreateAdd(b.CreateLoad(denominator_type, denominator_ptr), llvm::ConstantInt::get(denominator_type, 1));
-        b.CreateStore(denominator_value_updated, denominator_ptr);
+        auto * denominator_value_loaded = b.CreateLoad(denominator_type, denominator_ptr);
+        denominator_value_loaded->setAlignment(llvm::Align(alignof(Denominator)));
+        auto * denominator_value_updated = b.CreateAdd(denominator_value_loaded, llvm::ConstantInt::get(denominator_type, 1));
+        b.CreateStore(denominator_value_updated, denominator_ptr)->setAlignment(llvm::Align(alignof(Denominator)));
     }
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override

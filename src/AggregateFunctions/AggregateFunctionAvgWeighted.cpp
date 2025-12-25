@@ -71,6 +71,7 @@ public:
         auto * numerator_type = toNativeType<Numerator>(b);
         auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
+        numerator_value->setAlignment(llvm::Align(alignof(Numerator)));
 
         auto numerator_data_type = toNativeDataType<Numerator>();
         auto * argument = nativeCast(b, arguments[0], numerator_data_type);
@@ -78,7 +79,7 @@ public:
 
         llvm::Value * value_weight_multiplication = argument->getType()->isIntegerTy() ? b.CreateMul(argument, weight) : b.CreateFMul(argument, weight);
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_weight_multiplication) : b.CreateFAdd(numerator_value, value_weight_multiplication);
-        b.CreateStore(numerator_result_value, numerator_ptr);
+        b.CreateStore(numerator_result_value, numerator_ptr)->setAlignment(llvm::Align(alignof(Numerator)));
 
         auto * denominator_type = toNativeType<Denominator>(b);
 
@@ -88,9 +89,10 @@ public:
         auto * weight_cast_to_denominator = nativeCast(b, arguments[1], toNativeDataType<Denominator>());
 
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
+        denominator_value->setAlignment(llvm::Align(alignof(Denominator)));
         auto * denominator_value_updated = denominator_type->isIntegerTy() ? b.CreateAdd(denominator_value, weight_cast_to_denominator) : b.CreateFAdd(denominator_value, weight_cast_to_denominator);
 
-        b.CreateStore(denominator_value_updated, denominator_ptr);
+        b.CreateStore(denominator_value_updated, denominator_ptr)->setAlignment(llvm::Align(alignof(Denominator)));
     }
 
     void

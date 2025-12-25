@@ -272,7 +272,7 @@ class AssemblyPrinter
 {
 public:
     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
-    : target_machine(target_machine_)
+        : target_machine(target_machine_)
     {
     }
 
@@ -280,7 +280,7 @@ public:
     {
         llvm::legacy::PassManager pass_manager;
         target_machine.Options.MCOptions.AsmVerbose = true;
-        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::AssemblyFile))
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
         pass_manager.run(module);
@@ -297,7 +297,6 @@ private:
 class JITModuleMemoryManager : public llvm::RTDyldMemoryManager
 {
 public:
-
     uint8_t * allocateCodeSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef) override
     {
         return reinterpret_cast<uint8_t *>(ex_page_arena.allocate(size, alignment));
