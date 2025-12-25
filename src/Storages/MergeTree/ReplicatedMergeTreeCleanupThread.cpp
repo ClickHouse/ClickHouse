@@ -72,7 +72,11 @@ void ReplicatedMergeTreeCleanupThread::run()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+        {
+            /// Reschedule instead of returning early to avoid cleanup thread stopping permanently.
+            task->scheduleAfter((*storage_settings)[MergeTreeSetting::max_cleanup_delay_period] * 1000);
             return;
+        }
     }
     catch (...)
     {
