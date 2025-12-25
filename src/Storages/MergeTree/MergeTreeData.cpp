@@ -7134,14 +7134,13 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
     {
         if (!shared_parts_list)
         {
-            auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *shared_lock_holder);
-
             /// Convert read to write lock, and re-check the shared_parts_list
             shared_lock_holder.reset();
             lock_holder.emplace(data_parts_mutex, /*data_=*/ nullptr);
 
             if (!shared_parts_list)
             {
+                auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *lock_holder);
                 shared_ranges_in_parts = std::make_shared<const RangesInDataParts>(parts);
                 shared_parts_list = std::make_shared<const DataPartsVector>(std::move(parts));
             }
@@ -9663,7 +9662,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
+        return std::make_shared<AddDeduplicationInfoTransform>(header);
     });
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));

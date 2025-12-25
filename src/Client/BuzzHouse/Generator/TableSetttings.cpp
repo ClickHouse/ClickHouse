@@ -267,6 +267,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_to_prewarm_caches", bytesRangeSetting},
     {"min_bytes_to_rebalance_partition_over_jbod", bytesRangeSetting},
+    {"min_columns_to_activate_adaptive_write_buffer",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"min_compress_block_size", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_fetch", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_merge", bytesRangeSetting},
