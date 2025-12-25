@@ -113,9 +113,9 @@ from pathlib import Path
 from typing import Iterator, List
 
 from ci_buddy import CIBuddy
-from ci_config import CI
 from ci_utils import GH, Shell
 from git_helper import GIT_PREFIX, Git
+from pr_info import Labels
 from s3_helper import S3Helper
 from ssh import SSHAgent
 from version_helper import (
@@ -509,9 +509,9 @@ class ReleaseInfo:
             # TODO: move to new GH step?
             print("Create Release PR")
             with checkout(self.release_branch):
-                pr_labels = f"--label {CI.Labels.RELEASE}"
+                pr_labels = f"--label {Labels.RELEASE}"
                 if release_type == VersionType.LTS:
-                    pr_labels += f" --label {CI.Labels.RELEASE_LTS}"
+                    pr_labels += f" --label {Labels.RELEASE_LTS}"
                 Shell.check(
                     f"""gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Release pull request for branch {self.release_branch}' \
                                 --head {self.release_branch} {pr_labels} \
