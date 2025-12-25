@@ -137,7 +137,9 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "equals"
         || function_name == "notEquals"
         || function_name == "mapContainsKey"
+        || function_name == "mapContainsKeyLike"
         || function_name == "mapContainsValue"
+        || function_name == "mapContainsValueLike"
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
@@ -174,9 +176,12 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return is_array_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
+
     if (function_name == "like"
         || function_name == "startsWith"
-        || function_name == "endsWith")
+        || function_name == "endsWith"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike")
     {
         return getHintOrNoneMode();
     }
@@ -483,18 +488,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
+        auto use = [&](auto tokens) -> bool
+        {
+            out.function = RPNElement::FUNCTION_HAS;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            return true;
+        };
+
         /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
         /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
         bool is_supported_key_function = has_map_keys_column && (function_name == "mapContainsKey" || function_name == "has");
         bool is_supported_value_function = has_map_values_column && function_name == "mapContainsValue";
-
         if (is_supported_key_function || is_supported_value_function)
+            return use(stringToTokens(value_field));
+
+        /// Currently, not all token extractors support LIKE-style matching.
+        if (token_extractor->supportsStringLike())
         {
-            auto tokens = stringToTokens(value_field);
-            out.function = RPNElement::FUNCTION_HAS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-            return true;
+            bool is_supported_key_like_function = has_map_keys_column && function_name == "mapContainsKeyLike";
+            bool is_supported_value_like_function = has_map_values_column && function_name == "mapContainsValueLike";
+            if (is_supported_key_like_function || is_supported_value_like_function)
+                return use(stringLikeToTokens(value_field));
         }
+
         return false;
     }
     if (function_name == "notEquals")
