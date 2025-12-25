@@ -591,7 +591,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
                  static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
                  const auto now = std::chrono::system_clock::now();
 
-                 // Convert to milliseconds since epoch
+                 /// Convert to milliseconds since epoch
                  auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
                  ms -= (rg.pickRandomly(values) * 1000);
                  return std::to_string(ms);
