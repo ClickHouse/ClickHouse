@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database
+# Tags: no-parallel, atomic-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
