@@ -1,0 +1,42 @@
+#pragma once
+
+#include <Interpreters/Context_fwd.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/SelectQueryInfo.h>
+
+namespace DB
+{
+
+class ReadFromSystemPrimesStep final : public SourceStepWithFilter
+{
+public:
+    ReadFromSystemPrimesStep(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        StoragePtr storage_,
+        size_t max_block_size_,
+        size_t num_streams_);
+
+    String getName() const override { return "ReadFromSystemPrimes"; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    QueryPlanStepPtr clone() const override;
+
+private:
+    void checkLimits(size_t rows);
+    Pipe makePipe();
+
+    const Names column_names;
+    StoragePtr storage;
+    ExpressionActionsPtr key_expression;
+    size_t max_block_size;
+    size_t num_streams;
+    std::shared_ptr<const StorageLimitsList> storage_limits;
+};
+
+}
