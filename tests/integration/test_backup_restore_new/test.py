@@ -63,6 +63,7 @@ def cleanup_after_test():
         instance.query("DROP DATABASE IF EXISTS test")
         instance.query("DROP DATABASE IF EXISTS test2")
         instance.query("DROP DATABASE IF EXISTS test3")
+        instance.query("DROP DATABASE IF EXISTS restored")
         instance.query("DROP USER IF EXISTS u1, u2")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
@@ -1123,6 +1124,8 @@ def test_materialized_view_with_target_table():
 
 
 def test_restore_materialized_view_target_using_insert_select():
+    instance.query("DROP DATABASE IF EXISTS test SYNC")
+    instance.query("DROP DATABASE IF EXISTS restored SYNC")
     size = 100
     create_and_fill_table(n=size)
     instance.query(
@@ -1147,6 +1150,8 @@ def test_restore_materialized_view_target_using_insert_select():
 
 
 def test_restore_materialized_view_inner_target_using_insert_select():
+    instance.query("DROP DATABASE IF EXISTS test SYNC")
+    instance.query("DROP DATABASE IF EXISTS restored SYNC")
     size = 100
     create_and_fill_table(n=size)
     instance.query("CREATE MATERIALIZED VIEW test.view AS SELECT y, x FROM test.table")
