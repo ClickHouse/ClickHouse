@@ -113,6 +113,17 @@ public:
         void updateHash(SipHash & hash_state) const;
     };
 
+    struct AddFunctionSettings
+    {
+        AddFunctionSettings(bool is_short_circuit_argument_ = false)
+            : is_short_circuit_argument(is_short_circuit_argument_)
+        {
+        }
+
+        /// True if added function is used inside an argument of some short circuit function.
+        bool is_short_circuit_argument;
+    };
+
     /// NOTE: std::list is an implementation detail.
     /// It allows to add and remove new nodes inplace without reallocation.
     /// Raw pointers to nodes remain valid.
@@ -164,15 +175,19 @@ public:
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
-            std::string result_name);
+            std::string result_name,
+            const AddFunctionSettings & settings = {});
     const Node & addFunction(
         const FunctionNode & function,
         NodeRawConstPtrs children,
-        std::string result_name);
+        std::string result_name,
+        const AddFunctionSettings & settings = {});
     const Node & addFunction(
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
-        std::string result_name);
+        std::string result_name,
+        const AddFunctionSettings & settings = {});
+
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
@@ -542,7 +557,8 @@ private:
         ColumnsWithTypeAndName arguments,
         std::string result_name,
         DataTypePtr result_type,
-        bool all_const);
+        bool all_const,
+        const AddFunctionSettings & settings);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

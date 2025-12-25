@@ -330,7 +330,8 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionOverloadResolverPtr & function,
     NodeRawConstPtrs children,
-    std::string result_name)
+    std::string result_name,
+    const AddFunctionSettings & settings)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -354,13 +355,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function_base->getResultType(),
-        all_const);
+        all_const,
+        settings);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionNode & function,
     NodeRawConstPtrs children,
-    std::string result_name)
+    std::string result_name,
+    const AddFunctionSettings & settings)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -370,13 +373,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function.getResultType(),
-        all_const);
+        all_const,
+        settings);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionBasePtr & function_base,
     NodeRawConstPtrs children,
-    std::string result_name)
+    std::string result_name,
+    const AddFunctionSettings & settings)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -386,7 +391,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function_base->getResultType(),
-        all_const);
+        all_const,
+        settings);
 }
 
 const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
@@ -411,7 +417,8 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     ColumnsWithTypeAndName arguments,
     std::string result_name,
     DataTypePtr result_type,
-    bool all_const)
+    bool all_const,
+    const AddFunctionSettings & settings)
 {
     size_t num_arguments = children.size();
 
@@ -423,8 +430,13 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
 
+    DataTypesWithConstInfo arguments_with_const_info;
+    arguments_with_const_info.reserve(arguments.size());
+    for (const auto & argument : arguments)
+        arguments_with_const_info.emplace_back(argument.type, argument.column ? isColumnConst(*argument.column) : false);
+
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
+    if (node.function_base->isSuitableForConstantFolding() && (!settings.is_short_circuit_argument || !node.function_base->isSuitableForShortCircuitArgumentsExecution(arguments_with_const_info)))
     {
         ColumnPtr column;
 
@@ -3348,7 +3360,8 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
                     std::move(arguments),
                     result_name,
                     node->result_type,
-                    all_const);
+                    all_const,
+                    {});
                 break;
             }
             case ActionsDAG::ActionType::PLACEHOLDER:
