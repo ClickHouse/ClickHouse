@@ -85,10 +85,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
 }
 
 MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondition(
-    const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const
+    const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexhypothesisMergedCondition>(
-        query_info, storage_metadata->getConstraints(), index.granularity);
+        query_info, storage_metadata->getConstraints(), index.granularity, std::move(context));
 }
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)

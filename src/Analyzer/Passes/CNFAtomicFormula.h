@@ -1,17 +1,12 @@
 #pragma once
 
 #include <Analyzer/HashUtils.h>
+#include <Common/CNFAtomicFormula.h>
 
 namespace DB::Analyzer
 {
 
-struct CNFAtomicFormula
-{
-    bool negative = false;
-    QueryTreeNodePtrWithHash node_with_hash;
-
-    bool operator==(const CNFAtomicFormula & rhs) const;
-    bool operator<(const CNFAtomicFormula & rhs) const;
-};
+/// Specialization of the shared CNF atomic formula template for QueryTree nodes
+using CNFAtomicFormula = DB::CNFAtomicFormula<QueryTreeNodePtrWithHash>;
 
 }

@@ -321,7 +321,7 @@ struct IMergeTreeIndex
     virtual bool isTextIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
-        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
+        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/, ContextPtr /*context*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "MergedCondition is not implemented for index of type {}", index.type);
