@@ -5,9 +5,10 @@
 
 #include <Common/NaNUtils.h>
 
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <Common/OutOfMemorySafeContainers.h>
 #include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>

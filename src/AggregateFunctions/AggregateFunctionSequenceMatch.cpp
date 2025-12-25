@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+#include <Common/OutOfMemorySafeContainers.h>
 #include <Common/assert_cast.h>
 
 #include <bitset>

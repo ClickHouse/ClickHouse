@@ -7,9 +7,10 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/OutOfMemorySafeContainers.h>
 
 
 namespace DB

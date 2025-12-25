@@ -8,9 +8,10 @@
 #include <type_traits>
 #include <utility>
 
-#include <Common/RadixSort.h>
-#include <Common/Exception.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/Exception.h>
+#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 
 #include <IO/ReadHelpers.h>

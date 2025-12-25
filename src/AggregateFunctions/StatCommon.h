@@ -7,6 +7,7 @@
 #include <base/sort.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/OutOfMemorySafeContainers.h>
 #include <Common/iota.h>
 
 #include <IO/WriteHelpers.h>

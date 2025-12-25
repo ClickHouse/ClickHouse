@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Common/OutOfMemorySafeContainers.h>
 
 
 namespace DB

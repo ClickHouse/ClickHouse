@@ -6,6 +6,7 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
+#include <Common/OutOfMemorySafeContainers.h>
 #include <Common/iota.h>
 
 
