@@ -2,7 +2,9 @@
 
 #include <Common/AllocatorWithMemoryTracking.h>
 
+#include <deque>
 #include <list>
+#include <queue>
 #include <vector>
 
 namespace DB
@@ -25,4 +27,12 @@ using SafeList = std::list<T, AllocatorWithMemoryTracking<T>>;
 template <typename T>
 using SafeVector = std::vector<T, AllocatorWithMemoryTracking<T>>;
 
+template <typename T>
+using SafeDeque = std::deque<T, AllocatorWithMemoryTracking<T>>;
+
+template <typename T>
+using SafeQueue = std::queue<T, AllocatorWithMemoryTracking<T>>;
+
+// templame <typename K, typename V>
+// using SafeMap = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 }

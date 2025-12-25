@@ -114,7 +114,7 @@ public:
 
 private:
     void fillResultValue(const TimestampType current_timestamp,
-        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const SafeDeque<std::pair<TimestampType, ValueType>> & samples_in_window,
         Float64 accumulated_resets_in_window,
         ValueType & result, UInt8 & null) const
     {
@@ -229,7 +229,7 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
+        SafeDeque<std::pair<TimestampType, ValueType>> samples_in_window;
         SafeVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
         Float64 accumulated_resets_in_window = 0;
 
