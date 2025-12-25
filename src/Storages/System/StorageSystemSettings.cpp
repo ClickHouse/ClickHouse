@@ -33,7 +33,7 @@ ColumnsDescription StorageSystemSettings::getColumnsDescription()
          "1 — Current user can't change the setting."},
         {"type", std::make_shared<DataTypeString>(), "The type of the value that can be assigned to this setting."},
         {"default", std::make_shared<DataTypeString>(), "Setting default value."},
-        {"alias_for", std::make_shared<DataTypeString>(), "Flag that shows whether this name is an alias to another setting."},
+        {"alias_for", std::make_shared<DataTypeString>(), "The name of the original setting if the setting is an alias for another setting."},
         {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
         {"tier", getSettingsTierEnum(), R"(
 Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their

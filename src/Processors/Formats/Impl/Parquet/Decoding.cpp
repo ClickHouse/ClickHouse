@@ -99,7 +99,7 @@ struct BitPackedRLEDecoder : public PageDecoder
         else
         {
             const size_t byte_width = (bit_width + 7) / 8;
-            chassert(byte_width <= sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+            chassert(byte_width <= sizeof(T));
             const T value_mask = T((1ul << bit_width) - 1);
 
             run_length = len >> 1;
@@ -375,9 +375,16 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         if (values_per_block == 0 || values_per_block % 128 != 0 || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header");
 
-        /// Sanity-check total_values_remaining: each value takes at least one bit.
-        /// This is useful to avoid allocating lots of memory if the input is corrupted.
-        requireRemainingBytes((total_values_remaining + 7)/8);
+        /// Sanity-check total_values_remaining to avoid huge memory allocations from corrupted data.
+        /// Each block requires at least miniblocks_per_block bytes (for the bit-width array) plus
+        /// 1 byte for min_delta varint. Even with 0-bit encoding (all identical deltas), this is
+        /// the minimum. The first value is encoded separately, so +1.
+        size_t remaining_bytes = end - data;
+        size_t min_bytes_per_block = miniblocks_per_block + 1;
+        size_t max_blocks = remaining_bytes / min_bytes_per_block;
+        size_t max_values = max_blocks * values_per_block + 1;
+        if (total_values_remaining > max_values)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values but data can contain at most {}", total_values_remaining, max_values);
     }
 
     void nextBlock()
@@ -618,10 +625,11 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 col_str->getOffsets().clear();
                 col_str->getChars().clear();
             }
-            col_str->reserve(col_str->size() + num_values);
+            size_t initial_size = col_str->size();
+            col_str->reserve(initial_size + num_values);
 
             decodeImpl<false, false>(num_values, col_str, nullptr);
-            chassert(col_str->size() == num_values);
+            chassert(col_str->size() == initial_size + num_values);
 
             if (!direct)
                 string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);
@@ -1003,7 +1011,7 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
             c.reserve(c.size() + indexes.size());
             for (UInt32 idx : indexes)
             {
-                size_t start = offsets[size_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+                size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
                 /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
                 c.insertData(data.data() + start, len);
@@ -1221,7 +1229,7 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
     {
         col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values);
         for (size_t i = 0; i < num_values; ++i)
-            col_str.insertData(chars.data() + offsets[i - 1], offsets[i] - offsets[i - 1] - separator_bytes);
+            col_str.insertData(chars.data() + offsets[ssize_t(i) - 1], offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes);
     }
 }
 
@@ -1259,7 +1267,7 @@ T byteswap(T x)
 template <typename T>
 BigEndianHelper<T>::BigEndianHelper(size_t input_size)
 {
-    chassert(sizeof(T) >= input_size);  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(sizeof(T) >= input_size);
     value_offset = sizeof(T) - input_size;
     value_mask = (~T(0)) << (8 * value_offset);
 
@@ -1297,7 +1305,7 @@ T BigEndianHelper<T>::convertPaddedValue(const char * data) const
 template <typename T>
 T BigEndianHelper<T>::convertUnpaddedValue(std::span<const char> data) const
 {
-    chassert(data.size() <= sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(data.size() <= sizeof(T));
     T x = 0;
     memcpy(reinterpret_cast<char *>(&x) + value_offset, data.data(), data.size());
     fixupValue(x);
@@ -1314,7 +1322,7 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
 {
     const char * from_bytes = data.data();
     auto to_bytes = col.insertRawUninitialized(num_values);
-    chassert(to_bytes.size() == num_values * sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(to_bytes.size() == num_values * sizeof(T));
     T * to = reinterpret_cast<T *>(to_bytes.data());
     for (size_t i = 0; i < num_values; ++i)
     {
@@ -1342,13 +1350,13 @@ template <typename T>
 void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto to_bytes = col.insertRawUninitialized(num_values);
-    chassert(to_bytes.size() == num_values * sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(to_bytes.size() == num_values * sizeof(T));
     T * to = reinterpret_cast<T *>(to_bytes.data());
 
     for (size_t i = 0; i < num_values; ++i)
     {
-        const char * data = chars.data() + offsets[i - 1];
-        size_t size = offsets[i] - offsets[i - 1] - separator_bytes;
+        const char * data = chars.data() + offsets[ssize_t(i) - 1];
+        size_t size = offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes;
         if (size > sizeof(T))
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide Decimal value: {} > {} bytes", size, sizeof(T));
 
