@@ -15,7 +15,6 @@
     #define USE_SIMDCOMP 1
 #endif
 
-#pragma clang optimize off
 extern "C"
 {
 #if defined(USE_SIMDCOMP)
@@ -92,9 +91,10 @@ struct CodecTraits<uint32_t>
 #endif
 
 #if defined(USE_SIMDCOMP_SSE41)
-        auto * m128_out = reinterpret_cast<__m128i*>(out);
-        auto end = simdpack_length(p, n, m128_out, bits);
-        return static_cast<uint32_t>(end - m128_out);
+        __m128i * m128_out = reinterpret_cast<__m128i*>(out);
+        __m128i * m128_out_end = simdpack_length(p, n, m128_out, bits);
+
+        return static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
 #endif
         return streamvbyte_delta_encode(p, n, out, 0);
     }
@@ -115,8 +115,8 @@ struct CodecTraits<uint32_t>
 
 #if defined(USE_SIMDCOMP_SSE41)
         auto * m128i_p = reinterpret_cast<__m128i*>(p);
-        const auto * end = simdunpack_length(m128i_p, n, out, bits);
-        return static_cast<size_t>(end - m128i_p);
+        const auto * m128i_p_end = simdunpack_length(m128i_p, n, out, bits);
+        return static_cast<size_t>(m128i_p_end - m128i_p) * sizeof(__m128*);
 #endif
         return streamvbyte_delta_decode(p, out, n, 0);
     }

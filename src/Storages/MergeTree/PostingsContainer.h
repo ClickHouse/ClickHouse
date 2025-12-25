@@ -1,15 +1,11 @@
 #pragma once
 #include <Common/Exception.h>
-#include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/IntegerCodecTrait.h>
 #include <Storages/MergeTree/MergeTreeIndexTextCommon.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <roaring/roaring.hh>
 #include <Storages/MergeTree/MergedPartOffsets.h>
-#include <Core/SortCursor.h>
+#include <roaring/roaring.hh>
 
-#pragma clang optimize off
 namespace DB
 {
 
@@ -144,9 +140,7 @@ struct CodecUtils
 
         /// Decode postings to buffer named temp.
         unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
-        auto used = CodecTraits<ValueType>::decode(p, block_header.count, block_header.max_bits, current.data());
-        if (used != block_header.bytes)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Compressed and decompressed byte counts do not match. compressed = {}, decompressed = {}", block_header.bytes, used);
+        CodecTraits<ValueType>::decode(p, block_header.count, block_header.max_bits, current.data());
         chassert(block_header.count == current.size());
 
         /// Restore the original array from the decompressed delta values.
@@ -190,10 +184,6 @@ public:
 
     void add(T value)
     {
-        if (total == postings_list_segment_size)
-        {
-            flushSegment();
-        }
         if (total == 0)
         {
             segments.emplace_back();
@@ -207,40 +197,18 @@ public:
             return;
         }
 
-        if (current.size() == kBlockSize)
-        {
-            compressBlock(current, temp_compression_data_buffer);
-            current.clear();
-        }
         /// Delta computation is intentionally deferred
         /// and will be applied later as part of the block compression step.
         current.emplace_back(value - prev_value);
         prev_value = value;
         ++total;
         ++cardinality;
-    }
 
-    void add(std::vector<T> & values)
-    {
-        chassert(values.size() == kBlockSize);
-        if (values.empty())
-            return;
+        if (current.size() == kBlockSize)
+            compressBlock(current, temp_compression_data_buffer);
+
         if (total == postings_list_segment_size)
             flushSegment();
-        if (total == 0)
-        {
-            segments.emplace_back();
-            segments.back().header.base_value = values.front();
-            segments.back().compressed_data_offset = compressed_data.size();
-        }
-        current.swap(values);
-        auto new_prev_value = current.back();
-        std::adjacent_difference(current.begin(), current.end(), current.begin());
-        current[0] -= prev_value;
-        prev_value = new_prev_value;
-        total += current.size();
-        cardinality += current.size();
-        compressBlock(current, temp_compression_data_buffer);
     }
 
     /// Serializes posting list to a WriteBuffer-like output.
@@ -337,17 +305,20 @@ private:
 
         auto [cap, bits] = CodecTraits<T>::evaluateSizeAndMaxBits(segment.data(), segment.size());
         temp_compression_data.resize(cap);
-        auto bytes = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
+        auto used = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
 
         ///	Write the BlockHeader followed by the compressed posting list data.
-        BlockHeader block_header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(bytes) };
+        BlockHeader block_header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(used) };
         WriteBufferFromString compressed_buffer(compressed_data, AppendModeTag {});
         internal::CodecUtils<ValueType>::writeBlockHeader(block_header, compressed_buffer);
-        compressed_buffer.write(temp_compression_data.data(), bytes);
+        compressed_buffer.write(temp_compression_data.data(), used);
         compressed_buffer.finalize();
+
         size_t compressed_block_data_size = compressed_data.size() - segments.back().compressed_data_offset;
         segments.back().compressed_data_size = compressed_block_data_size;
         compressed_block_sizes.emplace_back(compressed_block_data_size);
+
+        current.clear();
     }
 
     static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
@@ -425,7 +396,7 @@ public:
     bool operator!=(const Iterator & rhs) const { return !(*this == rhs); }
 
     size_t getIndex() const { return index; }
-private:
+
     void advance()
     {
         if (is_end)
@@ -434,8 +405,10 @@ private:
 
         if (current_index == current.size() || current.empty())
             decodeNextBlock();
-        if (!is_end)
-            current_value = current[current_index];
+        if (is_end)
+            return;
+
+        current_value = current[current_index];
     }
 
     void decodeNextBlock()
@@ -473,6 +446,7 @@ private:
             is_end = true;
     }
 
+private:
     std::string temp_buffer;
     ValueType prev_value;
     StreamType & stream;
