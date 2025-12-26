@@ -5482,6 +5482,7 @@ The engine family allowed in Cloud.
 - 1 - rewrite DDLs to use *ReplicatedMergeTree
 - 2 - rewrite DDLs to use SharedMergeTree
 - 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
+- 4 - same as 3, plus additionally use Alias instead of Distributed
 
 UInt64 to minimize public part
 )", 0) \
