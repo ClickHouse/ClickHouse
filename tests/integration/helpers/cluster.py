@@ -4445,6 +4445,13 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
+    
+    def is_built_with_llvm_coverage(self):
+        build_opts = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
+        )
+        print("in is_built_with_llvm_coverage: ", build_opts)
+        return "WITH_COVERAGE=ON" in build_opts.upper()
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -4786,7 +4793,7 @@ class ClickHouseInstance:
                 return
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-TERM")],
                 user="root",
             )
 

@@ -30,6 +30,9 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zstd \
         zip \
         clang-tidy-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+    && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
+    && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

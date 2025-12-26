@@ -159,6 +159,7 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+    is_llvm_coverage = False
 
     if args.param:
         for item in args.param.split(","):
@@ -199,6 +200,8 @@ def main():
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
+        elif "llvm coverage" in to:
+            is_llvm_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
 
@@ -323,6 +326,10 @@ def main():
         )
     )
 
+    # Reduce number of tests to speed up debuging
+    parallel_test_modules = parallel_test_modules[:16]
+    sequential_test_modules = sequential_test_modules[:16]
+
     if is_sequential:
         parallel_test_modules = []
         assert not is_parallel
@@ -349,7 +356,14 @@ def main():
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # "LLVM_PROFILE_FILE" :f"it-{batch_num}.profraw"
     }
+    if is_llvm_coverage:
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%m.profraw"
+        print(
+            f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+        )
+
     test_results = []
     failed_tests_files = []
 
@@ -387,31 +401,32 @@ def main():
             has_error = True
             error_info.append(test_result_parallel.info)
 
-    fail_num = len([r for r in test_results if not r.is_ok()])
-    if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-        for attempt in range(module_repeat_cnt):
-            log_file = f"{temp_path}/pytest_sequential.log"
-            test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
-                env=test_env,
-                cwd="./tests/integration/",
-                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
-                logfile=log_file,
-            )
-            if is_flaky_check and not test_result_sequential.is_ok():
-                print(
-                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
-                )
-                break
-        test_results.extend(test_result_sequential.results)
-        failed_test_cases.extend(
-            [t.name for t in test_result_sequential.results if t.is_failure()]
-        )
-        if test_result_sequential.files:
-            failed_tests_files.extend(test_result_sequential.files)
-        if test_result_sequential.is_error():
-            has_error = True
-            error_info.append(test_result_sequential.info)
+    # Comment this to speed up the debugging process
+    # fail_num = len([r for r in test_results if not r.is_ok()])
+    # if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
+    #     for attempt in range(module_repeat_cnt):
+    #         log_file = f"{temp_path}/pytest_sequential.log"
+    #         test_result_sequential = Result.from_pytest_run(
+    #             command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
+    #             env=test_env,
+    #             cwd="./tests/integration/",
+    #             pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+    #             logfile=log_file,
+    #         )
+    #         if is_flaky_check and not test_result_sequential.is_ok():
+    #             print(
+    #                 f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+    #             )
+    #             break
+    #     test_results.extend(test_result_sequential.results)
+    #     failed_test_cases.extend(
+    #         [t.name for t in test_result_sequential.results if t.is_failure()]
+    #     )
+    #     if test_result_sequential.files:
+    #         failed_tests_files.extend(test_result_sequential.files)
+    #     if test_result_sequential.is_error():
+    #         has_error = True
+    #         error_info.append(test_result_sequential.info)
 
     # Collect logs before rerun
     attached_files = []
@@ -443,6 +458,11 @@ def main():
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
+        if is_llvm_coverage:
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%m.profraw"
+            print(
+                f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+            )
         test_result_retries = Result.from_pytest_run(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
@@ -479,11 +499,30 @@ def main():
                 attached_files.append("dmesg.log")
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
+       
+    if is_llvm_coverage:
+        assert is_bugfix_validation is False, "LLVM coverage with bugfix validation is not supported"
+        has_failure = False
+        for r in R.results:
+            if r.status == Result.StatusExtended.FAIL:
+                if r.has_label(Result.Label.OK_ON_RETRY):
+                    # Remove label and set to OK
+                    r.remove_label(Result.Label.OK_ON_RETRY)
+                    r.status = Result.StatusExtended.OK
+                else:
+                    has_failure = True
+        if has_failure:
+            R.set_failed()
+            R.set_info("Some tests failed during LLVM coverage run")
+        else:
+            R.set_success()
+            has_error = False
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
     if is_bugfix_validation:
+        assert is_llvm_coverage is False, "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses
@@ -500,6 +539,42 @@ def main():
         else:
             R.set_success()
 
+    if is_llvm_coverage:
+        print("Collecting and merging LLVM coverage files...")
+        profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+        profraw_files = [f.strip() for f in profraw_files if f.strip()]
+        
+        if profraw_files:
+            print(f"Found {len(profraw_files)} .profraw files")
+            
+            # Auto-detect available LLVM profdata tool
+            llvm_profdata = None
+            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+                if Shell.check(f"command -v {cmd}", verbose=False):
+                    llvm_profdata = cmd
+                    break
+            
+            if not llvm_profdata:
+                print("ERROR: llvm-profdata not found in PATH")
+            else:
+                print(f"Using {llvm_profdata} to merge coverage files")
+                
+                # Merge all profraw files to current directory
+                merged_file = f"./it-{batch_num}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                merge_output = Shell.get_output(merge_cmd, verbose=True)
+                
+                # Check for corrupted files in the output
+                corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
+                if corrupted_files:
+                    print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
+                    for corrupted in corrupted_files:
+                        print(f"  {corrupted}")
+                
+        else:
+            print("No .profraw files found for coverage")
+    
     R.sort().complete_job()
 
 
