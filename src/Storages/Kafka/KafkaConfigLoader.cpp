@@ -12,6 +12,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
+#include <IO/S3/getAvailabilityZone.h>
 
 namespace CurrentMetrics
 {
@@ -34,6 +35,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
+    extern const KafkaSettingsString kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -374,6 +376,41 @@ void updateConfigurationFromConfig(
 
     if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
         kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
+
+    auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
+    if (!autodetect_rack.empty())
+    {
+        const static std::unordered_map<decltype(autodetect_rack), decltype(autodetect_rack)> alias_to_facility =
+        {
+            {
+                "AWS/IMDSv2/availability-zone-id", "MSK"
+            },
+            {
+                "AWS/IMDSv2/availability-zone", "CONFLUENT"
+            },
+            {
+                "GCP/MDS/zone", "GCP"
+            },
+        };
+
+        if (auto it = alias_to_facility.find(autodetect_rack); it != alias_to_facility.end())
+            autodetect_rack = it->second;
+
+        if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
+        {
+            std::string rack
+                = S3::tryGetRunningAvailabilityZone(magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
+            if (!rack.empty())
+            {
+                kafka_config.set("client.rack", rack);
+                LOG_TRACE(params.log, "client.rack set to {}.", rack);
+            }
+            else
+                LOG_ERROR(params.log, "Failed to determine client.rack via facility {}.", autodetect_rack);
+        }
+        else
+            LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility.");
+    }
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
