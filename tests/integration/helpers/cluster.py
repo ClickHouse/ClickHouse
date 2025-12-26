@@ -895,18 +895,18 @@ class ClickHouseCluster:
         if with_spark:
             import pyspark
 
-            (
-                pyspark.sql.SparkSession.builder.appName("spark_test")
-                # The jars are now linked to "$SPARK_HOME/jars" and we don't
-                # need packages to be downloaded once and once again
-                # .config(
-                #     "spark.jars.packages",
-                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                # )
-                .master("local")
-                .getOrCreate()
-                .stop()
-            )
+            # (
+            #     pyspark.sql.SparkSession.builder.appName("spark_test")
+            #     # The jars are now linked to "$SPARK_HOME/jars" and we don't
+            #     # need packages to be downloaded once and once again
+            #     # .config(
+            #     #     "spark.jars.packages",
+            #     #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+            #     # )
+            #     .master("local")
+            #     .getOrCreate()
+            #     .stop()
+            # )
 
         self.port_pool = PortPoolManager()
         # For La Casa Del Dolor to run upgrades
@@ -1965,6 +1965,8 @@ class ClickHouseCluster:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
         minio_data_dir=None,
@@ -2108,6 +2110,8 @@ class ClickHouseCluster:
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
+            cpu_limit=cpu_limit,
+            pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
@@ -4008,6 +4012,10 @@ class ClickHouseCluster:
                     sanitizer_assert_instance
                 )
             )
+
+        if self.spark_session:
+            self.spark_session.stop()
+
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
@@ -4155,6 +4163,8 @@ services:
         stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
+        {cpu_limit}
+        {pids_limit}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -4251,6 +4261,8 @@ class ClickHouseInstance:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
@@ -4267,9 +4279,22 @@ class ClickHouseInstance:
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         if mem_limit is not None:
-            self.mem_limit = "mem_limit : " + mem_limit
+            self.mem_limit = f"mem_limit : {mem_limit}"
         else:
-            self.mem_limit = ""
+            self.mem_limit = "mem_limit : 10g"
+
+        if cpu_limit is None:
+            self.cpu_limit = "cpus : 5"
+        elif cpu_limit == False:
+            self.cpu_limit = ""
+        else:
+            self.cpu_limit = f"cpus : {cpu_limit}"
+
+        if pids_limit is not None:
+            self.pids_limit = f"pids_limit: {pids_limit}"
+        else:
+            self.pids_limit = f"pids_limit: 5000"
+
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -5769,6 +5794,8 @@ class ClickHouseInstance:
                     metrika_xml=metrika_xml,
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
+                    cpu_limit=self.cpu_limit,
+                    pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
                     user=os.getuid(),
