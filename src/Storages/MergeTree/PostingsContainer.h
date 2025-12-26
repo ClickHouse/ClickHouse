@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <roaring/roaring.hh>
-
+#pragma clang optimize off
 namespace DB
 {
 
@@ -49,19 +49,53 @@ namespace ErrorCodes
 
 namespace internal
 {
+
+template <typename F, typename In>
+static void readOneField(F & out, In & in)
+{
+    UInt64 v = 0;
+    readVarUInt(v, in);
+    out = static_cast<F>(v);
+}
+
 struct BlockHeader
 {
     BlockHeader() = default;
-    explicit  BlockHeader(uint16_t count_, uint16_t max_bits_, uint32_t bytes_)
-        : count(count_)
-        , max_bits(max_bits_)
-        , bytes(bytes_)
+    static BlockHeader makeBlockHeader(bool is_tail, uint8_t tail_count, bool embedded, uint8_t max_bits, uint16_t bytes)
     {
+        BlockHeader header;
+        header.full_or_tail_count = (static_cast<uint8_t>(is_tail) << 7) | (tail_count & 0x7F);
+        header.embedded_and_max_bits = (static_cast<uint8_t>(embedded) << 7) | (max_bits & 0x7F);
+        header.content_bytes = bytes;
+        return header;
     }
-    uint16_t count = 0;
-    uint16_t max_bits = 0;
-    uint32_t bytes = 0;
+
+    bool isTailBlock() const { return (full_or_tail_count >> 7) & 1; }
+    uint8_t count() const { return isTailBlock() ? (full_or_tail_count & 0x7F) : 128; }
+    bool isEmbedded() const { return (embedded_and_max_bits >> 7) & 1; }
+    uint8_t maxBits() const { return embedded_and_max_bits & 0x7F; }
+    uint16_t bytes() const { return content_bytes; }
+
+    template<typename Out>
+    void encodeTo( Out & out) const
+    {
+        writeVarUInt(full_or_tail_count, out);
+        writeVarUInt(embedded_and_max_bits, out);
+        writeVarUInt(content_bytes, out);
+    }
+    template<typename In>
+    void decodeFrom(In & in)
+    {
+        readOneField(full_or_tail_count, in);
+        readOneField(embedded_and_max_bits, in);
+        readOneField(content_bytes, in);
+    }
+private:
+    uint8_t full_or_tail_count = 0;
+    uint8_t embedded_and_max_bits = 0;
+    uint32_t content_bytes = 0;
 };
+
 template<typename ValueType>
 struct ContainerHeader
 {
@@ -71,6 +105,21 @@ struct ContainerHeader
         , block_count(block_count_)
     {
     }
+
+    template<typename Out>
+    void encodeTo(Out & out) const
+    {
+        writeVarUInt(block_count, out);
+        writeVarUInt(base_value, out);
+    }
+
+    template<typename In>
+    void decodeFrom(In & in)
+    {
+        readOneField(block_count, in);
+        readOneField(base_value, in);
+    }
+
     ValueType base_value {};
     uint32_t block_count = 0;
 };
@@ -90,58 +139,21 @@ struct CodecUtils
 {
     using BlockHeader = BlockHeader;
     using ContainerHeader = ContainerHeader<ValueType>;
-    template<typename Out>
-    static void writeBlockHeader(BlockHeader header, Out & out)
-    {
-        writeVarUInt(header.count, out);
-        writeVarUInt(header.bytes, out);
-        writeVarUInt(header.max_bits, out);
-    }
-
-    template <typename F, typename In>
-    static void readOneField(F & out, In & in)
-    {
-        UInt64 v = 0;
-        readVarUInt(v, in);
-        out = static_cast<F>(v);
-    }
-
-    template<typename In>
-    static void readBlockHeader(BlockHeader & header, In & in)
-    {
-        readOneField(header.count, in);
-        readOneField(header.bytes, in);
-        readOneField(header.max_bits, in);
-    }
-
-    template<typename Out>
-    static void writeContainerHeader(ContainerHeader header, Out & out)
-    {
-        writeVarUInt(header.block_count, out);
-        writeVarUInt(header.base_value, out);
-    }
-
-    template<typename In>
-    static void readContainerHeader(ContainerHeader & header, In & in)
-    {
-        readOneField(header.block_count, in);
-        readOneField(header.base_value, in);
-    }
 
     template<typename In>
     static void decodeOneBlock(In & in, ValueType & prev_value, std::vector<ValueType> & current, std::string & temp_buffer)
     {
         BlockHeader block_header;
-        readBlockHeader(block_header, in);
+        block_header.decodeFrom(in);
 
-        current.resize(block_header.count);
-        temp_buffer.resize(block_header.bytes);
-        in.readStrict(temp_buffer.data(), block_header.bytes);
+        current.resize(block_header.count());
+        temp_buffer.resize(block_header.bytes());
+        in.readStrict(temp_buffer.data(), block_header.bytes());
 
         /// Decode postings to buffer named temp.
         unsigned char * p = reinterpret_cast<unsigned char *>(temp_buffer.data());
-        CodecTraits<ValueType>::decode(p, block_header.count, block_header.max_bits, current.data());
-        chassert(block_header.count == current.size());
+        CodecTraits<ValueType>::decode(p, block_header.count(), block_header.maxBits(), current.data());
+        chassert(block_header.count() == current.size());
 
         /// Restore the original array from the decompressed delta values.
         std::inclusive_scan(current.begin(), current.end(), current.begin(), std::plus<ValueType>{}, prev_value);
@@ -233,7 +245,7 @@ public:
     void deserialize(In & in, PostingList & out)
     {
         ContainerHeader header;
-        deserializeFrom(in, header);
+        header.decodeFrom(in);
         prev_value = header.base_value;
         std::string temp_buffer;
         current.reserve(kBlockSize);
@@ -273,7 +285,7 @@ private:
             auto & segment_desc = segments.back();
             token_info.offsets.emplace_back(write_buffer->count());
             token_info.ranges.emplace_back(segment_desc.header.base_value, segment_desc.last_value);
-            internal::CodecUtils<ValueType>::writeContainerHeader(segment_desc.header, *write_buffer);
+            segment_desc.header.encodeTo(*write_buffer);
             write_buffer->write(compressed_data.data() + segment_desc.compressed_data_offset, segment_desc.compressed_data_size);
             segments.clear();
         }
@@ -287,15 +299,9 @@ private:
         {
             info.offsets.emplace_back(out.count());
             info.ranges.emplace_back(segment_desc.header.base_value, segment_desc.last_value);
-            internal::CodecUtils<ValueType>::writeContainerHeader(segment_desc.header, out);
+            segment_desc.header.encodeTo(out);
             out.write(compressed_data.data() + segment_desc.compressed_data_offset, segment_desc.compressed_data_size);
         }
-    }
-
-    template<typename In>
-    void deserializeFrom(In & in, ContainerHeader & header)
-    {
-        internal::CodecUtils<ValueType>::readContainerHeader(header, in);
     }
 
     void compressBlock(std::vector<T> & segment, std::string & temp_compression_data)
@@ -308,9 +314,12 @@ private:
         auto used = CodecTraits<T>::encode(segment.data(), segment.size(), bits, reinterpret_cast<unsigned char*>(temp_compression_data.data()));
 
         ///	Write the BlockHeader followed by the compressed posting list data.
-        BlockHeader block_header { static_cast<uint16_t>(segment.size()), static_cast<uint16_t>(bits), static_cast<uint32_t>(used) };
+        bool is_tail_block = segment.size() != kBlockSize;
+        BlockHeader block_header = BlockHeader::makeBlockHeader(is_tail_block,
+            is_tail_block ? static_cast<uint16_t>(segment.size()) : 0,
+            false, static_cast<uint8_t>(bits), static_cast<uint16_t>(used));
         WriteBufferFromString compressed_buffer(compressed_data, AppendModeTag {});
-        internal::CodecUtils<ValueType>::writeBlockHeader(block_header, compressed_buffer);
+        block_header.encodeTo(compressed_buffer);
         compressed_buffer.write(temp_compression_data.data(), used);
         compressed_buffer.finalize();
 
@@ -319,14 +328,6 @@ private:
         compressed_block_sizes.emplace_back(compressed_block_data_size);
 
         current.clear();
-    }
-
-    static void decodeBlock(unsigned char *src, uint16_t n, uint32_t max_bits, std::vector<T> & out, uint32_t bytes_expected)
-    {
-        out.resize(n);
-        size_t used = CodecTraits<T>::decode(src, n, max_bits, out.data());
-        if (used != bytes_expected)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "compressed/decompressed mismatch");
     }
 
     std::string compressed_data;
@@ -420,7 +421,7 @@ public:
             stream.seekToMark({offset_in_file, 0});
 
             ContainerHeader header;
-            CodecUtils<ValueType>::readContainerHeader(header, *stream.getDataBuffer());
+            header.decodeFrom(*stream.getDataBuffer());
             prev_value = header.base_value;
 
             total_blocks = header.block_count;
@@ -597,7 +598,7 @@ public:
             typename internal::CodecUtils<ValueType>::ContainerHeader header;
             auto & buffer = *stream.getDataBuffer();
             stream.seekToMark({offset_in_file, 0});
-            internal::CodecUtils<ValueType>::readContainerHeader(header, buffer);
+            header.decodeFrom(buffer);
 
             ValueType prev_value = header.base_value;
             temp_compress_buffer.reserve(PostingsContainerImpl<ValueType>::kBlockSize);
