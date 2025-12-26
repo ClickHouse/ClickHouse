@@ -21,6 +21,8 @@ function handle_term()
 }
 trap handle_term TERM
 
+mkdir -p /var/log/clickhouse-server
+touch /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.err.log
 echo "Runnig: $*"
 "$@" &
 PID=$!
