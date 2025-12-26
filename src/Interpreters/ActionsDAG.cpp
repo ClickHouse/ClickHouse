@@ -1003,11 +1003,10 @@ Block ActionsDAG::updateHeader(const Block & header) const
     }
 
     Block res;
-    res.reserve(result_columns.size());
+    res.reserve(result_columns.size() + header.columns() - pos_to_remove.size());
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    res.reserve(header.columns() - pos_to_remove.size());
     for (size_t i = 0; i < header.columns(); i++)
     {
         if (!pos_to_remove.contains(i))
