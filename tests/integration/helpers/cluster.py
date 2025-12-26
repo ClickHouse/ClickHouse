@@ -648,6 +648,8 @@ class ClickHouseCluster:
         self.with_hive = False
         self.with_coredns = False
         self.with_ytsaurus = False
+        # available when with_dremio26 == True
+        self.with_dremio26 = False
         self.with_letsencrypt_pebble = False
 
         # available when with_minio == True
@@ -871,6 +873,14 @@ class ClickHouseCluster:
 
         # available when with_letsencrypt_pebble = True
         self._letsencrypt_pebble_api_port = 14000
+
+        # Dremio 26 service config (ArrowFlight)
+        self.dremio26_host = "dremio26"
+        self.dremio26_port = 32010
+        self.dremio26_rest_port = 9047
+        self.dremio26_dir = p.abspath(p.join(self.instances_dir, "dremio26"))
+        self.dremio26_logs_dir = os.path.join(self.dremio26_dir, "logs")
+        self.base_dremio26_cmd = []
         self._letsencrypt_pebble_management_port = 15000
 
         self.docker_client: docker.DockerClient = None
@@ -1622,6 +1632,29 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_dremio26_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        logging.debug("Setup Dremio 26")
+        self.with_dremio26 = True
+        # Provide Dremio envs for compose
+        env_variables["DREMIO26_ROOT_HOST"] = self.dremio26_host
+        env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
+        env_variables["DREMIO26_REST_PORT"] = str(self.dremio26_rest_port)
+        env_variables["DREMIO26_LOGS"] = self.dremio26_logs_dir
+        env_variables["DREMIO26_LOGS_FS"] = "bind"
+        env_variables["DREMIO26_DOCKER_USER"] = str(os.getuid())
+
+        dremio_compose = p.join(
+            docker_compose_yml_dir, "docker_compose_dremio_26_0.yml"
+        )
+        self.base_cmd.extend(["--file", dremio_compose])
+        self.base_dremio26_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            dremio_compose,
+        )
+        return self.base_dremio26_cmd
+
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_glue_catalog = True
         self.base_cmd.extend(
@@ -1777,6 +1810,14 @@ class ClickHouseCluster:
     def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ytsaurus = True
         env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+        # Provide an internal listen port pool to avoid dynamic collisions inside container
+        try:
+            start_port = self.port_pool.get_port()
+            end_port = start_port + 200
+            env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = f"{start_port}-{end_port}"
+        except Exception:
+            # Fallback to a sane default range
+            env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = "30050-30250"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
@@ -1885,6 +1926,7 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
+        with_dremio26=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
         # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
@@ -2237,6 +2279,13 @@ class ClickHouseCluster:
         if with_minio and not self.with_minio:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_dremio26 and not self.with_dremio26:
+            cmds.append(
+                self.setup_dremio26_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_iceberg_catalog and not self.with_iceberg_catalog:
@@ -2711,7 +2760,7 @@ class ClickHouseCluster:
 
     def wait_ytsaurus_to_start(self):
         self.wait_for_url(
-            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=600
         )
 
     def wait_letsencrypt_pebble_to_start(self):
@@ -4972,6 +5021,20 @@ class ClickHouseInstance:
             ]
         )
         return result
+
+    def count_log_lines(self):
+        """Return total number of lines in clickhouse-server.log inside the container."""
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "[ -f /var/log/clickhouse-server/clickhouse-server.log ] && wc -l < /var/log/clickhouse-server/clickhouse-server.log || echo 0",
+            ]
+        )
+        try:
+            return int(result.strip())
+        except Exception:
+            return 0
 
     def wait_for_log_line(
         self,
