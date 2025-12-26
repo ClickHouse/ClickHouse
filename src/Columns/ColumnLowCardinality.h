@@ -297,6 +297,8 @@ public:
     const ColumnPtr & getIndexesPtr() const { return idx.getIndexes(); }
     size_t getSizeOfIndexType() const { return idx.getSizeOfIndexType(); }
 
+    ColumnIndex & getColumnIndex() { return idx; }
+
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
         const IColumn * indexes = &getIndexes();

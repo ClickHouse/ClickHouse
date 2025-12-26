@@ -175,48 +175,59 @@ NamesAndAliases QueryLogElement::getNamesAndAliases()
     };
 }
 
+
+namespace
+{
+/// Use a more lightweight cast for MSAN for performance reasons
+#if defined(MEMORY_SANITIZER)
+    #define QueryLogCast static_cast
+#else
+    #define QueryLogCast typeid_cast
+#endif
+}
+
 void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
     const auto & hostname = getFQDNOrHostName();
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
-    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(type);
-    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(DateLUT::instance().toDayNum(event_time).toUnderType());
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(event_time);
-    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(query_start_time);
-    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(query_start_time_microseconds);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(query_duration_ms);
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    QueryLogCast<ColumnInt8 &>(*columns[i++]).getData().push_back(type);
+    QueryLogCast<ColumnUInt16 &>(*columns[i++]).getData().push_back(DateLUT::instance().toDayNum(event_time).toUnderType());
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(event_time);
+    QueryLogCast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(query_start_time);
+    QueryLogCast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(query_start_time_microseconds);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(query_duration_ms);
 
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(read_rows);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(read_bytes);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(written_rows);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(written_bytes);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(result_rows);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(result_bytes);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(read_rows);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(read_bytes);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(written_rows);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(written_bytes);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(result_rows);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(result_bytes);
 
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(memory_usage);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(memory_usage);
 
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(current_database.data(), current_database.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(query.data(), query.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(formatted_query.data(), formatted_query.size());
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(normalized_query_hash);
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(current_database.data(), current_database.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(query.data(), query.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(formatted_query.data(), formatted_query.size());
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(normalized_query_hash);
 
     const std::string_view query_kind_str = magic_enum::enum_name(query_kind);
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(query_kind_str.data(), query_kind_str.size());
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(query_kind_str.data(), query_kind_str.size());
 
     {
-        auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_databases = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_tables = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_columns = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_partitions = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_projections = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_views = QueryLogCast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
-            auto & lc_column_data = typeid_cast<ColumnLowCardinality &>(column.getData());
+            auto & lc_column_data = QueryLogCast<ColumnLowCardinality &>(column.getData());
 
             size_t size = 0;
             for (const auto & name : data)
@@ -236,19 +247,19 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_views, column_views);
     }
 
-    typeid_cast<ColumnInt32 &>(*columns[i++]).getData().push_back(exception_code);
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(exception.data(), exception.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(stack_trace.data(), stack_trace.size());
+    QueryLogCast<ColumnInt32 &>(*columns[i++]).getData().push_back(exception_code);
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(exception.data(), exception.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(stack_trace.data(), stack_trace.size());
 
     appendClientInfo(client_info, columns, i);
 
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
 
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 
     {
-        auto & column_thread_ids = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_thread_ids_data = typeid_cast<ColumnUInt64 &>(column_thread_ids.getData());
+        auto & column_thread_ids = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_thread_ids_data = QueryLogCast<ColumnUInt64 &>(column_thread_ids.getData());
 
         for (const UInt64 thread_id : thread_ids)
             column_thread_ids_data.getData().emplace_back(thread_id);
@@ -257,7 +268,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         offsets.push_back(offsets.back() + thread_ids.size());
     }
 
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(peak_threads_usage);
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(peak_threads_usage);
 
     if (profile_counters)
     {
@@ -266,7 +277,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+        QueryLogCast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     if (query_settings)
@@ -276,28 +287,28 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+        QueryLogCast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     {
-        auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_aggregate_function_combinator_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_format_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_executable_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_sql_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_aggregate_function_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_aggregate_function_combinator_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_database_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_data_type_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_dictionary_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_format_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_function_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_storage_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_table_function_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_executable_user_defined_function_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_sql_user_defined_function_factory_objects = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_row_policies_names = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_used_privileges = QueryLogCast<ColumnArray &>(*columns[i++]);
+        auto & column_missing_privileges = QueryLogCast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
-            auto & lc_column_data = typeid_cast<ColumnLowCardinality &>(column.getData());
+            auto & lc_column_data = QueryLogCast<ColumnLowCardinality &>(column.getData());
 
             size_t size = 0;
             for (const auto & value : data)
@@ -326,60 +337,60 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     {
-        auto & tid_tuple = typeid_cast<ColumnTuple &>(*columns[i++]);
-        typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(0)).getData().push_back(tid.start_csn);
-        typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(1)).getData().push_back(tid.local_tid);
-        typeid_cast<ColumnUUID &>(tid_tuple.getColumn(2)).getData().push_back(tid.host_id);
+        auto & tid_tuple = QueryLogCast<ColumnTuple &>(*columns[i++]);
+        QueryLogCast<ColumnUInt64 &>(tid_tuple.getColumn(0)).getData().push_back(tid.start_csn);
+        QueryLogCast<ColumnUInt64 &>(tid_tuple.getColumn(1)).getData().push_back(tid.local_tid);
+        QueryLogCast<ColumnUUID &>(tid_tuple.getColumn(2)).getData().push_back(tid.host_id);
     }
 
-    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
+    QueryLogCast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
 
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());
     else
-        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+        QueryLogCast<ColumnMap &>(*columns[i++]).insertDefault();
 
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+    QueryLogCast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
 {
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
+    QueryLogCast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
 
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.current_user.data(), client_info.current_user.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.current_query_id.data(), client_info.current_query_id.size());
-    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
-    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.current_user.data(), client_info.current_user.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(client_info.current_query_id.data(), client_info.current_query_id.size());
+    QueryLogCast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    QueryLogCast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());
 
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.initial_user.data(), client_info.initial_user.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.initial_query_id.data(), client_info.initial_query_id.size());
-    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
-    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.initial_address->port());
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time);
-    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time_microseconds);
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.initial_user.data(), client_info.initial_user.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(client_info.initial_query_id.data(), client_info.initial_query_id.size());
+    QueryLogCast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
+    QueryLogCast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.initial_address->port());
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time);
+    QueryLogCast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time_microseconds);
 
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.authenticated_user.data(), client_info.authenticated_user.size());
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.authenticated_user.data(), client_info.authenticated_user.size());
 
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
+    QueryLogCast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
+    QueryLogCast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_major);
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_minor);
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_patch);
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_major);
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_minor);
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_version_patch);
 
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_query_number);
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_line_number);
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_query_number);
+    QueryLogCast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_line_number);
 
-    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.http_method));
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.http_user_agent.data(), client_info.http_user_agent.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.http_referer.data(), client_info.http_referer.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.forwarded_for.data(), client_info.forwarded_for.size());
+    QueryLogCast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.http_method));
+    QueryLogCast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.http_user_agent.data(), client_info.http_user_agent.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(client_info.http_referer.data(), client_info.http_referer.size());
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(client_info.forwarded_for.data(), client_info.forwarded_for.size());
 
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.quota_key.data(), client_info.quota_key.size());
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(client_info.distributed_depth);
+    QueryLogCast<ColumnString &>(*columns[i++]).insertData(client_info.quota_key.data(), client_info.quota_key.size());
+    QueryLogCast<ColumnUInt64 &>(*columns[i++]).getData().push_back(client_info.distributed_depth);
 }
 }

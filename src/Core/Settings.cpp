@@ -1,7 +1,10 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnIndex.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnUnique.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -7682,6 +7685,7 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     if (!column)
         return;
 
+    /// Note that we are casting as much to get the most final class to speed up inserting, specially with MSAN
     auto & column_map = typeid_cast<ColumnMap &>(*column);
     auto & offsets = column_map.getNestedColumn().getOffsets();
 
@@ -7689,19 +7693,31 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
     auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
+    chassert(!key_column.isSharedDictionary());
+    auto & key_dictionary = typeid_cast<ColumnUnique<ColumnString> &>(key_column.getDictionary());
+    auto & key_indexes = key_column.getColumnIndex();
+
+    chassert(!value_column.isSharedDictionary());
+    auto & value_dictionary = typeid_cast<ColumnUnique<ColumnString> &>(value_column.getDictionary());
+    auto & value_indexes = value_column.getColumnIndex();
+
     size_t size = 0;
 
     /// Iterate over standard settings
     const auto & accessor = Traits::Accessor::instance();
+    const auto & field_infos = accessor.field_infos;
     for (size_t i = 0; i < accessor.size(); i++)
     {
-        if (changed_only && !accessor.isValueChanged(*this, i))
+        if (changed_only && !field_infos[i].is_value_changed_function(*this))
             continue;
 
-        const auto & name = accessor.getName(i);
-        auto value = accessor.getValueString(*this, i);
-        key_column.insertData(name.data(), name.size());
-        value_column.insertData(value.data(), value.size());
+        const auto & name = field_infos[i].name;
+        auto value = field_infos[i].get_value_string_function(*this);
+
+        /// Equivalent to key_column.insertData(name.data(), name.size());
+        key_indexes.insertIndex(key_dictionary.uniqueInsertData(name.data(), name.size()));
+        /// Equivalent to value_column.insertData(value.data(), value.size());
+        value_indexes.insertIndex(value_dictionary.uniqueInsertData(value.data(), value.size()));
         ++size;
     }
 
@@ -7714,8 +7730,8 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 
         const auto & name = custom.first;
         auto value = setting_field.toString();
-        key_column.insertData(name.data(), name.size());
-        value_column.insertData(value.data(), value.size());
+        key_indexes.insertIndex(key_dictionary.uniqueInsertData(name.data(), name.size()));
+        value_indexes.insertIndex(value_dictionary.uniqueInsertData(value.data(), value.size()));
         ++size;
     }
 
