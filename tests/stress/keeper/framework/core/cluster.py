@@ -57,6 +57,23 @@ class ClusterBuilder:
             pass
         conf_dir.mkdir(parents=True, exist_ok=True)
 
+        # Ensure startup wait knobs are aligned with job env
+        try:
+            # Default keeper start timeout aligns to READY if not set explicitly
+            if not os.environ.get("KEEPER_START_TIMEOUT_SEC"):
+                os.environ["KEEPER_START_TIMEOUT_SEC"] = os.environ.get(
+                    "KEEPER_READY_TIMEOUT", "300"
+                )
+            # Allow longer connection window when logs are progressing
+            if not os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC"):
+                rt = int(os.environ.get("KEEPER_READY_TIMEOUT", "300") or "300")
+                os.environ["KEEPER_CONNECT_TIMEOUT_SEC"] = str(rt + 180)
+            # Prefer probing keeper client port first, then native/http
+            if not os.environ.get("CH_WAIT_START_PORTS"):
+                os.environ["CH_WAIT_START_PORTS"] = f"{CLIENT_PORT},9000,8123"
+        except Exception:
+            pass
+
         # Precompute names and server ids
         names = [f"keeper{i}" for i in range(1, topology + 1)]
 
