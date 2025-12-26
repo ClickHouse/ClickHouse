@@ -1271,6 +1271,13 @@ The server successfully detected this situation and will download merged part fr
     \
     M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
     M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
+    \
+    M(RuntimeFiltersCreated, "Number of distinct JOIN Runtime Filters created within a query", ValueType::Number) \
+    M(RuntimeFilterBlocksProcessed, "Number of blocks processed by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterBlocksSkipped, "Number of blocks skipped by JOIN Runtime Filters without processing due to filter being dynamically disabled because of poor filtering ratio", ValueType::Number) \
+    M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
