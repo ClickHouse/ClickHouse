@@ -42,10 +42,14 @@ def main():
         os.environ.setdefault("KEEPER_SCENARIO_FILE", "all")
         # Allow more time for startup and reduce client pressure
         os.environ.setdefault("KEEPER_READY_TIMEOUT", "600")
-        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "16")
+        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "64")
+        os.environ.setdefault("KEEPER_BENCH_WARMUP_S", "5")
+        os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
+        os.environ.setdefault("KEEPER_FORCE_BENCH", "1")
+        os.environ.setdefault("KEEPER_DURATION", "60")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
         # Limit concurrency and backends on PR to avoid resource starvation
-        os.environ.setdefault("KEEPER_PYTEST_XDIST", "1")
+        os.environ.setdefault("KEEPER_PYTEST_XDIST", "2")
         os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
         # Enable HTTP control readiness endpoint by default on PR to improve startup probes
         os.environ.setdefault("KEEPER_ENABLE_CONTROL", "1")

@@ -13,7 +13,7 @@ import yaml
 from ..faults import apply_step as apply_step_dispatcher
 from ..framework.core.preflight import ensure_environment
 from ..framework.core.registry import fault_registry
-from ..framework.core.settings import parse_bool
+from ..framework.core.settings import parse_bool, DEFAULT_ERROR_RATE, DEFAULT_P99_MS
 from ..framework.fuzz import _EXCLUDE as _FUZZ_EXCLUDE
 from ..framework.fuzz import generate_fuzz_scenario
 from ..framework.io.probes import (
@@ -396,6 +396,66 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             ctx["bench_node"] = nodes[0]
             ctx["bench_secure"] = secure
             ctx["bench_servers"] = servers_arg(nodes)
+        forced = parse_bool(os.environ.get("KEEPER_FORCE_BENCH"))
+        if (not kb) and forced:
+            try:
+                cli_dur = int(request.config.getoption("--duration"))
+            except Exception:
+                cli_dur = None
+            try:
+                env_dur = (
+                    int(os.environ.get("KEEPER_DURATION"))
+                    if os.environ.get("KEEPER_DURATION")
+                    else None
+                )
+            except Exception:
+                env_dur = None
+            eff_dur_fb = cli_dur or env_dur or 120
+            try:
+                ce = os.environ.get("KEEPER_BENCH_CLIENTS")
+                clients_env_fb = int(ce) if ce not in (None, "") else None
+            except Exception:
+                clients_env_fb = None
+            try:
+                wc_env = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
+            except Exception:
+                wc_env = ""
+            cfg_fb = str(WORKDIR / wc_env) if wc_env else str(WORKDIR / "workloads/prod_mix.yaml")
+            rb = {
+                "kind": "run_bench",
+                "duration_s": eff_dur_fb,
+                "config": cfg_fb,
+            }
+            def _has_rb(actions):
+                try:
+                    for a in (actions or []):
+                        k = str(a.get("kind", "")).strip().lower()
+                        if k == "run_bench":
+                            return True
+                        if k == "parallel":
+                            for s in (a.get("steps") or []):
+                                if str(s.get("kind", "")).strip().lower() == "run_bench":
+                                    return True
+                    return False
+                except Exception:
+                    return False
+            if _has_rb(fs_effective):
+                pass
+            elif fs_effective:
+                fs_effective = [{"kind": "parallel", "steps": [rb] + fs_effective}]
+            else:
+                fs_effective = [rb]
+            try:
+                gs = scenario.get("gates") or []
+                has_err = any((g.get("type") == "error_rate_le") for g in gs)
+                has_p99 = any((g.get("type") == "p99_le") for g in gs)
+                if not has_err:
+                    gs = gs + [{"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)}]
+                if not has_p99:
+                    gs = gs + [{"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)}]
+                scenario["gates"] = gs
+            except Exception:
+                pass
         for action in fs_effective:
             _apply_step(action, nodes, leader, ctx)
         if kb:
