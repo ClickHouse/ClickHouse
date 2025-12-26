@@ -83,7 +83,7 @@ TEST_CONFIGS = [
         True,
         "no idea why i'm sequential",
     ),
-    # TC("test_random_inserts/", True, "no idea why i'm sequential"),
+    TC("test_random_inserts/", True, "no idea why i'm sequential"),
     # TC("test_replicated_database/", True, "no idea why i'm sequential"),
     TC("test_server_overload/", True, "no idea why i'm sequential"),
     # TC("test_server_reload/", True, "no idea why i'm sequential"),
