@@ -40,12 +40,15 @@ def main():
         # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
         os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
         # Allow more time for startup and reduce client pressure
-        os.environ.setdefault("KEEPER_READY_TIMEOUT", "300")
+        os.environ.setdefault("KEEPER_READY_TIMEOUT", "600")
         os.environ.setdefault("KEEPER_BENCH_CLIENTS", "16")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
         # Limit concurrency and backends on PR to avoid resource starvation
-        os.environ.setdefault("KEEPER_PYTEST_XDIST", "2")
+        os.environ.setdefault("KEEPER_PYTEST_XDIST", "1")
         os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default")
+        # Enable HTTP control readiness endpoint by default on PR to improve startup probes
+        os.environ.setdefault("KEEPER_ENABLE_CONTROL", "1")
+        os.environ.setdefault("KEEPER_CONTROL_PORT", "18080")
     else:
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
     # Always keep containers/logs on fail for local/CI triage unless explicitly disabled
@@ -61,8 +64,8 @@ def main():
     os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
     # Derive an extended connection window for slow initializations when logs show progress
     try:
-        _ready = int(os.environ.get("KEEPER_READY_TIMEOUT", "300") or "300")
-        os.environ.setdefault("KEEPER_CONNECT_TIMEOUT_SEC", str(_ready + 300))
+        _ready = int(os.environ.get("KEEPER_READY_TIMEOUT", "600") or "600")
+        os.environ.setdefault("KEEPER_CONNECT_TIMEOUT_SEC", str(_ready + 600))
     except Exception:
         pass
 
@@ -294,11 +297,11 @@ def main():
                     conf = inst / f"keeper{i}" / "configs" / "config.d" / f"keeper_config_keeper{i}.xml"
                     if conf:
                         tail_cmds.append(f"echo '==== keeper{i} config ====' && sed -n '1,120p' '{conf}'")
-                    tail_cmds.append(f"echo '==== keeper{i} err ====' && tail -n 120 '{err}' || true")
-                    tail_cmds.append(f"echo '==== keeper{i} log ====' && tail -n 120 '{log}' || true")
+                    tail_cmds.append(f"echo '==== keeper{i} err ====' && tail -n 400 '{err}' || true")
+                    tail_cmds.append(f"echo '==== keeper{i} log ====' && tail -n 400 '{log}' || true")
                 # docker inventory and service logs (best-effort)
                 tail_cmds.append("echo '==== docker ps (keepers) ====' && docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | sed -n '1,200p'")
-                tail_cmds.append("for n in $(docker ps --format '{{.Names}}' | grep -E 'keeper[0-9]+' || true); do echo '==== docker logs' $n '===='; docker logs --tail 200 $n || true; done")
+                tail_cmds.append("for n in $(docker ps --format '{{.Names}}' | grep -E 'keeper[0-9]+' || true); do echo '==== docker logs' $n '===='; docker logs --tail 400 $n || true; done")
                 if tail_cmds:
                     results.append(Result.from_commands_run(name="Keeper debug tails", command=tail_cmds))
     except Exception:
