@@ -436,6 +436,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     print(f"Job [{job.name}] is directly affected by changed files")
                     is_affected = True
 
+# FIXME
+                is_affectted = True
                 if is_affected:
                     affected_artifacts.extend(job.provides)
                     if job.provides:
