@@ -364,6 +364,30 @@ void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params
 
 }
 
+TEST(IOTestAwsS3Client, InstanceProfileCredentialsProviderCaching)
+{
+    DB::S3::ClientFactory::instance();
+
+    Aws::Client::ClientConfiguration client_config;
+    client_config.connectTimeoutMs = 50;
+    client_config.requestTimeoutMs = 1000;
+
+    auto provider1 = DB::S3::AWSInstanceProfileCredentialsProvider::create(client_config, /*use_secure_pull=*/true);
+    ASSERT_TRUE(provider1);
+
+    auto provider2 = DB::S3::AWSInstanceProfileCredentialsProvider::create(client_config, /*use_secure_pull=*/true);
+    ASSERT_TRUE(provider2);
+    EXPECT_EQ(provider1.get(), provider2.get());
+
+    auto provider3 = DB::S3::AWSInstanceProfileCredentialsProvider::create(client_config, /*use_secure_pull=*/false);
+    ASSERT_TRUE(provider3);
+    EXPECT_NE(provider1.get(), provider3.get());
+
+    auto provider4 = DB::S3::AWSInstanceProfileCredentialsProvider::create(client_config, /*use_secure_pull=*/false);
+    ASSERT_TRUE(provider4);
+    EXPECT_EQ(provider3.get(), provider4.get());
+}
+
 TEST(IOTestAwsS3Client, AssumeRole)
 {
     const auto get_credential_string =  [&](const Poco::Net::MessageHeader & headers) -> std::string
