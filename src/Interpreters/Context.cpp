@@ -6067,9 +6067,31 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    UInt64 max_block_size,
+    const std::optional<FormatSettings> & format_settings,
+    const std::optional<UInt64> & max_block_size_bytes,
+    const std::optional<UInt64> & min_block_size_rows,
+    const std::optional<UInt64> & min_block_size_bytes) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(
+        name,
+        buf,
+        sample,
+        shared_from_this(),
+        max_block_size,
+        format_settings,
+        nullptr,
+        nullptr,
+        false,
+        CompressionMethod::None,
+        false,
+        max_block_size_bytes,
+        min_block_size_rows,
+        min_block_size_bytes);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const

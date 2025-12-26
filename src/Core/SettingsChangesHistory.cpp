@@ -45,6 +45,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"max_insert_block_size_bytes", 0, 0, "New settings that allows to control the size of blocks in bytes during parsing of data in Row Input Format and."},
+            {"max_insert_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "An alias for max_insert_block_size."}
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

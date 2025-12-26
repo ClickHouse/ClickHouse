@@ -31,7 +31,7 @@ YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
     format_settings.json.read_map_as_array_of_tuples = true;
 
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
-        *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size = max_block_size}), format_settings, false);
+        *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
 }
 
 
@@ -48,7 +48,7 @@ YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     read_buffer = (use_lookups) ? client->lookupRows(source_options.cypress_path, *source_options.lookup_input_block) : client->selectRows(source_options.cypress_path);
     format_settings.json.read_map_as_array_of_tuples = true;
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
-        *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size = max_block_size}), format_settings, false);
+        *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
 }
 
 std::shared_ptr<ISource> YTsaurusSourceFactory::createSource(YTsaurusClientPtr client, const YTsaurusTableSourceOptions source_options, const SharedHeader & sample_block, const UInt64 max_block_size)
