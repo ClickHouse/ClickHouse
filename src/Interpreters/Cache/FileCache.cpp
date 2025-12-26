@@ -132,6 +132,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                settings[FileCacheSetting::background_download_threads],
                write_cache_per_user_directory)
 {
+    if (boundary_alignment && boundary_alignment > max_file_segment_size.load())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'boundary_alignment' ({}) cannot be greater than 'max_file_segment_size' ({})",
+                        boundary_alignment, max_file_segment_size.load());
+
     switch (settings[FileCacheSetting::cache_policy].value)
     {
         case FileCachePolicy::LRU:

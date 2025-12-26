@@ -1,6 +1,5 @@
 -- Fixes issue: https://github.com/ClickHouse/ClickHouse/issues/85552
--- Tags: no-fasttest, no-parallel-replicas
--- fasttest: depends on IcebergS3, S3
+-- Tags: no-parallel, no-fasttest, no-random-settings
 
 SET allow_experimental_insert_into_iceberg=1;
 
