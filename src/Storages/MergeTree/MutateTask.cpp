@@ -591,7 +591,14 @@ getColumnsForNewDataPart(
     /// settings will not be applied for them (for example, new serialization versions for data types).
     if (!affects_all_columns)
     {
-        settings = serialization_infos.getSettings();
+        settings = SerializationInfo::Settings
+        {
+            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            false,
+            serialization_infos.getSettings().version,
+            serialization_infos.getSettings().string_serialization_version,
+            serialization_infos.getSettings().nullable_serialization_version,
+        };
     }
     /// Otherwise use fresh settings from storage.
     else
@@ -1453,7 +1460,9 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
+                squashed_chunk = Squashing::squash(
+                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
+                    projection_squashes[i].getHeader());
             }
 
             if (squashed_chunk)
@@ -1512,7 +1521,9 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        auto squashed_chunk = Squashing::squash(projection_squashes[i].flush());
+        auto squashed_chunk = Squashing::squash(
+            projection_squashes[i].flush(),
+            projection_squashes[i].getHeader());
         if (squashed_chunk)
             writeTempProjectionPart(i, std::move(squashed_chunk));
     }
@@ -1544,14 +1555,14 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
         auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(ctx->context->getReadSettings());
         const auto & indexes = build_text_index_transform->getIndexes();
 
-        for (size_t i = 0; i < indexes.size(); ++i)
+        for (const auto & index : indexes)
         {
-            auto segments = build_text_index_transform->getSegments(i, 0);
+            auto segments = build_text_index_transform->getSegments(index->index.name, 0);
 
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
-                indexes[i],
+                index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
                 ctx->out->getWriterSettings());

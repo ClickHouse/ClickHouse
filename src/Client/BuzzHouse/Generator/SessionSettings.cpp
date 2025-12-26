@@ -591,7 +591,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
                  static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
                  const auto now = std::chrono::system_clock::now();
 
-                 // Convert to milliseconds since epoch
+                 /// Convert to milliseconds since epoch
                  auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
                  ms -= (rg.pickRandomly(values) * 1000);
                  return std::to_string(ms);
@@ -967,6 +967,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'UTF-8'" : "'ASCII'"; }, {}, false)},
     {"output_format_pretty_highlight_digit_groups", trueOrFalseSettingNoOracle},
     {"output_format_pretty_multiline_fields", trueOrFalseSettingNoOracle},
+    {"output_format_pretty_named_tuples_as_json", trueOrFalseSettingNoOracle},
     {"output_format_pretty_row_numbers", trueOrFalseSettingNoOracle},
     {"output_format_protobuf_nullables_with_google_wrappers", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_include_column_names", trueOrFalseSettingNoOracle},
