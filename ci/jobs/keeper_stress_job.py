@@ -40,7 +40,7 @@ def main():
         # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
         os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
         # Allow more time for startup and reduce client pressure
-        os.environ.setdefault("KEEPER_READY_TIMEOUT", "240")
+        os.environ.setdefault("KEEPER_READY_TIMEOUT", "300")
         os.environ.setdefault("KEEPER_BENCH_CLIENTS", "16")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
         # Limit concurrency and backends on PR to avoid resource starvation
@@ -59,6 +59,12 @@ def main():
     os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
     # Default to running tests with pytest-xdist workers (can be overridden)
     os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
+    # Derive an extended connection window for slow initializations when logs show progress
+    try:
+        _ready = int(os.environ.get("KEEPER_READY_TIMEOUT", "300") or "300")
+        os.environ.setdefault("KEEPER_CONNECT_TIMEOUT_SEC", str(_ready + 300))
+    except Exception:
+        pass
 
     # Apply custom KEY=VALUE envs passed via --param to mirror integration jobs UX
     if args.param:
