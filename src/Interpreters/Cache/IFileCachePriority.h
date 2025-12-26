@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Core/Types.h>
 #include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
-#include <Interpreters/Cache/UserInfo.h>
 
 #include <atomic>
 #include <memory>
@@ -21,8 +21,8 @@ class IFileCachePriority : private boost::noncopyable
 public:
     using Key = FileCacheKey;
     using QueueEntryType = FileCacheQueueEntryType;
-    using UserInfo = FileCacheUserInfo;
-    using UserID = UserInfo::UserID;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = OriginInfo::UserID;
 
     struct Entry
     {
@@ -142,7 +142,7 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const UserInfo & user,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock &,
         bool best_effort = false) = 0;
 
@@ -153,6 +153,7 @@ public:
         size_t size,
         size_t elements,
         const CachePriorityGuard::Lock &,
+        const OriginInfo&,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const = 0;
 
@@ -160,8 +161,12 @@ public:
 
     struct IPriorityDump
     {
+        std::vector<FileSegmentInfo> infos;
+        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
+        void merge(const IPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
         virtual ~IPriorityDump() = default;
     };
+
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
 
     virtual PriorityDumpPtr dump(const CachePriorityGuard::Lock &) = 0;
@@ -175,7 +180,7 @@ public:
         EvictionCandidates & res,
         IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
-        const UserID & user_id,
+        const OriginInfo & origin,
         const CachePriorityGuard::Lock &) = 0;
 
     virtual void resetEvictionPos(const CachePriorityGuard::Lock & lock) = 0;
@@ -262,5 +267,7 @@ protected:
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 };
+
+using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
 
 }
