@@ -32,6 +32,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -184,7 +185,7 @@ NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_ver
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} in schema version {} is unknown", source_id, schema_version);
-    return it->second;
+    return resetTimeZoneIfNeeded(it->second);
 }
 
 std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const
@@ -194,7 +195,7 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
         return {};
-    return it->second;
+    return resetTimeZoneIfNeeded(it->second);
 }
 
 std::optional<Int32> IcebergSchemaProcessor::tryGetColumnIDByName(Int32 schema_id, const std::string & name) const
@@ -216,7 +217,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     {
         auto it = clickhouse_types_by_source_ids.find({schema_id, source_id});
         if (it != clickhouse_types_by_source_ids.end())
-            fields.push_back(it->second);
+            fields.push_back(resetTimeZoneIfNeeded(it->second));
     }
     return fields;
 }
@@ -528,7 +529,11 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     auto it = clickhouse_table_schemas_by_ids.find(id);
     if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
-    return it->second;
+
+    auto res = std::make_shared<NamesAndTypesList>();
+    for (const auto & name_and_type : *it->second)
+        res->push_back(resetTimeZoneIfNeeded(name_and_type));
+    return res;
 }
 
 bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
@@ -568,6 +573,22 @@ ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
         = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
     column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
     return column_mapper;
+}
+
+NameAndTypePair IcebergSchemaProcessor::resetTimeZoneIfNeeded(const NameAndTypePair & name_and_type)
+{
+    if (name_and_type.type->getTypeId() != TypeIndex::DateTime64)
+        return name_and_type;
+
+    if (const DataTypeDateTime64 * type_dt = checkAndGetDataType<DataTypeDateTime64>(name_and_type.type.get()))
+    {
+        // clickhouse_types_by_source_ids can be filled in different request with different timezone
+        // in this case need to reset timezone on current timezone
+        if (!type_dt->hasExplicitTimeZone())
+            return NameAndTypePair(name_and_type.name, std::make_shared<DataTypeDateTime64>(6));
+    }
+
+    return name_and_type;
 }
 
 }
