@@ -3834,7 +3834,11 @@ class ClickHouseCluster:
                         detach=True,
                     )
 
-            start_timeout = 300.0  # seconds
+            # Instance startup timeout (seconds). Allow override via env (used by Keeper stress workflows).
+            try:
+                start_timeout = float(os.environ.get("KEEPER_START_TIMEOUT_SEC", 300.0))
+            except Exception:
+                start_timeout = 300.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -5326,8 +5330,13 @@ class ClickHouseInstance:
             handle.reload()
             status = handle.status
             if status == "exited":
+                # Include only a concise tail to avoid flooding CI logs
+                try:
+                    logs_tail = handle.logs(tail=200).decode("utf-8", errors="replace")
+                except Exception:
+                    logs_tail = handle.logs().decode("utf-8", errors="replace")
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs_tail:\n{logs_tail}"
                 )
 
             deadline = start_time + timeout
@@ -5338,9 +5347,13 @@ class ClickHouseInstance:
 
             current_time = time.time()
             if current_time >= deadline:
+                try:
+                    logs_tail = handle.logs(tail=200).decode("utf-8", errors="replace")
+                except Exception:
+                    logs_tail = handle.logs().decode("utf-8", errors="replace")
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, logs_tail:\n{logs_tail}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
