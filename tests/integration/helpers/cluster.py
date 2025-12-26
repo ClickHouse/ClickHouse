@@ -5355,13 +5355,48 @@ class ClickHouseInstance:
             handle.reload()
             status = handle.status
             if status == "exited":
-                # Include only a concise tail to avoid flooding CI logs
                 try:
                     logs_tail = handle.logs(tail=200).decode("utf-8", errors="replace")
                 except Exception:
                     logs_tail = handle.logs().decode("utf-8", errors="replace")
+                diag_ps = ""
+                diag_ss = ""
+                diag_cfg = ""
+                diag_err = ""
+                diag_log = ""
+                try:
+                    diag_ps = self.exec_in_container(["bash", "-c", "ps aux | sed -n '1,200p'"], nothrow=True, user="root")
+                except Exception:
+                    pass
+                try:
+                    diag_ss = self.exec_in_container(["bash", "-c", "ss -ltnp | sed -n '1,200p'"], nothrow=True, user="root")
+                except Exception:
+                    pass
+                try:
+                    diag_cfg = self.exec_in_container(["bash", "-c", "if [ -d /etc/clickhouse-server/config.d ]; then for f in /etc/clickhouse-server/config.d/*keeper* 2>/dev/null; do if [ -f \"$f\" ]; then echo ==== \"$f\" ====; sed -n '1,150p' \"$f\"; fi; done; fi"], nothrow=True)
+                except Exception:
+                    pass
+                try:
+                    diag_err = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.err.log || true"], nothrow=True)
+                except Exception:
+                    pass
+                try:
+                    diag_log = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.log || true"], nothrow=True)
+                except Exception:
+                    pass
+                extra = ""
+                if diag_ps:
+                    extra += "\n[ps]\n" + diag_ps
+                if diag_ss:
+                    extra += "\n[ss]\n" + diag_ss
+                if diag_cfg:
+                    extra += "\n[keeper_config]\n" + diag_cfg
+                if diag_err:
+                    extra += "\n[err.log]\n" + diag_err
+                if diag_log:
+                    extra += "\n[server.log]\n" + diag_log
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs_tail:\n{logs_tail}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs_tail:\n{logs_tail}{extra}"
                 )
 
             deadline = start_time + timeout
@@ -5376,9 +5411,45 @@ class ClickHouseInstance:
                     logs_tail = handle.logs(tail=200).decode("utf-8", errors="replace")
                 except Exception:
                     logs_tail = handle.logs().decode("utf-8", errors="replace")
+                diag_ps = ""
+                diag_ss = ""
+                diag_cfg = ""
+                diag_err = ""
+                diag_log = ""
+                try:
+                    diag_ps = self.exec_in_container(["bash", "-c", "ps aux | sed -n '1,200p'"], nothrow=True, user="root")
+                except Exception:
+                    pass
+                try:
+                    diag_ss = self.exec_in_container(["bash", "-c", "ss -ltnp | sed -n '1,200p'"], nothrow=True, user="root")
+                except Exception:
+                    pass
+                try:
+                    diag_cfg = self.exec_in_container(["bash", "-c", "if [ -d /etc/clickhouse-server/config.d ]; then for f in /etc/clickhouse-server/config.d/*keeper* 2>/dev/null; do if [ -f \"$f\" ]; then echo ==== \"$f\" ====; sed -n '1,150p' \"$f\"; fi; done; fi"], nothrow=True)
+                except Exception:
+                    pass
+                try:
+                    diag_err = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.err.log || true"], nothrow=True)
+                except Exception:
+                    pass
+                try:
+                    diag_log = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.log || true"], nothrow=True)
+                except Exception:
+                    pass
+                extra = ""
+                if diag_ps:
+                    extra += "\n[ps]\n" + diag_ps
+                if diag_ss:
+                    extra += "\n[ss]\n" + diag_ss
+                if diag_cfg:
+                    extra += "\n[keeper_config]\n" + diag_cfg
+                if diag_err:
+                    extra += "\n[err.log]\n" + diag_err
+                if diag_log:
+                    extra += "\n[server.log]\n" + diag_log
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs_tail:\n{logs_tail}"
+                    f"Container status: {status}, logs_tail:\n{logs_tail}{extra}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)

@@ -208,6 +208,17 @@ class ClusterBuilder:
         )
         # Do not inject <zookeeper> for keeper_server tests to avoid collisions with base configs
         zk_block = ""
+        # If control is enabled, prefer probing the control port first.
+        if enable_ctrl:
+            try:
+                cur = (os.environ.get("CH_WAIT_START_PORTS", "") or "").strip()
+                head = str(CONTROL_PORT)
+                os.environ["CH_WAIT_START_PORTS"] = (
+                    head if not cur else f"{head},{cur}"
+                )
+            except Exception:
+                pass
+
         for i, name in enumerate(names, start=start_sid):
             # Build a single per-node config file with all required sections (minimal to avoid collisions)
             path_block = (
@@ -234,6 +245,8 @@ class ClusterBuilder:
             macros_block = ""
             # Ensure server listens on container IPs; do not duplicate tcp_port
             net_block = (
+                "<listen_host remove=\"1\">::</listen_host>"
+                "<listen_host remove=\"1\">::1</listen_host>"
                 "<listen_host>0.0.0.0</listen_host>"
                 "<listen_try>1</listen_try>"
             )
