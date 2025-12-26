@@ -3,5 +3,6 @@
 members = [
     "skim",
     "prql",
+    "aho_corasick",
 ]
 resolver = "2"

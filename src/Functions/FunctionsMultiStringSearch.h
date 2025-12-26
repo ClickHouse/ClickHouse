@@ -23,6 +23,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
+    extern const SettingsBool force_daachorse_for_multi_search;
 }
 
 /**
@@ -62,14 +63,25 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringSearch>(settings[Setting::allow_hyperscan], settings[Setting::max_hyperscan_regexp_length], settings[Setting::max_hyperscan_regexp_total_length], settings[Setting::reject_expensive_hyperscan_regexps]);
+        return std::make_shared<FunctionsMultiStringSearch>(
+            settings[Setting::allow_hyperscan],
+            settings[Setting::max_hyperscan_regexp_length],
+            settings[Setting::max_hyperscan_regexp_total_length],
+            settings[Setting::reject_expensive_hyperscan_regexps],
+            settings[Setting::force_daachorse_for_multi_search]);
     }
 
-    FunctionsMultiStringSearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)
+    FunctionsMultiStringSearch(
+        bool allow_hyperscan_,
+        size_t max_hyperscan_regexp_length_,
+        size_t max_hyperscan_regexp_total_length_,
+        bool reject_expensive_hyperscan_regexps_,
+        bool force_daachorse_for_multi_search_ = false)
         : allow_hyperscan(allow_hyperscan_)
         , max_hyperscan_regexp_length(max_hyperscan_regexp_length_)
         , max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
         , reject_expensive_hyperscan_regexps(reject_expensive_hyperscan_regexps_)
+        , force_daachorse_for_multi_search(force_daachorse_for_multi_search_)
     {}
 
     String getName() const override { return name; }
@@ -119,6 +131,7 @@ public:
                 col_needles_const->getValue<Array>(),
                 vec_res, offsets_res,
                 allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                force_daachorse_for_multi_search,
                 input_rows_count);
         else
             Impl::vectorVector(
@@ -126,6 +139,7 @@ public:
                 col_needles_vector->getData(), col_needles_vector->getOffsets(),
                 vec_res, offsets_res,
                 allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                force_daachorse_for_multi_search,
                 input_rows_count);
 
         // the combination of const haystack + const needle is not implemented because
@@ -143,6 +157,7 @@ private:
     const size_t max_hyperscan_regexp_length;
     const size_t max_hyperscan_regexp_total_length;
     const bool reject_expensive_hyperscan_regexps;
+    const bool force_daachorse_for_multi_search;
 };
 
 }
