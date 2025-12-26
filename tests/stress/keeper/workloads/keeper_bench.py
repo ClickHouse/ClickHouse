@@ -6,7 +6,7 @@ import yaml
 from pathlib import Path
 
 from ..framework.core.util import has_bin, sh
-from ..framework.core.settings import CLIENT_PORT
+from ..framework.core.settings import CLIENT_PORT, DEFAULT_P99_MS, DEFAULT_ERROR_RATE
 from ..framework.io.probes import mntr
 
 
@@ -287,6 +287,26 @@ class KeeperBench:
         # Write config inside the container
         sh(self.node, "mkdir -p /tmp || true")
         sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + cfg_dump + "YAML\n")
+        try:
+            w = 0
+            try:
+                w = int(os.environ.get("KEEPER_BENCH_WARMUP_S", "0") or 0)
+            except Exception:
+                w = 0
+            if w > 0:
+                wp = ""
+                try:
+                    if has_bin(self.node, "timeout"):
+                        wp = f"timeout -s SIGKILL {max(5, int(w) + 5)}"
+                except Exception:
+                    wp = ""
+                wcmd = f"{wp} {self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(w)}".strip()
+                try:
+                    sh(self.node, wcmd)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # Prepare default summary early; used on skip
         summary = {
             "ops": 0,
@@ -296,6 +316,150 @@ class KeeperBench:
             "p99_ms": 0,
             "duration_s": self.duration_s,
         }
+        try:
+            adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE") or os.environ.get("KEEPER_ADAPTIVE")
+            adapt = str(adapt_env).strip().lower() in ("1", "true", "yes", "on")
+        except Exception:
+            adapt = False
+        if adapt:
+            try:
+                summary["duration_s"] = 0
+            except Exception:
+                pass
+            try:
+                target_p99 = int(os.environ.get("KEEPER_ADAPT_TARGET_P99_MS", str(int(DEFAULT_P99_MS))) or int(DEFAULT_P99_MS))
+            except Exception:
+                target_p99 = int(DEFAULT_P99_MS)
+            try:
+                max_err = float(os.environ.get("KEEPER_ADAPT_MAX_ERROR", str(float(DEFAULT_ERROR_RATE))) or float(DEFAULT_ERROR_RATE))
+            except Exception:
+                max_err = float(DEFAULT_ERROR_RATE)
+            try:
+                stage_s = int(os.environ.get("KEEPER_ADAPT_STAGE_S", "15") or 15)
+            except Exception:
+                stage_s = 15
+            try:
+                cmin = int(os.environ.get("KEEPER_ADAPT_MIN_CLIENTS", "8") or 8)
+            except Exception:
+                cmin = 8
+            try:
+                cmax = int(os.environ.get("KEEPER_ADAPT_MAX_CLIENTS", os.environ.get("KEEPER_BENCH_CLIENTS", "128")))
+            except Exception:
+                cmax = 128
+            try:
+                ccur = int(os.environ.get("KEEPER_BENCH_CLIENTS", "64") or 64)
+            except Exception:
+                ccur = 64
+            # If explicit clients were passed via constructor, prefer them as the starting point
+            try:
+                if self.clients is not None:
+                    ccur = int(self.clients)
+            except Exception:
+                pass
+            ccur = max(cmin, min(cmax, max(1, int(ccur))))
+
+            import copy as _copy
+
+            def _run_stage(cli, dur):
+                nonlocal bench_cfg
+                st_cfg = _copy.deepcopy(bench_cfg)
+                try:
+                    st_cfg["concurrency"] = int(cli)
+                except Exception:
+                    pass
+                st_dump = yaml.safe_dump(st_cfg, sort_keys=False)
+                sh(self.node, "mkdir -p /tmp || true")
+                sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + st_dump + "YAML\n")
+                hard_cap = max(5, int(dur) + 30)
+                prefix = ""
+                try:
+                    if has_bin(self.node, "timeout"):
+                        prefix = f"timeout -s SIGKILL {hard_cap}"
+                except Exception:
+                    prefix = ""
+                base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(dur)}"
+                cmd = f"{prefix} {base}".strip()
+                run_out = sh(self.node, cmd)
+                out = sh(
+                    self.node,
+                    "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+                )
+                st = {
+                    "ops": 0,
+                    "errors": 0,
+                    "p50_ms": 0,
+                    "p95_ms": 0,
+                    "p99_ms": 0,
+                    "duration_s": int(dur),
+                }
+                try:
+                    data = json.loads(out.get("out", "") or "{}")
+                    if isinstance(data, dict):
+                        st["ops"] = int(data.get("operations") or data.get("total_requests") or 0)
+                        st["errors"] = int(data.get("errors") or data.get("failed") or 0)
+                        lat = data.get("latency") or data.get("latency_ms") or {}
+                        def _pick(d, *ks):
+                            for k in ks:
+                                if k in d:
+                                    return d.get(k)
+                            return None
+                        p50 = _pick(lat, "p50", "50%", "median")
+                        p95 = _pick(lat, "p95", "95%")
+                        p99 = _pick(lat, "p99", "99%")
+                        if p50 is not None:
+                            st["p50_ms"] = int(float(p50))
+                        if p95 is not None:
+                            st["p95_ms"] = int(float(p95))
+                        if p99 is not None:
+                            st["p99_ms"] = int(float(p99))
+                except Exception:
+                    pass
+                return st
+
+            remaining = int(self.duration_s)
+            try:
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                adapt_log = odir / "keeper_adapt_stages.jsonl"
+            except Exception:
+                adapt_log = None
+
+            while remaining > 0:
+                dur = min(stage_s, remaining)
+                st = _run_stage(ccur, dur)
+                try:
+                    summary["ops"] += int(st.get("ops") or 0)
+                    summary["errors"] += int(st.get("errors") or 0)
+                    summary["duration_s"] += int(st.get("duration_s") or 0)
+                    summary["p50_ms"] = max(int(summary.get("p50_ms") or 0), int(st.get("p50_ms") or 0))
+                    summary["p95_ms"] = max(int(summary.get("p95_ms") or 0), int(st.get("p95_ms") or 0))
+                    summary["p99_ms"] = max(int(summary.get("p99_ms") or 0), int(st.get("p99_ms") or 0))
+                except Exception:
+                    pass
+                try:
+                    if adapt_log is not None:
+                        with open(adapt_log, "a", encoding="utf-8") as f:
+                            f.write(json.dumps({"clients": ccur, **st}) + "\n")
+                except Exception:
+                    pass
+                remaining -= dur
+                ops = float(st.get("ops") or 0)
+                errs = float(st.get("errors") or 0)
+                p99 = float(st.get("p99_ms") or 0)
+                err_ratio = (errs / ops) if ops > 0 else 0.0
+                try:
+                    if ops <= 0:
+                        ccur = min(cmax, max(cmin, int(ccur * 1.1) + 1))
+                    elif err_ratio > max_err or p99 > target_p99:
+                        ccur = max(cmin, int(max(ccur - 1, ccur * 0.7)))
+                    elif p99 < 0.5 * target_p99:
+                        ccur = min(cmax, int(ccur * 1.3) + 1)
+                    else:
+                        ccur = min(cmax, int(ccur * 1.1) + 1)
+                except Exception:
+                    ccur = min(cmax, max(cmin, int(ccur) + 1))
+            return summary
         # Execute the bench tool (replay mode or generator mode)
         # Hard-cap execution: duration + 30s, if `timeout` is available in container
         hard_cap = max(5, int(self.duration_s) + 30)

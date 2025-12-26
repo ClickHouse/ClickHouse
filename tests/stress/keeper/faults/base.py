@@ -1,4 +1,5 @@
 import time
+import os
 
 from ..framework.core.registry import fault_registry
 from ..framework.core.settings import RAFT_PORT, CLIENT_PORT
@@ -89,12 +90,30 @@ def apply_step(step, nodes, leader, ctx):
         from ..workloads.keeper_bench import KeeperBench
 
         try:
-            duration = int(step.get("duration_s", 60))
+            if "duration_s" in step and step.get("duration_s") is not None:
+                duration = int(step.get("duration_s"))
+            else:
+                try:
+                    duration = int(os.environ.get("KEEPER_DURATION", 60))
+                except Exception:
+                    duration = 60
         except Exception:
             duration = 60
         cfg_path = step.get("config")
+        clients = None
+        try:
+            if "clients" in step and step.get("clients") is not None:
+                clients = int(step.get("clients"))
+        except Exception:
+            clients = None
         kb = KeeperBench(
-            nodes[0], servers_arg(nodes), cfg_path=cfg_path, duration_s=duration
+            nodes[0],
+            servers_arg(nodes),
+            cfg_path=cfg_path,
+            duration_s=duration,
+            replay_path=None,
+            secure=False,
+            clients=clients,
         )
         ctx["bench_summary"] = kb.run()
         return
