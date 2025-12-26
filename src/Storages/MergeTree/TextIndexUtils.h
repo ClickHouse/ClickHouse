@@ -118,6 +118,8 @@ private:
     void flushPostingList();
     void flushDictionaryBlock();
 
+    void mergePostings();
+
     std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
     MergeTreeIndexPtr index_ptr;
@@ -143,7 +145,8 @@ private:
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token.
-    PostingList output_postings;
+    PostingListCodec output_postings;
+    std::vector<std::pair<size_t, TokenPostingsInfo>> stream_and_tokens;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
