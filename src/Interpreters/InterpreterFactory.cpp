@@ -87,7 +87,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
 }
 
@@ -138,7 +138,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef()[Setting::enable_analyzer])
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
@@ -149,7 +149,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef()[Setting::enable_analyzer])
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         else
             interpreter_name = "InterpreterSelectWithUnionQuery";
@@ -242,7 +242,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         const auto kind = query->as<ASTExplainQuery>()->getKind();
         if (kind == ASTExplainQuery::ParsedAST)
-            context->setSetting("allow_experimental_analyzer", false);
+            context->setSetting("enable_analyzer", false);
 
         interpreter_name = "InterpreterExplainQuery";
     }

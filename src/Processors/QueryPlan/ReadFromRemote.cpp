@@ -53,7 +53,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 query_plan_max_step_description_length;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -624,7 +624,7 @@ void ReadFromRemote::addPipe(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-    bool parallel_replicas_disabled = context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
+    bool parallel_replicas_disabled = context->getSettingsRef()[Setting::enable_parallel_replicas] == 0;
     if (stage == QueryProcessingStage::Complete)
     {
         if (const auto * ast_select = shard.query->as<ASTSelectQuery>())

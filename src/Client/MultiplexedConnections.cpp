@@ -15,7 +15,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsDialect dialect;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -177,11 +177,11 @@ void MultiplexedConnections::sendQuery(
         client_info.number_of_current_replica = replica_info->number_of_current_replica;
     }
 
-    /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
+    /// FIXME: Remove once we will make `enable_analyzer` obsolete setting.
     /// Make the analyzer being set, so it will be effectively applied on the remote server.
     /// In other words, the initiator always controls whether the analyzer enabled or not for
     /// all servers involved in the distributed query processing.
-    modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+    modified_settings.set("enable_analyzer", static_cast<bool>(modified_settings[Setting::enable_analyzer]));
 
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 

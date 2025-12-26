@@ -129,7 +129,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -629,12 +629,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool is_query_with_final = isQueryWithFinal(query_info);
     if (is_query_with_final && context->canUseTaskBasedParallelReplicas())
     {
-        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
+        if (settings[Setting::enable_parallel_replicas] == 1)
         {
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("enable_parallel_replicas", Field(0));
         }
-        else if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+        else if (settings[Setting::enable_parallel_replicas] >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
         }
@@ -642,15 +642,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
     bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
-    if (is_plain_merge_tree && settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+    if (is_plain_merge_tree && settings[Setting::enable_parallel_replicas] > 0
         && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
     {
-        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
+        if (settings[Setting::enable_parallel_replicas] == 1)
         {
             LOG_DEBUG(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("enable_parallel_replicas", Field(0));
         }
-        else if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+        else if (settings[Setting::enable_parallel_replicas] >= 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`");
         }
@@ -940,10 +940,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     };
 
 
-    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed allow_experimental_parallel_reading_from_replicas
+    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed enable_parallel_replicas
     /// inside the query context (because it doesn't have write access to the main context)
     UInt64 parallel_replicas_before_analysis
-        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] : 0;
+        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef()[Setting::enable_parallel_replicas] : 0;
 
     /// Conditionally support AST-based PREWHERE optimization.
     analyze(shouldMoveToPrewhere() && (!settings[Setting::query_plan_optimize_prewhere] || !settings[Setting::query_plan_enable_optimizations]));
@@ -955,10 +955,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (context->hasQueryContext())
     {
         /// As this query can't be executed with parallel replicas, we must reanalyze it
-        if (context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]
+        if (context->getQueryContext()->getSettingsRef()[Setting::enable_parallel_replicas]
             != parallel_replicas_before_analysis)
         {
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("enable_parallel_replicas", Field(0));
             context->setSetting("max_parallel_replicas", UInt64{1});
             need_analyze_again = true;
         }
@@ -1052,7 +1052,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (getTrivialCount(0).has_value())
     {
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("enable_parallel_replicas", Field(0));
         context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
         return true;
@@ -1106,7 +1106,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 
     if (number_of_replicas_to_use <= 1)
     {
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("enable_parallel_replicas", Field(0));
         context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;
@@ -2490,7 +2490,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 }
 
 /// Based on the query analysis, check if using a trivial count (storage or partition metadata) is possible
-std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas)
+std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 enable_parallel_replicas)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -2500,7 +2500,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
 
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
-        && (allow_experimental_parallel_reading_from_replicas == 0)
+        && (enable_parallel_replicas == 0)
         && !settings[Setting::allow_experimental_query_deduplication]
         && !empty_result_for_aggregation_by_empty_set
         && storage
@@ -2587,7 +2587,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     std::optional<UInt64> num_rows;
 
     /// Optimization for trivial query like SELECT count() FROM table.
-    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::allow_experimental_parallel_reading_from_replicas])))
+    if (processing_stage == QueryProcessingStage::FetchColumns && (num_rows = getTrivialCount(settings[Setting::enable_parallel_replicas])))
     {
         const auto & desc = query_analyzer->aggregates()[0];
         const auto & func = desc.function;

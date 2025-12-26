@@ -8,7 +8,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_aggregate_partitions_independently;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -76,7 +76,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool enable_full_text_index;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
@@ -129,7 +129,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
 
-    bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
+    bool use_parallel_replicas = from[Setting::enable_parallel_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
@@ -148,7 +148,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
-    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
+    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::enable_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
     enable_full_text_index = from[Setting::enable_full_text_index];
@@ -174,7 +174,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
 
-    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
+    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::enable_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
@@ -213,7 +213,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
-    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
+    parallel_replicas_enabled = from[Setting::enable_parallel_replicas];
     max_parallel_replicas = from[Setting::max_parallel_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];

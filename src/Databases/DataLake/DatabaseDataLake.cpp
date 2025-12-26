@@ -60,9 +60,9 @@ namespace DatabaseDataLakeSetting
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_database_iceberg;
-    extern const SettingsBool allow_experimental_database_unity_catalog;
-    extern const SettingsBool allow_experimental_database_glue_catalog;
+    extern const SettingsBool allow_database_iceberg;
+    extern const SettingsBool allow_database_unity_catalog;
+    extern const SettingsBool allow_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
@@ -846,7 +846,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
@@ -859,7 +859,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::GLUE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Glue catalog is beta. "
@@ -872,7 +872,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::UNITY:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DataLake database with Unity catalog catalog is beta. "
