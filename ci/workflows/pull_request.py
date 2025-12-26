@@ -69,34 +69,53 @@ workflow = Workflow.Config(
         ],
         JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
-        JobConfigs.lightweight_functional_tests_job,
-        JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        JobConfigs.bugfix_validation_it_job,
+        JobConfigs.lightweight_functional_tests_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.stateless_tests_targeted_pr_jobs[0]
+        .set_allow_merge_on_failure()
+        .set_dependency(BLOCKERS_AFTER_KEEPER),
+        JobConfigs.integration_test_targeted_pr_jobs[0]
+        .set_allow_merge_on_failure()
+        .set_dependency(BLOCKERS_AFTER_KEEPER),
+        *[
+            j.set_dependency(BLOCKERS_AFTER_KEEPER)
+            for j in JobConfigs.stateless_tests_flaky_pr_jobs
+        ],
+        *[
+            j.set_dependency(BLOCKERS_AFTER_KEEPER)
+            for j in JobConfigs.integration_test_asan_flaky_pr_jobs
+        ],
+        JobConfigs.bugfix_validation_ft_pr_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.bugfix_validation_it_job.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
         *[
             j.set_dependency(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                BLOCKERS_AFTER_KEEPER
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.functional_tests_jobs_azure
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        *JobConfigs.unittest_jobs,
+        *[
+            j.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for j in JobConfigs.unittest_jobs
+        ],
         JobConfigs.docker_server.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
