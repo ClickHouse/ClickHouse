@@ -158,7 +158,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
         && std::ranges::any_of(
             variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
     {
-        unsupported_case.store(true, std::memory_order_relaxed);
+        markUnsupportedCase();
         return;
     }
 
