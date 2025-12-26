@@ -39,13 +39,14 @@ def main():
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
         # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
         os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
+        os.environ.setdefault("KEEPER_SCENARIO_FILE", "all")
         # Allow more time for startup and reduce client pressure
         os.environ.setdefault("KEEPER_READY_TIMEOUT", "600")
         os.environ.setdefault("KEEPER_BENCH_CLIENTS", "16")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
         # Limit concurrency and backends on PR to avoid resource starvation
         os.environ.setdefault("KEEPER_PYTEST_XDIST", "1")
-        os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default")
+        os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
         # Enable HTTP control readiness endpoint by default on PR to improve startup probes
         os.environ.setdefault("KEEPER_ENABLE_CONTROL", "1")
         os.environ.setdefault("KEEPER_CONTROL_PORT", "18080")
@@ -193,11 +194,14 @@ def main():
     except Exception:
         dur_val = 120
     try:
-        ready_val = int(os.environ.get("KEEPER_READY_TIMEOUT", 120))
+        ready_val = int(os.environ.get("KEEPER_READY_TIMEOUT", 600))
     except Exception:
-        ready_val = 120
+        ready_val = 600
+    if ready_val < 600:
+        ready_val = 600
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
     extra.append(f"--timeout={timeout_val}")
+    extra.append("--timeout-method=thread")
     # Always run with pytest-xdist (safe per-worker isolation is implemented in the framework)
     xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "auto").strip() or "auto"
     extra.append(f"-n {xdist_workers}")
@@ -206,6 +210,7 @@ def main():
     # Prepare env for pytest
     env = os.environ.copy()
     env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
+    env["KEEPER_READY_TIMEOUT"] = str(ready_val)
     # IMPORTANT: containers launched by docker-compose will bind-mount this exact host path
     # Mount the installed binary to avoid noexec on repo mounts and ensure parity with host-side tools
     server_bin_for_mount = ch_path
@@ -217,6 +222,7 @@ def main():
     env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
     # Ensure ClickHouseCluster uses the same readiness window when waiting for instances
     env.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_val))
+    env.setdefault("KEEPER_SCENARIO_FILE", "all")
     # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
     repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
     cur_pp = env.get("PYTHONPATH", "")
