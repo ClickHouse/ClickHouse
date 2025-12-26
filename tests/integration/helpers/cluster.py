@@ -167,13 +167,23 @@ def run_and_check(
         )
         return ""
 
+    # Honor a global override for long-running steps (e.g. keeper stress bench)
+    eff_timeout = timeout
+    try:
+        if (timeout is None) or (timeout == 300):
+            to_env = os.environ.get("KEEPER_PYTEST_TIMEOUT")
+            if to_env:
+                eff_timeout = int(to_env)
+    except Exception:
+        eff_timeout = timeout
+
     res = subprocess.run(
         args,
         stdout=stdout,
         stderr=stderr,
         env=env,
         shell=shell,
-        timeout=timeout,
+        timeout=eff_timeout,
         check=False,
     )
     out = res.stdout.decode("utf-8", "ignore")

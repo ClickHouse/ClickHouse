@@ -85,7 +85,9 @@ class S3:
         s3_full_path = s3_path
         if not s3_full_path.endswith(file_name) and not with_rename:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
-        cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
+        # Quote paths to handle special characters like spaces or brackets in local filenames/paths
+        import shlex
+        cmd = f"aws s3 cp {shlex.quote(str(local_path))} {shlex.quote('s3://' + str(s3_full_path))}"
         if text and not content_type:
             cmd += " --content-type text/plain"
         elif content_type:
