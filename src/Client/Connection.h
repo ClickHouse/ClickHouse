@@ -66,9 +66,9 @@ public:
         Protocol::Compression compression_,
         Protocol::Secure secure_,
         const String & tls_sni_override_,
-        const String & bind_host_,
+        const String & bind_host_
 #if USE_JWT_CPP && USE_SSL
-        std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
+        , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
 #endif
     );
 

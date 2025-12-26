@@ -1622,9 +1622,9 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.compression,
         parameters.security,
         parameters.tls_sni_override,
-        parameters.bind_host,
+        parameters.bind_host
 #if USE_JWT_CPP && USE_SSL
-        parameters.jwt_provider
+        , parameters.jwt_provider
 #endif
         );
 }
