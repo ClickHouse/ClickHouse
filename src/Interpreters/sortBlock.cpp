@@ -5,8 +5,10 @@
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <Core/SortCursor.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
+#include <algorithm>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -61,7 +63,11 @@ struct PartialSortingLessImpl
                 continue;
             }
 
-            if constexpr (check_collation)
+            if (elem.description.is_natural)
+            {
+                res = naturalCompareAt(lhs, rhs, *elem.column, *elem.column, elem.description.nulls_direction);
+            }
+            else if constexpr (check_collation)
             {
                 if (isCollationRequired(elem.description))
                 {
@@ -142,20 +148,79 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     if (unlikely(all_const))
         return;
 
+    /// Check if natural sort is required
+    bool is_natural_required = false;
+    for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+    {
+        if (column_with_sort_description.description.is_natural)
+        {
+            is_natural_required = true;
+            break;
+        }
+    }
+
     /// If only one column to sort by
     if (columns_with_sort_descriptions.size() == 1)
     {
         auto & column_with_sort_description = columns_with_sort_descriptions[0];
 
-        IColumn::PermutationSortDirection direction = column_with_sort_description.description.direction == -1 ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
-        int nan_direction_hint = column_with_sort_description.description.nulls_direction;
-        const auto & column = column_with_sort_description.column;
+        /// Use general comparator for natural sort
+        if (is_natural_required)
+        {
+            size_t size = block.rows();
+            permutation.resize(size);
+            iota(permutation.data(), size, IColumn::Permutation::value_type(0));
 
-        if (isCollationRequired(column_with_sort_description.description))
-            column->getPermutationWithCollation(
-                *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation);
+            bool is_collation_required = isCollationRequired(column_with_sort_description.description);
+            if (is_collation_required)
+            {
+                PartialSortingLessWithCollation less(columns_with_sort_descriptions);
+                if (limit && limit < size)
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::partial_sort(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                    else
+                        std::nth_element(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                }
+                else
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::stable_sort(permutation.begin(), permutation.end(), less);
+                    else
+                        std::sort(permutation.begin(), permutation.end(), less);
+                }
+            }
+            else
+            {
+                PartialSortingLess less(columns_with_sort_descriptions);
+                if (limit && limit < size)
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::partial_sort(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                    else
+                        std::nth_element(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                }
+                else
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::stable_sort(permutation.begin(), permutation.end(), less);
+                    else
+                        std::sort(permutation.begin(), permutation.end(), less);
+                }
+            }
+        }
         else
-            column->getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+        {
+            IColumn::PermutationSortDirection direction = column_with_sort_description.description.direction == -1 ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
+            int nan_direction_hint = column_with_sort_description.description.nulls_direction;
+            const auto & column = column_with_sort_description.column;
+
+            if (isCollationRequired(column_with_sort_description.description))
+                column->getPermutationWithCollation(
+                    *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation);
+            else
+                column->getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+        }
     }
     else
     {
@@ -166,33 +231,86 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
         if (limit >= size)
             limit = 0;
 
-        EqualRanges ranges;
-        ranges.emplace_back(0, permutation.size());
-
-        for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+        /// Use general comparator for natural sort
+        if (is_natural_required)
         {
-            while (!ranges.empty() && limit && limit <= ranges.back().from)
-                ranges.pop_back();
-
-            if (ranges.empty())
-                break;
-
-            if (column_with_sort_description.column_const)
-                continue;
-
-            bool is_collation_required = isCollationRequired(column_with_sort_description.description);
-            IColumn::PermutationSortDirection direction = column_with_sort_description.description.direction == -1 ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
-            int nan_direction_hint = column_with_sort_description.description.nulls_direction;
-            const auto & column = column_with_sort_description.column;
+            bool is_collation_required = false;
+            for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+            {
+                if (isCollationRequired(column_with_sort_description.description))
+                {
+                    is_collation_required = true;
+                    break;
+                }
+            }
 
             if (is_collation_required)
             {
-                column->updatePermutationWithCollation(
-                    *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation, ranges);
+                PartialSortingLessWithCollation less(columns_with_sort_descriptions);
+                if (limit && limit < size)
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::partial_sort(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                    else
+                        std::nth_element(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                }
+                else
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::stable_sort(permutation.begin(), permutation.end(), less);
+                    else
+                        std::sort(permutation.begin(), permutation.end(), less);
+                }
             }
             else
             {
-                column->updatePermutation(direction, stability, limit, nan_direction_hint, permutation, ranges);
+                PartialSortingLess less(columns_with_sort_descriptions);
+                if (limit && limit < size)
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::partial_sort(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                    else
+                        std::nth_element(permutation.begin(), permutation.begin() + limit, permutation.end(), less);
+                }
+                else
+                {
+                    if (stability == IColumn::PermutationSortStability::Stable)
+                        std::stable_sort(permutation.begin(), permutation.end(), less);
+                    else
+                        std::sort(permutation.begin(), permutation.end(), less);
+                }
+            }
+        }
+        else
+        {
+            EqualRanges ranges;
+            ranges.emplace_back(0, permutation.size());
+
+            for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+            {
+                while (!ranges.empty() && limit && limit <= ranges.back().from)
+                    ranges.pop_back();
+
+                if (ranges.empty())
+                    break;
+
+                if (column_with_sort_description.column_const)
+                    continue;
+
+                bool is_collation_required = isCollationRequired(column_with_sort_description.description);
+                IColumn::PermutationSortDirection direction = column_with_sort_description.description.direction == -1 ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
+                int nan_direction_hint = column_with_sort_description.description.nulls_direction;
+                const auto & column = column_with_sort_description.column;
+
+                if (is_collation_required)
+                {
+                    column->updatePermutationWithCollation(
+                        *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation, ranges);
+                }
+                else
+                {
+                    column->updatePermutation(direction, stability, limit, nan_direction_hint, permutation, ranges);
+                }
             }
         }
     }

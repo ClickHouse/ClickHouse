@@ -707,7 +707,9 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                 SortColumnDescription(
                     order_by_element.children.front()->getColumnName(),
                     order_by_element.direction,
-                    order_by_element.nulls_direction));
+                    order_by_element.nulls_direction,
+                    {},
+                    order_by_element.is_natural));
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
