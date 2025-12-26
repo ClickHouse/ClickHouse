@@ -40,7 +40,7 @@ def main():
         # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
         os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
         # Allow more time for startup and reduce client pressure
-        os.environ.setdefault("KEEPER_READY_TIMEOUT", "180")
+        os.environ.setdefault("KEEPER_READY_TIMEOUT", "240")
         os.environ.setdefault("KEEPER_BENCH_CLIENTS", "16")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
         # Limit concurrency and backends on PR to avoid resource starvation
@@ -206,6 +206,8 @@ def main():
     env["CLICKHOUSE_BINARY"] = ch_path
     env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
     env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
+    # Ensure ClickHouseCluster uses the same readiness window when waiting for instances
+    env.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_val))
     # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
     repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
     cur_pp = env.get("PYTHONPATH", "")
