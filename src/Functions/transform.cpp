@@ -8,13 +8,16 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
@@ -31,6 +34,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
 }
 
 namespace
@@ -57,9 +66,21 @@ namespace
       */
     class FunctionTransform : public IFunction
     {
+    private:
+        bool use_low_cardinality_optimisation = false;
     public:
         static constexpr auto name = "transform";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTransform>(); }
+        static FunctionPtr create(ContextPtr context)
+        {
+            auto const & settings = context->getSettingsRef();
+            auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
+            return std::make_shared<FunctionTransform>(use_low_cardinality_optimisation);
+        }
+
+        explicit FunctionTransform(bool use_low_cardinality_optimisation_ = false)
+            : use_low_cardinality_optimisation(use_low_cardinality_optimisation_)
+        {
+        }
 
         String getName() const override { return name; }
 
@@ -71,7 +92,7 @@ namespace
         bool useDefaultImplementationForNothing() const override { return false; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             const auto args_size = arguments.size();
             if (args_size != 3 && args_size != 4)
@@ -82,9 +103,10 @@ namespace
                     getName(),
                     args_size);
 
-            const DataTypePtr & type_x = arguments[0];
+            const DataTypePtr & type_x = arguments[0].type;
+            const bool is_x_constant = arguments[0].column && isColumnConst(*arguments[0].column);
 
-            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
 
             if (!type_arr_from)
                 throw Exception(
@@ -94,7 +116,7 @@ namespace
 
             const auto type_arr_from_nested = type_arr_from->getNestedType();
 
-            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].type.get());
 
             if (!type_arr_to)
                 throw Exception(
@@ -123,11 +145,18 @@ namespace
                         "transform(T, Array(T), Array(U), U) -> U; "
                         "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                         getName());
+                if (use_low_cardinality_optimisation && is_x_constant)
+                {
+                    if (isString(ret))
+                        ret = std::make_shared<DataTypeLowCardinality>(ret);
+                    if (isString(removeNullable(ret)))
+                        ret = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+                }
                 checkAllowedType(ret);
                 return ret;
             }
 
-            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3].type});
             if (!ret)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -135,6 +164,14 @@ namespace
                     "transform(T, Array(T), Array(U), U) -> U; "
                     "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
+            if (use_low_cardinality_optimisation && arguments[3].column && isColumnConst(*arguments[3].column))
+            {
+                // We don't check is_x_constant - as we've a default value
+                if (isString(ret))
+                    ret = std::make_shared<DataTypeLowCardinality>(ret);
+                if (isString(removeNullable(ret)))
+                    ret = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+            }
             checkAllowedType(ret);
             return ret;
         }
@@ -672,6 +709,9 @@ namespace
         static void checkAllowedTypeHelper(const DataTypePtr & type)
         {
             if (isStringOrFixedString(type))
+                return;
+
+            if (type->lowCardinality())
                 return;
 
             if (type->haveMaximumSizeOfValue())
