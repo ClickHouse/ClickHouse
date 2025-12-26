@@ -2685,19 +2685,21 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         cd->mutable_cluster()->set_cluster(next.cluster.value());
     }
 
-    /// Layout properties
-    const auto & layoutSettings = allDictionaryLayoutSettings.at(dl);
     layout->set_layout(dl);
+    /*
+    /// Layout properties
+    /// Don't set random dictionary properties that can overhelm the server
+    const auto & layoutSettings = allDictionaryLayoutSettings.at(dl);
     if (!layoutSettings.empty() && rg.nextSmallNumber() < 5)
     {
         svs = svs ? svs : layout->mutable_setting_values();
         generateSettingValues(rg, layoutSettings, svs);
-    }
+    }*/
     if (dl == COMPLEX_KEY_SSD_CACHE || dl == SSD_CACHE)
     {
         /// needs path
-        svs = svs ? svs : layout->mutable_setting_values();
-        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        svs = layout->mutable_setting_values();
+        SetValue * sv = svs->mutable_set_value();
         const String ncache = "cache" + std::to_string(this->cache_counter++);
         const std::filesystem::path & nfile = fc.server_file_path / ncache;
 
@@ -2711,8 +2713,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         sv->set_property("SIZE_IN_CELLS");
-        sv->set_value(
-            std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+        sv->set_value(std::to_string(rg.randomInt<uint64_t>(0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key
