@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
+    extern const SettingsBool use_parquet_metadata_cache;
 }
 
 namespace ErrorCodes
@@ -634,6 +635,50 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
+ 
+        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        {
+            auto cache_log = getLogger("ParquetMetadataCache");
+            LOG_DEBUG(cache_log, "cache is enabled");
+            if (isParquetFormat(object_info, configuration)
+                && !object_info->getObjectMetadata()->etag.empty())
+            {
+                auto format_settings_with_metadata_cache_key = format_settings;
+                if (!format_settings_with_metadata_cache_key.has_value())
+                {
+                    format_settings_with_metadata_cache_key.emplace(getFormatSettings(context_));
+                }
+                LOG_DEBUG(cache_log, "creating cache key {} : {}", object_info->getPath(), object_info->getObjectMetadata()->etag);
+                std::pair<std::string, std::string> cache_key = std::make_pair(
+                    object_info->getPath(),
+                    object_info->getObjectMetadata()->etag);
+                format_settings_with_metadata_cache_key->parquet.metadata_cache_key = cache_key;
+                if (format_settings_with_metadata_cache_key->parquet.metadata_cache_key)
+                {
+                    LOG_DEBUG(cache_log, "successfully set cache key");
+                }
+                else
+                {
+                    LOG_DEBUG(cache_log, "failed to set cache key");
+                }
+                input_format = FormatFactory::instance().getInput(
+                object_info->getFileFormat().value_or(configuration->format),
+                *read_buf,
+                initial_header,
+                context_,
+                max_block_size,
+                format_settings_with_metadata_cache_key,
+                parser_shared_resources,
+                filter_info,
+                true /* is_remote_fs */,
+                compression_method,
+                need_only_count);
+            }
+            else
+            {
+                LOG_DEBUG(cache_log, "failed format check or etag is empty");
+            }
+        } 
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
@@ -736,9 +781,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 || object_storage->getType() == ObjectStorageType::S3);
     }
 
-    /// We need object metadata for two cases:
+    /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
+    /// 3. object etag as a caching key for parquet metadata caching
     if (!object_info.metadata)
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
 

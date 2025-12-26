@@ -4,6 +4,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -247,6 +248,39 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         result.compression_method = compression_method_value.value();
     }
     return result;
+}
+
+static bool isParquetFromContentType(const ObjectMetadata & metadata)
+{
+    /// there's no official MIME type for parquet, so we will do our best
+    /// based off the most common headers
+    auto check_content_type_header = [](const String & header, const ObjectMetadata & meta)-> bool {
+        auto content_type_header = meta.attributes.find(header);
+        if (content_type_header != meta.attributes.end())
+        {
+            const String & content_type = content_type_header->second;
+            return content_type == "application/parquet" ||
+                content_type == "application/vnd.apache.parquet" ||
+                content_type == "application/octet-stream" ||
+                content_type == "binary/octet-stream";
+        }
+        return false;
+    };
+    bool upper_content_type = check_content_type_header("Content-Type", metadata);
+    bool lower_content_type = check_content_type_header("content-type", metadata);
+    return upper_content_type || lower_content_type;
+}
+
+static bool isParquetFromFormat(const StorageObjectStorageConfigurationPtr & conf)
+{
+    if (conf->format == "Parquet" || conf->format == "parquet")
+        return true;
+    return false;
+}
+
+bool isParquetFormat(const ObjectInfoPtr & object_info, const StorageObjectStorageConfigurationPtr & conf)
+{
+    return isParquetFromFormat(conf) || isParquetFromContentType(object_info->relative_path_with_metadata.metadata.value());
 }
 
 namespace Setting
