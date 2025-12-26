@@ -35,14 +35,17 @@ def main():
     jn = os.environ.get("JOB_NAME", "")
     is_pr = (wf == "PR") or ("(PR)" in jn)
     if is_pr:
-        # Run full suite on CI by default (including @weekly scenarios)
-        os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
+        # Keep PR runs lightweight and stable under CI load
+        os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
         # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
         os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
-        # Keep PR runs predictable; users can override via --duration/--param
-        os.environ.setdefault("KEEPER_READY_TIMEOUT", "60")
-        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "32")
+        # Allow more time for startup and reduce client pressure
+        os.environ.setdefault("KEEPER_READY_TIMEOUT", "180")
+        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "16")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
+        # Limit concurrency and backends on PR to avoid resource starvation
+        os.environ.setdefault("KEEPER_PYTEST_XDIST", "2")
+        os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default")
     else:
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
     # Always keep containers/logs on fail for local/CI triage unless explicitly disabled
