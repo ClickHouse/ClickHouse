@@ -429,6 +429,69 @@ std::vector<Group> extractGroupFromArgument(std::string_view function_name, cons
 }
 
 
+void checkArgumentTypeForConstString(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    if (argument_index >= arguments.size())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
+
+    auto type = arguments[argument_index].type;
+    auto nested_type = removeLowCardinality(type);
+
+    if (!isString(nested_type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                        argument_index + 1, function_name, type, "String");
+}
+
+
+String extractConstStringFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    chassert(argument_index < arguments.size());
+    const auto & column = *arguments[argument_index].column;
+
+    if (!checkColumnConst<ColumnString>(&column))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant string", argument_index + 1, function_name);
+
+    return String{column.getDataAt(0)};
+}
+
+
+void checkArgumentTypeForConstStrings(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    if (argument_index >= arguments.size())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
+
+    auto type = arguments[argument_index].type;
+    auto nested_type = removeLowCardinality(type);
+
+    if (!isArray(nested_type) || !isString(typeid_cast<const DataTypeArray &>(*nested_type).getNestedType()))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                        argument_index + 1, function_name, type, "Array(String)");
+}
+
+
+std::vector<String> extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    chassert(argument_index < arguments.size());
+    const auto & column = *arguments[argument_index].column;
+
+    const auto * array_column = checkAndGetColumnConstData<ColumnArray>(&column);
+    if (!array_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, function_name);
+
+    size_t count = array_column->getOffsets()[0];
+    const auto * string_column = checkAndGetColumn<ColumnString>(&array_column->getData());
+    if (!string_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, function_name);
+
+    Strings res;
+    res.reserve(count);
+    for (size_t i = 0; i != count; ++i)
+        res.emplace_back(String{string_column->getDataAt(i)});
+
+    return res;
+}
+
+
 const std::type_info & checkArgumentTypeForID(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_nullable)
 {
     if (argument_index >= arguments.size())
