@@ -868,7 +868,7 @@ public:
             while (ctrl_ptr + idx < ctrl_end && ctrl_ptr[idx] < 0)  /// Skip empty/deleted
                 ++idx;
         }
-        iterator(const int8_t * ce) : ctrl_ptr(ce), ctrl_end(ce), slot_base(nullptr), idx(0) {}
+        explicit iterator(const int8_t * ce) : ctrl_ptr(ce), ctrl_end(ce), slot_base(nullptr), idx(0) {}
 
         iterator & operator++()
         {
