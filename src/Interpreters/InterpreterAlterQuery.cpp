@@ -10,6 +10,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -19,7 +20,6 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -395,12 +395,18 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         return column_names;
     };
 
-    requireTemporaryDatabaseAccessIfNeeded(required_access, database, context_);
-    const auto from_database_granted = command.type == ASTAlterCommand::REPLACE_PARTITION &&
-            requireTemporaryDatabaseAccessIfNeeded(required_access, command.from_database, context_);
-    const auto to_database_granted = command.type == ASTAlterCommand::MOVE_PARTITION &&
-            command.move_destination_type == DataDestinationType::TABLE &&
-            requireTemporaryDatabaseAccessIfNeeded(required_access, command.to_database, context_);
+    if (command.type == ASTAlterCommand::REPLACE_PARTITION && !requireTemporaryDatabaseAccessIfNeeded(required_access, command.from_database, context_))
+        required_access.emplace_back(AccessType::SELECT, command.from_database, command.from_table);
+
+    if (
+        command.type == ASTAlterCommand::MOVE_PARTITION &&
+        command.move_destination_type == DataDestinationType::TABLE &&
+        !requireTemporaryDatabaseAccessIfNeeded(required_access, command.to_database, context_)
+    )
+        required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+
+    if (requireTemporaryDatabaseAccessIfNeeded(required_access, database, context_))
+        return required_access;
 
     switch (command.type)
     {
@@ -565,8 +571,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
                     break;
                 case DataDestinationType::TABLE:
                     required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
-                    if (!to_database_granted)
-                        required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
                     break;
                 case DataDestinationType::SHARD:
                     required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
@@ -579,8 +583,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::REPLACE_PARTITION:
         {
-            if (!from_database_granted)
-                required_access.emplace_back(AccessType::SELECT, command.from_database, command.from_table);
             required_access.emplace_back(AccessType::ALTER_DELETE | AccessType::INSERT, database, table);
             break;
         }

@@ -1,12 +1,12 @@
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessRightsElement.h>
-#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
+#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Access/AccessControl.h>
+#include <Access/Common/AccessRightsElement.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

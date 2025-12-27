@@ -1,4 +1,4 @@
-#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 
@@ -15,7 +15,7 @@ bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_acce
     {
         // todo: duplicates in result?
         // we could skip check here at all because access already granted if the temporary database presents in context, but permissions may be changed since creation.
-        required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE, db_name);
+        required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE);
         return true;
     }
 

@@ -27,17 +27,7 @@ namespace
     /// CREATE TABLE, CREATE DICTIONARY, CREATE VIEW, CREATE TEMPORARY TABLE, CREATE DATABASE, CREATE TEMPORARY DATABASE queries.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.database)
-        {
-            /// CREATE [TEMPORARY] DATABASE
-            String database_name = create.getDatabase();
-            if (!database_name.empty())
-            {
-                String new_database_name = data.renaming_map.getNewDatabaseName(database_name);
-                create.setDatabase(new_database_name);
-            }
-        }
-        else if (create.table)
+        if (create.table)
         {
             if (create.temporary)
             {
@@ -79,6 +69,16 @@ namespace
                         }
                     }
                 }
+            }
+        }
+        else if (create.database)
+        {
+            /// CREATE [TEMPORARY] DATABASE
+            String database_name = create.getDatabase();
+            if (!database_name.empty())
+            {
+                String new_database_name = data.renaming_map.getNewDatabaseName(database_name);
+                create.setDatabase(new_database_name);
             }
         }
 

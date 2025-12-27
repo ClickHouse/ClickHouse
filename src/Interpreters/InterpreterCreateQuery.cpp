@@ -58,7 +58,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
-#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -2444,7 +2444,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (!create.table)
     {
         if (create.temporary)
-            required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE, create.getDatabase());
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE);
         else
             required_access.emplace_back(AccessType::CREATE_DATABASE, create.getDatabase());
     }

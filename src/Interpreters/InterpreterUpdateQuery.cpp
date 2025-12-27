@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
@@ -20,6 +19,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 
 
 namespace DB

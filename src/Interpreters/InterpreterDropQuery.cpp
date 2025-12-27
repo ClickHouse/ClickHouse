@@ -4,9 +4,9 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <IO/SharedThreadPools.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
