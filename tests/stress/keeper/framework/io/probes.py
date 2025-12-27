@@ -66,9 +66,19 @@ def count_leaders(nodes):
 def mntr(node):
     kv = {}
     for line in four(node, "mntr").splitlines():
-        if "\t" in line:
-            k, v = line.split("\t", 1)
+        s = line.strip()
+        if not s:
+            continue
+        if "\t" in s:
+            k, v = s.split("\t", 1)
             kv[k.strip()] = v.strip()
+            continue
+        parts = s.split()
+        if len(parts) >= 2:
+            k = parts[0].strip()
+            v = parts[1].strip()
+            if k:
+                kv[k] = v
     return kv
 
 

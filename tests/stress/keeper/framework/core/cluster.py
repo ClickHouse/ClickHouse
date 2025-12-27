@@ -255,7 +255,11 @@ class ClusterBuilder:
             (conf_dir / f"keeper_config_{name}.xml").write_text(full_xml)
             cfgs = [f"configs/{cname}/keeper_config_{name}.xml"]
             inst = cluster.add_instance(
-                name, main_configs=cfgs, with_zookeeper=False, stay_alive=True
+                name,
+                main_configs=cfgs,
+                with_zookeeper=False,
+                stay_alive=True,
+                hostname=name,
             )
             nodes.append(inst)
 
