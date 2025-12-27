@@ -375,8 +375,8 @@ private:
         {
             if (!cell.isEmpty())
             {
-                Cell * result;
-                bool inserted;
+                Cell * result = nullptr;
+                bool inserted = false;
                 emplaceNoResize(cell.key, result, inserted);
                 if (inserted)
                     result->value = cell.value;
