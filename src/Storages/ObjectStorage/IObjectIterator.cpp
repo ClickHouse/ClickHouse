@@ -112,11 +112,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
     if (!last_object_info)
         return {};
 
-
     auto splitter = FormatFactory::instance().getSplitter(format);
     if (splitter)
     {
-        auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+        auto buffer = createReadBuffer(last_object_info->path_with_metadata, object_storage, getContext(), log);
         size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
         auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
         for (const auto & file_bucket : file_bucket_info)
@@ -126,6 +125,9 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
         }
     }
+
+    if (pending_objects_info.empty())
+        return last_object_info;
 
     auto result = pending_objects_info.front();
     pending_objects_info.pop();

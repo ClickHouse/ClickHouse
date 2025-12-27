@@ -13,7 +13,8 @@ namespace DB::Iceberg
 {
 struct IcebergObjectSerializableInfo
 {
-    String data_object_file_path_key;
+    String data_object_file_path_from_metadata;
+    String data_object_file_absolute_path;
     Int32 underlying_format_read_schema_id;
     Int32 schema_id_relevant_to_iterator;
     Int64 sequence_number;
@@ -33,6 +34,7 @@ private:
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
 
 
@@ -47,13 +49,22 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// It is also used to create a filter for the data object in the position delete transform.
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
 
-    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
+    explicit IcebergDataObjectInfo(const PathWithMetadata & path_);
+
+    /// Sometimes data files are located outside the table location and even in a different storage.
+    explicit IcebergDataObjectInfo(
+        Iceberg::ManifestFileEntry data_manifest_file_entry_,
+        Int32 schema_id_relevant_to_iterator_,
+        ObjectStoragePtr resolved_storage,
+        const String & resolved_key);
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
         const SharedHeader & header,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_);
+        ContextPtr context_,
+        const String & table_location,
+        SecondaryStorages & secondary_storages);
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 

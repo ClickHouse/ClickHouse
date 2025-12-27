@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+#include "config.h"
 #include <string>
 #include <string_view>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -47,8 +49,6 @@ bool writeMetadataFileAndVersionHint(
     DB::CompressionMethod compression_method,
     bool try_write_version_hint
 );
-
-std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
 struct TransformAndArgument
 {

@@ -143,7 +143,7 @@ public:
     {
         DB::ObjectStoragePtr object_storage = disk->getObjectStorage();
 
-        DB::RelativePathsWithMetadata children;
+        DB::PathsWithMetadata children;
         auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
         object_storage->listObjects(common_key_prefix, children, /* max_keys */ 0);
 

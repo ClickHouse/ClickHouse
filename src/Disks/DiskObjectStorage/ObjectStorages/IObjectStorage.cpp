@@ -21,12 +21,12 @@ namespace ErrorCodes
 
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
-    RelativePathsWithMetadata files;
+    PathsWithMetadata files;
     listObjects(path, files, 1);
     return !files.empty();
 }
 
-void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
+void IObjectStorage::listObjects(const std::string &, PathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
@@ -51,7 +51,7 @@ SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata(
 
 ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
 {
-    RelativePathsWithMetadata files;
+    PathsWithMetadata files;
     listObjects(path_prefix, files, max_keys);
 
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));

@@ -423,7 +423,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 LOG_DEBUG(log, "Has no credentials");
             }
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && catalog->getCatalogType() != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        else if (!lightweight && table_metadata.requiresCredentials()
+            && catalog->getCatalogType() != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE
+            && table_metadata.getStorageType() != DatabaseDataLakeStorageType::Local)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,

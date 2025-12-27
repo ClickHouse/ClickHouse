@@ -33,7 +33,7 @@ class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageID;
 struct IObjectIterator;
-struct RelativePathWithMetadata;
+struct PathWithMetadata;
 class IObjectStorage;
 struct ObjectInfo;
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
