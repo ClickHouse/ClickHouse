@@ -1,6 +1,32 @@
 import os
 
 
+def getenv_int(name, default):
+    try:
+        v = os.environ.get(name)
+        if v is None or v == "":
+            return int(default)
+        return int(v)
+    except Exception:
+        try:
+            return int(default)
+        except Exception:
+            return default
+
+
+def getenv_float(name, default):
+    try:
+        v = os.environ.get(name)
+        if v is None or v == "":
+            return float(default)
+        return float(v)
+    except Exception:
+        try:
+            return float(default)
+        except Exception:
+            return default
+
+
 def parse_bool(v):
     if isinstance(v, bool):
         return v
