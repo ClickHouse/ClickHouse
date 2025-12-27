@@ -2,7 +2,10 @@
 #include <iomanip>
 #include <mutex>
 #include <atomic>
+
+#if defined(__x86_64__)
 #include <immintrin.h>
+#endif
 
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
@@ -564,6 +567,7 @@ public:
 };
 
 
+#if defined(__x86_64__)
 /// ==================== Swiss Table Hash Map ====================
 /// Swiss Table uses SIMD to probe multiple slots at once.
 /// Metadata array stores control bytes (7 bits of hash + empty/deleted markers).
@@ -774,6 +778,7 @@ public:
         return iterator(ctrl.data() + capacity);
     }
 };
+#endif
 
 
 /// ==================== Two-Level Robin Hood Hash Map ====================
@@ -846,6 +851,7 @@ public:
 };
 
 
+#if defined(__x86_64__)
 /// ==================== Two-Level Swiss Table Hash Map ====================
 /// Partitions keys into 256 buckets for parallel merging capability.
 template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
@@ -914,16 +920,18 @@ public:
         return impls[bucket][key];
     }
 };
+#endif
 
 
 using Mutex = std::mutex;
 
 using MapSmallLocks = HashMapWithSmallLocks<Key, Value>;
 using MapRobinHood = RobinHoodHashMap<Key, Value>;
-using MapSwiss = SwissTableHashMap<Key, Value>;
 using MapTwoLevelRobinHood = TwoLevelRobinHoodHashMap<Key, Value>;
+#if defined(__x86_64__)
+using MapSwiss = SwissTableHashMap<Key, Value>;
 using MapTwoLevelSwiss = TwoLevelSwissTableHashMap<Key, Value>;
-
+#endif
 
 void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -1341,6 +1349,7 @@ void aggregateRobinHoodPrefetch(MapRobinHood & map, Source::const_iterator begin
         ++map[*it];
 }
 
+#if defined(__x86_64__)
 /// ==================== Swiss Table Aggregation ====================
 void aggregateSwiss(MapSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -1366,6 +1375,7 @@ void aggregateSwissPrefetch(MapSwiss & map, Source::const_iterator begin, Source
     for (; it != end; ++it)
         ++map[*it];
 }
+#endif
 
 /// ==================== Two-Level Robin Hood Aggregation ====================
 void aggregateTwoLevelRobinHood(MapTwoLevelRobinHood & map, Source::const_iterator begin, Source::const_iterator end)
@@ -1400,6 +1410,7 @@ void mergeTwoLevelRobinHood(MapTwoLevelRobinHood * maps, size_t num_threads, siz
             maps[0].impls[bucket][it.getKey()] += it.getMapped();
 }
 
+#if defined(__x86_64__)
 /// ==================== Two-Level Swiss Table Aggregation ====================
 void aggregateTwoLevelSwiss(MapTwoLevelSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -1432,6 +1443,7 @@ void mergeTwoLevelSwiss(MapTwoLevelSwiss * maps, size_t num_threads, size_t buck
         for (auto it = maps[i].impls[bucket].begin(); it != maps[i].impls[bucket].end(); ++it)
             maps[0].impls[bucket][it.getKey()] += it.getMapped();
 }
+#endif
 
 
 int main(int argc, char ** argv)
