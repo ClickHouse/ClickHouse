@@ -413,6 +413,93 @@ def test_function_over_time():
     )
 
 
+def test_literals():
+    timestamp = 250
+    do_query_test(
+        "23",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "23"]}',
+        [["1970-01-01 00:04:10.000", 23]],
+    )
+
+    do_query_test(
+        "-2.43",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "-2.43"]}',
+        [["1970-01-01 00:04:10.000", -2.43]],
+    )
+
+    do_query_test(
+        "3.4e-5",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "0.000034"]}',
+        [["1970-01-01 00:04:10.000", "0.000034"]],
+    )
+
+    do_query_test(
+        "0x8f",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "143"]}',
+        [["1970-01-01 00:04:10.000", 143]],
+    )
+
+    do_query_test(
+        "-Inf",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "-Inf"]}',
+        [["1970-01-01 00:04:10.000", "-inf"]],
+    )
+
+    do_query_test(
+        "NaN",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "NaN"]}',
+        [["1970-01-01 00:04:10.000", "nan"]],
+    )
+
+    do_query_test(
+        "1_000_000",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "1000000"]}',
+        [["1970-01-01 00:04:10.000", "1000000"]],
+    )
+
+    do_query_test(
+        ".123_456_789",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "0.123456789"]}',
+        [["1970-01-01 00:04:10.000", "0.123456789"]],
+    )
+
+    do_query_test(
+        "0x_53_AB_F3_82",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "1403777922"]}',
+        [["1970-01-01 00:04:10.000", 1403777922]],
+    )
+
+    do_query_test(
+        "1h30m",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "5400"]}',
+        [["1970-01-01 00:04:10.000", 5400]],
+    )
+
+    do_query_test(
+        "12h34m56s",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "45296"]}',
+        [["1970-01-01 00:04:10.000", 45296]],
+    )
+
+    do_query_test(
+        "54s321ms",
+        timestamp,
+        '{"resultType": "scalar", "result": [250, "54.321"]}',
+        [["1970-01-01 00:04:10.000", "54.321"]],
+    )
+
+
 def test_range_query():
     do_range_query_test(
         "test",
