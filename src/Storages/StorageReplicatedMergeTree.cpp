@@ -4139,10 +4139,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             return AttemptStatus::Limited;
         }
 
-        UInt64 max_source_parts_size_for_merge = CompactionStatistics::getMaxSourcePartsSizeForMerge(
+        UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(
             *this, (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue], merges_and_mutations_sum);
-        String max_source_part_size_for_mutation_log_comment;
-        UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this, &max_source_part_size_for_mutation_log_comment);
+        String max_source_part_bytes_for_mutation_log_comment;
+        UInt64 max_source_part_bytes_for_mutation = CompactionStatistics::getMaxSourcePartBytesForMutation(*this, &max_source_part_bytes_for_mutation_log_comment);
+        UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
 
         bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
             getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
@@ -4151,7 +4152,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
             future_merged_part->uuid = UUIDHelpers::generateV4();
 
-        bool can_assign_merge = max_source_parts_size_for_merge > 0;
+        bool can_assign_merge = max_source_parts_bytes_for_merge > 0;
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
@@ -4160,7 +4161,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
                 local_merge_pred,
                 MergeSelectorApplier(
-                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr
@@ -4179,7 +4180,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
                 merge_predicate,
                 MergeSelectorApplier(
-                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr
@@ -4231,15 +4232,16 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
 
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
-        if (max_source_part_size_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
+        if (max_source_part_bytes_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
-            if (max_source_part_size_for_mutation == 0)
-                max_source_part_size_for_mutation_log_comment = " (" + max_source_part_size_for_mutation_log_comment + ")";
+            if (max_source_part_bytes_for_mutation == 0)
+                max_source_part_bytes_for_mutation_log_comment = " (" + max_source_part_bytes_for_mutation_log_comment + ")";
+
             LOG_TRACE(log, "Number of queued mutations ({}) is greater than max_replicated_mutations_in_queue ({})"
                 " or there are not enough free threads for mutations{}, so won't select new parts to merge or mutate.",
                 merges_and_mutations_queued.mutations,
                 (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value,
-                max_source_part_size_for_mutation_log_comment);
+                max_source_part_bytes_for_mutation_log_comment);
             return AttemptStatus::Limited;
         }
 
@@ -4253,7 +4255,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
             {
-                if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
+                if (part->getBytesOnDisk() > max_source_part_bytes_for_mutation)
                     continue;
 
                 auto expected = merge_predicate->getExpectedMutationVersion(part);
@@ -6200,11 +6202,14 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 if (partition_id.empty())
                 {
+                    UInt64 max_source_parts_bytes_for_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+                    UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
+
                     return merger_mutator.selectPartsToMerge(
                         parts_collector,
                         merge_predicate,
                         MergeSelectorApplier(
-                            /*max_merge_sizes=*/{(*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]},
+                            /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr

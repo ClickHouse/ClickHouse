@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -1081,6 +1082,13 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
             *pos, block.rows());
+    }
+
+    if (*pos + limit > std::numeric_limits<UInt32>::max())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot build text index in part with {} rows. Materialization of text index is not supported for parts with more than {} rows",
+            *pos + limit, std::numeric_limits<UInt32>::max());
     }
 
     const size_t rows_read = std::min(limit, block.rows() - *pos);
