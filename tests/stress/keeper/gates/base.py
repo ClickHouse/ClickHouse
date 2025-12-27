@@ -1,9 +1,10 @@
+import os
 import re
 import time
 from pathlib import Path
 from kazoo.client import KazooClient
 
-from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS
+from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS, parse_bool
 from ..framework.core.util import wait_until
 from ..framework.io.probes import (
     any_ephemerals,
@@ -239,12 +240,14 @@ def count_paths(nodes, prefixes):
             results.append((str(p), 0))
 
     try:
-        repo_root = Path(__file__).parents[4]
-        out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_counts.txt"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
-            for p, c in results:
-                f.write(f"{p},{c}\n")
+        import os
+        if parse_bool(os.environ.get("KEEPER_DEBUG")):
+            repo_root = Path(__file__).parents[4]
+            out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_counts.txt"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with open(out, "w", encoding="utf-8") as f:
+                for p, c in results:
+                    f.write(f"{p},{c}\n")
     except Exception:
         pass
     finally:
@@ -546,122 +549,50 @@ def replay_repeatable(
         return
 
 
-def apply_gate(gate, nodes, leader, ctx, summary):
-    gtype = (gate.get("type") or "").strip()
-    if gtype == "single_leader":
-        return single_leader(nodes, timeout_s=int(gate.get("timeout_s", 60)))
-    if gtype == "backlog_drains":
-        return backlog_drains(nodes, max_s=int(gate.get("max_s", 120)))
-    if gtype == "error_rate_le":
-        return error_rate_le(
-            summary or {}, max_ratio=float(gate.get("max_ratio", DEFAULT_ERROR_RATE))
-        )
-    if gtype == "p99_le":
-        return p99_le(summary or {}, max_ms=int(gate.get("max_ms", DEFAULT_P99_MS)))
-    if gtype == "p95_le":
-        return p95_le(summary or {}, max_ms=int(gate.get("max_ms", DEFAULT_P99_MS)))
-    if gtype == "watch_delta_within":
-        pct = gate.get("pct")
-        md = gate.get("max_delta")
-        try:
-            md = int(md) if md is not None else None
-        except Exception:
-            md = None
-        try:
-            pct = float(pct) if pct is not None else None
-        except Exception:
-            pct = None
-        return watch_delta_within(nodes, ctx, max_delta=md, pct=pct)
-    if gtype == "no_watcher_hotspot":
-        try:
-            ms = float(gate.get("max_share", 0.95))
-        except Exception:
-            ms = 0.95
-        return no_watcher_hotspot(nodes, ctx, max_share=ms)
-    if gtype == "ephemerals_gone_within":
-        return ephemerals_gone_within(nodes, max_s=int(gate.get("max_s", 60)))
-    if gtype == "ready_expect":
-        return ready_expect(
-            nodes,
-            leader,
-            ok=bool(gate.get("ok", True)),
-            timeout_s=int(gate.get("timeout_s", 60)),
-        )
-    if gtype == "lgif_monotone":
-        return lgif_monotone(nodes)
-    if gtype == "fourlw_enforces":
-        return fourlw_enforces(nodes, allow=gate.get("allow"), deny=gate.get("deny"))
-    if gtype == "health_precheck":
-        return health_precheck(nodes)
-    if gtype == "replay_repeatable":
-        return replay_repeatable(
-            nodes,
-            leader,
-            ctx,
-            summary or {},
-            duration_s=int(gate.get("duration_s", 120)),
-            max_error_rate_delta=float(gate.get("max_error_rate_delta", 0.05)),
-            max_p99_delta_ms=int(gate.get("max_p99_delta_ms", 500)),
-        )
-    if gtype == "prom_thresholds_le":
-        return prom_thresholds_le(
-            nodes,
-            gate.get("metrics") or {},
-            aggregate=str(gate.get("aggregate", "sum")),
-        )
-    if gtype == "srvr_thresholds_le":
-        return srvr_thresholds_le(
-            nodes,
-            gate.get("metrics") or {},
-            aggregate=str(gate.get("aggregate", "sum")),
-        )
-    if gtype == "rps_ge":
-        return rps_ge(summary or {}, min_rps=float(gate.get("min_rps", 0)))
-    if gtype == "ops_ge":
-        return ops_ge(summary or {}, min_ops=float(gate.get("min_ops", 0)))
-    if gtype == "count_paths":
-        return count_paths(nodes, gate.get("prefixes") or [])
-    if gtype == "mntr_print":
-        try:
-            for n in nodes or []:
-                try:
-                    m = mntr(n) or {}
-                    zc = int(m.get("zk_znode_count", 0) or 0)
-                    wc = int(m.get("zk_watch_count", 0) or 0)
-                    ec = int(m.get("zk_ephemerals_count", 0) or 0)
-                    ds = int(m.get("zk_approximate_data_size", 0) or 0)
-                    print(
-                        f"[keeper] mntr node={n.name} zk_znode_count={zc} zk_ephemerals_count={ec} zk_watch_count={wc} zk_data_size={ds}"
-                    )
-                except Exception:
-                    print(f"[keeper] mntr node={getattr(n, 'name', 'node')} error")
-        except Exception:
-            pass
-        return
-    if gtype == "print_summary":
-        try:
-            s = summary or {}
-            ops = int(s.get("ops", 0) or 0)
-            errs = int(s.get("errors", 0) or 0)
-            p50 = int(s.get("p50_ms", 0) or 0)
-            p95 = int(s.get("p95_ms", 0) or 0)
-            p99 = int(s.get("p99_ms", 0) or 0)
-            rr = s.get("read_ratio")
-            wr = s.get("write_ratio")
-            extra = []
-            if rr is not None:
-                try:
-                    extra.append(f"read_ratio={float(rr):.3f}")
-                except Exception:
-                    pass
-            if wr is not None:
-                try:
-                    extra.append(f"write_ratio={float(wr):.3f}")
-                except Exception:
-                    pass
-            extra_str = (" "+" ".join(extra)) if extra else ""
-            print(f"[keeper] bench_summary ops={ops} errors={errs} p50={p50}ms p95={p95}ms p99={p99}ms{extra_str}")
+def _gate_mntr_print(nodes):
+    try:
+        for n in nodes or []:
             try:
+                m = mntr(n) or {}
+                zc = int(m.get("zk_znode_count", 0) or 0)
+                wc = int(m.get("zk_watch_count", 0) or 0)
+                ec = int(m.get("zk_ephemerals_count", 0) or 0)
+                ds = int(m.get("zk_approximate_data_size", 0) or 0)
+                print(
+                    f"[keeper] mntr node={n.name} zk_znode_count={zc} zk_ephemerals_count={ec} zk_watch_count={wc} zk_data_size={ds}"
+                )
+            except Exception:
+                print(f"[keeper] mntr node={getattr(n, 'name', 'node')} error")
+    except Exception:
+        pass
+    return
+
+
+def _gate_print_summary(summary):
+    try:
+        s = summary or {}
+        ops = int(s.get("ops", 0) or 0)
+        errs = int(s.get("errors", 0) or 0)
+        p50 = int(s.get("p50_ms", 0) or 0)
+        p95 = int(s.get("p95_ms", 0) or 0)
+        p99 = int(s.get("p99_ms", 0) or 0)
+        rr = s.get("read_ratio")
+        wr = s.get("write_ratio")
+        extra = []
+        if rr is not None:
+            try:
+                extra.append(f"read_ratio={float(rr):.3f}")
+            except Exception:
+                pass
+        if wr is not None:
+            try:
+                extra.append(f"write_ratio={float(wr):.3f}")
+            except Exception:
+                pass
+        extra_str = (" "+" ".join(extra)) if extra else ""
+        print(f"[keeper] bench_summary ops={ops} errors={errs} p50={p50}ms p95={p95}ms p99={p99}ms{extra_str}")
+        try:
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 repo_root = Path(__file__).parents[4]
                 out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_summary.txt"
                 out.parent.mkdir(parents=True, exist_ok=True)
@@ -680,18 +611,55 @@ def apply_gate(gate, nodes, leader, ctx, summary):
                         except Exception:
                             pass
                     f.write("\n")
-            except Exception:
-                pass
         except Exception:
             pass
-        return
-    if gtype == "config_converged":
-        return config_converged(nodes, timeout_s=int(gate.get("timeout_s", 30)))
-    if gtype == "config_members_len_eq":
-        return config_members_len_eq(nodes, expected=int(gate.get("expected", 3)))
-    if gtype == "election_time_le":
-        return election_time_le(ctx, max_s=float(gate.get("max_s", 10)))
-    if gtype == "log_sanity_ok":
-        return log_sanity_ok(nodes, allow=gate.get("allow"))
-    # Generic pass-through for unknown gates (non-fatal in stress env)
+    except Exception:
+        pass
+    return
+
+
+def apply_gate(gate, nodes, leader, ctx, summary):
+    gtype = (gate.get("type") or "").strip()
+    def _wdw(g):
+        pct = g.get("pct")
+        md = g.get("max_delta")
+        try:
+            md = int(md) if md is not None else None
+        except Exception:
+            md = None
+        try:
+            pct = float(pct) if pct is not None else None
+        except Exception:
+            pct = None
+        return watch_delta_within(nodes, ctx, max_delta=md, pct=pct)
+
+    dispatch = {
+        "single_leader": lambda g: single_leader(nodes, timeout_s=int(g.get("timeout_s", 60))),
+        "backlog_drains": lambda g: backlog_drains(nodes, max_s=int(g.get("max_s", 120))),
+        "error_rate_le": lambda g: error_rate_le(summary or {}, max_ratio=float(g.get("max_ratio", DEFAULT_ERROR_RATE))),
+        "p99_le": lambda g: p99_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))),
+        "p95_le": lambda g: p95_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))),
+        "watch_delta_within": _wdw,
+        "no_watcher_hotspot": lambda g: no_watcher_hotspot(nodes, ctx, max_share=float(g.get("max_share", 0.95))),
+        "ephemerals_gone_within": lambda g: ephemerals_gone_within(nodes, max_s=int(g.get("max_s", 60))),
+        "ready_expect": lambda g: ready_expect(nodes, leader, ok=bool(g.get("ok", True)), timeout_s=int(g.get("timeout_s", 60))),
+        "lgif_monotone": lambda g: lgif_monotone(nodes),
+        "fourlw_enforces": lambda g: fourlw_enforces(nodes, allow=g.get("allow"), deny=g.get("deny")),
+        "health_precheck": lambda g: health_precheck(nodes),
+        "replay_repeatable": lambda g: replay_repeatable(nodes, leader, ctx, summary or {}, duration_s=int(g.get("duration_s", 120)), max_error_rate_delta=float(g.get("max_error_rate_delta", 0.05)), max_p99_delta_ms=int(g.get("max_p99_delta_ms", 500))),
+        "prom_thresholds_le": lambda g: prom_thresholds_le(nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))),
+        "srvr_thresholds_le": lambda g: srvr_thresholds_le(nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))),
+        "rps_ge": lambda g: rps_ge(summary or {}, min_rps=float(g.get("min_rps", 0))),
+        "ops_ge": lambda g: ops_ge(summary or {}, min_ops=float(g.get("min_ops", 0))),
+        "count_paths": lambda g: count_paths(nodes, g.get("prefixes") or []),
+        "mntr_print": lambda g: _gate_mntr_print(nodes),
+        "print_summary": lambda g: _gate_print_summary(summary),
+        "config_converged": lambda g: config_converged(nodes, timeout_s=int(g.get("timeout_s", 30))),
+        "config_members_len_eq": lambda g: config_members_len_eq(nodes, expected=int(g.get("expected", 3))),
+        "election_time_le": lambda g: election_time_le(ctx, max_s=float(g.get("max_s", 10))),
+        "log_sanity_ok": lambda g: log_sanity_ok(nodes, allow=g.get("allow")),
+    }
+    fn = dispatch.get(gtype)
+    if fn:
+        return fn(gate)
     raise AssertionError(f"unknown gate type: {gtype}")
