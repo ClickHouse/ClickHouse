@@ -17,6 +17,8 @@ from ..framework.io.probes import (
     ready,
     srvr_kv,
     wchs_total,
+    lgif,
+    wchp_paths,
 )
 from ..framework.io.prom_parse import parse_prometheus_text
 from ..workloads.adapter import servers_arg
@@ -365,7 +367,7 @@ def watch_delta_within(nodes, ctx, max_delta=None, pct=None):
         return
 
 
-def no_watcher_hotspot(nodes, ctx=None, max_share=0.95):
+def no_watcher_hotspot(nodes, ctx=None, max_share=0.95, max_path_share=None):
     try:
         totals = []
         total = 0
@@ -373,15 +375,34 @@ def no_watcher_hotspot(nodes, ctx=None, max_share=0.95):
             v = int(wchs_total(n) or 0)
             totals.append(v)
             total += v
-        if total <= 0:
-            return
-        worst = max(totals) if totals else 0
-        share = float(worst) / float(total)
-        if share <= float(max_share):
-            return
-        raise AssertionError(
-            f"no_watcher_hotspot: worst_share={share:.3f} exceeds {float(max_share):.3f}"
-        )
+        if total > 0:
+            worst = max(totals) if totals else 0
+            share = float(worst) / float(total)
+            if share > float(max_share):
+                raise AssertionError(
+                    f"no_watcher_hotspot: worst_share={share:.3f} exceeds {float(max_share):.3f}"
+                )
+        if max_path_share is not None:
+            try:
+                agg = {}
+                for n in nodes or []:
+                    d = wchp_paths(n) or {}
+                    for k, v in d.items():
+                        try:
+                            agg[k] = agg.get(k, 0) + int(v)
+                        except Exception:
+                            continue
+                t = sum(agg.values())
+                if t > 0:
+                    w = max(agg.values()) if agg else 0
+                    s = float(w) / float(t)
+                    if s > float(max_path_share):
+                        raise AssertionError(
+                            f"no_watcher_hotspot: worst_path_share={s:.3f} exceeds {float(max_path_share):.3f}"
+                        )
+            except Exception:
+                pass
+        return
     except Exception:
         return
 
@@ -412,9 +433,42 @@ def ready_expect(nodes, leader, ok=True, timeout_s=60):
     )
 
 
-def lgif_monotone(nodes):
-    # Placeholder: assume monotonic in short runs
-    return
+def lgif_monotone(nodes, ctx=None):
+    try:
+        for n in nodes or []:
+            try:
+                cur = lgif(n) or {}
+            except Exception:
+                cur = {}
+            base = None
+            try:
+                if ctx is not None:
+                    base = ((ctx.get("_metrics_cache_baseline") or {}).get(n.name) or {}).get("lgif")
+            except Exception:
+                base = None
+            if not base:
+                continue
+            try:
+                dec = []
+                for k, bv in (base or {}).items():
+                    try:
+                        bvi = int(bv)
+                    except Exception:
+                        continue
+                    try:
+                        cv = int((cur or {}).get(k, bvi))
+                    except Exception:
+                        cv = bvi
+                    if cv < bvi:
+                        dec.append(k)
+                if dec:
+                    keys = ",".join(sorted(dec)[:5])
+                    raise AssertionError(f"lgif_monotone: decreased keys: {keys}")
+            except Exception:
+                return
+        return
+    except Exception:
+        return
 
 
 def fourlw_enforces(nodes, allow=None, deny=None):
@@ -640,10 +694,19 @@ def apply_gate(gate, nodes, leader, ctx, summary):
         "p99_le": lambda g: p99_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))),
         "p95_le": lambda g: p95_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))),
         "watch_delta_within": _wdw,
-        "no_watcher_hotspot": lambda g: no_watcher_hotspot(nodes, ctx, max_share=float(g.get("max_share", 0.95))),
+        "no_watcher_hotspot": lambda g: (lambda _g: (
+            (lambda mps: no_watcher_hotspot(
+                nodes,
+                ctx,
+                max_share=float(_g.get("max_share", 0.95)),
+                max_path_share=mps,
+            ))(
+                (lambda raw: (float(raw) if raw not in (None, "") else None))(_g.get("max_path_share"))
+            )
+        ))(g),
         "ephemerals_gone_within": lambda g: ephemerals_gone_within(nodes, max_s=int(g.get("max_s", 60))),
         "ready_expect": lambda g: ready_expect(nodes, leader, ok=bool(g.get("ok", True)), timeout_s=int(g.get("timeout_s", 60))),
-        "lgif_monotone": lambda g: lgif_monotone(nodes),
+        "lgif_monotone": lambda g: lgif_monotone(nodes, ctx),
         "fourlw_enforces": lambda g: fourlw_enforces(nodes, allow=g.get("allow"), deny=g.get("deny")),
         "health_precheck": lambda g: health_precheck(nodes),
         "replay_repeatable": lambda g: replay_repeatable(nodes, leader, ctx, summary or {}, duration_s=int(g.get("duration_s", 120)), max_error_rate_delta=float(g.get("max_error_rate_delta", 0.05)), max_p99_delta_ms=int(g.get("max_p99_delta_ms", 500))),

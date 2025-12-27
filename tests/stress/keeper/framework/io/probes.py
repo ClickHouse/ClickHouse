@@ -86,6 +86,31 @@ def wchs_total(node):
         return 0
 
 
+def wchp_paths(node):
+    try:
+        out = four(node, "wchp")
+        counts = {}
+        for line in out.splitlines():
+            s = line.strip()
+            if not s or not s.startswith("/"):
+                continue
+            parts = s.split()
+            path = parts[0]
+            num = None
+            for tok in reversed(s.replace(",", " ").split()):
+                try:
+                    num = int(tok)
+                    break
+                except Exception:
+                    continue
+            if num is None:
+                num = 1
+            counts[path] = counts.get(path, 0) + int(num)
+        return counts
+    except Exception:
+        return {}
+
+
 def any_ephemerals(node):
     return "Sessions with Ephemerals" in four(node, "dump")
 
