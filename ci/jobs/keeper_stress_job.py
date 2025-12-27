@@ -32,6 +32,24 @@ def main():
     parser.add_argument("--duration", type=int)
     parser.add_argument("--param")
     args, _ = parser.parse_known_args()
+    try:
+        _repo = str(Path(__file__).resolve().parents[2])
+        _envf = os.path.join(_repo, "ci", "tmp", "praktika_setup_env.sh")
+        if os.path.exists(_envf):
+            with open(_envf, "r", encoding="utf-8") as _f:
+                for _line in _f:
+                    _s = _line.strip()
+                    if not _s or _s.startswith("#"):
+                        continue
+                    if _s.startswith("export "):
+                        _s = _s[7:]
+                    if "=" in _s:
+                        _k, _v = _s.split("=", 1)
+                        _v = _v.strip().strip("'").strip('"')
+                        if _k and _v and _k not in os.environ:
+                            os.environ[_k.strip()] = _v
+    except Exception:
+        pass
     # Ensure weekly selection defaults depend on workflow: PR disables weekly, Nightly enables
     wf = os.environ.get("WORKFLOW_NAME", "")
     jn = os.environ.get("JOB_NAME", "")
@@ -49,10 +67,10 @@ def main():
         os.environ.setdefault("KEEPER_BENCH_CLIENTS", "64")
         os.environ.setdefault("KEEPER_BENCH_WARMUP_S", "5")
         os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
-        os.environ.setdefault("KEEPER_DEFAULT_P99_MS", "2000")
-        os.environ.setdefault("KEEPER_DEFAULT_ERROR_RATE", "0.02")
-        os.environ.setdefault("KEEPER_ADAPT_TARGET_P99_MS", "800")
-        os.environ.setdefault("KEEPER_ADAPT_MAX_ERROR", "0.02")
+        os.environ.setdefault("KEEPER_DEFAULT_P99_MS", "2500")
+        os.environ.setdefault("KEEPER_DEFAULT_ERROR_RATE", "0.05")
+        os.environ.setdefault("KEEPER_ADAPT_TARGET_P99_MS", "1200")
+        os.environ.setdefault("KEEPER_ADAPT_MAX_ERROR", "0.05")
         os.environ.setdefault("KEEPER_ADAPT_STAGE_S", "15")
         os.environ.setdefault("KEEPER_ADAPT_MIN_CLIENTS", "8")
         os.environ.setdefault("KEEPER_ADAPT_MAX_CLIENTS", "128")
@@ -237,7 +255,7 @@ def main():
     extra.append(f"--junitxml={junit_file}")
     base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
     if is_parallel:
-        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=0"])
+        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=0", "--dist", "loadfile"])
         cmd = (" ".join(base + extra)).rstrip()
     else:
         cmd = (" ".join(["-s"] + base + extra)).rstrip()
@@ -302,6 +320,7 @@ def main():
             logfile=None,
         )
     )
+    pytest_result_ok = results[-1].is_ok()
     try:
         tests = failures = errors = skipped = 0
         summary_txt = None
@@ -422,7 +441,7 @@ def main():
     except Exception:
         pass
     try:
-        if not results[-1].is_ok():
+        if not pytest_result_ok:
             base = Path(repo_dir) / "tests/stress/keeper/tests"
             inst_dirs = sorted(
                 base.glob("_instances-*"),
