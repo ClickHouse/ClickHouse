@@ -1845,7 +1845,7 @@ def test_blob_storage_log(cluster):
             countIf(event_type == 'Upload'),
             countIf(remote_path == 'test_blob_storage_log.csv'),
             countIf(bucket == 'cont'),
-            countIf(error_code == 0),
+            countIf(error == ''),
             count()
         FROM system.blob_storage_log WHERE query_id = '{query_id}'"""
     )
