@@ -41,6 +41,14 @@ struct ActionsDAGWithInversionPushDown
     explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
 };
 
+
+struct DeterministicKeyTransformDag
+{
+    ExpressionActionsPtr actions;
+    String output_name;
+    DataTypePtr input_type;
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -385,6 +393,14 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
+
+    bool extractDeterministicFunctionsDagFromKey(
+        const String & expr_name,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        DeterministicKeyTransformDag & out_functions_chain) const;
+
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
@@ -394,6 +410,14 @@ private:
         DataTypePtr & out_type);
 
     bool canConstantBeWrappedByFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
+    bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
