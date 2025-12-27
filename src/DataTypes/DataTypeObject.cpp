@@ -7,6 +7,7 @@
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
+#include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <Columns/ColumnObject.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
@@ -307,6 +308,40 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
 
 std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const
 {
+    /// Check if it's a special subcolumn used for distinct paths calculation.
+    if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
+    {
+        std::vector<String> typed_path_names;
+        typed_path_names.reserve(typed_paths.size());
+        for (const auto & [path, _] : typed_paths)
+            typed_path_names.push_back(path);
+
+        std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(std::make_shared<SerializationObjectDistinctPaths>(typed_path_names));
+        res->type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        /// If column was provided, we should create a column for the requested subcolumn.
+        if (data.column)
+        {
+            const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
+            auto result_column = res->type->createColumn();
+            if (!object_column.empty())
+            {
+                auto & result_array_column = assert_cast<ColumnArray &>(*result_column);
+                auto & result_paths_column = assert_cast<ColumnString &>(result_array_column.getData());
+                for (const auto & path : typed_path_names)
+                    result_paths_column.insertData(path.data(), path.size());
+                for (const auto & [path, _] : object_column.getDynamicPaths())
+                    result_paths_column.insertData(path.data(), path.size());
+                const auto [shared_data_paths, _] = object_column.getSharedDataPathsAndValues();
+                result_paths_column.insertRangeFrom(*shared_data_paths, 0, shared_data_paths->size());
+                result_array_column.getOffsets().push_back(result_paths_column.size());
+                result_array_column.insertManyDefaults(object_column.size() - 1);
+            }
+            res->column = std::move(result_column);
+        }
+
+        return res;
+    }
+
     /// Check if it's sub-object subcolumn.
     /// In this case we should return JSON column with all paths that are inside specified object prefix.
     /// For example, if we have {"a" : {"b" : {"c" : {"d" : 10, "e" : "Hello"}, "f" : [1, 2, 3]}}} and subcolumn ^a.b
@@ -484,6 +519,13 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             auto data_type = DataTypeFactory::instance().get(path_with_type->type);
             if (typed_paths.contains(path_with_type->name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->name);
+
+            for (const auto & [path, _] : typed_paths)
+            {
+                if (path.starts_with(path_with_type->name + ".") || path_with_type->name.starts_with(path + "."))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found incompatible typed paths: {} and {}. One of them is a prefix of the other", path, path_with_type->name);
+            }
+
             if (typed_paths.size() >= DataTypeObject::MAX_TYPED_PATHS)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many typed paths. The maximum is: {}", DataTypeObject::MAX_TYPED_PATHS);
             typed_paths.emplace(path_with_type->name, data_type);

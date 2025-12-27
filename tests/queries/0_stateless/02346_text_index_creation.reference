@@ -1,17 +1,22 @@
 Must not have no arguments.
 Test single tokenizer argument.
--- tokenizer must be splitByNonAlpha, ngrams, splitByString or array.
+-- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString or array.
 -- tokenizer can be identifier or function.
-Test ngram size.
--- ngram size must be between 2 and 8.
-Test separators argument.
+Test ngrams tokenizer.
+-- ngram size must be larger than 0.
+-- ngram size must be an unsigned int.
+-- ngram size cannot be larger than max UInt64.
+Test sparseGrams tokenizer.
+-- min_length must be between 3 and 100.
+-- max_length must be bigger than min_length.
+-- min_cutoff_length must be smaller/bigger than max/min_length.
+Test splitByString tokenizer.
 -- separators must be array.
 -- separators must be an array of strings.
 Test posting_list_block_size argument.
 -- posting_list_block_size must be a positive integer.
 Test dictionary_block_size argument.
--- dictionary_block_size must be an integer.
--- dictionary_block_size must be bigger than 0.
+-- dictionary_block_size must be a positive integer.
 Test dictionary_block_frontcoding_compression argument.
 -- dictionary_block_frontcoding_compression must be an integer.
 -- dictionary_block_frontcoding_compression must be 0 or 1.
