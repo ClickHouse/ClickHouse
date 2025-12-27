@@ -102,7 +102,7 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void finalizeRestoreFromBackup() override;
+    void finalizeRestoreFromBackup(const RestoreSettings & restore_settings) override;
     bool supportsBackupPartition() const override;
 
     static String generateInnerTableName(const StorageID & view_id);

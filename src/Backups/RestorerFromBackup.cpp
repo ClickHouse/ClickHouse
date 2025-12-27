@@ -960,6 +960,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
                 table_id);
 
+        LOG_TRACE(log, "Excluding dependency {}", table_id.getQualifiedName().getFullName());
         return true; /// Exclude this dependency.
     };
 
@@ -1268,7 +1269,7 @@ void RestorerFromBackup::finalizeTables()
     }
 
     for (const auto & storage : tables)
-        storage->finalizeRestoreFromBackup();
+        storage->finalizeRestoreFromBackup(getRestoreSettings());
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

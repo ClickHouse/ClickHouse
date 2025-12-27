@@ -102,6 +102,9 @@ struct BackupSettings
     /// when `data_file_name_generator` is `Checksum`.
     std::optional<size_t> data_file_name_prefix_length;
 
+    /// Should we back up data from materialized view targets?
+    bool backup_data_from_materialized_view_targets = true;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
