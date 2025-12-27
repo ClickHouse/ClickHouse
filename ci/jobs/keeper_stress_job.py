@@ -330,6 +330,10 @@ def main():
     except Exception:
         pass
     try:
+        try:
+            files_to_attach
+        except NameError:
+            files_to_attach = []
         cidb_txt = f"{temp_dir}/keeper_cidb_verify.txt"
         sha = env.get("COMMIT_SHA") or env.get("GITHUB_SHA") or "local"
         backends_counts = {}
@@ -391,14 +395,16 @@ def main():
             )
         )
         try:
-            if 'files_to_attach' in locals():
-                files_to_attach.append(cidb_txt)
+            files_to_attach.append(cidb_txt)
         except Exception:
             pass
     except Exception:
         pass
     # Collect debug artifacts on failure
-    files_to_attach = []
+    try:
+        files_to_attach
+    except NameError:
+        files_to_attach = []
     try:
         if 'summary_txt' in locals() and summary_txt:
             sp = Path(summary_txt)
@@ -458,6 +464,13 @@ def main():
     except Exception:
         pass
 
+    try:
+        if 'cidb_txt' in locals():
+            p = Path(cidb_txt)
+            if p.exists() and str(p) not in files_to_attach:
+                files_to_attach.append(str(p))
+    except Exception:
+        pass
     # Publish aggregated job result (with nested pytest results)
     Result.create_from(results=results, stopwatch=stop_watch, files=files_to_attach).complete_job()
 
