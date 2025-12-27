@@ -179,8 +179,9 @@ void DB::PrometheusHTTPProtocolAPI::writeScalarResult(WriteBuffer & response, co
     {
         // Write timestamp
         const auto & time_column = result_block.getByName(TimeSeriesColumnNames::Time).column;
-        auto time = time_column->getFloat64(0);
-        writeFloatText(time, response);
+        UInt32 time_scale = getTimeseriesTimeScale(result_block.getByName(TimeSeriesColumnNames::Time).type);
+        auto time = time_column->getInt(0);
+        writeTimestamp(response, time, time_scale);
 
         writeString(",", response);
 
@@ -188,7 +189,7 @@ void DB::PrometheusHTTPProtocolAPI::writeScalarResult(WriteBuffer & response, co
         const auto & scalar_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
         auto value = scalar_column->getFloat64(0);
         writeString("\"", response);
-        writeFloatText(value, response);
+        writeScalar(response, value);
         writeString("\"", response);
     }
 
@@ -201,6 +202,10 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
 
     if (!result_block.empty() && result_block.rows() > 0)
     {
+        const auto & time_column = result_block.getByName(TimeSeriesColumnNames::Time).column;
+        UInt32 time_scale = getTimeseriesTimeScale(result_block.getByName(TimeSeriesColumnNames::Time).type);
+        const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
+
         for (size_t i = 0; i < result_block.rows(); ++i)
         {
             if (i > 0)
@@ -218,17 +223,15 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             writeString("\"value\":[", response);
 
             // Write timestamp
-            const auto & time_column = result_block.getByName(TimeSeriesColumnNames::Time).column;
-            auto time = time_column->getFloat64(i);
-            writeFloatText(time, response);
+            auto time = time_column->getInt(i);
+            writeTimestamp(response, time, time_scale);
 
             writeString(",", response);
 
             // Write value
-            const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
             auto value = value_column->getFloat64(i);
             writeString("\"", response);
-            writeFloatText(value, response);
+            writeScalar(response, value);
             writeString("\"", response);
 
             writeString("]}", response);
@@ -292,6 +295,18 @@ void DB::PrometheusHTTPProtocolAPI::writeRangeQueryResponse(WriteBuffer & respon
 {
     if (!result_block.empty() && result_block.rows() > 0)
     {
+        const auto & ts_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
+        const auto & array_column = typeid_cast<const ColumnArray &>(*ts_column);
+        const auto & offsets = array_column.getOffsets();
+        const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+        const auto & timestamp_column = tuple_column.getColumn(0);
+        const auto & value_column = tuple_column.getColumn(1);
+
+        UInt32 timestamp_scale = getTimeseriesTimeScale(
+            typeid_cast<const DataTypeTuple &>(
+                *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+                .getElement(0));
+
         // For range queries, we need to group results by metric labels
         // This is a simplified implementation
         for (size_t i = 0; i < result_block.rows(); ++i)
@@ -309,35 +324,46 @@ void DB::PrometheusHTTPProtocolAPI::writeRangeQueryResponse(WriteBuffer & respon
             // Extract time series data
             writeString(R"("values":[)", response);
 
+            size_t start = (i == 0) ? 0 : offsets[i-1];
+            size_t end = offsets[i];
 
-            const auto & ts_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
-            if (const auto * array_column = typeid_cast<const ColumnArray *>(ts_column.get()))
+            for (size_t j = start; j < end; ++j)
             {
-                const auto & offsets = array_column->getOffsets();
-                size_t start = (i == 0) ? 0 : offsets[i-1];
-                size_t end = offsets[i];
+                if (j > start)
+                    writeString(",", response);
 
-                if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(&array_column->getData()))
-                {
-                    const auto & timestamp_column = tuple_column->getColumn(0);
-                    const auto & value_column = tuple_column->getColumn(1);
-
-                    for (size_t j = start; j < end; ++j)
-                    {
-                        if (j > start)
-                            writeString(",", response);
-
-                        writeString("[", response);
-                        writeFloatText(timestamp_column.getFloat64(j), response);
-                        writeString(",\"", response);
-                        writeFloatText(value_column.getFloat64(j), response);
-                        writeString("\"]", response);
-                    }
-                }
+                writeString("[", response);
+                writeTimestamp(response, timestamp_column.getInt(j), timestamp_scale);
+                writeString(",\"", response);
+                writeScalar(response, value_column.getFloat64(j));
+                writeString("\"]", response);
             }
 
             writeString("]}", response);
         }
+    }
+}
+
+void PrometheusHTTPProtocolAPI::writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale)
+{
+    writeText(value, scale, response);
+}
+
+void PrometheusHTTPProtocolAPI::writeScalar(WriteBuffer & response, Float64 value)
+{
+    if (std::isfinite(value))
+    {
+        writeFloatText(value, response);
+    }
+    else if (std::isinf(value))
+    {
+        if (value < 0)
+            response.write('-');
+        writeString("Inf", response);
+    }
+    else
+    {
+        writeString("NaN", response);
     }
 }
 

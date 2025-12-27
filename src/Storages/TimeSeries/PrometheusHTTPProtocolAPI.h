@@ -81,6 +81,9 @@ private:
     void writeRangeQueryFooter(WriteBuffer & response);
     void writeRangeQueryResponse(WriteBuffer & response, const Block & result_block);
 
+    void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
+    void writeScalar(WriteBuffer & response, Float64 value);
+
     /// Write JSON response for series metadata
     void writeSeriesResponse(WriteBuffer & response, const Block & result_block);
 
