@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <mutex>
 #include <atomic>
+#include <cmath>
 
 #if defined(__x86_64__)
 #include <immintrin.h>
@@ -123,7 +124,7 @@ class HashMapWithSmallLocks
 {
 public:
     using Cell = HashMapCellWithLock<Key, Mapped, Hash>;
-    static constexpr size_t INITIAL_SIZE_DEGREE = 22;  /// 4M cells, suitable for up to ~2M unique keys
+    static constexpr size_t DEFAULT_SIZE_DEGREE = 22;  /// 4M cells default
 
 private:
     std::vector<Cell> buf;
@@ -136,7 +137,12 @@ private:
     size_t place(size_t hash_value) const { return hash_value & mask(); }
 
 public:
-    HashMapWithSmallLocks() : size_degree(INITIAL_SIZE_DEGREE)
+    HashMapWithSmallLocks() : size_degree(DEFAULT_SIZE_DEGREE)
+    {
+        buf.resize(1ULL << size_degree);
+    }
+
+    explicit HashMapWithSmallLocks(size_t size_degree_) : size_degree(size_degree_)
     {
         buf.resize(1ULL << size_degree);
     }
@@ -198,9 +204,10 @@ public:
     {
         size_t hash_value = hash_func(key);
         size_t place_value = place(hash_value);
+        size_t capacity = 1ULL << size_degree;
 
         /// Linear probing with locking
-        while (true)
+        for (size_t i = 0; i < capacity; ++i)
         {
             Cell & cell = buf[place_value];
 
@@ -234,6 +241,30 @@ public:
                 place_value = (place_value + 1) & mask();
             }
         }
+
+        /// Table is full - find any empty cell (should not happen with proper sizing)
+        std::cerr << "Warning: HashMapWithSmallLocks is full, searching for any empty cell\n";
+        for (size_t i = 0; i < capacity; ++i)
+        {
+            Cell & cell = buf[i];
+            cell.lock.lock();
+            if (cell.isZero())
+            {
+                cell.value.first = key;
+                cell.value.second = Mapped{};
+                found = &cell;
+                inserted = true;
+                size_lock.lock();
+                ++m_size;
+                size_lock.unlock();
+                cell.lock.unlock();
+                return;
+            }
+            cell.lock.unlock();
+        }
+
+        /// Truly full - this is a fatal error
+        throw std::runtime_error("HashMapWithSmallLocks is completely full");
     }
 
     /// Increment value for key, using tryEmplace
@@ -366,7 +397,7 @@ private:
         bool is_new = true;
         Cell * new_cell_result = nullptr;
 
-        while (true)
+        while (dist < capacity())  /// Safety bound
         {
             Cell & cell = buf[pos];
 
@@ -701,13 +732,39 @@ public:
         __builtin_prefetch(&slots[pos]);
     }
 
+    void resize()
+    {
+        std::vector<int8_t> old_ctrl = std::move(ctrl);
+        std::vector<Slot> old_slots = std::move(slots);
+        size_t old_capacity = capacity;
+
+        ++size_degree;
+        capacity = 1ULL << size_degree;
+        ctrl.assign(capacity + GROUP_SIZE, CTRL_EMPTY);
+        slots.resize(capacity);
+        m_size = 0;
+
+        for (size_t i = 0; i < old_capacity; ++i)
+        {
+            if (old_ctrl[i] >= 0)  /// Not empty or deleted
+            {
+                Slot * result;
+                bool inserted;
+                emplace(old_slots[i].key, result, inserted);
+                if (inserted)
+                    result->value = old_slots[i].value;
+            }
+        }
+    }
+
     Slot * find(const Key & key)
     {
         size_t hash = hash_func(key);
         int8_t h2 = H2(hash);
         size_t pos = H1(hash) & mask();
+        size_t probes = 0;
 
-        while (true)
+        while (probes < capacity)
         {
             const int8_t * group = &ctrl[pos];
             uint32_t matches = matchGroup(group, h2);
@@ -726,16 +783,23 @@ public:
                 return nullptr;
 
             pos = (pos + GROUP_SIZE) & mask();
+            probes += GROUP_SIZE;
         }
+        return nullptr;
     }
 
     void emplace(const Key & key, Slot *& result, bool & inserted)
     {
+        /// Resize if load factor > 0.75
+        if (m_size * 4 >= capacity * 3)
+            resize();
+
         size_t hash = hash_func(key);
         int8_t h2 = H2(hash);
         size_t pos = H1(hash) & mask();
+        size_t probes = 0;
 
-        while (true)
+        while (probes < capacity)
         {
             const int8_t * group = &ctrl[pos];
 
@@ -773,7 +837,12 @@ public:
             }
 
             pos = (pos + GROUP_SIZE) & mask();
+            probes += GROUP_SIZE;
         }
+
+        /// Should never reach here if resize works correctly
+        resize();
+        emplace(key, result, inserted);
     }
 
     Mapped & operator[](const Key & key)
@@ -2383,7 +2452,6 @@ int main(int argc, char ** argv)
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
 
-#if 0
     if (!method || method == 5)
     {
         std::cerr << "Method 5 (Local map + shared map with small locks, tryLock):\n";
@@ -2397,7 +2465,9 @@ int main(int argc, char ** argv)
           */
 
         std::vector<Map> local_maps(num_threads);
-        MapSmallLocks global_map;
+        /// Size the global map to handle all unique keys with good load factor
+        size_t size_degree = std::max<size_t>(16, static_cast<size_t>(std::ceil(std::log2(n * 2))));
+        MapSmallLocks global_map(size_degree);
 
         Stopwatch watch;
 
@@ -2458,7 +2528,8 @@ int main(int argc, char ** argv)
           * No local maps, all contention handled by the locks.
           */
 
-        MapSmallLocks global_map;
+        size_t size_degree = std::max<size_t>(16, static_cast<size_t>(std::ceil(std::log2(n * 2))));
+        MapSmallLocks global_map(size_degree);
 
         Stopwatch watch;
 
@@ -2488,7 +2559,8 @@ int main(int argc, char ** argv)
           */
 
         std::vector<Map> local_maps(num_threads);
-        MapSmallLocks global_map;
+        size_t size_degree = std::max<size_t>(16, static_cast<size_t>(std::ceil(std::log2(n * 2))));
+        MapSmallLocks global_map(size_degree);
 
         Stopwatch watch;
 
@@ -2992,7 +3064,7 @@ int main(int argc, char ** argv)
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
-#endif
+
     /// ==================== Partitioning-based algorithms ====================
     /// Use CRC32 hash + fastrange for partitioning, then aggregate per-partition.
 
