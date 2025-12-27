@@ -1,8 +1,9 @@
 import time
 import os
+import random
 
 from ..framework.core.registry import fault_registry
-from ..framework.core.settings import RAFT_PORT, CLIENT_PORT
+from ..framework.core.settings import RAFT_PORT, CLIENT_PORT, DEFAULT_FAULT_DURATION_S
 from ..framework.core.util import resolve_targets, wait_until, sh
 from ..framework.io.probes import count_leaders, four, is_leader, ready, wchs_total, mntr
 
@@ -41,9 +42,39 @@ def apply_step(step, nodes, leader, ctx):
             raise errs[0]
         return
     if kind == "background_schedule":
-        # Run each step once (no scheduler loop)
-        for sub in step.get("steps") or []:
-            apply_step(sub, nodes, leader, ctx)
+        try:
+            dur = int(step.get("duration_s", int(DEFAULT_FAULT_DURATION_S)))
+        except Exception:
+            dur = int(DEFAULT_FAULT_DURATION_S)
+        try:
+            pmin = float(step.get("min_period_s", 5.0))
+        except Exception:
+            pmin = 5.0
+        try:
+            pmax = float(step.get("max_period_s", max(pmin, 20.0)))
+        except Exception:
+            pmax = max(pmin, 20.0)
+        subs = step.get("steps") or []
+        if not subs:
+            return
+        deadline = time.time() + max(1, int(dur))
+        while time.time() < deadline:
+            try:
+                sub = random.choice(subs)
+            except Exception:
+                sub = subs[0]
+            try:
+                apply_step(sub, nodes, leader, ctx)
+            except Exception:
+                pass
+            now = time.time()
+            if now >= deadline:
+                break
+            try:
+                sleep_s = max(0.0, min(float(pmax), float(pmin) + (random.random() * max(0.0, float(pmax) - float(pmin)))))
+            except Exception:
+                sleep_s = float(pmin)
+            time.sleep(min(sleep_s, max(0.0, deadline - now)))
         return
     if kind == "ensure_paths":
         paths = [str(p).strip() for p in (step.get("paths") or []) if str(p).strip()]
