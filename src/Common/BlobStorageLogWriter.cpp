@@ -1,4 +1,4 @@
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
