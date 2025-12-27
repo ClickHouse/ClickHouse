@@ -91,6 +91,13 @@ void setCollectLocalProfileSamplesInTraceLog(bool value);
 
 std::string_view getLastFlushProfileForThread();
 
+/// Convert a jemalloc heap profile to symbolized format that jeprof can read without binary
+/// This generates a "jeprof --raw" compatible format with embedded symbols
+///
+/// Notes:
+/// - demangling code slightly differs (i.e. it may return "operator()" instead of "DB::Context::initializeSystemLogs()::$_0::operator()() const")
+void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename);
+
 }
 
 }
