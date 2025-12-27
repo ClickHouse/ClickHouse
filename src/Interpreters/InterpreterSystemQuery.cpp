@@ -1004,7 +1004,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = Jemalloc::flushProfile("/tmp/jemalloc_clickhouse");
+            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
+            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
+            filename += ".symbolized";
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
