@@ -162,6 +162,28 @@ class KeeperBench:
         self.secure = bool(secure)
         self.clients = clients
 
+    def _debug_dir(self):
+        try:
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                return odir
+        except Exception:
+            return None
+        return None
+
+    def _write_debug(self, name, content):
+        try:
+            od = self._debug_dir()
+            if od is None:
+                return
+            p = od / name
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception:
+            pass
+
     def _bench_cmd(self):
         if has_bin(self.node, "keeper-bench"):
             return "keeper-bench"
@@ -169,6 +191,79 @@ class KeeperBench:
             # Many images ship keeper-bench as a clickhouse subcommand
             return "clickhouse keeper-bench"
         raise AssertionError("keeper-bench tool not found on node")
+
+    def _parse_output_json(self, out_text):
+        s = {
+            "ops": 0,
+            "errors": 0,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "p99_ms": 0,
+        }
+        try:
+            data = json.loads(out_text or "{}")
+            if isinstance(data, dict):
+                s["ops"] = int(
+                    data.get("operations") or data.get("total_requests") or 0
+                )
+                s["errors"] = int(data.get("errors") or data.get("failed") or 0)
+                lat = data.get("latency") or data.get("latency_ms") or {}
+                def _pick(d, *ks):
+                    for k in ks:
+                        if k in d:
+                            return d.get(k)
+                    return None
+                p50 = _pick(lat, "p50", "50%", "median")
+                p95 = _pick(lat, "p95", "95%")
+                p99 = _pick(lat, "p99", "99%")
+                if p50 is not None:
+                    s["p50_ms"] = int(float(p50))
+                if p95 is not None:
+                    s["p95_ms"] = int(float(p95))
+                if p99 is not None:
+                    s["p99_ms"] = int(float(p99))
+        except Exception:
+            pass
+        return s
+
+    def _run_stage(self, base_cfg, clients, dur):
+        import copy as _copy
+        st_cfg = _copy.deepcopy(base_cfg)
+        try:
+            st_cfg["concurrency"] = int(clients)
+        except Exception:
+            pass
+        st_dump = yaml.safe_dump(st_cfg, sort_keys=False)
+        sh(self.node, "mkdir -p /tmp || true")
+        sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + st_dump + "YAML\n")
+        hard_cap = max(5, int(dur) + 30)
+        prefix = ""
+        try:
+            if has_bin(self.node, "timeout"):
+                prefix = f"timeout -s SIGKILL {hard_cap}"
+        except Exception:
+            prefix = ""
+        base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(dur)}"
+        cmd = f"{prefix} {base}".strip()
+        run_out = sh(self.node, cmd)
+        out = sh(
+            self.node,
+            "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+        )
+        st = {
+            "ops": 0,
+            "errors": 0,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "p99_ms": 0,
+            "duration_s": int(dur),
+        }
+        try:
+            parsed = self._parse_output_json(out.get("out", ""))
+            st.update(parsed)
+        except Exception:
+            pass
+        return st
 
     def run(self):
         cfg_text = ""
@@ -202,20 +297,16 @@ class KeeperBench:
                                     pass
         except Exception:
             cfg_text = ""
-        # Persist meta for debugging config discovery
         try:
-            if parse_bool(os.environ.get("KEEPER_DEBUG")):
-                repo_root = Path(__file__).parents[4]
-                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                odir.mkdir(parents=True, exist_ok=True)
-                with open(odir / "keeper_bench_meta.txt", "w", encoding="utf-8") as f:
-                    f.write(f"cfg_path={self.cfg_path or ''}\n")
-                    try:
-                        f.write(f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n")
-                    except Exception:
-                        f.write("cfg_exists=error\n")
-                    f.write(f"servers='{self.servers}'\n")
-                    f.write(f"cfg_text_preview={cfg_text[:400]}\n")
+            dbg = []
+            dbg.append(f"cfg_path={self.cfg_path or ''}\n")
+            try:
+                dbg.append(f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n")
+            except Exception:
+                dbg.append("cfg_exists=error\n")
+            dbg.append(f"servers='{self.servers}'\n")
+            dbg.append(f"cfg_text_preview={cfg_text[:400]}\n")
+            self._write_debug("keeper_bench_meta.txt", "".join(dbg))
         except Exception:
             pass
         # Override from explicit constructor or env
@@ -261,7 +352,6 @@ class KeeperBench:
                         pass
         except Exception:
             pass
-        # Debug: capture directory listings before running bench
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 ls_out = []
@@ -274,24 +364,13 @@ class KeeperBench:
                         ls_out.append(f"$ {q}\n" + str((r or {}).get("out", "")) + "\n")
                     except Exception as _:
                         ls_out.append(f"$ {q}\n<error>\n")
-                try:
-                    repo_root = Path(__file__).parents[4]
-                    odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                    odir.mkdir(parents=True, exist_ok=True)
-                    with open(odir / "keeper_pre_ls.txt", "w", encoding="utf-8") as f:
-                        f.write("\n".join(ls_out))
-                except Exception:
-                    pass
+                self._write_debug("keeper_pre_ls.txt", "\n".join(ls_out))
         except Exception:
             pass
         cfg_dump = yaml.safe_dump(bench_cfg, sort_keys=False)
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
-                repo_root = Path(__file__).parents[4]
-                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                odir.mkdir(parents=True, exist_ok=True)
-                with open(odir / "keeper_bench_config.yaml", "w", encoding="utf-8") as f:
-                    f.write(cfg_dump)
+                self._write_debug("keeper_bench_config.yaml", cfg_dump)
         except Exception:
             pass
         # Write config inside the container
@@ -347,63 +426,8 @@ class KeeperBench:
                 pass
             ccur = max(cmin, min(cmax, max(1, int(ccur))))
 
-            import copy as _copy
-
             def _run_stage(cli, dur):
-                nonlocal bench_cfg
-                st_cfg = _copy.deepcopy(bench_cfg)
-                try:
-                    st_cfg["concurrency"] = int(cli)
-                except Exception:
-                    pass
-                st_dump = yaml.safe_dump(st_cfg, sort_keys=False)
-                sh(self.node, "mkdir -p /tmp || true")
-                sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + st_dump + "YAML\n")
-                hard_cap = max(5, int(dur) + 30)
-                prefix = ""
-                try:
-                    if has_bin(self.node, "timeout"):
-                        prefix = f"timeout -s SIGKILL {hard_cap}"
-                except Exception:
-                    prefix = ""
-                base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(dur)}"
-                cmd = f"{prefix} {base}".strip()
-                run_out = sh(self.node, cmd)
-                out = sh(
-                    self.node,
-                    "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
-                )
-                st = {
-                    "ops": 0,
-                    "errors": 0,
-                    "p50_ms": 0,
-                    "p95_ms": 0,
-                    "p99_ms": 0,
-                    "duration_s": int(dur),
-                }
-                try:
-                    data = json.loads(out.get("out", "") or "{}")
-                    if isinstance(data, dict):
-                        st["ops"] = int(data.get("operations") or data.get("total_requests") or 0)
-                        st["errors"] = int(data.get("errors") or data.get("failed") or 0)
-                        lat = data.get("latency") or data.get("latency_ms") or {}
-                        def _pick(d, *ks):
-                            for k in ks:
-                                if k in d:
-                                    return d.get(k)
-                            return None
-                        p50 = _pick(lat, "p50", "50%", "median")
-                        p95 = _pick(lat, "p95", "95%")
-                        p99 = _pick(lat, "p99", "99%")
-                        if p50 is not None:
-                            st["p50_ms"] = int(float(p50))
-                        if p95 is not None:
-                            st["p95_ms"] = int(float(p95))
-                        if p99 is not None:
-                            st["p99_ms"] = int(float(p99))
-                except Exception:
-                    pass
-                return st
+                return self._run_stage(bench_cfg, cli, dur)
 
             remaining = int(self.duration_s)
             try:
@@ -477,13 +501,8 @@ class KeeperBench:
         run_out = sh(self.node, cmd)
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
-                repo_root = Path(__file__).parents[4]
-                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                odir.mkdir(parents=True, exist_ok=True)
-                with open(odir / "keeper_bench_cmd.txt", "w", encoding="utf-8") as f:
-                    f.write(cmd + "\n")
-                with open(odir / "keeper_bench_stdout.txt", "w", encoding="utf-8") as f:
-                    f.write((run_out or {}).get("out", ""))
+                self._write_debug("keeper_bench_cmd.txt", cmd + "\n")
+                self._write_debug("keeper_bench_stdout.txt", (run_out or {}).get("out", ""))
         except Exception:
             pass
         # Parse JSON output if present
@@ -493,37 +512,13 @@ class KeeperBench:
         )
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
-                repo_root = Path(__file__).parents[4]
-                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                odir.mkdir(parents=True, exist_ok=True)
-                with open(odir / "keeper_bench_out_raw.json", "w", encoding="utf-8") as f:
-                    f.write(out.get("out", ""))
+                self._write_debug("keeper_bench_out_raw.json", out.get("out", ""))
         except Exception:
             pass
         try:
-            data = json.loads(out.get("out", "") or "{}")
-            if isinstance(data, dict):
-                summary["ops"] = int(
-                    data.get("operations") or data.get("total_requests") or 0
-                )
-                summary["errors"] = int(data.get("errors") or data.get("failed") or 0)
-                lat = data.get("latency") or data.get("latency_ms") or {}
-
-                def _pick(d, *ks):
-                    for k in ks:
-                        if k in d:
-                            return d.get(k)
-                    return None
-
-                p50 = _pick(lat, "p50", "50%", "median")
-                p95 = _pick(lat, "p95", "95%")
-                p99 = _pick(lat, "p99", "99%")
-                if p50 is not None:
-                    summary["p50_ms"] = int(float(p50))
-                if p95 is not None:
-                    summary["p95_ms"] = int(float(p95))
-                if p99 is not None:
-                    summary["p99_ms"] = int(float(p99))
+            parsed = self._parse_output_json(out.get("out", ""))
+            for k, v in parsed.items():
+                summary[k] = v if k in ("ops", "errors", "p50_ms", "p95_ms", "p99_ms") else summary.get(k, v)
         except Exception:
             pass
         # Fallback: if ops still zero, estimate by znode_count delta on this node
