@@ -16,21 +16,21 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesTagsGroupToTags(group) returns Array(Tuple(String, String))
+/// Function timeSeriesGroupToTags(group) returns Array(Tuple(String, String))
 /// containing the names and values of tags associated with a specified group.
-class FunctionTimeSeriesTagsGroupToTags : public IFunction
+class FunctionTimeSeriesGroupToTags : public IFunction
 {
 public:
-    static constexpr auto name = "timeSeriesTagsGroupToTags";
+    static constexpr auto name = "timeSeriesGroupToTags";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesTagsGroupToTags>(context); }
-    explicit FunctionTimeSeriesTagsGroupToTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesGroupToTags>(context); }
+    explicit FunctionTimeSeriesGroupToTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    /// Function timeSeriesTagsGroupToTags returns information stored in the query context, it's deterministic in the scope of the current query.
+    /// Function timeSeriesGroupToTags returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -68,13 +68,13 @@ private:
 };
 
 
-REGISTER_FUNCTION(TimeSeriesTagsGroupToTags)
+REGISTER_FUNCTION(TimeSeriesGroupToTags)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified group.
 See also function [timeSeriesTagsToGroup()](/sql-reference/functions/time-series-functions#timeSeriesTagsToGroup).
     )";
-    FunctionDocumentation::Syntax syntax = "timeSeriesTagsGroupToTags(group)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesGroupToTags(group)";
     FunctionDocumentation::Arguments arguments = {{"group", "A group of tags.", {"UInt64"}}};
     FunctionDocumentation::ReturnedValue returned_value = {
         R"(
@@ -88,7 +88,7 @@ The returned array is always sorted by `tag_name` and never contains the same `t
         "Example",
         R"(
 SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS group,
-       timeSeriesTagsGroupToTags(group) AS sorted_tags,
+       timeSeriesGroupToTags(group) AS sorted_tags,
        timeSeriesTagsToGroup(sorted_tags) AS same_group,
        throwIf(same_group != group)
         )",
@@ -103,7 +103,8 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimeSeriesTagsGroupToTags>(documentation);
+    factory.registerFunction<FunctionTimeSeriesGroupToTags>(documentation);
+    factory.registerAlias("timeSeriesTagsGroupToTags", "timeSeriesGroupToTags");
 }
 
 }
