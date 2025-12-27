@@ -505,7 +505,9 @@ def health_precheck(nodes):
         for n in nodes:
             m = mntr(n)
             if not isinstance(m, dict) or not m:
-                raise AssertionError("health_precheck: mntr empty")
+                kv = srvr_kv(n)
+                if not isinstance(kv, dict) or not kv:
+                    raise AssertionError("health_precheck: mntr/srvr empty")
     except Exception:
         raise
     return
