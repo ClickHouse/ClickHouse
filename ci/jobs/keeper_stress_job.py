@@ -228,10 +228,19 @@ def main():
     extra.append("--timeout-method=thread")
     xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "auto").strip() or "auto"
     extra.append(f"-n {xdist_workers}")
+    try:
+        is_parallel = xdist_workers not in ("1", "no", "0")
+    except Exception:
+        is_parallel = True
     report_file = f"{temp_dir}/pytest.jsonl"
     junit_file = f"{temp_dir}/keeper_junit.xml"
     extra.append(f"--junitxml={junit_file}")
-    cmd = f"-s -vv {tests_target} --durations=0{dur_arg} {' '.join(extra)}".rstrip()
+    base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
+    if is_parallel:
+        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=0"])
+        cmd = (" ".join(base + extra)).rstrip()
+    else:
+        cmd = (" ".join(["-s"] + base + extra)).rstrip()
 
     # Prepare env for pytest
     env = os.environ.copy()
