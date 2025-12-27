@@ -5,6 +5,8 @@
 
 #if defined(__x86_64__)
 #include <immintrin.h>
+#elif defined(__aarch64__)
+#include <arm_neon.h>
 #endif
 
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -570,17 +572,17 @@ public:
 };
 
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
 /// ==================== Swiss Table Hash Map ====================
 /// Swiss Table uses SIMD to probe multiple slots at once.
 /// Metadata array stores control bytes (7 bits of hash + empty/deleted markers).
-/// Groups of 16 control bytes are searched simultaneously using SSE/AVX.
+/// Groups of 16 control bytes are searched simultaneously using SSE/NEON.
 template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
 class SwissTableHashMap
 {
 public:
     static constexpr size_t INITIAL_SIZE_DEGREE = 22;
-    static constexpr size_t GROUP_SIZE = 16;  /// SSE width
+    static constexpr size_t GROUP_SIZE = 16;  /// SIMD width (128 bits = 16 bytes)
     static constexpr int8_t CTRL_EMPTY = -128;    /// 0b10000000
     static constexpr int8_t CTRL_DELETED = -2;    /// 0b11111110
 
@@ -604,7 +606,8 @@ private:
 
     size_t mask() const { return capacity - 1; }
 
-    /// Find matching positions in a group using SIMD
+#if defined(__x86_64__)
+    /// Find matching positions in a group using SSE
     uint32_t matchGroup(const int8_t * group, int8_t h2) const
     {
         __m128i ctrl_vec = _mm_loadu_si128(reinterpret_cast<const __m128i*>(group));
@@ -629,6 +632,49 @@ private:
         /// Empty and deleted both have high bit set
         return static_cast<uint32_t>(_mm_movemask_epi8(ctrl_vec));
     }
+#elif defined(__aarch64__)
+    /// Helper: Convert NEON comparison result to bitmask (emulate _mm_movemask_epi8)
+    static uint32_t neonMovemask(uint8x16_t input)
+    {
+        /// Shift each byte to extract MSB, then combine into a 16-bit mask
+        static const uint8x16_t shift = {0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7};
+        uint8x16_t masked = vshrq_n_u8(input, 7);  /// Get MSB of each byte (0 or 1)
+        uint8x16_t shifted = vshlq_u8(masked, vreinterpretq_s8_u8(shift));  /// Shift to bit position
+        /// Sum the low and high halves separately
+        uint8x8_t low = vget_low_u8(shifted);
+        uint8x8_t high = vget_high_u8(shifted);
+        uint64_t low_sum = vaddlv_u8(low);   /// Horizontal add low 8 bytes
+        uint64_t high_sum = vaddlv_u8(high); /// Horizontal add high 8 bytes
+        return static_cast<uint32_t>(low_sum | (high_sum << 8));
+    }
+
+    /// Find matching positions in a group using NEON
+    uint32_t matchGroup(const int8_t * group, int8_t h2) const
+    {
+        int8x16_t ctrl_vec = vld1q_s8(group);
+        int8x16_t match_vec = vdupq_n_s8(h2);
+        uint8x16_t cmp = vceqq_s8(ctrl_vec, match_vec);
+        return neonMovemask(cmp);
+    }
+
+    /// Find empty positions in a group
+    uint32_t matchEmpty(const int8_t * group) const
+    {
+        int8x16_t ctrl_vec = vld1q_s8(group);
+        int8x16_t empty_vec = vdupq_n_s8(CTRL_EMPTY);
+        uint8x16_t cmp = vceqq_s8(ctrl_vec, empty_vec);
+        return neonMovemask(cmp);
+    }
+
+    /// Find empty or deleted positions
+    uint32_t matchEmptyOrDeleted(const int8_t * group) const
+    {
+        int8x16_t ctrl_vec = vld1q_s8(group);
+        /// Empty and deleted both have high bit set (negative values)
+        uint8x16_t msb = vreinterpretq_u8_s8(vshrq_n_s8(ctrl_vec, 7));  /// Arithmetic shift to get sign bit
+        return neonMovemask(msb);
+    }
+#endif
 
 public:
     SwissTableHashMap() : size_degree(INITIAL_SIZE_DEGREE)
@@ -854,7 +900,7 @@ public:
 };
 
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
 /// ==================== Two-Level Swiss Table Hash Map ====================
 /// Partitions keys into 256 buckets for parallel merging capability.
 template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
@@ -931,7 +977,7 @@ using Mutex = std::mutex;
 using MapSmallLocks = HashMapWithSmallLocks<Key, Value>;
 using MapRobinHood = RobinHoodHashMap<Key, Value>;
 using MapTwoLevelRobinHood = TwoLevelRobinHoodHashMap<Key, Value>;
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
 using MapSwiss = SwissTableHashMap<Key, Value>;
 using MapTwoLevelSwiss = TwoLevelSwissTableHashMap<Key, Value>;
 #endif
@@ -1352,7 +1398,7 @@ void aggregateRobinHoodPrefetch(MapRobinHood & map, Source::const_iterator begin
         ++map[*it];
 }
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
 /// ==================== Swiss Table Aggregation ====================
 void aggregateSwiss(MapSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -1413,7 +1459,7 @@ void mergeTwoLevelRobinHood(MapTwoLevelRobinHood * maps, size_t num_threads, siz
             maps[0].impls[bucket][it.getKey()] += it.getMapped();
 }
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
 /// ==================== Two-Level Swiss Table Aggregation ====================
 void aggregateTwoLevelSwiss(MapTwoLevelSwiss & map, Source::const_iterator begin, Source::const_iterator end)
 {
