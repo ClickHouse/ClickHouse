@@ -62,7 +62,10 @@ struct SmallLock
         {
             /// Spin with backoff
             while (locked.load(std::memory_order_relaxed))
-                _mm_pause();
+#if defined(__x86_64__)
+                _mm_pause()
+#endif
+                ;
         }
     }
 
