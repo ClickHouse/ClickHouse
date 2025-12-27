@@ -12,6 +12,7 @@ from ..framework.core.settings import (
     DEFAULT_ERROR_RATE,
     getenv_int,
     getenv_float,
+    parse_bool,
 )
 from ..framework.io.probes import mntr
 
@@ -283,11 +284,12 @@ class KeeperBench:
             pass
         cfg_dump = yaml.safe_dump(bench_cfg, sort_keys=False)
         try:
-            repo_root = Path(__file__).parents[4]
-            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-            odir.mkdir(parents=True, exist_ok=True)
-            with open(odir / "keeper_bench_config.yaml", "w", encoding="utf-8") as f:
-                f.write(cfg_dump)
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                with open(odir / "keeper_bench_config.yaml", "w", encoding="utf-8") as f:
+                    f.write(cfg_dump)
         except Exception:
             pass
         # Write config inside the container
