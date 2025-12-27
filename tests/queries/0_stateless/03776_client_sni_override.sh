@@ -71,4 +71,5 @@ if grep '^[0-9a-f]\{4\} -' "${SERVER_LOG}" | sed 's/.*   //' | tr -d '\n' | grep
     echo "PASS: custom.example.com found in TLS handshake"
 else
     echo "FAIL: custom.example.com not found in TLS handshake"
+    cat "${SERVER_LOG}"
 fi
