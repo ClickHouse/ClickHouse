@@ -378,6 +378,7 @@ private:
                 Cell * result = nullptr;
                 bool inserted = false;
                 emplaceNoResize(cell.key, result, inserted);
+                assert(result != nullptr);
                 if (inserted)
                     result->value = cell.value;
                 else
