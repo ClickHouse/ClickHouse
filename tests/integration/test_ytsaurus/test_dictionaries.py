@@ -1,8 +1,9 @@
+import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-from .yt_helpers import YtsaurusURIHelper, YTsaurusCLI
+from .yt_helpers import YtsaurusURIHelper, YTsaurusCLI, ensure_ytsaurus_ready
 
 from helpers.cluster import is_arm
 
@@ -27,6 +28,14 @@ yt_uri_helper = YtsaurusURIHelper(cluster.ytsaurus_port)
 def started_cluster():
     try:
         cluster.start()
+        to = 0
+        try:
+            to = int(os.environ.get("YTS_READY_TIMEOUT", "120") or "120")
+        except Exception:
+            to = 120
+        ok = ensure_ytsaurus_ready(cluster, instance, yt_uri_helper.host, yt_uri_helper.port, yt_uri_helper.ytcluster_name, timeout_s=to)
+        if not ok:
+            pytest.skip("YTsaurus not ready in time; skipping module")
         yield cluster
 
     finally:

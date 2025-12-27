@@ -74,6 +74,9 @@ class MetricsSampler:
                     entry["mntr"] = m
                     entry["lgif"] = l
                     cache[n.name] = entry
+                    b = self._ctx.setdefault("_metrics_cache_baseline", {})
+                    if n.name not in b:
+                        b[n.name] = {"lgif": l}
             except Exception:
                 pass
             # Sample 4LW 'dirs' in a lightweight way: count lines and bytes
