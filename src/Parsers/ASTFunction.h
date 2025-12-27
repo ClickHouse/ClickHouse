@@ -113,6 +113,21 @@ std::shared_ptr<ASTFunction> makeASTOperator(const String & name, Args &&... arg
     return function;
 }
 
+/// Adds a parameters to aggregate function.
+inline std::shared_ptr<ASTFunction> addParametersToAggregateFunction(std::shared_ptr<ASTFunction> && function) { return std::move(function); }
+
+template <typename... OtherParameters>
+std::shared_ptr<ASTFunction> addParametersToAggregateFunction(std::shared_ptr<ASTFunction> && function, ASTPtr parameter, OtherParameters &&... other_parameters)
+{
+    if (!function->parameters)
+    {
+        function->parameters = std::make_shared<ASTExpressionList>();
+        function->children.push_back(function->parameters);
+    }
+    function->parameters->children.push_back(std::move(parameter));
+    return addParametersToAggregateFunction(std::move(function), std::forward<OtherParameters>(other_parameters)...);
+}
+
 /// ASTFunction Helpers: hide casts and semantic.
 
 String getFunctionName(const IAST * ast);

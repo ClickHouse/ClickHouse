@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD) grouping?
+    : (MULT | DIV | MOD | ATAN2) grouping?
     ;
 
 addOp

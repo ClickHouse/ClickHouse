@@ -65,12 +65,6 @@ public:
         const String & end_param);
 
 private:
-    /// Convert timestamp parameter to Field
-    Field parseTimestamp(const String & time_param);
-
-    /// Convert step parameter to Field
-    Field parseStep(const String & step_param);
-
     /// Write JSON response for instant query result (including scalars)
     void writeInstantQueryHeader(WriteBuffer & response);
     void writeScalarQueryResponse(WriteBuffer & response, const Block & result_block);
@@ -86,6 +80,9 @@ private:
     void writeRangeQueryHeader(WriteBuffer & response);
     void writeRangeQueryFooter(WriteBuffer & response);
     void writeRangeQueryResponse(WriteBuffer & response, const Block & result_block);
+
+    void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
+    void writeScalar(WriteBuffer & response, Float64 value);
 
     /// Write JSON response for series metadata
     void writeSeriesResponse(WriteBuffer & response, const Block & result_block);
