@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -59,7 +60,8 @@ BlockIO InterpreterCreateIndexQuery::execute()
     }
 
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_ADD_INDEX, create_index.getDatabase(), create_index.getTable());
+    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, create_index.getDatabase(), current_context))
+        required_access.emplace_back(AccessType::ALTER_ADD_INDEX, create_index.getDatabase(), create_index.getTable());
 
     if (!create_index.cluster.empty())
     {
@@ -72,7 +74,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     auto table_id = current_context->resolveStorageID(create_index, Context::ResolveOrdinary);
     query_ptr->as<ASTCreateIndexQuery &>().setDatabase(table_id.database_name);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, current_context);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, current_context); // todo: double getDatabase
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);

@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <IO/SharedThreadPools.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
@@ -665,11 +666,12 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     AccessRightsElements required_access;
     const auto & drop = current_query_ptr->as<const ASTDropQuery &>();
 
+    if (requireTemporaryDatabaseAccessIfNeeded(required_access, drop.getDatabase(), getContext()))
+        return required_access;
+
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
+        if (drop.kind == ASTDropQuery::Kind::Detach || drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)

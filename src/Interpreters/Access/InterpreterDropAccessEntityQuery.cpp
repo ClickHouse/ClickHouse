@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 
@@ -104,8 +105,12 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
         {
             if (query.row_policy_names)
             {
+                const auto & context = getContext();
                 for (const auto & row_policy_name : query.row_policy_names->full_names)
-                    res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                {
+                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
+                        res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                }
             }
             return res;
         }

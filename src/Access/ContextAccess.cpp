@@ -83,7 +83,7 @@ namespace
 }
 
 
-AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
+AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control) // todo: temporaries
 {
     AccessFlags max_flags;
 
@@ -621,10 +621,10 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     {
         /// Access to temporary tables is controlled in an unusual way, not like normal tables.
         /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
-        /// and other grants are considered as always given.
+        /// and other grants are considered as always given. todo: yes?
         /// The DatabaseCatalog class won't resolve StorageID for temporary tables
         /// which shouldn't be accessed.
-        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
+        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE) // todo: temporary databases
             return access_granted();
     }
 
@@ -683,7 +683,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     struct PrecalculatedFlags
-    {
+    { // todo: temporary databases
         const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
             | AccessType::TRUNCATE;

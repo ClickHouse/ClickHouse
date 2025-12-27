@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Interpreters/processColumnTransformers.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 
 #include <memory>
 
@@ -91,7 +92,8 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
 {
     const auto & optimize = query_ptr->as<const ASTOptimizeQuery &>();
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::OPTIMIZE, optimize.getDatabase(), optimize.getTable());
+    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, optimize.getDatabase(), getContext()))
+        required_access.emplace_back(AccessType::OPTIMIZE, optimize.getDatabase(), optimize.getTable());
     return required_access;
 }
 

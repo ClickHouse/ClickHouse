@@ -3,6 +3,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
 
@@ -72,7 +73,8 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     AccessRightsElements required_access;
     const auto & undrop = query_ptr->as<const ASTUndropQuery &>();
 
-    required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, undrop.getDatabase(), getContext()))
+        required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
     return required_access;
 }
 

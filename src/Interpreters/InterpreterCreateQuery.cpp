@@ -58,6 +58,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -2435,12 +2436,17 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (internal)
         return {};
 
+    // todo: exclude temporaries from backups and document it
     AccessRightsElements required_access;
     const auto & create = query_ptr->as<const ASTCreateQuery &>();
+    const auto & context = getContext();
 
     if (!create.table)
     {
-        required_access.emplace_back(AccessType::CREATE_DATABASE, create.getDatabase());
+        if (create.temporary)
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE, create.getDatabase());
+        else
+            required_access.emplace_back(AccessType::CREATE_DATABASE, create.getDatabase());
     }
     else if (create.is_dictionary)
     {
@@ -2478,7 +2484,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         for (const auto & target : create.targets->targets)
         {
             const auto & target_id = target.table_id;
-            if (target_id)
+            if (target.table_id && !requireTemporaryDatabaseAccessIfNeeded(required_access, target_id.database_name, context))
                 required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
         }
     }

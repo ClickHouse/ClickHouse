@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/AlterCommands.h>
@@ -29,7 +30,8 @@ BlockIO InterpreterDropIndexQuery::execute()
     const auto & drop_index = query_ptr->as<ASTDropIndexQuery &>();
 
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_DROP_INDEX, drop_index.getDatabase(), drop_index.getTable());
+    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, drop_index.getDatabase(), current_context))
+        required_access.emplace_back(AccessType::ALTER_DROP_INDEX, drop_index.getDatabase(), drop_index.getTable());
 
     if (!drop_index.cluster.empty())
     {
@@ -42,7 +44,7 @@ BlockIO InterpreterDropIndexQuery::execute()
     auto table_id = current_context->resolveStorageID(drop_index, Context::ResolveOrdinary);
     query_ptr->as<ASTDropIndexQuery &>().setDatabase(table_id.database_name);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, getContext());
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name, current_context); // todo: double getDatabase
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);

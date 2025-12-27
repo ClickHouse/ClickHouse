@@ -1,37 +1,38 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTCreateRoleQuery.h>
-#include <Parsers/Access/ASTCreateQuotaQuery.h>
-#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/Access/ASTSettingsProfileElement.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
+#include <Access/MaskingPolicy.h>
 #include <Access/Quota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/Role.h>
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
-#include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <base/range.h>
 #include <base/sort.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -403,17 +404,25 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         }
         case AccessEntityType::ROW_POLICY:
         {
+            // todo: ensure that row policy will not leave DB scope
+            const auto & context = getContext();
             if (show_query.row_policy_names)
             {
                 for (const auto & row_policy_name : show_query.row_policy_names->full_names)
-                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
+                {
+                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
+                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
+                }
             }
             else if (show_query.database_and_table_name)
             {
-                if (show_query.database_and_table_name->second.empty())
-                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
-                else
-                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
+                if (!requireTemporaryDatabaseAccessIfNeeded(res, show_query.database_and_table_name->first, context))
+                {
+                    if (show_query.database_and_table_name->second.empty())
+                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
+                    else
+                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
+                }
             }
             else
             {

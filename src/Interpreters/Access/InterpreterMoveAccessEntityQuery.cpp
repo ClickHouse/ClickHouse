@@ -1,11 +1,12 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
-#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/requireTemporaryDatabaseAccessIfNeeded.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
 
 
 namespace DB
@@ -78,10 +79,15 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
         {
             if (query.row_policy_names)
             {
+                const auto & context = getContext();
                 for (const auto & row_policy_name : query.row_policy_names->full_names)
                 {
-                    res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
-                    res.emplace_back(AccessType::CREATE_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                    // todo: ensure that row policy will not leave DB scope
+                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
+                    {
+                        res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                        res.emplace_back(AccessType::CREATE_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                    }
                 }
             }
             return res;
