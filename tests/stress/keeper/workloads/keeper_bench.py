@@ -204,17 +204,18 @@ class KeeperBench:
             cfg_text = ""
         # Persist meta for debugging config discovery
         try:
-            repo_root = Path(__file__).parents[4]
-            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-            odir.mkdir(parents=True, exist_ok=True)
-            with open(odir / "keeper_bench_meta.txt", "w", encoding="utf-8") as f:
-                f.write(f"cfg_path={self.cfg_path or ''}\n")
-                try:
-                    f.write(f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n")
-                except Exception:
-                    f.write("cfg_exists=error\n")
-                f.write(f"servers='{self.servers}'\n")
-                f.write(f"cfg_text_preview={cfg_text[:400]}\n")
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                with open(odir / "keeper_bench_meta.txt", "w", encoding="utf-8") as f:
+                    f.write(f"cfg_path={self.cfg_path or ''}\n")
+                    try:
+                        f.write(f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n")
+                    except Exception:
+                        f.write("cfg_exists=error\n")
+                    f.write(f"servers='{self.servers}'\n")
+                    f.write(f"cfg_text_preview={cfg_text[:400]}\n")
         except Exception:
             pass
         # Override from explicit constructor or env
@@ -262,24 +263,25 @@ class KeeperBench:
             pass
         # Debug: capture directory listings before running bench
         try:
-            ls_out = []
-            for q in ["ls /", "ls /e2e", "ls /e2e/prod", "stat /e2e/prod", "stat /e2e/prod/create", "stat /e2e/prod/set"]:
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                ls_out = []
+                for q in ["ls /", "ls /e2e", "ls /e2e/prod", "stat /e2e/prod", "stat /e2e/prod/create", "stat /e2e/prod/set"]:
+                    try:
+                        r = sh(
+                            self.node,
+                            f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{q}' 2>&1 || true",
+                        )
+                        ls_out.append(f"$ {q}\n" + str((r or {}).get("out", "")) + "\n")
+                    except Exception as _:
+                        ls_out.append(f"$ {q}\n<error>\n")
                 try:
-                    r = sh(
-                        self.node,
-                        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{q}' 2>&1 || true",
-                    )
-                    ls_out.append(f"$ {q}\n" + str((r or {}).get("out", "")) + "\n")
-                except Exception as _:
-                    ls_out.append(f"$ {q}\n<error>\n")
-            try:
-                repo_root = Path(__file__).parents[4]
-                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                odir.mkdir(parents=True, exist_ok=True)
-                with open(odir / "keeper_pre_ls.txt", "w", encoding="utf-8") as f:
-                    f.write("\n".join(ls_out))
-            except Exception:
-                pass
+                    repo_root = Path(__file__).parents[4]
+                    odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                    odir.mkdir(parents=True, exist_ok=True)
+                    with open(odir / "keeper_pre_ls.txt", "w", encoding="utf-8") as f:
+                        f.write("\n".join(ls_out))
+                except Exception:
+                    pass
         except Exception:
             pass
         cfg_dump = yaml.safe_dump(bench_cfg, sort_keys=False)
@@ -405,10 +407,13 @@ class KeeperBench:
 
             remaining = int(self.duration_s)
             try:
-                repo_root = Path(__file__).parents[4]
-                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-                odir.mkdir(parents=True, exist_ok=True)
-                adapt_log = odir / "keeper_adapt_stages.jsonl"
+                if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                    repo_root = Path(__file__).parents[4]
+                    odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                    odir.mkdir(parents=True, exist_ok=True)
+                    adapt_log = odir / "keeper_adapt_stages.jsonl"
+                else:
+                    adapt_log = None
             except Exception:
                 adapt_log = None
 
@@ -471,13 +476,14 @@ class KeeperBench:
         cmd = f"{prefix} {base}".strip()
         run_out = sh(self.node, cmd)
         try:
-            repo_root = Path(__file__).parents[4]
-            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-            odir.mkdir(parents=True, exist_ok=True)
-            with open(odir / "keeper_bench_cmd.txt", "w", encoding="utf-8") as f:
-                f.write(cmd + "\n")
-            with open(odir / "keeper_bench_stdout.txt", "w", encoding="utf-8") as f:
-                f.write((run_out or {}).get("out", ""))
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                with open(odir / "keeper_bench_cmd.txt", "w", encoding="utf-8") as f:
+                    f.write(cmd + "\n")
+                with open(odir / "keeper_bench_stdout.txt", "w", encoding="utf-8") as f:
+                    f.write((run_out or {}).get("out", ""))
         except Exception:
             pass
         # Parse JSON output if present
@@ -486,11 +492,12 @@ class KeeperBench:
             "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
         )
         try:
-            repo_root = Path(__file__).parents[4]
-            odir = repo_root / "tests" / "stress" / "keeper" / "tests"
-            odir.mkdir(parents=True, exist_ok=True)
-            with open(odir / "keeper_bench_out_raw.json", "w", encoding="utf-8") as f:
-                f.write(out.get("out", ""))
+            if parse_bool(os.environ.get("KEEPER_DEBUG")):
+                repo_root = Path(__file__).parents[4]
+                odir = repo_root / "tests" / "stress" / "keeper" / "tests"
+                odir.mkdir(parents=True, exist_ok=True)
+                with open(odir / "keeper_bench_out_raw.json", "w", encoding="utf-8") as f:
+                    f.write(out.get("out", ""))
         except Exception:
             pass
         try:
