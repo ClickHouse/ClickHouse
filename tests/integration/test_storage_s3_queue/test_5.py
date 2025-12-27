@@ -75,7 +75,7 @@ def started_cluster():
                 "configs/keeper_retries.xml",
             ],
             stay_alive=True,
-            cpu_limit=10
+            cpu_limit=8
         )
         cluster.add_instance(
             "instance2",
