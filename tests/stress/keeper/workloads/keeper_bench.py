@@ -6,7 +6,13 @@ import yaml
 from pathlib import Path
 
 from ..framework.core.util import has_bin, sh
-from ..framework.core.settings import CLIENT_PORT, DEFAULT_P99_MS, DEFAULT_ERROR_RATE
+from ..framework.core.settings import (
+    CLIENT_PORT,
+    DEFAULT_P99_MS,
+    DEFAULT_ERROR_RATE,
+    getenv_int,
+    getenv_float,
+)
 from ..framework.io.probes import mntr
 
 
@@ -288,11 +294,7 @@ class KeeperBench:
         sh(self.node, "mkdir -p /tmp || true")
         sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + cfg_dump + "YAML\n")
         try:
-            w = 0
-            try:
-                w = int(os.environ.get("KEEPER_BENCH_WARMUP_S", "0") or 0)
-            except Exception:
-                w = 0
+            w = int(getenv_int("KEEPER_BENCH_WARMUP_S", 0))
             if w > 0:
                 wp = ""
                 try:
@@ -326,30 +328,13 @@ class KeeperBench:
                 summary["duration_s"] = 0
             except Exception:
                 pass
-            try:
-                target_p99 = int(os.environ.get("KEEPER_ADAPT_TARGET_P99_MS", str(int(DEFAULT_P99_MS))) or int(DEFAULT_P99_MS))
-            except Exception:
-                target_p99 = int(DEFAULT_P99_MS)
-            try:
-                max_err = float(os.environ.get("KEEPER_ADAPT_MAX_ERROR", str(float(DEFAULT_ERROR_RATE))) or float(DEFAULT_ERROR_RATE))
-            except Exception:
-                max_err = float(DEFAULT_ERROR_RATE)
-            try:
-                stage_s = int(os.environ.get("KEEPER_ADAPT_STAGE_S", "15") or 15)
-            except Exception:
-                stage_s = 15
-            try:
-                cmin = int(os.environ.get("KEEPER_ADAPT_MIN_CLIENTS", "8") or 8)
-            except Exception:
-                cmin = 8
-            try:
-                cmax = int(os.environ.get("KEEPER_ADAPT_MAX_CLIENTS", os.environ.get("KEEPER_BENCH_CLIENTS", "128")))
-            except Exception:
-                cmax = 128
-            try:
-                ccur = int(os.environ.get("KEEPER_BENCH_CLIENTS", "64") or 64)
-            except Exception:
-                ccur = 64
+            target_p99 = int(getenv_int("KEEPER_ADAPT_TARGET_P99_MS", int(DEFAULT_P99_MS)))
+            max_err = float(getenv_float("KEEPER_ADAPT_MAX_ERROR", float(DEFAULT_ERROR_RATE)))
+            stage_s = int(getenv_int("KEEPER_ADAPT_STAGE_S", 15))
+            cmin = int(getenv_int("KEEPER_ADAPT_MIN_CLIENTS", 8))
+            # Allow KEEPER_BENCH_CLIENTS to seed cmax if explicit max not set
+            cmax = int(getenv_int("KEEPER_ADAPT_MAX_CLIENTS", int(os.environ.get("KEEPER_BENCH_CLIENTS", "128") or 128)))
+            ccur = int(getenv_int("KEEPER_BENCH_CLIENTS", 64))
             # If explicit clients were passed via constructor, prefer them as the starting point
             try:
                 if self.clients is not None:

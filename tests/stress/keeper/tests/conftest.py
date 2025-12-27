@@ -13,7 +13,7 @@ def pytest_addoption(parser):
     )
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
     # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
-    pa("--duration", type=int, default=int(os.environ.get("KEEPER_DURATION", "120")))
+    pa("--duration", type=int, default=int(getenv_int("KEEPER_DURATION", 120)))
     pa(
         "--total-shards",
         type=int,
@@ -68,7 +68,7 @@ def pytest_addoption(parser):
 
 
 from ..framework.core.cluster import ClusterBuilder
-from ..framework.core.settings import parse_bool
+from ..framework.core.settings import parse_bool, getenv_int
 from ..framework.core.util import wait_until
 from ..framework.io.probes import count_leaders
 
@@ -154,11 +154,7 @@ def cluster_factory(request):
             except Exception:
                 pass
             raise e
-        to = 120.0
-        try:
-            to = float(os.environ.get("KEEPER_READY_TIMEOUT", "120"))
-        except Exception:
-            to = 120.0
+        to = float(getenv_int("KEEPER_READY_TIMEOUT", 120))
         wait_until(
             lambda: count_leaders(nodes) == 1,
             timeout_s=to,
