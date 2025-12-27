@@ -92,6 +92,9 @@ def _inject_gate_macros(s):
             )
         if not _has_gate(s, "p99_le"):
             _append_gate(s, {"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)})
+    # Always append log_sanity_ok as a last guard (non-intrusive if logs empty)
+    if not _has_gate(s, "log_sanity_ok"):
+        _append_gate(s, {"type": "log_sanity_ok"})
 
 
 def _inject_prefix_tags(s):
