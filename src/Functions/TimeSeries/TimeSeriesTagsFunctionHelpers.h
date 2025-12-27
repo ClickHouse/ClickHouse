@@ -44,6 +44,22 @@ void checkArgumentTypeForGroup(std::string_view function_name, const ColumnsWith
 /// Group is an integer (UInt64) which is used to identify a set of tags.
 std::vector<Group> extractGroupFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool return_single_element_if_const_column = false);
 
+/// Checks the type of a function argument containing a constant tag name.
+void checkArgumentTypeForConstTagName(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+void checkArgumentTypeForConstString(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+
+/// Extracts a constant tag name from a function argument.
+String extractConstTagNameFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+String extractConstStringFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+
+/// Checks the type of a function argument containing a constant array of tag names.
+void checkArgumentTypeForConstTagNames(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+void checkArgumentTypeForConstStrings(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+
+/// Checks the type of a function argument containing a constant array of tag names.
+std::vector<String> extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+std::vector<String> extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+
 /// Checks the type of a function argument containing an identifier of time series.
 const std::type_info & checkArgumentTypeForID(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_nullable = false);
 

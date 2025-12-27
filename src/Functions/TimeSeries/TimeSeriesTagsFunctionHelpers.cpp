@@ -100,8 +100,6 @@ namespace
                     {
                         auto tag_name = std::string_view{tag_names.getDataAt(j)};
                         auto tag_value = std::string_view{tag_values.getDataAt(j)};
-                        if (tag_name.empty())
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
                         res.emplace_back(tag_name, tag_value);
                     }
                 }
@@ -176,8 +174,7 @@ namespace
     }
 
     /// Extracts tags from two columns: the first column contains names and the second column contains values.
-    void extractTagNameAndValueFromTwoColumns(std::string_view function_name,
-                                              const IColumn & column_tag_name,
+    void extractTagNameAndValueFromTwoColumns(const IColumn & column_tag_name,
                                               const IColumn & column_tag_value,
                                               std::vector<TagNamesAndValues> & out_tags_vector)
     {
@@ -191,8 +188,6 @@ namespace
         {
             auto tag_name = tag_names[i];
             auto tag_value = tag_values[i];
-            if (tag_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
             out_tags_vector[i].emplace_back(tag_name, tag_value);
         }
     }
@@ -209,12 +204,19 @@ namespace
         {
             return left.first == right.first;
         };
+        auto is_tag_name_empty = [](const std::pair<String, String> & x)
+        {
+            return x.first.empty();
+        };
         auto is_tag_value_empty = [](const std::pair<String, String> & x)
         {
             return x.second.empty();
         };
         for (auto & tags : tags_vector)
         {
+            if (std::find_if(tags.begin(), tags.end(), is_tag_name_empty) != tags.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
+
             std::sort(tags.begin(), tags.end(), less_by_tag_name);
             tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
 
@@ -388,7 +390,7 @@ std::vector<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArguments(
         {
             const auto & column_tag_name = *arguments[i].column;
             const auto & column_tag_value = *arguments[i + 1].column;
-            extractTagNameAndValueFromTwoColumns(function_name, column_tag_name, column_tag_value, tags_vector);
+            extractTagNameAndValueFromTwoColumns(column_tag_name, column_tag_value, tags_vector);
         }
     }
 
@@ -416,6 +418,112 @@ std::vector<Group> extractGroupFromArgument(std::string_view function_name, cons
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
     return extractGroupFromColumn(function_name, argument_index, column, return_single_element_if_const_column);
+}
+
+
+void checkArgumentTypeForConstString(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    if (argument_index >= arguments.size())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
+
+    auto type = arguments[argument_index].type;
+    auto nested_type = removeLowCardinality(type);
+
+    if (!isString(nested_type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                        argument_index + 1, function_name, type, "String");
+}
+
+
+void checkArgumentTypeForConstTagName(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    checkArgumentTypeForConstString(function_name, arguments, argument_index);
+}
+
+
+String extractConstStringFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    chassert(argument_index < arguments.size());
+    const auto & column = *arguments[argument_index].column;
+
+    if (!checkColumnConst<ColumnString>(&column))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant string", argument_index + 1, function_name);
+
+    return String{column.getDataAt(0)};
+}
+
+
+String extractConstTagNameFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    String tag_name = extractConstStringFromArgument(function_name, arguments, argument_index);
+    if (tag_name.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
+    }
+    return tag_name;
+}
+
+
+void checkArgumentTypeForConstStrings(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    if (argument_index >= arguments.size())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} can't be called with {} arguments", function_name, arguments.size());
+
+    auto type = arguments[argument_index].type;
+    auto nested_type = removeLowCardinality(type);
+
+    if (!isArray(nested_type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                        argument_index + 1, function_name, type, "Array(String)");
+
+    auto element_type = typeid_cast<const DataTypeArray &>(*nested_type).getNestedType();
+    if (!isString(element_type) && !isNothing(element_type))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
+                        argument_index + 1, function_name, type, "Array(String)");
+}
+
+
+void checkArgumentTypeForConstTagNames(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    checkArgumentTypeForConstStrings(function_name, arguments, argument_index);
+}
+
+
+std::vector<String> extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    chassert(argument_index < arguments.size());
+    const auto & column = *arguments[argument_index].column;
+
+    const auto * array_column = checkAndGetColumnConstData<ColumnArray>(&column);
+    if (!array_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, function_name);
+
+    if (checkAndGetColumn<ColumnNothing>(&array_column->getData()))
+        return {};
+
+    size_t count = array_column->getOffsets()[0];
+    const auto * string_column = checkAndGetColumn<ColumnString>(&array_column->getData());
+    if (!string_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be a constant Array(String)", argument_index + 1, function_name);
+
+    Strings res;
+    res.reserve(count);
+    for (size_t i = 0; i != count; ++i)
+        res.emplace_back(String{string_column->getDataAt(i)});
+
+    return res;
+}
+
+
+std::vector<String> extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+{
+    Strings tag_names = extractConstStringsFromArgument(function_name, arguments, argument_index);
+    for (const auto & tag_name : tag_names)
+    {
+        if (tag_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} must not be called with an empty tag name", function_name);
+    }
+    return tag_names;
 }
 
 

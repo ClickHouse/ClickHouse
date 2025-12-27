@@ -6,6 +6,7 @@
 
 namespace DB
 {
+class ColumnString;
 
 /// Mapping between identifiers and tags which are collected in the context of the currently executed query.
 ///
@@ -39,6 +40,7 @@ public:
     using TagNamesAndValuesPtr = std::shared_ptr<const TagNamesAndValues>;
 
     static String toString(const TagNamesAndValues & tags);
+    static String toString(const TagNamesAndValuesPtr & tags);
 
     /// A group is just an integer.
     using Group = UInt64;
@@ -63,6 +65,11 @@ public:
     TagNamesAndValuesPtr getTagsByGroup(Group group) const;
     std::vector<TagNamesAndValuesPtr> getTagsByGroup(const std::vector<Group> & groups_) const;
 
+    /// Extracts the value of a specified tag, or an empty string if there is no such tag in the group.
+    String extractTag(Group group, const String & tag_to_extract) const;
+    std::vector<String> extractTag(const std::vector<Group> & groups_, const String & tag_to_extract) const;
+    void extractTag(const std::vector<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
+
     /// Returns the group assigned to the set of tags which was added to the collector
     /// with a specified identifier.
     template <typename IDType>
@@ -78,7 +85,75 @@ public:
     template <typename IDType>
     std::vector<TagNamesAndValuesPtr> getTagsByID(const std::vector<IDType> & ids) const;
 
+    /// Removes a tag from a group and returns the result group.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group removeTag(Group group, const String & tag_to_remove);
+    std::vector<Group> removeTag(const std::vector<Group> & groups_, const String & tag_to_remove);
+
+    /// Removes multiple tags from a group and returns the result group.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group removeTags(Group group, const Strings & tags_to_remove);
+    std::vector<Group> removeTags(const std::vector<Group> & groups_, const Strings & tags_to_remove);
+
+    /// Removes all tags from a group except specified ones and returns the result group.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group removeAllTagsExcept(Group group, const Strings & tags_to_keep);
+    std::vector<Group> removeAllTagsExcept(const std::vector<Group> & groups_, const Strings & tags_to_keep);
+
+    /// Copies a specified tag from `src_group` to `dest_group`. The function replaces any previous value of the copied tag in `dest_group`.
+    /// If the copied tag doesn't present in `src_group` then the function will remove them in `dest_group` as well.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group copyTag(Group dest_group, Group src_group, const String & tag_to_copy);
+    std::vector<Group> copyTag(Group dest_group, const std::vector<Group> & src_groups, const String & tag_to_copy);
+    std::vector<Group> copyTag(const std::vector<Group> & dest_groups, Group src_group, const String & tag_to_copy);
+    std::vector<Group> copyTag(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const String & tag_to_copy);
+
+    /// Copies specified tags from `src_group` to `dest_group`. The function replaces any previous values of the copied tags in `dest_group`.
+    /// If some of the copied tags don't present in `src_group` then the function will remove them in `dest_group` as well.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    Group copyTags(Group dest_group, Group src_group, const Strings & tags_to_copy);
+    std::vector<Group> copyTags(Group dest_group, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
+    std::vector<Group> copyTags(const std::vector<Group> & dest_groups, Group src_group, const Strings & tags_to_copy);
+    std::vector<Group> copyTags(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const Strings & tags_to_copy);
+
+    /// Joins all the values of all the `src_tags` using `separator` and returns a new group with the tag `dest_tag` set to the joined value.
+    /// This function implements the logic of promql function label_join().
+    Group joinTags(Group group, const String & dest_tag, const String & separator, const Strings & src_tags);
+    std::vector<Group> joinTags(const std::vector<Group> & groups, const String & dest_tag, const String & separator, const Strings & src_tags);
+
+    /// Matches the regular expression `regex` against the value of the tag `src_tag`.
+    /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
+    /// together with the original tags in the input.
+    /// Capturing groups in the regular expression can be referenced with $1, $2, etc.
+    /// Named capturing groups in the regular expression can be referenced with $name (where name is the capturing group name).
+    /// If the regular expression doesn't match then the original group is returned unchanged.
+    /// This function implements the logic of promql function label_replace().
+    Group replaceTag(Group group, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
+    std::vector<Group> replaceTag(const std::vector<Group> & groups, const String & dest_tag, const String & replacement, const String & src_tag, const String & regex);
+
 private:
+    /// Transforms the set of tags assigned to a group using a one-argument function, returns the result group.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    template <typename TransformFunc>
+    Group transformTags(Group group, TransformFunc && transform_func);
+
+    template <typename TransformFunc>
+    std::vector<Group> transformTags(const std::vector<Group> & groups_, TransformFunc && transform_func);
+
+    /// Transforms the set of tags assigned to a group using a two-arguments function, returns the result group.
+    /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
+    template <typename TransformFunc2>
+    Group transformTags2(Group group1, Group group2, TransformFunc2 && transform_func);
+
+    template <typename TransformFunc2>
+    std::vector<Group> transformTags2(Group group1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
+
+    template <typename TransformFunc2>
+    std::vector<Group> transformTags2(const std::vector<Group> & groups1, Group group2, TransformFunc2 && transform_func);
+
+    template <typename TransformFunc2>
+    std::vector<Group> transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
+
     mutable SharedMutex mutex;
 
     std::vector<TagNamesAndValuesPtr> groups;
