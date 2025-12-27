@@ -341,6 +341,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         for step in scenario.get("pre", []):
             _apply_step(step, nodes, leader, ctx)
         kb = None
+        bench_injected = False
         if (
             faults_mode != "random"
             and "workload" in scenario
@@ -397,7 +398,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             ctx["bench_secure"] = secure
             ctx["bench_servers"] = servers_arg(nodes)
         forced = parse_bool(os.environ.get("KEEPER_FORCE_BENCH"))
-        if (not kb) and forced:
+        if forced:
             try:
                 cli_dur = int(request.config.getoption("--duration"))
             except Exception:
@@ -445,6 +446,9 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 fs_effective = [{"kind": "parallel", "steps": [rb] + fs_effective}]
             else:
                 fs_effective = [rb]
+            bench_injected = True
+            if kb:
+                kb = None
             try:
                 gs = scenario.get("gates") or []
                 has_err = any((g.get("type") == "error_rate_le") for g in gs)
@@ -458,7 +462,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 pass
         for action in fs_effective:
             _apply_step(action, nodes, leader, ctx)
-        if kb:
+        if kb and not bench_injected:
             summary = kb.run()
         elif ctx.get("bench_summary"):
             summary = ctx.get("bench_summary") or {}
@@ -585,6 +589,22 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             for c in clients.values():
                 try:
                     c.stop()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            for zk in (ctx.get("_watch_flood_clients") or []):
+                try:
+                    zk.stop(); zk.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            for zk in (ctx.get("_ephem_clients") or []):
+                try:
+                    zk.stop(); zk.close()
                 except Exception:
                     pass
         except Exception:

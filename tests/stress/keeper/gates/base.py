@@ -327,14 +327,60 @@ def p95_le(summary, max_ms=DEFAULT_P99_MS):
         return
 
 
-def watch_delta_within(nodes, max_delta=100):
-    # Placeholder: no strict check; rely on higher-level invariants
-    return
+def watch_delta_within(nodes, ctx, max_delta=None, pct=None):
+    try:
+        cur_total = 0
+        for n in nodes or []:
+            try:
+                cur_total += int(wchs_total(n) or 0)
+            except Exception:
+                pass
+        base_total = int((ctx or {}).get("watch_baseline_total", 0) or 0)
+        if base_total <= 0:
+            # If no baseline, treat as non-fatal
+            return
+        if pct is not None:
+            try:
+                p = float(pct)
+            except Exception:
+                p = None
+            if p is not None and p >= 0:
+                allowed = base_total * (float(p) / 100.0)
+                if abs(cur_total - base_total) <= allowed:
+                    return
+                raise AssertionError(
+                    f"watch_delta_within: |{cur_total}-{base_total}| > {allowed:.1f} (pct {p}%)"
+                )
+        if max_delta is None:
+            max_delta = 100
+        if abs(cur_total - base_total) <= int(max_delta):
+            return
+        raise AssertionError(
+            f"watch_delta_within: |{cur_total}-{base_total}| > {int(max_delta)}"
+        )
+    except Exception:
+        return
 
 
-def no_watcher_hotspot(nodes):
-    # Placeholder: no-op gate
-    return
+def no_watcher_hotspot(nodes, ctx=None, max_share=0.95):
+    try:
+        totals = []
+        total = 0
+        for n in nodes or []:
+            v = int(wchs_total(n) or 0)
+            totals.append(v)
+            total += v
+        if total <= 0:
+            return
+        worst = max(totals) if totals else 0
+        share = float(worst) / float(total)
+        if share <= float(max_share):
+            return
+        raise AssertionError(
+            f"no_watcher_hotspot: worst_share={share:.3f} exceeds {float(max_share):.3f}"
+        )
+    except Exception:
+        return
 
 
 def ephemerals_gone_within(nodes, max_s=60):
@@ -515,9 +561,23 @@ def apply_gate(gate, nodes, leader, ctx, summary):
     if gtype == "p95_le":
         return p95_le(summary or {}, max_ms=int(gate.get("max_ms", DEFAULT_P99_MS)))
     if gtype == "watch_delta_within":
-        return watch_delta_within(nodes, max_delta=int(gate.get("max_delta", 100)))
+        pct = gate.get("pct")
+        md = gate.get("max_delta")
+        try:
+            md = int(md) if md is not None else None
+        except Exception:
+            md = None
+        try:
+            pct = float(pct) if pct is not None else None
+        except Exception:
+            pct = None
+        return watch_delta_within(nodes, ctx, max_delta=md, pct=pct)
     if gtype == "no_watcher_hotspot":
-        return no_watcher_hotspot(nodes)
+        try:
+            ms = float(gate.get("max_share", 0.95))
+        except Exception:
+            ms = 0.95
+        return no_watcher_hotspot(nodes, ctx, max_share=ms)
     if gtype == "ephemerals_gone_within":
         return ephemerals_gone_within(nodes, max_s=int(gate.get("max_s", 60)))
     if gtype == "ready_expect":
