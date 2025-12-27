@@ -5,6 +5,8 @@ import argparse
 import subprocess
 import time
 from pathlib import Path
+import xml.etree.ElementTree as ET
+import requests
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
 try:
@@ -33,7 +35,9 @@ def main():
     # Ensure weekly selection defaults depend on workflow: PR disables weekly, Nightly enables
     wf = os.environ.get("WORKFLOW_NAME", "")
     jn = os.environ.get("JOB_NAME", "")
-    is_pr = (wf == "PR") or ("(PR)" in jn)
+    ghe = os.environ.get("GITHUB_EVENT_NAME", "")
+    ref = os.environ.get("GITHUB_REF", "")
+    is_pr = (wf == "PR") or ("(PR)" in jn) or ghe.startswith("pull_request") or ref.startswith("refs/pull/")
     if is_pr:
         # Keep PR runs lightweight and stable under CI load
         os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
@@ -46,10 +50,10 @@ def main():
         os.environ.setdefault("KEEPER_BENCH_WARMUP_S", "5")
         os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
         os.environ.setdefault("KEEPER_FORCE_BENCH", "1")
-        os.environ.setdefault("KEEPER_DURATION", "60")
+        os.environ.setdefault("KEEPER_DURATION", "600")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
         # Limit concurrency and backends on PR to avoid resource starvation
-        os.environ.setdefault("KEEPER_PYTEST_XDIST", "2")
+        os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
         os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
         # Enable HTTP control readiness endpoint by default on PR to improve startup probes
         os.environ.setdefault("KEEPER_ENABLE_CONTROL", "1")
@@ -60,7 +64,7 @@ def main():
     os.environ.setdefault("KEEPER_KEEP_ON_FAIL", "1")
     # Enable faults by default on CI; can be overridden via env/CLI
     os.environ.setdefault("KEEPER_FAULTS", "on")
-    os.environ.setdefault("KEEPER_DURATION", "120")
+    os.environ.setdefault("KEEPER_DURATION", "600")
     # Run both default and rocks backends by default to compare behavior
     os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
     # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
@@ -206,9 +210,11 @@ def main():
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
     extra.append(f"--timeout={timeout_val}")
     extra.append("--timeout-method=thread")
-    # Always run with pytest-xdist (safe per-worker isolation is implemented in the framework)
     xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "auto").strip() or "auto"
     extra.append(f"-n {xdist_workers}")
+    report_file = f"{temp_dir}/pytest.jsonl"
+    junit_file = f"{temp_dir}/keeper_junit.xml"
+    extra.append(f"--junitxml={junit_file}")
     cmd = f"-s -vv {tests_target} --durations=0{dur_arg} {' '.join(extra)}".rstrip()
 
     # Prepare env for pytest
@@ -267,12 +273,123 @@ def main():
             cwd=repo_dir,
             name="Keeper Stress",
             env=env,
-            pytest_report_file=None,
+            pytest_report_file=report_file,
             logfile=None,
         )
     )
+    try:
+        tests = failures = errors = skipped = 0
+        summary_txt = None
+        try:
+            p = Path(junit_file)
+            if p.exists():
+                root = ET.parse(str(p)).getroot()
+                suites = []
+                if root.tag == "testsuite":
+                    suites = [root]
+                else:
+                    suites = list(root.findall("testsuite"))
+                for ts in suites:
+                    tests += int(ts.attrib.get("tests", 0) or 0)
+                    failures += int(ts.attrib.get("failures", 0) or 0)
+                    errors += int(ts.attrib.get("errors", 0) or 0)
+                    skipped += int(ts.attrib.get("skipped", 0) or 0)
+        except Exception:
+            pass
+        passed = max(0, tests - failures - errors - skipped)
+        try:
+            summary_txt = f"{temp_dir}/keeper_summary.txt"
+            with open(summary_txt, "w", encoding="utf-8") as f:
+                f.write(
+                    f"Passed: {passed}, Failed: {failures}, Skipped: {skipped}, Errors: {errors}, Total: {tests}\n"
+                )
+        except Exception:
+            summary_txt = None
+        results.append(
+            Result.from_commands_run(
+                name=f"Keeper Test Summary: Passed {passed}, Failed {failures}, Skipped {skipped}, Errors {errors}, Total {tests}",
+                command=["true"],
+            )
+        )
+    except Exception:
+        pass
+    try:
+        cidb_txt = f"{temp_dir}/keeper_cidb_verify.txt"
+        sha = env.get("COMMIT_SHA") or env.get("GITHUB_SHA") or "local"
+        backends_counts = {}
+        bench_rows = 0
+        checks_rows = 0
+        helper = None
+        try:
+            from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
+
+            helper = ClickHouseHelper()
+        except Exception:
+            helper = None
+        if helper is not None and sha and sha != "local":
+            try:
+                q = (
+                    "SELECT backend, count() FROM keeper_stress_tests.keeper_metrics_ts "
+                    f"WHERE commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY "
+                    "GROUP BY backend ORDER BY backend FORMAT TabSeparated"
+                )
+                r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                txt = r.text.strip()
+                for line in txt.splitlines():
+                    parts = line.split("\t")
+                    if len(parts) == 2:
+                        backends_counts[parts[0]] = int(float(parts[1]))
+            except Exception:
+                pass
+            try:
+                q = (
+                    "SELECT count() FROM keeper_stress_tests.keeper_metrics_ts "
+                    f"WHERE commit_sha = '{sha}' AND source = 'bench' AND ts > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                )
+                r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                t2 = r.text.strip()
+                bench_rows = int(float(t2.splitlines()[0])) if t2 else 0
+            except Exception:
+                pass
+            try:
+                q = (
+                    "SELECT count() FROM default.checks "
+                    f"WHERE check_name LIKE 'keeper_stress:%' AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                    "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                )
+                r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                t3 = r.text.strip()
+                checks_rows = int(float(t3.splitlines()[0])) if t3 else 0
+            except Exception:
+                pass
+        present = ",".join(sorted(k for k in backends_counts.keys())) if backends_counts else ""
+        with open(cidb_txt, "w", encoding="utf-8") as f:
+            f.write(f"commit_sha={sha}\n")
+            f.write(f"backends_counts={backends_counts}\n")
+            f.write(f"bench_rows={bench_rows}\n")
+            f.write(f"checks_rows={checks_rows}\n")
+        results.append(
+            Result.from_commands_run(
+                name=f"CIDB Verify: backends [{present}] bench_rows={bench_rows} checks_rows={checks_rows}",
+                command=["true"],
+            )
+        )
+        try:
+            if 'files_to_attach' in locals():
+                files_to_attach.append(cidb_txt)
+        except Exception:
+            pass
+    except Exception:
+        pass
     # Collect debug artifacts on failure
     files_to_attach = []
+    try:
+        if 'summary_txt' in locals() and summary_txt:
+            sp = Path(summary_txt)
+            if sp.exists():
+                files_to_attach.append(str(sp))
+    except Exception:
+        pass
     try:
         if not results[-1].is_ok():
             base = Path(repo_dir) / "tests/stress/keeper/tests"

@@ -1,0 +1,29 @@
+version: 1
+defaults:
+  duration: 600
+  topology: 3
+scenarios:
+  - id: WCH-01
+    name: Watch flood + session churn under 10m bench
+    topology: 3
+    pre:
+      - { kind: record_watch_baseline }
+    faults:
+      - kind: parallel
+        steps:
+          - { kind: run_bench, config: workloads/prod_mix.yaml, duration_s: 600 }
+          - kind: background_schedule
+            duration_s: 540
+            min_period_s: 20
+            max_period_s: 40
+            steps:
+              - { kind: watch_flood, on: leader, watchers: 5000, depth: 3, path_prefix: /watch/flood, touch_once: true }
+              - { kind: session_churn, on: all, clients: 64, rate_per_s: 8, duration_s: 30, ephemerals_per_client: 2, path_prefix: /churn }
+              - { kind: stop_cont, on: followers, count: 2, sleep_s: 1.0 }
+    gates:
+      - { type: single_leader }
+      - { type: watch_delta_within, pct: 50 }
+      - { type: no_watcher_hotspot, max_share: 0.90 }
+      - { type: error_rate_le, max_ratio: 0.10 }
+      - { type: p99_le, max_ms: 10000 }
+      - { type: mntr_print }
