@@ -45,7 +45,7 @@ struct AggregationMethodOneNumber
     static const bool one_key_nullable_optimization = nullable;
 
     /// Shuffle key columns before `insertKeyIntoColumns` call if needed.
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &, bool) { return {}; }
 
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/, const IColumn::SerializationSettings * settings);
@@ -79,7 +79,7 @@ struct AggregationMethodString
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &, bool) { return {}; }
 
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
     {
@@ -115,7 +115,7 @@ struct AggregationMethodStringNoCache
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = nullable;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &, bool) { return {}; }
 
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
@@ -148,7 +148,7 @@ struct AggregationMethodFixedString
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &, bool) { return {}; }
 
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
@@ -181,7 +181,7 @@ struct AggregationMethodFixedStringNoCache
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = nullable;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &, bool) { return {}; }
 
     static void insertKeyIntoColumns(
         std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
@@ -213,7 +213,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static const bool low_cardinality_optimization = true;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &, bool) { return {}; }
 
     static void insertKeyIntoColumns(
         const Key & key,
@@ -258,7 +258,7 @@ struct AggregationMethodKeysFixed
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes, bool)
     {
         return State::shuffleKeyColumns(key_columns, key_sizes);
     }
@@ -301,7 +301,10 @@ struct AggregationMethodSerialized
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
 
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & sizes, bool aggregation_in_order)
+    {
+        return State::shuffleKeyColumns(key_columns, sizes, aggregation_in_order);
+    }
 
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };

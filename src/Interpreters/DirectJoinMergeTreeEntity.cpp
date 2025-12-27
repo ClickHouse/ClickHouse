@@ -213,7 +213,7 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     Map key_to_rows;
     Arena pool;
 
-    Method method({found_key_column.get()}, {}, nullptr);
+    Method method({found_key_column.get()}, {}, nullptr, /* optimize */ false);
     for (size_t i = 0; i < num_found_rows; ++i)
     {
         auto emplace_result = method.emplaceKey(key_to_rows, i, pool);
@@ -223,7 +223,7 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     /// All values inserted, can release the column
     found_key_column.reset();
 
-    Method key_getter({keys[0].column.get()}, {}, nullptr);
+    Method key_getter({keys[0].column.get()}, {}, nullptr, /* optimize */ false);
 
     out_offsets.reserve(num_keys);
     out_null_map.reserve(num_keys);
