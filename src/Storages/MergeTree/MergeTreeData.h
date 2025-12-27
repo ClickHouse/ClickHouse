@@ -508,6 +508,20 @@ public:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
+    /// Build a block of aggregated values from skip index data.
+    /// This enables aggregate functions (min, max, uniq) to be satisfied
+    /// directly from .idx files without reading data.
+    Block getSkipIndexAggregationBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & index_name,
+        const String & index_type,
+        const Names & required_columns,
+        const Names & group_by_keys,
+        const ActionsDAG * filter_dag,
+        const RangesInDataParts & parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        ContextPtr query_context) const;
+
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,
