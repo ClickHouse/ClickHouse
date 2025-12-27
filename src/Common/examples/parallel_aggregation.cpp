@@ -3974,5 +3974,1680 @@ int main(int argc, char ** argv)
         std::cerr << "Size: " << total_size << std::endl << std::endl;
     }
 
+    if (!method || method == 508)
+    {
+        std::cerr << "Method 508 (Block-based local + deferred, interleaved processing):\n";
+        /** Option 508.
+          * Process data in blocks, alternating between:
+          *   - Local aggregation with deferring (frequent keys stay in local map)
+          *   - Immediate aggregation of deferred keys into partitioned maps
+          *
+          * Local hash tables persist between blocks, accumulating frequent keys.
+          * Deferred data is processed while still hot in cache.
+          * At the end, merge remaining local data into partitioned results.
+          */
+
+        static constexpr size_t BLOCK_SIZE = 65536;  /// Process 64K elements per block
+        static constexpr size_t LOCAL_MAP_MAX_SIZE = 4096;  /// 4K entries in local map
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 16; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        /// Per-thread data structures that persist across blocks
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+
+        /// Per-thread deferred buffers (reused between blocks)
+        std::vector<std::vector<std::vector<Key>>> deferred(num_threads);
+        for (auto & d : deferred)
+            d.resize(num_threads);
+
+        Stopwatch watch;
+        size_t total_blocks = 0;
+
+        /// Process data in blocks
+        size_t num_blocks = (data.size() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+        for (size_t block = 0; block < num_blocks; ++block)
+        {
+            size_t block_start = block * BLOCK_SIZE;
+            size_t block_end = std::min(block_start + BLOCK_SIZE, data.size());
+
+            /// Step 1: Local aggregation with deferring (parallel)
+            for (size_t i = 0; i < num_threads; ++i)
+                pool.scheduleOrThrowOnError([&, i, block_start, block_end] {
+                    /// Each thread processes its portion of this block
+                    size_t thread_start = block_start + ((block_end - block_start) * i) / num_threads;
+                    size_t thread_end = block_start + ((block_end - block_start) * (i + 1)) / num_threads;
+
+                    auto & local_map = local_maps[i];
+                    auto & my_deferred = deferred[i];
+
+                    /// Clear deferred buffers for this block
+                    for (auto & d : my_deferred)
+                        d.clear();
+
+                    for (size_t idx = thread_start; idx < thread_end; ++idx)
+                    {
+                        Key key = data[idx];
+                        size_t hash = DefaultHash<Key>()(key);
+
+                        if (!local_map.tryInsertOrIncrement(key, hash))
+                        {
+                            UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                            size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                            my_deferred[partition].push_back(key);
+                        }
+                    }
+                });
+
+            pool.wait();
+
+            /// Step 2: Aggregate deferred keys into partitioned maps (parallel by partition)
+            for (size_t i = 0; i < num_threads; ++i)
+                pool.scheduleOrThrowOnError([&, i] {
+                    auto & map = partitioned_maps[i];
+                    /// Gather deferred keys from all threads for partition i
+                    for (size_t t = 0; t < num_threads; ++t)
+                    {
+                        for (const auto & key : deferred[t][i])
+                            ++map[key];
+                    }
+                });
+
+            pool.wait();
+            ++total_blocks;
+        }
+
+        watch.stop();
+        double time_blocks = watch.elapsedSeconds();
+
+        std::cerr
+            << "Processed " << total_blocks << " blocks in " << time_blocks
+            << " (" << n / time_blocks << " elem/sec.)"
+            << std::endl;
+
+        /// Count local map entries
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final step: Merge local maps into partitioned results
+        /// Pre-partition local entries for parallel merge
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        /// Merge pre-partitioned local data
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_blocks + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 509)
+    {
+        std::cerr << "Method 509 (Block-based with larger local map and prefetch):\n";
+        /** Option 509.
+          * Same as 508 but with larger local map and prefetching during deferred aggregation.
+          */
+
+        static constexpr size_t BLOCK_SIZE = 131072;  /// 128K elements per block
+        static constexpr size_t LOCAL_MAP_MAX_SIZE = 16384;  /// 16K entries
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 32; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+
+        std::vector<std::vector<std::vector<Key>>> deferred(num_threads);
+        for (auto & d : deferred)
+            d.resize(num_threads);
+
+        Stopwatch watch;
+
+        size_t num_blocks = (data.size() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+        for (size_t block = 0; block < num_blocks; ++block)
+        {
+            size_t block_start = block * BLOCK_SIZE;
+            size_t block_end = std::min(block_start + BLOCK_SIZE, data.size());
+
+            /// Step 1: Local aggregation with deferring
+            for (size_t i = 0; i < num_threads; ++i)
+                pool.scheduleOrThrowOnError([&, i, block_start, block_end] {
+                    size_t thread_start = block_start + ((block_end - block_start) * i) / num_threads;
+                    size_t thread_end = block_start + ((block_end - block_start) * (i + 1)) / num_threads;
+
+                    auto & local_map = local_maps[i];
+                    auto & my_deferred = deferred[i];
+
+                    for (auto & d : my_deferred)
+                        d.clear();
+
+                    for (size_t idx = thread_start; idx < thread_end; ++idx)
+                    {
+                        Key key = data[idx];
+                        size_t hash = DefaultHash<Key>()(key);
+
+                        if (!local_map.tryInsertOrIncrement(key, hash))
+                        {
+                            UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                            size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                            my_deferred[partition].push_back(key);
+                        }
+                    }
+                });
+
+            pool.wait();
+
+            /// Step 2: Aggregate deferred with prefetching
+            for (size_t i = 0; i < num_threads; ++i)
+                pool.scheduleOrThrowOnError([&, i] {
+                    auto & map = partitioned_maps[i];
+                    static constexpr size_t PREFETCH_LOOKAHEAD = 16;
+
+                    for (size_t t = 0; t < num_threads; ++t)
+                    {
+                        const auto & keys = deferred[t][i];
+                        size_t sz = keys.size();
+
+                        for (size_t j = 0; j < PREFETCH_LOOKAHEAD && j < sz; ++j)
+                            map.prefetch(keys[j]);
+
+                        for (size_t j = 0; j < sz; ++j)
+                        {
+                            if (j + PREFETCH_LOOKAHEAD < sz)
+                                map.prefetch(keys[j + PREFETCH_LOOKAHEAD]);
+                            ++map[keys[j]];
+                        }
+                    }
+                });
+
+            pool.wait();
+        }
+
+        watch.stop();
+        double time_blocks = watch.elapsedSeconds();
+
+        std::cerr
+            << "Processed " << num_blocks << " blocks in " << time_blocks
+            << " (" << n / time_blocks << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final merge
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_blocks + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 510)
+    {
+        std::cerr << "Method 510 (Mutex-protected partitions, no lockstep):\n";
+        /** Option 510.
+          * Similar to block-based methods, but without lockstep synchronization.
+          * Each thread processes data in blocks independently.
+          * When deferring, immediately write to partition with mutex protection.
+          * This eliminates inter-block barriers at the cost of mutex contention.
+          */
+
+        constexpr size_t BLOCK_SIZE = 4096;  /// Smaller blocks for frequent partition writes
+        constexpr size_t LOCAL_MAP_MAX_SIZE = 4096;  /// L1 cache sized
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 16; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+        std::vector<std::mutex> partition_mutexes(num_threads);
+
+        Stopwatch watch;
+
+        /// Each thread processes its range independently, no inter-block synchronization
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                size_t start = (data.size() * i) / num_threads;
+                size_t end = (data.size() * (i + 1)) / num_threads;
+
+                /// Temporary buffer for deferred keys (per partition)
+                std::vector<std::vector<Key>> deferred_buffer(num_threads);
+
+                for (size_t idx = start; idx < end; ++idx)
+                {
+                    Key key = data[idx];
+                    size_t hash = DefaultHash<Key>()(key);
+
+                    if (!local_map.tryInsertOrIncrement(key, hash))
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        deferred_buffer[partition].push_back(key);
+
+                        /// Flush buffer when it gets large enough
+                        if (deferred_buffer[partition].size() >= BLOCK_SIZE)
+                        {
+                            std::lock_guard lock(partition_mutexes[partition]);
+                            auto & map = partitioned_maps[partition];
+                            for (const auto & k : deferred_buffer[partition])
+                                ++map[k];
+                            deferred_buffer[partition].clear();
+                        }
+                    }
+                }
+
+                /// Flush remaining deferred keys
+                for (size_t p = 0; p < num_threads; ++p)
+                {
+                    if (!deferred_buffer[p].empty())
+                    {
+                        std::lock_guard lock(partition_mutexes[p]);
+                        auto & map = partitioned_maps[p];
+                        for (const auto & k : deferred_buffer[p])
+                            ++map[k];
+                    }
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_main = watch.elapsedSeconds();
+
+        std::cerr
+            << "Main phase in " << time_main
+            << " (" << n / time_main << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final merge of local maps
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_main + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 511)
+    {
+        std::cerr << "Method 511 (Mutex-protected partitions, larger buffers):\n";
+        /** Option 511.
+          * Same as 510 but with larger buffer before flushing.
+          * Trades memory for reduced mutex contention.
+          */
+
+        constexpr size_t BLOCK_SIZE = 16384;  /// Larger buffer before flush
+        constexpr size_t LOCAL_MAP_MAX_SIZE = 16384;  /// Larger local map
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 32; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+        std::vector<std::mutex> partition_mutexes(num_threads);
+
+        Stopwatch watch;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                size_t start = (data.size() * i) / num_threads;
+                size_t end = (data.size() * (i + 1)) / num_threads;
+
+                std::vector<std::vector<Key>> deferred_buffer(num_threads);
+
+                for (size_t idx = start; idx < end; ++idx)
+                {
+                    Key key = data[idx];
+                    size_t hash = DefaultHash<Key>()(key);
+
+                    if (!local_map.tryInsertOrIncrement(key, hash))
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        deferred_buffer[partition].push_back(key);
+
+                        if (deferred_buffer[partition].size() >= BLOCK_SIZE)
+                        {
+                            std::lock_guard lock(partition_mutexes[partition]);
+                            auto & map = partitioned_maps[partition];
+                            for (const auto & k : deferred_buffer[partition])
+                                ++map[k];
+                            deferred_buffer[partition].clear();
+                        }
+                    }
+                }
+
+                for (size_t p = 0; p < num_threads; ++p)
+                {
+                    if (!deferred_buffer[p].empty())
+                    {
+                        std::lock_guard lock(partition_mutexes[p]);
+                        auto & map = partitioned_maps[p];
+                        for (const auto & k : deferred_buffer[p])
+                            ++map[k];
+                    }
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_main = watch.elapsedSeconds();
+
+        std::cerr
+            << "Main phase in " << time_main
+            << " (" << n / time_main << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_main + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 512)
+    {
+        std::cerr << "Method 512 (Shared NxN deferred buffers, opportunistic locking):\n";
+        /** Option 512.
+          * NxN deferred buffers stored outside threads, each with its own mutex.
+          * Producer phase: each thread writes to its row of buffers (deferred[thread_id][partition]).
+          * Consumer phase: each thread responsible for partition p tries to lock and process
+          * buffers from deferred[*][p], using try_lock to skip contended buffers.
+          * Loops until at least num_threads buffers are processed.
+          */
+
+        constexpr size_t LOCAL_MAP_MAX_SIZE = 4096;
+        constexpr size_t BUFFER_FLUSH_SIZE = 4096;
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 16; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        /// Shared NxN deferred buffers with per-buffer mutexes
+        struct DeferredBuffer
+        {
+            std::vector<Key> keys;
+            std::unique_ptr<std::mutex> mutex = std::make_unique<std::mutex>();
+        };
+
+        std::vector<std::vector<DeferredBuffer>> deferred(num_threads);
+        for (auto & row : deferred)
+            row.resize(num_threads);
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+
+        std::atomic<bool> production_done{false};
+
+        Stopwatch watch;
+
+        /// Producer threads
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_deferred = deferred[i];  /// My row of buffers
+                size_t start = (data.size() * i) / num_threads;
+                size_t end = (data.size() * (i + 1)) / num_threads;
+
+                /// Local buffer before flushing to shared deferred
+                std::vector<std::vector<Key>> local_buffer(num_threads);
+
+                for (size_t idx = start; idx < end; ++idx)
+                {
+                    Key key = data[idx];
+                    size_t hash = DefaultHash<Key>()(key);
+
+                    if (!local_map.tryInsertOrIncrement(key, hash))
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        local_buffer[partition].push_back(key);
+
+                        /// Flush to shared buffer when local buffer is large
+                        if (local_buffer[partition].size() >= BUFFER_FLUSH_SIZE)
+                        {
+                            std::lock_guard lock(*my_deferred[partition].mutex);
+                            my_deferred[partition].keys.insert(
+                                my_deferred[partition].keys.end(),
+                                local_buffer[partition].begin(),
+                                local_buffer[partition].end());
+                            local_buffer[partition].clear();
+                        }
+                    }
+                }
+
+                /// Flush remaining
+                for (size_t p = 0; p < num_threads; ++p)
+                {
+                    if (!local_buffer[p].empty())
+                    {
+                        std::lock_guard lock(*my_deferred[p].mutex);
+                        my_deferred[p].keys.insert(
+                            my_deferred[p].keys.end(),
+                            local_buffer[p].begin(),
+                            local_buffer[p].end());
+                    }
+                }
+            });
+
+        pool.wait();
+        production_done = true;
+
+        watch.stop();
+        double time_produce = watch.elapsedSeconds();
+
+        std::cerr
+            << "Production phase in " << time_produce
+            << " (" << n / time_produce << " elem/sec.)"
+            << std::endl;
+
+        watch.restart();
+
+        /// Consumer threads - each consumes partition i using opportunistic locking
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                size_t buffers_processed = 0;
+                std::vector<bool> processed(num_threads, false);
+
+                /// Loop until we've processed all buffers for our partition
+                while (buffers_processed < num_threads)
+                {
+                    for (size_t t = 0; t < num_threads; ++t)
+                    {
+                        if (processed[t])
+                            continue;
+
+                        auto & buf = deferred[t][i];
+                        if (buf.mutex->try_lock())
+                        {
+                            for (const auto & key : buf.keys)
+                                ++map[key];
+                            buf.keys.clear();
+                            buf.mutex->unlock();
+                            processed[t] = true;
+                            ++buffers_processed;
+                        }
+                    }
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_consume = watch.elapsedSeconds();
+
+        std::cerr
+            << "Consume phase in " << time_consume
+            << " (" << n / time_consume << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final merge of local maps
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_produce + time_consume + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 513)
+    {
+        std::cerr << "Method 513 (Shared NxN buffers, interleaved produce/consume):\n";
+        /** Option 513.
+          * Same structure as 512, but consumer threads run concurrently with producers.
+          * Consumers opportunistically grab available buffers while production is ongoing.
+          */
+
+        constexpr size_t LOCAL_MAP_MAX_SIZE = 4096;
+        constexpr size_t BUFFER_FLUSH_SIZE = 2048;
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 16; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        struct DeferredBuffer
+        {
+            std::vector<Key> keys;
+            std::unique_ptr<std::mutex> mutex = std::make_unique<std::mutex>();
+        };
+
+        std::vector<std::vector<DeferredBuffer>> deferred(num_threads);
+        for (auto & row : deferred)
+            row.resize(num_threads);
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+
+        std::atomic<size_t> producers_done{0};
+
+        Stopwatch watch;
+
+        /// Start both producers and consumers concurrently
+        /// Producers: threads 0 to num_threads-1 produce into their row
+        /// Consumers: same threads also consume their column opportunistically
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_deferred = deferred[i];
+                auto & map = partitioned_maps[i];
+                size_t start = (data.size() * i) / num_threads;
+                size_t end = (data.size() * (i + 1)) / num_threads;
+
+                std::vector<std::vector<Key>> local_buffer(num_threads);
+                std::vector<bool> consumed(num_threads, false);
+                size_t consume_idx = 0;
+
+                for (size_t idx = start; idx < end; ++idx)
+                {
+                    Key key = data[idx];
+                    size_t hash = DefaultHash<Key>()(key);
+
+                    if (!local_map.tryInsertOrIncrement(key, hash))
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        local_buffer[partition].push_back(key);
+
+                        if (local_buffer[partition].size() >= BUFFER_FLUSH_SIZE)
+                        {
+                            std::lock_guard lock(*my_deferred[partition].mutex);
+                            my_deferred[partition].keys.insert(
+                                my_deferred[partition].keys.end(),
+                                local_buffer[partition].begin(),
+                                local_buffer[partition].end());
+                            local_buffer[partition].clear();
+                        }
+                    }
+
+                    /// Periodically try to consume from our column
+                    if ((idx & 0xFFF) == 0)  /// Every 4K elements
+                    {
+                        for (size_t attempts = 0; attempts < 2; ++attempts)
+                        {
+                            size_t t = consume_idx % num_threads;
+                            consume_idx++;
+                            if (consumed[t])
+                                continue;
+
+                            auto & buf = deferred[t][i];
+                            if (buf.mutex->try_lock())
+                            {
+                                if (!buf.keys.empty())
+                                {
+                                    for (const auto & k : buf.keys)
+                                        ++map[k];
+                                    buf.keys.clear();
+                                }
+                                buf.mutex->unlock();
+                            }
+                        }
+                    }
+                }
+
+                /// Flush remaining local buffers
+                for (size_t p = 0; p < num_threads; ++p)
+                {
+                    if (!local_buffer[p].empty())
+                    {
+                        std::lock_guard lock(*my_deferred[p].mutex);
+                        my_deferred[p].keys.insert(
+                            my_deferred[p].keys.end(),
+                            local_buffer[p].begin(),
+                            local_buffer[p].end());
+                    }
+                }
+
+                producers_done.fetch_add(1);
+
+                /// Wait for ALL producers to finish before final consume
+                while (producers_done.load() < num_threads)
+                    std::this_thread::yield();
+
+                /// Final consume pass - must process all remaining buffers
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    auto & buf = deferred[t][i];
+                    std::lock_guard lock(*buf.mutex);
+                    for (const auto & k : buf.keys)
+                        ++map[k];
+                    buf.keys.clear();
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_main = watch.elapsedSeconds();
+
+        std::cerr
+            << "Main phase in " << time_main
+            << " (" << n / time_main << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final merge of local maps
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_main + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 514)
+    {
+        std::cerr << "Method 514 (Shared NxN buffers, larger local map, batch consume):\n";
+        /** Option 514.
+          * Larger local map to capture more frequent keys.
+          * Batch consume: process at least N buffers before returning.
+          */
+
+        constexpr size_t LOCAL_MAP_MAX_SIZE = 16384;
+        constexpr size_t BUFFER_FLUSH_SIZE = 8192;
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 32; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        struct DeferredBuffer
+        {
+            std::vector<Key> keys;
+            std::unique_ptr<std::mutex> mutex = std::make_unique<std::mutex>();
+        };
+
+        std::vector<std::vector<DeferredBuffer>> deferred(num_threads);
+        for (auto & row : deferred)
+            row.resize(num_threads);
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+
+        Stopwatch watch;
+
+        /// Producer phase
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_deferred = deferred[i];
+                size_t start = (data.size() * i) / num_threads;
+                size_t end = (data.size() * (i + 1)) / num_threads;
+
+                std::vector<std::vector<Key>> local_buffer(num_threads);
+
+                for (size_t idx = start; idx < end; ++idx)
+                {
+                    Key key = data[idx];
+                    size_t hash = DefaultHash<Key>()(key);
+
+                    if (!local_map.tryInsertOrIncrement(key, hash))
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        local_buffer[partition].push_back(key);
+
+                        if (local_buffer[partition].size() >= BUFFER_FLUSH_SIZE)
+                        {
+                            std::lock_guard lock(*my_deferred[partition].mutex);
+                            my_deferred[partition].keys.insert(
+                                my_deferred[partition].keys.end(),
+                                local_buffer[partition].begin(),
+                                local_buffer[partition].end());
+                            local_buffer[partition].clear();
+                        }
+                    }
+                }
+
+                for (size_t p = 0; p < num_threads; ++p)
+                {
+                    if (!local_buffer[p].empty())
+                    {
+                        std::lock_guard lock(*my_deferred[p].mutex);
+                        my_deferred[p].keys.insert(
+                            my_deferred[p].keys.end(),
+                            local_buffer[p].begin(),
+                            local_buffer[p].end());
+                    }
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_produce = watch.elapsedSeconds();
+
+        std::cerr
+            << "Production phase in " << time_produce
+            << " (" << n / time_produce << " elem/sec.)"
+            << std::endl;
+
+        watch.restart();
+
+        /// Consumer phase with opportunistic batch locking
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                std::vector<bool> processed(num_threads, false);
+                size_t buffers_processed = 0;
+
+                while (buffers_processed < num_threads)
+                {
+                    size_t batch_count = 0;
+                    /// Try to grab at least num_threads/2 buffers in one pass
+                    for (size_t t = 0; t < num_threads && batch_count < num_threads; ++t)
+                    {
+                        if (processed[t])
+                            continue;
+
+                        auto & buf = deferred[t][i];
+                        if (buf.mutex->try_lock())
+                        {
+                            for (const auto & key : buf.keys)
+                                ++map[key];
+                            buf.keys.clear();
+                            buf.mutex->unlock();
+                            processed[t] = true;
+                            ++buffers_processed;
+                            ++batch_count;
+                        }
+                    }
+
+                    /// If we couldn't get any, yield and retry
+                    if (batch_count == 0)
+                        std::this_thread::yield();
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_consume = watch.elapsedSeconds();
+
+        std::cerr
+            << "Consume phase in " << time_consume
+            << " (" << n / time_consume << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final merge
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_produce + time_consume + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 515)
+    {
+        std::cerr << "Method 515 (Shared NxN buffers, block-based async produce/consume):\n";
+        /** Option 515.
+          * Each thread independently:
+          *   1. Processes a block of data (local aggregation + defer to shared buffers)
+          *   2. Opportunistically consumes from its partition's buffers
+          *   3. Repeats for next block
+          * No barriers between blocks - threads work asynchronously.
+          */
+
+        constexpr size_t BLOCK_SIZE = 65500;  /// Elements per block per thread
+        constexpr size_t LOCAL_MAP_MAX_SIZE = 4096;
+        constexpr size_t BUFFER_FLUSH_SIZE = 1024;
+
+        struct LocalEntry
+        {
+            Key key;
+            Value value;
+            bool occupied;
+        };
+
+        struct LocalMap
+        {
+            std::vector<LocalEntry> entries;
+            size_t size = 0;
+
+            LocalMap() : entries(LOCAL_MAP_MAX_SIZE * 2) {}
+
+            bool tryInsertOrIncrement(Key key, size_t hash)
+            {
+                const size_t MASK = LOCAL_MAP_MAX_SIZE * 2 - 1;
+                size_t pos = hash & MASK;
+                for (size_t probe = 0; probe < 16; ++probe)
+                {
+                    auto & entry = entries[pos];
+                    if (!entry.occupied)
+                    {
+                        if (size >= LOCAL_MAP_MAX_SIZE)
+                            return false;
+                        entry.key = key;
+                        entry.value = 1;
+                        entry.occupied = true;
+                        ++size;
+                        return true;
+                    }
+                    if (entry.key == key)
+                    {
+                        ++entry.value;
+                        return true;
+                    }
+                    pos = (pos + 1) & MASK;
+                }
+                return false;
+            }
+        };
+
+        struct DeferredBuffer
+        {
+            std::vector<Key> keys;
+            std::unique_ptr<std::mutex> mutex = std::make_unique<std::mutex>();
+        };
+
+        std::vector<std::vector<DeferredBuffer>> deferred(num_threads);
+        for (auto & row : deferred)
+            row.resize(num_threads);
+
+        std::vector<LocalMap> local_maps(num_threads);
+        std::vector<Map> partitioned_maps(num_threads);
+
+        std::atomic<size_t> threads_done{0};
+
+        Stopwatch watch;
+
+        /// Each thread works independently - no inter-block synchronization
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_deferred = deferred[i];
+                auto & map = partitioned_maps[i];
+
+                size_t start = (data.size() * i) / num_threads;
+                size_t end = (data.size() * (i + 1)) / num_threads;
+
+                std::vector<std::vector<Key>> local_buffer(num_threads);
+
+                size_t idx = start;
+                while (idx < end)
+                {
+                    /// Step 1: Process a block of data
+                    size_t block_end = std::min(idx + BLOCK_SIZE, end);
+                    for (; idx < block_end; ++idx)
+                    {
+                        Key key = data[idx];
+                        size_t hash = DefaultHash<Key>()(key);
+
+                        if (!local_map.tryInsertOrIncrement(key, hash))
+                        {
+                            UInt32 part_hash = static_cast<UInt32>(intHashCRC32(key));
+                            size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                            local_buffer[partition].push_back(key);
+
+                            if (local_buffer[partition].size() >= BUFFER_FLUSH_SIZE)
+                            {
+                                std::lock_guard lock(*my_deferred[partition].mutex);
+                                my_deferred[partition].keys.insert(
+                                    my_deferred[partition].keys.end(),
+                                    local_buffer[partition].begin(),
+                                    local_buffer[partition].end());
+                                local_buffer[partition].clear();
+                            }
+                        }
+                    }
+
+                    /// Step 2: Opportunistically consume from our partition
+                    for (size_t t = 0; t < num_threads; ++t)
+                    {
+                        auto & buf = deferred[t][i];
+                        if (buf.mutex->try_lock())
+                        {
+                            for (const auto & key : buf.keys)
+                                ++map[key];
+                            buf.keys.clear();
+                            buf.mutex->unlock();
+                        }
+                    }
+                }
+
+                /// Flush remaining local buffers to shared
+                for (size_t p = 0; p < num_threads; ++p)
+                {
+                    if (!local_buffer[p].empty())
+                    {
+                        std::lock_guard lock(*my_deferred[p].mutex);
+                        my_deferred[p].keys.insert(
+                            my_deferred[p].keys.end(),
+                            local_buffer[p].begin(),
+                            local_buffer[p].end());
+                    }
+                }
+
+                threads_done.fetch_add(1);
+
+                /// Wait for all threads to finish producing
+                while (threads_done.load() < num_threads)
+                    std::this_thread::yield();
+
+                /// Final consume pass - process all remaining buffers for our partition
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    auto & buf = deferred[t][i];
+                    std::lock_guard lock(*buf.mutex);
+                    for (const auto & key : buf.keys)
+                        ++map[key];
+                    buf.keys.clear();
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_main = watch.elapsedSeconds();
+
+        std::cerr
+            << "Main phase in " << time_main
+            << " (" << n / time_main << " elem/sec.)"
+            << std::endl;
+
+        size_t total_local = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_local += local_maps[i].size;
+
+        std::cerr << "Local map entries: " << total_local << std::endl;
+
+        /// Final merge of local maps
+        std::vector<std::vector<std::vector<std::pair<Key, Value>>>> local_partitioned(num_threads);
+        for (auto & lp : local_partitioned)
+            lp.resize(num_threads);
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & local_map = local_maps[i];
+                auto & my_local_partitioned = local_partitioned[i];
+
+                for (const auto & entry : local_map.entries)
+                {
+                    if (entry.occupied)
+                    {
+                        UInt32 part_hash = static_cast<UInt32>(intHashCRC32(entry.key));
+                        size_t partition = (static_cast<UInt64>(part_hash) * num_threads) >> 32;
+                        my_local_partitioned[partition].emplace_back(entry.key, entry.value);
+                    }
+                }
+            });
+
+        pool.wait();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] {
+                auto & map = partitioned_maps[i];
+                for (size_t t = 0; t < num_threads; ++t)
+                {
+                    for (const auto & [key, value] : local_partitioned[t][i])
+                        map[key] += value;
+                }
+            });
+
+        pool.wait();
+
+        watch.stop();
+        double time_merge = watch.elapsedSeconds();
+        std::cerr
+            << "Final merge in " << time_merge
+            << " (" << total_local / time_merge << " elem/sec.)"
+            << std::endl;
+
+        size_t total_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            total_size += partitioned_maps[i].size();
+
+        double time_total = time_main + time_merge;
+        std::cerr
+            << "Total in \033[1m" << time_total << "\033[0m"
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << total_size << std::endl << std::endl;
+    }
+
     return 0;
 }
