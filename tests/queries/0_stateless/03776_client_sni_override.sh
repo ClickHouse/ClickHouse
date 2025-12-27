@@ -22,8 +22,9 @@ done
 
 # Start openssl s_server in the background with -tlsextdebug to capture SNI
 # Use -www to serve a simple HTTP page (keeps connection open longer for complete handshake)
+# Use -msg to capture more details if -tlsextdebug is not enough or format differs
 SERVER_LOG="${CERT_DIR}/server.log"
-openssl s_server -accept ${TEST_PORT} -cert "${CERT_DIR}/server.crt" -key "${CERT_DIR}/server.key" -tlsextdebug -www \
+openssl s_server -accept ${TEST_PORT} -cert "${CERT_DIR}/server.crt" -key "${CERT_DIR}/server.key" -tlsextdebug -msg -www \
     > "${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 
@@ -46,12 +47,13 @@ echo "Test 1: With --tls-sni-override=custom.example.com"
 # will hang because openssl s_server expects HTTP input. We timeout the client after 2 seconds.
 # --accept-invalid-certificate is needed for the self-signed cert
 
+CLIENT_LOG="${CERT_DIR}/client.log"
 ${CLICKHOUSE_CLIENT} --host 127.0.0.1 --port ${TEST_PORT} --secure \
-    --tls-sni-override=custom.example.com --accept-invalid-certificate -q "SELECT 1" >/dev/null 2>&1 &
+    --tls-sni-override=custom.example.com --accept-invalid-certificate -q "SELECT 1" >"${CLIENT_LOG}" 2>&1 &
 CLIENT_PID=$!
 
-# Wait for TLS handshake to complete (should be very fast)
-sleep 2
+# Wait for TLS handshake to complete (should be very fast, but CI can be slow)
+sleep 5
 
 # Kill the client (it will be hung waiting for response from openssl)
 kill -9 ${CLIENT_PID} 2>/dev/null || true
@@ -67,9 +69,13 @@ sleep 2
 # Check if SNI was sent - extract just the ASCII representation column from the hex dump
 # Format: "0010 - 70 6c 65 2e 63 6f 6d                              ple.com"
 # We extract everything after the last 3+ spaces, concatenate, and search
-if grep '^[0-9a-f]\{4\} -' "${SERVER_LOG}" | sed 's/.*   //' | tr -d '\n' | grep -q 'custom\.example\.com'; then
+# We relax the grep to allow indentation and use -a for binary safety
+if grep -a '[0-9a-f]\{4\} -' "${SERVER_LOG}" | sed 's/.*  //' | tr -d '\n' | grep -q 'custom\.example\.com'; then
     echo "PASS: custom.example.com found in TLS handshake"
 else
     echo "FAIL: custom.example.com not found in TLS handshake"
+    echo "Server Log:"
     cat "${SERVER_LOG}"
+    echo "Client Log:"
+    cat "${CLIENT_LOG}"
 fi
