@@ -2494,7 +2494,6 @@ int main(int argc, char ** argv)
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
     }
-#endif
 
     if (!method || method == 300)
     {
@@ -2608,7 +2607,6 @@ int main(int argc, char ** argv)
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
 
-#if 0
     if (!method || method == 400)
     {
         std::cerr << "Method 400 (Swiss Table hash table):\n";
@@ -2720,7 +2718,7 @@ int main(int argc, char ** argv)
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
-#endif
+
     if (!method || method == 302)
     {
         std::cerr << "Method 302 (Two-Level Robin Hood):\n";
@@ -2834,7 +2832,7 @@ int main(int argc, char ** argv)
             << std::endl;
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
-#if 0
+
     if (!method || method == 402)
     {
         std::cerr << "Method 402 (Two-Level Swiss Table):\n";
