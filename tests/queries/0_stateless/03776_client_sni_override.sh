@@ -15,17 +15,11 @@ mkdir -p "${CERT_DIR}"
 openssl req -newkey rsa:2048 -nodes -keyout "${CERT_DIR}/server.key" -x509 -days 1 -out "${CERT_DIR}/server.crt" \
     -subj "/CN=localhost" 2>/dev/null >/dev/null
 
-# Find an available port
-TEST_PORT=19444
-while netstat -an 2>/dev/null | grep -q ":${TEST_PORT} "; do
-    TEST_PORT=$((TEST_PORT + 1))
-done
-
-# Start openssl s_server in the background with -tlsextdebug to capture SNI
+# Start openssl s_server with port 0 to let it allocate a free port
 # Use -www to serve a simple HTTP page (keeps connection open longer for complete handshake)
 # Use -msg to capture more details if -tlsextdebug is not enough or format differs
 SERVER_LOG="${CERT_DIR}/server.log"
-openssl s_server -accept ${TEST_PORT} -cert "${CERT_DIR}/server.crt" -key "${CERT_DIR}/server.key" -tlsextdebug -msg -www \
+openssl s_server -accept 0 -cert "${CERT_DIR}/server.crt" -key "${CERT_DIR}/server.key" -tlsextdebug -msg -www \
     > "${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 
@@ -37,8 +31,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Give the server time to start
-sleep 2
+# Wait for the server to start and parse the port from the ACCEPT line
+# The output will contain a line like "ACCEPT [::]:64701" or "ACCEPT 0.0.0.0:64701"
+for _ in {1..20}; do
+    if [ -f "${SERVER_LOG}" ]; then
+        TEST_PORT=$(grep -oE 'ACCEPT .*:([0-9]+)' "${SERVER_LOG}" | head -1 | grep -oE '[0-9]+$')
+        if [ -n "${TEST_PORT}" ]; then
+            break
+        fi
+    fi
+    sleep 0.5
+done
+
+if [ -z "${TEST_PORT}" ]; then
+    echo "Failed to detect port from openssl s_server"
+    cat "${SERVER_LOG}"
+    exit 1
+fi
 
 # Test 1: Connect with clickhouse-client using --tls-sni-override
 echo "Test 1: With --tls-sni-override=custom.example.com"
