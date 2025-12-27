@@ -59,12 +59,13 @@ if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
     echo "=== jemalloc reports:"
     ls -dlt "$jemalloc_profiles"/* | head
 
+    bin="$(which clickhouse)"
     last_profile="$(ls -dt "$jemalloc_profiles"/* | head -1)"
     echo "Using $last_profile"
 
     if [[ -n $last_profile ]]; then
-        jeprof "$last_profile" --text > "$jemalloc_reports/jemalloc.txt"
-        jeprof "$last_profile" --collapsed | flamegraph.pl --color mem --width 2560 > "$jemalloc_reports/jemalloc.svg"
+        jeprof "$bin" "$last_profile" --text > "$jemalloc_reports/jemalloc.txt"
+        jeprof "$bin" "$last_profile" --collapsed | flamegraph.pl --color mem --width 2560 > "$jemalloc_reports/jemalloc.svg"
     fi
 fi
 
