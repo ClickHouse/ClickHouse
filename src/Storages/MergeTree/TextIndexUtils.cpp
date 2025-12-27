@@ -489,32 +489,6 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
     return storage;
 }
 
-std::vector<MergeTreeIndexPtr> getTextIndexesToBuildMerge(
-    const IndicesDescription & indices_description,
-    const NameSet & read_column_names,
-    const IMergeTreeDataPart & data_part,
-    bool merge_may_reduce_rows)
-{
-    std::vector<MergeTreeIndexPtr> indexes;
-
-    for (const auto & index : indices_description)
-    {
-        if (index.column_names.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index must have one input column, got {}", index.column_names.size());
-
-        if (!read_column_names.contains(index.column_names[0]))
-            continue;
-
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index);
-        /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
-        /// Build index if it is not materialized in the data part.
-        if (merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName()))
-            indexes.push_back(std::move(index_ptr));
-    }
-
-    return indexes;
-}
-
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,
