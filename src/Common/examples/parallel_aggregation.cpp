@@ -100,7 +100,7 @@ struct HashMapCellWithLock
     HashMapCellWithLock(const HashMapCellWithLock & other) : value(other.value) {}
 
     /// Copy assignment - copies value, resets lock
-    HashMapCellWithLock & operator=(const HashMapCellWithLock & other)
+    HashMapCellWithLock & operator=(const HashMapCellWithLock & other) // NOLINT(cert-oop54-cpp)
     {
         value = other.value;
         lock.locked.store(0, std::memory_order_relaxed);
