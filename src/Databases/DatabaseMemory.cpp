@@ -21,8 +21,8 @@ namespace ErrorCodes
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
+    : DatabaseWithOwnTablesBase(name_, false, "DatabaseMemory(" + name_ + ")", context_)
+    , data_path(DatabaseCatalog::getDataDirPath(name_, false) / "")
 {
     /// Temporary database should not have any data on the moment of its creation
     /// In case of sudden server shutdown remove database folder of temporary database
@@ -101,6 +101,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
+    create_query->temporary = isTemporary();
     if (!comment.empty())
         create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 

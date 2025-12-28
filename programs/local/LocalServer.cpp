@@ -306,7 +306,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
 static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
 {
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
@@ -318,7 +318,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, false, context);
 
     UUID default_database_uuid;
 
@@ -335,10 +335,10 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
         default_database_uuid = UUIDHelpers::generateV4();
 
     fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
-        DatabaseCatalog::getStoreDirPath(default_database_uuid);
+        DatabaseCatalog::getStoreDirPath(default_database_uuid, false);
 
-    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, false, context));
+    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", false, context));
     return overlay;
 }
 
@@ -1021,7 +1021,7 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
+                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE, global_context), false);
                 attached_system_database = true;
             }
 

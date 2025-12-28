@@ -16,7 +16,7 @@ namespace DB
 class DatabaseOverlay : public IDatabase, protected WithContext
 {
 public:
-    DatabaseOverlay(const String & name_, ContextPtr context_);
+    DatabaseOverlay(const String & name_, bool is_temporary_, ContextPtr context_);
 
     /// Not thread-safe. Use only as factory to initialize database
     DatabaseOverlay & registerNextDatabase(DatabasePtr database);

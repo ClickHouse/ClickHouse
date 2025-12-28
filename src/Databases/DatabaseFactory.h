@@ -40,6 +40,7 @@ public:
         const String & database_name;
         const String & metadata_path;
         const UUID & uuid;
+        const bool is_temporary;
         ContextPtr & context;
     };
 

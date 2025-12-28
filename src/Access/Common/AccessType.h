@@ -231,7 +231,9 @@ enum class AccessType : uint8_t
     \
     M(ALTER, "", GROUP, ALL) /* allows to execute ALTER TABLE */\
     \
-    M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} DATABASE */\
+    M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} {TEMPORARY} DATABASE */\
+    M(CREATE_TEMPORARY_DATABASE, "", DATABASE, CREATE) /* allows to create and manipulate temporary databases and tables inside;
+                                                        implicitly enabled by the grant CREATE_DATABASE; */\
     M(CREATE_TABLE, "", TABLE, CREATE) /* allows to execute {CREATE|ATTACH} {TABLE|VIEW} */\
     M(CREATE_VIEW, "", VIEW, CREATE) /* allows to execute {CREATE|ATTACH} VIEW;
                                         implicitly enabled by the grant CREATE_TABLE */\

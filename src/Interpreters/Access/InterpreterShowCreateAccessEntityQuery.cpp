@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
@@ -403,17 +404,25 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         }
         case AccessEntityType::ROW_POLICY:
         {
+            // todo: ensure that row policy will not leave DB scope
+            const auto & context = getContext();
             if (show_query.row_policy_names)
             {
                 for (const auto & row_policy_name : show_query.row_policy_names->full_names)
-                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
+                {
+                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
+                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
+                }
             }
             else if (show_query.database_and_table_name)
             {
-                if (show_query.database_and_table_name->second.empty())
-                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
-                else
-                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
+                if (!requireTemporaryDatabaseAccessIfNeeded(res, show_query.database_and_table_name->first, context))
+                {
+                    if (show_query.database_and_table_name->second.empty())
+                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
+                    else
+                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
+                }
             }
             else
             {

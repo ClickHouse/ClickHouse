@@ -3,6 +3,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
 
@@ -54,7 +55,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
 
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name, context);
     if (database->getEngineName() == "Replicated")
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Replicated database does not support UNDROP query");
     if (database->isTableExist(table_id.table_name, getContext()))
@@ -63,7 +64,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
 
-    DatabaseCatalog::instance().undropTable(table_id);
+    DatabaseCatalog::instance().undropTable(table_id, context);
     return {};
 }
 
@@ -72,7 +73,8 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     AccessRightsElements required_access;
     const auto & undrop = query_ptr->as<const ASTUndropQuery &>();
 
-    required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, undrop.getDatabase(), getContext()))
+        required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
     return required_access;
 }
 

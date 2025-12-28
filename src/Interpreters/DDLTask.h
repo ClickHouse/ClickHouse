@@ -291,6 +291,6 @@ public:
     ~ZooKeeperMetadataTransaction() = default;
 };
 
-ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
+ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name, ContextPtr context);
 
 }

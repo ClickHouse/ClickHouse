@@ -168,7 +168,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    explicit IDatabase(String database_name_);
+    explicit IDatabase(String database_name_, bool is_temporary_);
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -395,6 +395,8 @@ public:
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
+    bool isTemporary() const { return is_temporary; }
+
     virtual void renameDatabase(ContextPtr, const String & /*new_name*/);
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
@@ -451,10 +453,10 @@ protected:
     mutable std::mutex mutex;
     String database_name TSA_GUARDED_BY(mutex);
     String comment TSA_GUARDED_BY(mutex);
+    const bool is_temporary;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
-using Databases = std::map<String, DatabasePtr, std::less<>>;
 
 }

@@ -374,8 +374,8 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     }
 }
 
-DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : DatabaseWithAltersOnDiskBase(name_)
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, bool is_temporary_, const String & logger, ContextPtr context_)
+    : DatabaseWithAltersOnDiskBase(name_, is_temporary_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(logger))
 {

@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -24,7 +25,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -39,6 +39,15 @@ BlockIO InterpreterRenameQuery::execute()
 
     if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        for (const auto & elem : rename.getElements())
+        {
+            const auto & from_db = DatabaseCatalog::instance().tryGetDatabase(elem.from.getDatabase(), getContext());
+            const auto & to_db = DatabaseCatalog::instance().tryGetDatabase(elem.to.getDatabase(), getContext());
+            if ((from_db && from_db->isTemporary()) || (to_db && to_db->isTemporary()))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary databases cannot be renamed with ON CLUSTER clause");
+            // todo: check other interpreters
+        }
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -112,7 +121,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
 
-        DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
+        DatabasePtr database = database_catalog.getDatabase(elem.from_database_name, getContext());
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
@@ -158,7 +167,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database->renameTable(
                 getContext(),
                 elem.from_table_name,
-                *database_catalog.getDatabase(elem.to_database_name),
+                *database_catalog.getDatabase(elem.to_database_name, getContext()),
                 elem.to_table_name,
                 exchange_tables,
                 rename.dictionary);
@@ -190,12 +199,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     const auto & new_name = descriptions.back().to_database_name;
     auto & catalog = DatabaseCatalog::instance();
 
-    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
+    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name, getContext()) : catalog.getDatabase(old_name, getContext());
 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        if (getContext()->hasSessionContext() && getContext()->getSessionContext()->hasTemporaryDatabase(old_name))
+            getContext()->getSessionContext()->renameTemporaryDatabase(old_name, new_name);
     }
 
     return {};
@@ -205,26 +216,38 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 {
     AccessRightsElements required_access;
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+    const auto & context = getContext();
     for (const auto & elem : rename.getElements())
     {
-        if (type == RenameType::RenameTable)
+        const bool from_temporary = !elem.from.getDatabase().empty() && requireTemporaryDatabaseAccessIfNeeded(required_access, elem.from.getDatabase(), context);
+        const bool to_temporary = !elem.from.getDatabase().empty() && requireTemporaryDatabaseAccessIfNeeded(required_access, elem.to.getDatabase(), context);
+
+        switch (type)
         {
-            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.getDatabase(), elem.from.getTable());
-            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
-            if (rename.exchange)
+            case RenameType::RenameDatabase:
             {
-                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
-                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
+                if (!from_temporary)
+                    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.getDatabase());
+                if (!to_temporary)
+                    required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.getDatabase());
+                break;
             }
-        }
-        else if (type == RenameType::RenameDatabase)
-        {
-            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.getDatabase());
-            required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.getDatabase());
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of rename query");
+            case RenameType::RenameTable:
+            {
+                if (!from_temporary)
+                {
+                    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.getDatabase(), elem.from.getTable());
+                    if (rename.exchange)
+                        required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
+                }
+                if (!to_temporary)
+                {
+                    required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
+                    if (rename.exchange)
+                        required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
+                }
+                break;
+            }
         }
     }
     return required_access;

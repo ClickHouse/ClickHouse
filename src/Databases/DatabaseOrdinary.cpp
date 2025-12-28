@@ -85,11 +85,16 @@ extern const DatabaseMetadataDiskSettingsString disk;
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
 DatabaseOrdinary::DatabaseOrdinary(
-    const String & name_, const String & metadata_path_, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
+    const String & name_,
+    const String & metadata_path_,
+    bool is_temporary_,
+    ContextPtr context_,
+    DatabaseMetadataDiskSettings database_metadata_disk_settings_)
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          DatabaseCatalog::getDataDirPath(name_) / "",
+          DatabaseCatalog::getDataDirPath(name_, is_temporary_) / "",
+          is_temporary_,
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)
@@ -100,10 +105,11 @@ DatabaseOrdinary::DatabaseOrdinary(
     const String & name_,
     const String & metadata_path_,
     const String & data_path_,
+    bool is_temporary_,
     const String & logger,
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
-    : DatabaseOnDisk(name_, metadata_path_, data_path_, logger, context_)
+    : DatabaseOnDisk(name_, metadata_path_, data_path_, is_temporary_, logger, context_)
     , database_metadata_disk_settings(database_metadata_disk_settings_)
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value.empty())
@@ -712,7 +718,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         chassert(engine_define);
         database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.create_query.attach);
 
-        return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
+        return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.is_temporary, args.context, database_metadata_disk_settings);
     };
     factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true});
 }
