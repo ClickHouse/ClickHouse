@@ -967,3 +967,22 @@ def test_finished_download_time(cluster):
     assert len(elapsed_time) > 0
     assert int(elapsed_time) > 1
     assert int(elapsed_time) < 5
+
+def test_caches_with_query_limit(cluster):
+    node = cluster.instances["node"]
+    name = f"test_fs_cache_with_query_limit_{uuid.uuid4()}"
+    node.query(
+        f"""
+            DROP TABLE IF EXISTS fs_cache_query_limit SYNC;
+            CREATE TABLE fs_cache_query_limit (key UInt32, value String) Engine = MergeTree ORDER BY key SETTINGS disk = disk(
+                type = cache,
+                name = '{name}',
+                path = '{name}/',
+                max_size = '1Mi',
+                enable_filesystem_query_cache_limit = 'true',
+                disk = 'hdd_blob'
+            );
+        """
+    )
+    node.query("insert into fs_cache_query_limit select number,randomString(4096) from system.numbers limit 1000000")
+    node.query("select * from fs_cache_query_limit format Null")
