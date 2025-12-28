@@ -56,44 +56,18 @@ def main():
     ghe = os.environ.get("GITHUB_EVENT_NAME", "")
     ref = os.environ.get("GITHUB_REF", "")
     is_pr = (wf == "PR") or ("(PR)" in jn) or ghe.startswith("pull_request") or ref.startswith("refs/pull/")
-    if is_pr:
-        # Keep PR runs lightweight and stable under CI load
-        os.environ.setdefault("KEEPER_RUN_WEEKLY", "0")
-        # Do not restrict scenarios on PRs unless explicitly overridden via --keeper-include-ids
-        os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
-        os.environ.setdefault("KEEPER_SCENARIO_FILE", "all")
-        # Allow more time for startup and reduce client pressure
-        os.environ.setdefault("KEEPER_READY_TIMEOUT", "600")
-        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "64")
-        os.environ.setdefault("KEEPER_BENCH_WARMUP_S", "5")
-        os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
-        os.environ.setdefault("KEEPER_DEFAULT_P99_MS", "2500")
-        os.environ.setdefault("KEEPER_DEFAULT_ERROR_RATE", "0.05")
-        os.environ.setdefault("KEEPER_ADAPT_TARGET_P99_MS", "1200")
-        os.environ.setdefault("KEEPER_ADAPT_MAX_ERROR", "0.05")
-        os.environ.setdefault("KEEPER_ADAPT_STAGE_S", "15")
-        os.environ.setdefault("KEEPER_ADAPT_MIN_CLIENTS", "8")
-        os.environ.setdefault("KEEPER_ADAPT_MAX_CLIENTS", "128")
-        os.environ.setdefault("KEEPER_FORCE_BENCH", "1")
-        os.environ.setdefault("KEEPER_DURATION", "600")
-        os.environ.setdefault("KEEPER_DISABLE_S3", "1")
-        # Limit concurrency on PR via auto; keep full backend matrix
-        os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
-        os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
-        # Enable HTTP control readiness endpoint by default on PR to improve startup probes
-        os.environ.setdefault("KEEPER_ENABLE_CONTROL", "1")
-        os.environ.setdefault("KEEPER_CONTROL_PORT", "18080")
-    else:
-        os.environ.setdefault("KEEPER_RUN_WEEKLY", "1")
-        os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
-        os.environ.setdefault("KEEPER_BENCH_CLIENTS", "96")
-        os.environ.setdefault("KEEPER_DEFAULT_P99_MS", "1000")
-        os.environ.setdefault("KEEPER_DEFAULT_ERROR_RATE", "0.01")
-        os.environ.setdefault("KEEPER_ADAPT_TARGET_P99_MS", "600")
-        os.environ.setdefault("KEEPER_ADAPT_MAX_ERROR", "0.01")
-        os.environ.setdefault("KEEPER_ADAPT_STAGE_S", "15")
-        os.environ.setdefault("KEEPER_ADAPT_MIN_CLIENTS", "8")
-        os.environ.setdefault("KEEPER_ADAPT_MAX_CLIENTS", "192")
+    # Same suite and defaults for PR and nightly
+    os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
+    os.environ.setdefault("KEEPER_SCENARIO_FILE", "all")
+    os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
+    os.environ.setdefault("KEEPER_BENCH_CLIENTS", "96")
+    os.environ.setdefault("KEEPER_DEFAULT_P99_MS", "1000")
+    os.environ.setdefault("KEEPER_DEFAULT_ERROR_RATE", "0.01")
+    os.environ.setdefault("KEEPER_ADAPT_TARGET_P99_MS", "600")
+    os.environ.setdefault("KEEPER_ADAPT_MAX_ERROR", "0.01")
+    os.environ.setdefault("KEEPER_ADAPT_STAGE_S", "15")
+    os.environ.setdefault("KEEPER_ADAPT_MIN_CLIENTS", "8")
+    os.environ.setdefault("KEEPER_ADAPT_MAX_CLIENTS", "192")
     # Always keep containers/logs on fail for local/CI triage unless explicitly disabled
     os.environ.setdefault("KEEPER_KEEP_ON_FAIL", "1")
     # Enable faults by default on CI; can be overridden via env/CLI
@@ -138,6 +112,16 @@ def main():
             if Shell.check("docker info > /dev/null", verbose=True):
                 break
             time.sleep(2)
+
+    results.append(
+        Result.from_commands_run(
+            name="Docker pre-clean",
+            command=[
+                "docker network prune -f || true",
+                "docker container prune -f || true",
+            ],
+        )
+    )
 
     # Respect optional duration override from CLI first, then env
     dur_cli = args.duration
@@ -243,7 +227,7 @@ def main():
         ready_val = 600
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
     extra.append(f"--timeout={timeout_val}")
-    extra.append("--timeout-method=thread")
+    extra.append("--timeout-method=signal")
     xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "auto").strip() or "auto"
     extra.append(f"-n {xdist_workers}")
     try:

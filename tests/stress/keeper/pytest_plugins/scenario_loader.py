@@ -247,13 +247,7 @@ def pytest_generate_tests(metafunc):
         seen_ids.add(s.get("id"))
         # Build matrix expansions
         for clone in expand_matrix_clones(s, mb, mtops):
-            marks = []
-            try:
-                if "weekly" in (clone.get("tags") or []):
-                    marks.append(pytest.mark.weekly)
-            except Exception:
-                pass
-            params.append(pytest.param(clone, marks=marks, id=clone["id"]))
+            params.append(pytest.param(clone, id=clone["id"]))
     # Optional fuzz scenario
     if bool(_getopt(metafunc.config, "--fuzz", None, False)):
         seed = int(_getopt(metafunc.config, "--fuzz-seed", None, 0) or 0)
