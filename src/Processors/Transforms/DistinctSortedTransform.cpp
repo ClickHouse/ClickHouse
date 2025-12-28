@@ -191,7 +191,7 @@ bool DistinctSortedTransform::buildFilter(
     const size_t rows,
     ClearableSetVariants & variants) const
 {
-    typename Method::State state(columns, key_sizes, nullptr);
+    typename Method::State state(columns, key_sizes, nullptr, false);
 
     /// Compare last row of previous block and first row of current block,
     /// If rows are NOT equal, we can clear HashSet

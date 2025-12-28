@@ -623,6 +623,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             ;
     }
 
+    for (const auto & column : header)
+        optimize_serialized &= !column.column->lowCardinality();
+    for (const auto & column : getHeader(false))
+        optimize_serialized &= !column.column->lowCardinality();
+    for (const auto & column : getHeader(true))
+        optimize_serialized &= !column.column->lowCardinality();
+
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
@@ -1073,13 +1080,13 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, optimize_serialized);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, optimize_serialized);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -2221,7 +2228,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                 }
             }
 
-            shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+            shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes, optimize_serialized);
         };
 
         init_out_cols();
@@ -2484,7 +2491,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
             }
         }
 
-        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes, optimize_serialized);
 
         places.reserve(max_block_size);
     };
@@ -2562,7 +2569,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             }
         }
 
-        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes, optimize_serialized);
     };
 
     // should be invoked at least once, because null data might be the only content of the `data`
@@ -3483,7 +3490,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, optimize_serialized);
         if (is_simple_count)
         {
             merge_count_variant(state);
@@ -3507,7 +3514,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, optimize_serialized);
         if (is_simple_count)
         {
             merge_count_variant(state);
@@ -3936,7 +3943,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     /// Disable cache for simple count aggregation
     if (is_simple_count)
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, optimize_serialized);
         for (size_t i = 0; i < rows; ++i)
         {
             if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
@@ -3957,7 +3964,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     }
     else
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, optimize_serialized);
         for (size_t i = 0; i < rows; ++i)
         {
             if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
