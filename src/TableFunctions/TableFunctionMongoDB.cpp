@@ -77,7 +77,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mongodb' must have arguments.");
 
     ASTs & args = func_args.arguments->children;
-    if (args.size() < 4 || args.size() > 9)
+    if (args.size() < 3 || args.size() > 9)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Incorrect argument count for table function '{}'. Received {}. Usage: "
                         "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]])"
