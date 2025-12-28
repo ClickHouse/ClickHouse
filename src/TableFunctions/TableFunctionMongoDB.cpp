@@ -96,18 +96,17 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
                 structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
             else if (arg_name == "options" || arg_name == "oid_columns")
                 main_arguments.push_back(arg_value);
+            else
+            {
+                if (arg_name == "port")
+                    is_port_available = 1;
+                main_arguments.push_back(args[i]);
+            }
         }
         else if (args.size() - is_port_available >= 6 && i - is_port_available == 5)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         else if (args.size() <= 4 && i == 2)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
-        else if (args.size() >= 7 && i == 2)
-        {
-            const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
-            if (arg_name == "port")
-                is_port_available = 1;
-            main_arguments.push_back(args[i]);
-        }
         else
             main_arguments.push_back(args[i]);
     }
