@@ -332,7 +332,7 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    ALWAYS_INLINE bool checkDatabaseOptions(
+    bool checkDatabaseOptions(
         const DatabasePtr & db,
         const String & database_name,
         const GetDatabasesOptions & options,
