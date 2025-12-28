@@ -77,9 +77,9 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mongodb' must have arguments.");
 
     ASTs & args = func_args.arguments->children;
-    if ((args.size() < 1 || args.size() > 9))
+    if (args.size() > 9)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Incorrect argument count for table function '{}'. Recieved {}. Usage: "
+                        "Incorrect argument count for table function '{}'. Received {}. Usage: "
                         "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]])"
                         "or mongodb(host='', port='', database='', collection='', user='', password='', structure=''[, options=''[, oid_columns='']])"
                         "or mongodb(uri, collection, structure[, oid_columns]).",
@@ -103,7 +103,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         else if (args.size() >= 7 && i == 2) {
             const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
-            if (arg_name == "port") 
+            if (arg_name == "port")
                 is_port_available = 1;
             main_arguments.push_back(args[i]);
         }
