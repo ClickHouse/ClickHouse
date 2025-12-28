@@ -57,6 +57,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/HashiCorpVault.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1596,6 +1597,8 @@ try
         global_context->setConfig(loaded_config.configuration);
     }
 
+    HashiCorpVault::instance().load(config(), "hashicorp_vault", global_context);
+
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
     /// We need to reload server settings because config could be updated via zookeeper.
@@ -2080,6 +2083,8 @@ try
             global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
         dns_cache_updater->start();
     }
+
+    HashiCorpVault::instance().load(config(), "hashicorp_vault", global_context);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
