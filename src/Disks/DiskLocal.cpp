@@ -764,7 +764,7 @@ void DiskLocal::chmod(const String & path, mode_t mode)
 
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
-    LocalObjectStorageSettings settings_object_storage(disk_path, /* read_only */false);
+    LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 

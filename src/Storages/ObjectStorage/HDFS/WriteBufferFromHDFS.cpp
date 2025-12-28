@@ -6,8 +6,10 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Scheduler/ResourceGuard.h>
+#include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <hdfs/hdfs.h>
 
 
@@ -88,10 +90,13 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         int replication_,
         const WriteSettings & write_settings_,
         size_t buf_size_,
-        int flags_)
+        int flags_,
+        BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, replication_, write_settings_, flags_))
+    , hdfs_uri(hdfs_uri_)
     , filename(hdfs_file_path_)
+    , blob_log(std::move(blob_log_))
 {
 }
 
@@ -105,6 +110,8 @@ void WriteBufferFromHDFS::nextImpl()
 
     while (bytes_written != offset())
         bytes_written += impl->write(working_buffer.begin() + bytes_written, offset() - bytes_written);
+
+    total_bytes_written += bytes_written;
 }
 
 
@@ -113,6 +120,21 @@ void WriteBufferFromHDFS::sync()
     impl->sync();
 }
 
+void WriteBufferFromHDFS::finalizeImpl()
+{
+    if (blob_log)
+    {
+        blob_log->addEvent(
+            BlobStorageLogElement::EventType::Upload,
+            /* bucket */ hdfs_uri,
+            /* remote_path */ filename,
+            /* local_path */ {},
+            /* data_size */ total_bytes_written,
+            /* elapsed_microseconds */ 0,
+            /* error_code */ 0,
+            /* error_message */ {});
+    }
+}
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
