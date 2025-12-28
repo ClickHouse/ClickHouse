@@ -634,7 +634,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             return access_granted();
 
         /// Like to the temporary tables, but with temporary databases.
-        if (!database_name.empty() && context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(database_name.data())) /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        if (!database_name.empty() && context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(String(database_name))) // todo: copying here
             return access_granted();
     }
 

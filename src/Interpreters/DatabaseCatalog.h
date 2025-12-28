@@ -225,7 +225,7 @@ public:
     /// It is safe to pass global context.
     DatabasePtr getDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {}) const;
     DatabasePtr tryGetDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {}) const;
-    bool isDatabaseExist(std::string_view database_name) const; // todo const String &
+    bool isDatabaseExist(std::string_view database_name) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
     void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
