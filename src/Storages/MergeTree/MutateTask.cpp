@@ -95,6 +95,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 enum class ExecuteTTLType : uint8_t
@@ -1482,6 +1483,13 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
 void PartMergerWriter::createBuildTextIndexesTask()
 {
+    if (ctx->source_part->rows_count > std::numeric_limits<UInt32>::max())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
+            ctx->source_part->name, ctx->source_part->rows_count, std::numeric_limits<UInt32>::max());
+    }
+
     auto part_path = ctx->new_data_part->getDataPartStorage().getRelativePath();
     temporary_text_index_storage = createTemporaryTextIndexStorage(ctx->disk, part_path);
     std::vector<MergeTreeIndexPtr> text_indexes(ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());

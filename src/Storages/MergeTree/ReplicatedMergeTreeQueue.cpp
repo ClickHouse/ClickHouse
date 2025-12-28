@@ -1742,10 +1742,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
             return false;
 
-        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsSizeForMerge(data)
-                                                                           : CompactionStatistics::getMaxSourcePartSizeForMutation(data);
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data)
+                                                                           : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
-          * then ignore value returned by getMaxSourcePartsSizeForMerge() and execute merge of any size,
+          * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
           * because it may be ordered by OPTIMIZE or early with different settings.
           * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
