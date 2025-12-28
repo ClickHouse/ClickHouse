@@ -77,6 +77,8 @@ def main():
     os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
     # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
     os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
+    os.environ.setdefault("KEEPER_COMPOSE_DOWN_TIMEOUT", "60")
+    os.environ.setdefault("KEEPER_CLEAN_ARTIFACTS", "1")
     # Default to running tests with pytest-xdist workers (can be overridden)
     os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
     # Derive an extended connection window for slow initializations when logs show progress
@@ -253,7 +255,13 @@ def main():
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
     extra.append(f"--timeout={timeout_val}")
     extra.append("--timeout-method=signal")
-    xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "auto").strip() or "auto"
+    try:
+        cpus = os.cpu_count() or 8
+        # Heuristic: at most half the CPUs, capped at 16, minimum 6
+        heuristic_workers = str(min(16, max(6, cpus // 2)))
+    except Exception:
+        heuristic_workers = "12"
+    xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or heuristic_workers
     extra.append(f"-n {xdist_workers}")
     try:
         is_parallel = xdist_workers not in ("1", "no", "0")
@@ -262,9 +270,10 @@ def main():
     report_file = f"{temp_dir}/pytest.jsonl"
     junit_file = f"{temp_dir}/keeper_junit.xml"
     extra.append(f"--junitxml={junit_file}")
+    extra.append(f"--report-log={report_file}")
     base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
     if is_parallel:
-        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=0", "--dist", "load"])
+        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=2", "--dist", "load"])
         cmd = (" ".join(base + extra)).rstrip()
     else:
         cmd = (" ".join(["-s"] + base + extra)).rstrip()
@@ -272,6 +281,11 @@ def main():
     # Prepare env for pytest
     env = os.environ.copy()
     env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
+    try:
+        subproc_to = str(max(300, min(timeout_val - 60, 900)))
+    except Exception:
+        subproc_to = "900"
+    env["KEEPER_SUBPROC_TIMEOUT"] = subproc_to
     env["KEEPER_READY_TIMEOUT"] = str(ready_val)
     # IMPORTANT: containers launched by docker-compose will bind-mount this exact host path
     # Mount the installed binary to avoid noexec on repo mounts and ensure parity with host-side tools
@@ -300,10 +314,16 @@ def main():
         pass
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
     try:
-        addopts = env.get("PYTEST_ADDOPTS", "")
-        ig = "--ignore-glob=tests/stress/keeper/tests/_instances-*"
-        if ig not in addopts:
-            env["PYTEST_ADDOPTS"] = (addopts + " " + ig).strip()
+        addopts = env.get("PYTEST_ADDOPTS", "").strip()
+        extra_opts = [
+            "--ignore-glob=tests/stress/keeper/tests/_instances-*",
+            "-o",
+            "faulthandler_timeout=600",
+        ]
+        for opt in [" ".join(extra_opts)]:
+            if opt not in addopts:
+                addopts = (addopts + " " + opt).strip()
+        env["PYTEST_ADDOPTS"] = addopts
     except Exception:
         pass
 
@@ -508,6 +528,17 @@ def main():
                 files_to_attach.append(str(p))
     except Exception:
         pass
+    # Post-run docker prune to free space for subsequent jobs
+    results.append(
+        Result.from_commands_run(
+            name="Docker post-clean",
+            command=[
+                "docker system prune -af --volumes || true",
+                "docker network prune -f || true",
+                "docker container prune -f || true",
+            ],
+        )
+    )
     # Publish aggregated job result (with nested pytest results)
     Result.create_from(results=results, stopwatch=stop_watch, files=files_to_attach).complete_job()
 

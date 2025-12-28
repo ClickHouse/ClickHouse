@@ -171,7 +171,8 @@ def run_and_check(
     eff_timeout = timeout
     try:
         if (timeout is None) or (timeout == 300):
-            to_env = os.environ.get("KEEPER_PYTEST_TIMEOUT")
+            # Prefer a dedicated subprocess timeout if provided, otherwise fall back to pytest timeout
+            to_env = os.environ.get("KEEPER_SUBPROC_TIMEOUT") or os.environ.get("KEEPER_PYTEST_TIMEOUT")
             if to_env:
                 eff_timeout = int(to_env)
     except Exception:
@@ -3902,8 +3903,11 @@ class ClickHouseCluster:
         if self.up_called:
             if kill:
                 try:
-                    # NOTE: no --timeout, rely on stop_grace_period
-                    run_and_check(self.base_cmd + ["stop"])
+                    stop_to = os.environ.get("KEEPER_COMPOSE_DOWN_TIMEOUT")
+                    stop_cmd = self.base_cmd + ["stop"]
+                    if stop_to and str(stop_to).strip():
+                        stop_cmd = self.base_cmd + ["stop", "-t", str(int(stop_to))]
+                    run_and_check(stop_cmd)
                 except Exception as e:
                     logging.debug(
                         "Kill command failed during shutdown. {}".format(repr(e))
@@ -3951,7 +3955,11 @@ class ClickHouseCluster:
                         logging.error(msg)
 
             try:
-                subprocess_check_call(self.base_cmd + ["down", "--volumes"])
+                down_to = os.environ.get("KEEPER_COMPOSE_DOWN_TIMEOUT")
+                down_cmd = self.base_cmd + ["down", "--volumes"]
+                if down_to and str(down_to).strip():
+                    down_cmd = self.base_cmd + ["down", "--volumes", "--timeout", str(int(down_to))]
+                subprocess_check_call(down_cmd)
             except Exception as e:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
