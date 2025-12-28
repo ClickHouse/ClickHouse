@@ -61,7 +61,6 @@ mongodb(_named_collection_[, host][, port][, database][, collection][, user][, p
 mongodb(_named_collection_[, uri][, structure][, options[, oid_columns]])
 ```
 
-
 ## Returned value {#returned_value}
 
 A table object with the same columns as the original MongoDB table.
