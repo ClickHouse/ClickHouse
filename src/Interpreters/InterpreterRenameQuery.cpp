@@ -39,9 +39,18 @@ BlockIO InterpreterRenameQuery::execute()
 
     if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        for (const auto & elem : rename.getElements())
+        {
+            const auto & from_db = DatabaseCatalog::instance().tryGetDatabase(elem.from.getDatabase(), getContext());
+            const auto & to_db = DatabaseCatalog::instance().tryGetDatabase(elem.to.getDatabase(), getContext());
+            if ((from_db && from_db->isTemporary()) || (to_db && to_db->isTemporary()))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary databases cannot be renamed with ON CLUSTER clause");
+            // todo: check other interpreters
+        }
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params); // todo: forbid for temporaries
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));

@@ -444,7 +444,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
             .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
             .skip_temporary_owner_check = settings[Setting::show_others_temporary_databases_in_system_tables],
-        }, getContext()); // todo: show temporary settings
+        }, context);
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

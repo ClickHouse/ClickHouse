@@ -1441,7 +1441,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}, local_context);
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{}, local_context);
 
         for (const auto & db : databases)
         {

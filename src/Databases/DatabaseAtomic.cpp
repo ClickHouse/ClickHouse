@@ -128,7 +128,7 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
-    auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
+    auto tmp = data_path + DatabaseCatalog::formatUUIDForFilePath(query.uuid);
     assert(tmp != data_path && !tmp.empty());
     return tmp;
 }

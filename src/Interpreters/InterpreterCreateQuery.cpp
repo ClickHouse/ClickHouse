@@ -201,12 +201,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!context->hasSessionContext())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases cannot be created outside of a session");
 
-        /// actually can, but it is very easy to misuse and occasionally delete data while practical usage is questionable
-        if (create.attach && !context->isInternalQuery())
+        /// actually can, but it is very easy to misuse and occasionally delete data, while practical usage is questionable.
+        if (create.attach)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH DATABASE query cannot be used for temporary databases");
 
         if (is_on_cluster)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary databases cannot be created on cluster");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary databases cannot be created with ON CLUSTER clause");
 
         if (create.storage && create.storage->engine && create.storage->engine->name == "Replicated")
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Replicated databases cannot be temporary");
@@ -218,7 +218,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
-    if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {.with_datalake_catalogs = true, .skip_temporary_owner_check = true}))
+    if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {.skip_temporary_owner_check = true}))
     {
         if (create.if_not_exists)
             return {};
@@ -231,10 +231,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = context->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
-            .with_datalake_catalogs = true,
-            .skip_temporary_owner_check = true,
-        }, context).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.skip_temporary_owner_check = true}, context).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -2436,17 +2433,13 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (internal)
         return {};
 
-    // todo: exclude temporaries from backups and document it
     AccessRightsElements required_access;
     const auto & create = query_ptr->as<const ASTCreateQuery &>();
     const auto & context = getContext();
 
     if (!create.table)
     {
-        if (create.temporary)
-            required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE);
-        else
-            required_access.emplace_back(AccessType::CREATE_DATABASE, create.getDatabase());
+        required_access.emplace_back(!create.temporary ? AccessType::CREATE_DATABASE : AccessType::CREATE_TEMPORARY_DATABASE, create.getDatabase());
     }
     else if (create.is_dictionary)
     {

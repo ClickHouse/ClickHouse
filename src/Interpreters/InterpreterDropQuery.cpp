@@ -59,7 +59,7 @@ namespace ActionLocks
 
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists, ContextPtr context)
 {
-    const auto opts = GetDatabasesOptions{.with_datalake_catalogs = true, .skip_temporary_owner_check = context->isInternalQuery()};
+    const auto opts = GetDatabasesOptions{.skip_temporary_owner_check = context->isInternalQuery()};
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name, context, opts) : DatabaseCatalog::instance().getDatabase(database_name, context, opts);
 }
 

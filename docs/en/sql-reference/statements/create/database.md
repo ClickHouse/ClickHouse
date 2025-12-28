@@ -63,7 +63,13 @@ Result:
 
 ### TEMPORARY {#temporary}
 Creates a temporary database that will be automatically deleted when the current session ends.
-Temporary databases are visible in the `system.databases` table, but available to access only in the current session.
+
+Temporary databases are available to access only in the current session but may be visible to others in the system tables depending
+on the [show_others_temporary_databases_in_system_tables](/operations/settings/settings.md#show_others_temporary_databases_in_system_tables) setting.
+
+:::note
+Please note that the database name will be reserved, and you will not be able to create a new database with the same name, as with regular databases.
+:::
 
 [ON CLUSTER](#on-cluster) clause and [Replicated](../../../engines/database-engines/replicated.md) engines are not supported for temporary databases.
 

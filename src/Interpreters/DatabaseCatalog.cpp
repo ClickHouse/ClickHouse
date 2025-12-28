@@ -117,7 +117,7 @@ public:
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
         Names result;
-        auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}, context);
+        auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{}, context);
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
             if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
@@ -375,7 +375,7 @@ bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
 }
 
 
-DatabaseAndTable DatabaseCatalog::tryGetWithTable(const UUID & uuid) const // todo: won't it bypass temporary databases access check?
+DatabaseAndTable DatabaseCatalog::tryGetWithTable(const UUID & uuid) const
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     const UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
@@ -1197,9 +1197,9 @@ void DatabaseCatalog::enqueueTemporaryDatabaseDrop(DatabasePtr db) noexcept
     drop_temporary_databases_queue.emplace_back(std::move(db));
 }
 
-String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
+String DatabaseCatalog::getPathForTableMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName(), getContext());
+    auto database = getDatabase(table_id.getDatabaseName(), getContext(), {.skip_temporary_owner_check = true});
     auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
 
     if (!database_ptr)
@@ -1296,9 +1296,9 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id)
+void DatabaseCatalog::undropTable(StorageID table_id, ContextPtr context_)
 {
-    auto db_disk = getDatabase(table_id.database_name, getContext())->getDisk();
+    auto db_disk = getDatabase(table_id.database_name, context_)->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1332,7 +1332,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
-        String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
+        String table_metadata_path = getPathForTableMetadata(it_dropped_table->table_id);
 
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
@@ -1361,7 +1361,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
     ast_attach->setDatabase(dropped_table.table_id.database_name);
     ast_attach->setTable(dropped_table.table_id.table_name);
 
-    auto query_context = Context::createCopy(getContext());
+    auto query_context = Context::createCopy(context_);
     /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
     /// and cannot be acquired in the attach table again.
     InterpreterCreateQuery interpreter(ast_attach, query_context);
@@ -1562,7 +1562,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
 }
 
-String DatabaseCatalog::getPathForUUID(const UUID & uuid)
+String DatabaseCatalog::formatUUIDForFilePath(const UUID & uuid)
 {
     const size_t uuid_prefix_len = 3;
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';

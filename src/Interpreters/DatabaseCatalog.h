@@ -138,7 +138,7 @@ class BackgroundSchedulePoolTaskHolder;
 
 struct GetDatabasesOptions
 {
-    bool with_datalake_catalogs{false};
+    bool with_datalake_catalogs{true};
     bool with_temporaries{true};
     bool skip_temporary_owner_check{false};
 };
@@ -158,6 +158,7 @@ public:
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
 
+    static String formatUUIDForFilePath(const UUID & uuid);
 
     static fs::path getTemporaryDir() { return fs::path("temporary"); }
 
@@ -165,7 +166,7 @@ public:
     static fs::path getDataDirPath(const String & database_name, const bool is_temporary) { return getDataDirPath(is_temporary) / escapeForFileName(database_name); }
 
     static fs::path getStoreDirPath(const bool is_temporary) { return !is_temporary ? fs::path("store") : getTemporaryDir() / "store"; }
-    static fs::path getStoreDirPath(const UUID & uuid, const bool is_temporary) { return getStoreDirPath(is_temporary) / getPathForUUID(uuid); }
+    static fs::path getStoreDirPath(const UUID & uuid, const bool is_temporary) { return getStoreDirPath(is_temporary) / formatUUIDForFilePath(uuid); }
 
     static fs::path getMetadataDirPath(const bool is_temporary) { return !is_temporary ? fs::path("metadata") : getTemporaryDir() / "metadata"; }
     static fs::path getMetadataDirPath(const String & database_name, const bool is_temporary) { return getMetadataDirPath(is_temporary) / escapeForFileName(database_name); }
@@ -222,8 +223,8 @@ public:
     /// Database_name must not be empty.
     /// ContextPtr used to ensure that found temporary database belongs to passed session (can by bypassed by flag in options).
     /// It is safe to pass global context.
-    DatabasePtr getDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {.with_datalake_catalogs = true}) const;
-    DatabasePtr tryGetDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {.with_datalake_catalogs = true}) const;
+    DatabasePtr getDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabasePtr tryGetDatabase(std::string_view database_name, ContextPtr context, const GetDatabasesOptions & options = {}) const;
     bool isDatabaseExist(std::string_view database_name) const; // todo const String &
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
@@ -267,13 +268,11 @@ public:
 
     bool hasUUIDMapping(const UUID & uuid);
 
-    static String getPathForUUID(const UUID & uuid);
-
+    /// Will bypass temporary databases access check
     DatabaseAndTable tryGetWithTable(const UUID & uuid) const;
 
-    String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay, bool is_temporary_db);
-    void undropTable(StorageID table_id);
+    void undropTable(StorageID table_id, ContextPtr context);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -339,6 +338,7 @@ private:
         const GetDatabasesOptions & options,
         const ContextPtr & context_) const TSA_REQUIRES(databases_mutex);
     void shutdownImpl(std::function<void()> shutdown_system_logs);
+    String getPathForTableMetadata(const StorageID & table_id) const;
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 

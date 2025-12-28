@@ -59,7 +59,8 @@ public:
         if (database_name.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
-        allowed_max_length = computeMaxTableNameLength(database_name, false, Context::getGlobalContextInstance()); // todo: temporaries?
+        /// todo: temporary databases?
+        allowed_max_length = computeMaxTableNameLength(database_name, false, Context::getGlobalContextInstance());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 

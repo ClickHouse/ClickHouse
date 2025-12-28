@@ -110,7 +110,7 @@ StorageMaterializedView::StorageMaterializedView(
     const String & comment,
     bool is_restore_from_backup)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
-{ // todo: check select query to avoid a lot of possible errors with temporary databases, and is temporary database access available
+{
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
 

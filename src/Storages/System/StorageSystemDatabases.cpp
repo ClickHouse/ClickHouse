@@ -130,7 +130,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
         .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
         .skip_temporary_owner_check = settings[Setting::show_others_temporary_databases_in_system_tables],
-    }, context);
+    }, context); // todo: column with id of user that owns the temporary database
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
