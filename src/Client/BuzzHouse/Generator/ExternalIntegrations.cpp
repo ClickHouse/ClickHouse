@@ -1591,7 +1591,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         const uint32_t add_type = 3 * static_cast<uint32_t>(added_type < toadd_type);
         const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(added_endpoint < toadd_endpoint);
+        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
         const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
         const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
         const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
@@ -1752,7 +1752,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
             const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
             const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-            const uint32_t add_endpoint = 3 * static_cast<uint32_t>(added_endpoint < toadd_endpoint);
+            const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
             const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
             const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
             const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
