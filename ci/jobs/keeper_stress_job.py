@@ -315,10 +315,11 @@ def main():
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
     try:
         addopts = env.get("PYTEST_ADDOPTS", "").strip()
+        fh_to = str(max(600, min(timeout_val - 60, 1800)))
         extra_opts = [
             "--ignore-glob=tests/stress/keeper/tests/_instances-*",
             "-o",
-            "faulthandler_timeout=600",
+            f"faulthandler_timeout={fh_to}",
         ]
         for opt in [" ".join(extra_opts)]:
             if opt not in addopts:
