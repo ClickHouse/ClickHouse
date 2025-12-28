@@ -490,25 +490,27 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto use = [&](auto tokens) -> bool
         {
-            out.function = RPNElement::FUNCTION_HAS;
+            out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
         };
 
-        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
-        /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
-        bool is_supported_key_function = has_map_keys_column && (function_name == "mapContainsKey" || function_name == "has");
-        bool is_supported_value_function = has_map_values_column && function_name == "mapContainsValue";
-        if (is_supported_key_function || is_supported_value_function)
-            return use(stringToTokens(value_field));
-
-        /// Currently, not all token extractors support LIKE-style matching.
-        if (token_extractor->supportsStringLike())
+        /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
+        if (has_map_keys_column)
         {
-            bool is_supported_key_like_function = has_map_keys_column && function_name == "mapContainsKeyLike";
-            bool is_supported_value_like_function = has_map_values_column && function_name == "mapContainsValueLike";
-            if (is_supported_key_like_function || is_supported_value_like_function)
+            if (function_name == "mapContainsKey" || function_name == "has")
+                return use(stringToTokens(value_field));
+            if (function_name == "mapContainsKeyLike" && token_extractor->supportsStringLike())
+                return use(stringLikeToTokens(value_field));
+        }
+
+        /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
+        if (has_map_values_column)
+        {
+            if (function_name == "mapContainsValue")
+                return use(stringToTokens(value_field));
+            if (function_name == "mapContainsValueLike" && token_extractor->supportsStringLike())
                 return use(stringLikeToTokens(value_field));
         }
 

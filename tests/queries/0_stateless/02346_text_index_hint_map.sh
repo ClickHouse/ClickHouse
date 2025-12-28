@@ -15,8 +15,8 @@ $MY_CLICKHOUSE_CLIENT --query "
     CREATE TABLE tab
     (
         m Map(String, String),
-        INDEX idx_mk (mapKeys(m)) TYPE text(tokenizer = sparseGrams) GRANULARITY 4,
-        INDEX idx_mv (mapValues(m)) TYPE text(tokenizer = sparseGrams) GRANULARITY 4
+        INDEX idx_mk (mapKeys(m)) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 4,
+        INDEX idx_mv (mapValues(m)) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 4
     ) ENGINE = MergeTree ORDER BY tuple();
 
     INSERT INTO tab SELECT (arrayMap(x -> 'k' || x, range(number % 30)), arrayMap(x -> 'v' || x, range(number % 30))) FROM numbers(100000);
@@ -40,6 +40,7 @@ function run()
 
 run "SELECT count() FROM tab WHERE has(mapKeys(m), 'k18')"
 run "SELECT count() FROM tab WHERE has(m, 'k18')"
+run "SELECT count() FROM tab WHERE mapContains(m, 'k18')"
 run "SELECT count() FROM tab WHERE mapContainsKey(m, 'k18')"
 run "SELECT count() FROM tab WHERE mapContainsKeyLike(m, '%k18%')"
 run "SELECT count() FROM tab WHERE mapContainsValue(m, 'v18')"
