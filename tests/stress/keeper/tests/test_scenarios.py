@@ -602,6 +602,26 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         except Exception:
             pass
         try:
+            for w in (ctx.get("_watch_flood_watches") or []):
+                try:
+                    if hasattr(w, "cancel"):
+                        w.cancel()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(w, "stop"):
+                        w.stop()
+                except Exception:
+                    pass
+                try:
+                    s = getattr(w, "_stopped", None)
+                    if s:
+                        s.set()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
             for zk in (ctx.get("_ephem_clients") or []):
                 try:
                     zk.stop(); zk.close()

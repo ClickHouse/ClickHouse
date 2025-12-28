@@ -79,6 +79,7 @@ def main():
     os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
     os.environ.setdefault("KEEPER_COMPOSE_DOWN_TIMEOUT", "60")
     os.environ.setdefault("KEEPER_CLEAN_ARTIFACTS", "1")
+    os.environ.setdefault("CI_HEARTBEAT_SEC", "60")
     # Default to running tests with pytest-xdist workers (can be overridden)
     os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
     # Derive an extended connection window for slow initializations when logs show progress
