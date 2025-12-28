@@ -143,6 +143,7 @@ workflow = Workflow.Config(
             command=JobConfigs.keeper_stress_job.command,
             run_in_docker=JobConfigs.keeper_stress_job.run_in_docker,
             digest_config=JobConfigs.keeper_stress_job.digest_config,
+            timeout=3600 * 8,
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
         # --- /TEMP ---
