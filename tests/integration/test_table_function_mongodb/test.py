@@ -571,6 +571,29 @@ def test_limit(started_cluster):
     group_by_limit_mongo_table.drop()
 
 
+def test_named_collection(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test_named_collection"]
+    try:
+        db.command("dropAllUsersFromDatabase")
+        db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    except pymongo.errors.OperationFailure:
+        pass
+    simple_table = db["simple_table"]
+    data = [{"key": 1, "data": "a"}, {"key": 2, "data": "b"}]
+    simple_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    # Use named collection 'mongo1' (defined in configs/named_collections.xml) and override
+    # database and collection via key-value arguments. This should be accepted and forwarded
+    # to the storage configuration.
+    result = node.query(
+        "SELECT count() FROM mongodb(mongo1, structure='key UInt64, data String')"
+    )
+    assert result == "2\n"
+
+    simple_table.drop()
+
 def test_named_collection_overrides(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["override_db"]
