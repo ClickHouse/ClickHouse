@@ -114,11 +114,11 @@ std::pair<String, ASTPtr> getKeyValueMongoDBArgument(const ASTFunction * ast_fun
     const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_func->arguments.get());
     const auto & function_args = args_expr->children;
     if (function_args.size() != 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}. Expected size == 2, got {}", ast_func->formatForErrorMessage(), function_args.size());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (size != 2),  got {}.", ast_func->formatForErrorMessage());
     if (ast_func->name != "equals")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}. '{}' is not allowed.", ast_func->formatForErrorMessage(), ast_func->name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (name is not allowed), got {}.", ast_func->formatForErrorMessage());
     if (!function_args[0]->as<ASTIdentifier>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}. Key is not an identifier.", ast_func->formatForErrorMessage());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (Key is not an identifier), got {}.", ast_func->formatForErrorMessage());
 
     const auto & arg_name = function_args[0]->as<ASTIdentifier>()->name();
     static const std::unordered_set<std::string> allowed_keys = {
