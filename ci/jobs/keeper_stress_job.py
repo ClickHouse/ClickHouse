@@ -112,7 +112,32 @@ def main():
             if Shell.check("docker info > /dev/null", verbose=True):
                 break
             time.sleep(2)
+        if not Shell.check("docker info > /dev/null", verbose=True):
+            results.append(
+                Result.from_commands_run(
+                    name="Docker startup failed",
+                    command=[
+                        "ps ax | grep dockerd | grep -v grep || true",
+                        "ls -l ./ci/tmp/docker-in-docker.log || true",
+                        "tail -n 200 ./ci/tmp/docker-in-docker.log || true",
+                        "df -h || true",
+                    ],
+                )
+            )
+            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+            return
 
+    results.append(Result.from_commands_run(name="Disk space preflight", command=["df -h || true"]))
+    results.append(
+        Result.from_commands_run(
+            name="Docker aggressive prune",
+            command=[
+                "docker system prune -af --volumes || true",
+                "docker builder prune -af || true",
+                "docker image prune -af || true",
+            ],
+        )
+    )
     results.append(
         Result.from_commands_run(
             name="Docker pre-clean",
