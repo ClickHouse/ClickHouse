@@ -124,9 +124,9 @@ std::pair<String, ASTPtr> getKeyValueMongoDBArgument(const ASTFunction * ast_fun
     if (function_args.size() != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (size != 2), got {}.", ast_func->formatForErrorMessage());
     if (ast_func->name != "equals")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (name is not allowed), got {}.", ast_func->formatForErrorMessage());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (invalid argument name), got {}.", ast_func->formatForErrorMessage());
     if (!function_args[0]->as<ASTIdentifier>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (Key is not an identifier), got {}.", ast_func->formatForErrorMessage());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, (invalid argument key), got {}.", ast_func->formatForErrorMessage());
 
     const auto & arg_name = function_args[0]->as<ASTIdentifier>()->name();
     static const std::unordered_set<std::string> allowed_keys = {
