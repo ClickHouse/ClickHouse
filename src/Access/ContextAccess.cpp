@@ -634,7 +634,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             return access_granted();
 
         /// Like to the temporary tables, but with temporary databases.
-        if (context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(database_name.data()))
+        if (!database_name.empty() && context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(database_name.data()))
             return access_granted();
     }
 
