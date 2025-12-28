@@ -1174,6 +1174,9 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
+        "use_top_k_dynamic_filtering": lambda: random.randint(0, 1),
+        "query_plan_max_limit_for_top_k_optimization": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         **randomize_external_sort_group_by(),
     }
 
