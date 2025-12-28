@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", stay_alive=True, main_configs=["configs/config.xml"])
-node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"])
+node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"], cpu_limit=6)
 
 
 @pytest.fixture(scope="module")
