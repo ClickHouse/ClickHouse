@@ -575,6 +575,7 @@ def test_named_collection_overrides(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["override_db"]
     try:
+        db.command("dropAllUsersFromDatabase")
         db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
     except pymongo.errors.OperationFailure:
         pass
