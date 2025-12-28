@@ -167,19 +167,4 @@ def cluster_factory(request):
 
 
 def pytest_collection_modifyitems(config, items):
-    run_weekly = parse_bool(os.environ.get("KEEPER_RUN_WEEKLY"))
-    if run_weekly:
-        return
-    deselect = []
-    keep = []
-    for item in items:
-        if any(m.name == "weekly" for m in item.iter_markers()):
-            deselect.append(item)
-        else:
-            keep.append(item)
-    if deselect:
-        try:
-            config.hook.pytest_deselected(items=deselect)
-        except Exception:
-            pass
-        items[:] = keep
+    return
