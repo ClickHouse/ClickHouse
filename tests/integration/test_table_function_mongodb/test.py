@@ -584,11 +584,11 @@ def test_named_collection(started_cluster):
     simple_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    # Use named collection 'mongo1' (defined in configs/named_collections.xml) and override
+    # Use named collection 'mongo1_nc' (defined in configs/named_collections.xml) and override
     # database and collection via key-value arguments. This should be accepted and forwarded
     # to the storage configuration.
     result = node.query(
-        "SELECT count() FROM mongodb(mongo1, structure='key UInt64, data String')"
+        "SELECT count() FROM mongodb(mongo1_nc, structure='key UInt64, data String')"
     )
     assert result == "2\n"
 
@@ -596,7 +596,7 @@ def test_named_collection(started_cluster):
 
 def test_named_collection_overrides(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
-    db = mongo_connection["override_db"]
+    db = mongo_connection["test_named_collection_overrides"]
     try:
         db.command("dropAllUsersFromDatabase")
         db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
@@ -607,12 +607,10 @@ def test_named_collection_overrides(started_cluster):
     override_table.insert_many(data)
 
     node = started_cluster.instances["node"]
-    # Use named collection 'mongo1' (defined in configs/named_collections.xml) and override
+    # Use named collection 'mongo1_nc' (defined in configs/named_collections.xml) and override
     # database and collection via key-value arguments. This should be accepted and forwarded
     # to the storage configuration.
-    result = node.query(
-        "SELECT sum(key) FROM mongodb(mongo1, database = 'override_db', collection = 'override_collection', structure='key UInt64, data String')"
-    )
+    result = node.query("SELECT sum(key) FROM mongodb(mongo1_nc, database = 'test_named_collection_overrides', collection = 'override_collection', structure='key UInt64, data String')")
     assert result == "3\n"
 
     override_table.drop()
