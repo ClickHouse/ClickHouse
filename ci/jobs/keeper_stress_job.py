@@ -77,7 +77,7 @@ def main():
         os.environ.setdefault("KEEPER_FORCE_BENCH", "1")
         os.environ.setdefault("KEEPER_DURATION", "600")
         os.environ.setdefault("KEEPER_DISABLE_S3", "1")
-        # Limit concurrency and backends on PR to avoid resource starvation
+        # Limit concurrency on PR via auto; keep full backend matrix
         os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
         os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
         # Enable HTTP control readiness endpoint by default on PR to improve startup probes
@@ -255,7 +255,7 @@ def main():
     extra.append(f"--junitxml={junit_file}")
     base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
     if is_parallel:
-        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=0", "--dist", "loadfile"])
+        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=0", "--dist", "load"])
         cmd = (" ".join(base + extra)).rstrip()
     else:
         cmd = (" ".join(["-s"] + base + extra)).rstrip()
