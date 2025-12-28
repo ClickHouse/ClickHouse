@@ -101,7 +101,8 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         else if (args.size() <= 4 && i == 2)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
-        else if (args.size() >= 7 && i == 2) {
+        else if (args.size() >= 7 && i == 2)
+        {
             const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
             if (arg_name == "port")
                 is_port_available = 1;
