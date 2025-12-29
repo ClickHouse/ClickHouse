@@ -104,13 +104,13 @@ public:
         std::mutex mutex;
         LoggerPtr log;
 
-        struct ListedKeys
+        struct BucketInfo
         {
             std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
             std::optional<size_t> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, std::unique_ptr<ListedKeys>> keys_cache_per_bucket TSA_GUARDED_BY(mutex);
+        std::unordered_map<Bucket, std::unique_ptr<BucketInfo>> keys_cache_per_bucket TSA_GUARDED_BY(mutex);
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
         std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
@@ -129,6 +129,11 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+        BucketHolderPtr tryAcquireBucket(
+            size_t bucket,
+            BucketInfo & bucket_info,
+            BucketHolders & acquired_buckets,
+            size_t processor) const TSA_REQUIRES(mutex);
     };
 
     struct CommitSettings

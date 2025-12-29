@@ -138,7 +138,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     {
         buckets_num = metadata->getBucketsNum();
         for (size_t i = 0; i < buckets_num; ++i)
-            keys_cache_per_bucket.emplace(i, std::make_unique<ListedKeys>());
+            keys_cache_per_bucket.emplace(i, std::make_unique<BucketInfo>());
     }
 }
 
@@ -601,6 +601,34 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     }
 }
 
+ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator::tryAcquireBucket(
+    size_t bucket,
+    BucketInfo & bucket_info,
+    BucketHolders & acquired_buckets,
+    size_t processor) const
+{
+    if (bucket_info.processor.has_value())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Bucket already has a processor: {} (attempted processor: {})",
+            bucket_info.processor.value(), processor);
+    }
+
+    auto holder = metadata->tryAcquireBucket(bucket);
+    if (!holder)
+    {
+        LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})", bucket, bucket_info.keys.size());
+        return nullptr;
+    }
+
+    acquired_buckets.push_back(holder);
+    bucket_info.processor = processor;
+
+    LOG_TRACE(log, "Processor {} acquired bucket: {} (keys: {})", processor, bucket, bucket_info.keys.size());
+    return holder;
+}
+
 std::string ObjectStorageQueueSource::FileIterator::bucketHoldersToString() const
 {
     std::string processors_infos;
@@ -727,42 +755,37 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             for (auto it = keys_cache_per_bucket.begin(); it != keys_cache_per_bucket.end();)
             {
                 auto & [bucket, bucket_info] = *it;
-                auto & [bucket_keys, bucket_processor] = *bucket_info;
 
                 LOG_TEST(log, "Bucket: {}, cached keys: {}, processor: {}",
-                         bucket, bucket_keys.size(), bucket_processor.has_value() ? toString(bucket_processor.value()) : "None");
+                         bucket, bucket_info->keys.size(),
+                         bucket_info->processor.has_value() ? toString(bucket_info->processor.value()) : "None");
 
-                if (bucket_processor.has_value())
+                if (bucket_info->processor.has_value())
                 {
                     LOG_TEST(log, "Bucket {} is already locked for processing by {} (keys: {})",
-                             bucket, bucket_processor.value(), bucket_keys.size());
+                             bucket, bucket_info->processor.value(), bucket_info->keys.size());
                     ++it;
                     continue;
                 }
 
-                if (bucket_keys.empty())
+                if (bucket_info->keys.empty())
                 {
                     ++it;
                     continue;
                 }
 
-                current_bucket_holder = metadata->tryAcquireBucket(bucket);
+                current_bucket_holder = tryAcquireBucket(bucket, *bucket_info, *acquired_buckets, processor);
                 if (!current_bucket_holder)
                 {
                     LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
-                             bucket, bucket_keys.size());
+                             bucket, bucket_info->keys.size());
                     ++it;
                     continue;
                 }
 
-                acquired_buckets->push_back(current_bucket_holder);
-                bucket_processor = processor;
-
-                LOG_TRACE(log, "Processor {} acquired bucket: {} (keys cache: {})", processor, bucket, bucket_keys.size());
-
                 /// Take the key from the front, the order is important.
-                auto [object_info, file_metadata] = bucket_keys.front();
-                bucket_keys.pop_front();
+                auto [object_info, file_metadata] = bucket_info->keys.front();
+                bucket_info->keys.pop_front();
 
                 return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
             }
@@ -791,13 +814,13 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                     "Bucket {} not found in keys cache (buckets keys cache size: {}, expected buckets: {})",
                     bucket, keys_cache_per_bucket.size(), metadata->getBucketsNum());
             }
-            auto & [bucket_keys, bucket_processor] = *bucket_it->second;
+            BucketInfo & bucket_info = *bucket_it->second;
 
             LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}, cached_keys: {}",
                      object_info->getFileName(),
                      bucket,
                      current_bucket_holder ? toString(current_bucket_holder->getBucket()) : "None",
-                     bucket_keys.size());
+                     bucket_info.keys.size());
 
             if (current_bucket_holder)
             {
@@ -805,39 +828,34 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 {
                     /// Acquired bucket differs from object's bucket,
                     /// put it into bucket's cache and continue.
-                    bucket_keys.emplace_back(object_info, nullptr);
+                    bucket_info.keys.emplace_back(object_info, nullptr);
                     continue;
                 }
                 /// Bucket is already acquired, process the file.
                 return {object_info, nullptr, current_bucket_holder->getBucketInfo()};
             }
 
-            if (bucket_processor.has_value())
+            if (bucket_info.processor.has_value())
             {
                 //LOG_TEST(
                 //    log, "Will not process, should be processed by processor {}, current processor {}",
-                //    bucket_processor.value(), processor);
+                //    bucket_info.processor.value(), processor);
 
                 /// Bucket is already locked for processing by another thread.
-                bucket_keys.emplace_back(object_info, nullptr);
+                bucket_info.keys.emplace_back(object_info, nullptr);
                 continue;
             }
 
-            current_bucket_holder = metadata->tryAcquireBucket(bucket);
+            current_bucket_holder = tryAcquireBucket(bucket, bucket_info, *acquired_buckets, processor);
             if (current_bucket_holder)
             {
-                acquired_buckets->push_back(current_bucket_holder);
-                bucket_processor = processor;
-
-                LOG_TRACE(log, "Processor {} acquired bucket: {}", processor, bucket);
-
-                if (!bucket_keys.empty())
+                if (!bucket_info.keys.empty())
                 {
                     /// We have to maintain ordering between keys,
                     /// so if some keys are already in cache - start with them.
-                    bucket_keys.emplace_back(object_info, nullptr);
-                    std::tie(object_info, file_metadata) = bucket_keys.front();
-                    bucket_keys.pop_front();
+                    bucket_info.keys.emplace_back(object_info, nullptr);
+                    std::tie(object_info, file_metadata) = bucket_info.keys.front();
+                    bucket_info.keys.pop_front();
                 }
                 return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
             }
@@ -847,7 +865,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             //    bucket, processor);
 
             /// Bucket is already locked for processing by another thread.
-            bucket_keys.emplace_back(object_info, nullptr);
+            bucket_info.keys.emplace_back(object_info, nullptr);
         }
 
         LOG_TEST(log, "Reached the end of file iterator");
