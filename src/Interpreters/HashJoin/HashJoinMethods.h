@@ -114,7 +114,7 @@ private:
         bool & all_values_unique);
 
     template <typename AddedColumns>
-    static size_t switchJoinRightColumns(
+    static void switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
         AddedColumns & added_columns,
         const ScatteredBlock::Selector & selector,
@@ -122,7 +122,7 @@ private:
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, typename AddedColumns>
-    static size_t joinRightColumnsSwitchNullability(
+    static void joinRightColumnsSwitchNullability(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -130,7 +130,7 @@ private:
         JoinStuff::JoinUsedFlags & used_flags);
 
     template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
-    static size_t joinRightColumnsSwitchMultipleDisjuncts(
+    static void joinRightColumnsSwitchMultipleDisjuncts(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -147,7 +147,7 @@ private:
         JoinCommon::JoinMask::Kind join_mask_kind,
         typename AddedColumns,
         typename Selector>
-    static size_t joinRightColumns(
+    static void joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -161,7 +161,7 @@ private:
         bool check_null_map,
         typename AddedColumns,
         typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
+    static void joinRightColumnsSwitchJoinMaskKind(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
@@ -176,7 +176,7 @@ private:
         JoinCommon::JoinMask::Kind join_mask_kind,
         typename AddedColumns,
         typename Selector>
-    static size_t joinRightColumns(
+    static void joinRightColumns(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,
@@ -184,16 +184,23 @@ private:
         const Selector & selector);
 
     template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
+    static void joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map * map,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
 
+    template <typename AddedColumns, typename Selector>
+    static ColumnPtr buildAdditionalFilter(
+        const Selector & selector,
+        const std::vector<const RowRef *> & selected_rows,
+        const std::vector<size_t> & row_replicate_offset,
+        AddedColumns & added_columns);
+
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
     template <typename KeyGetter, typename Map, typename AddedColumns>
-    static size_t joinRightColumnsWithAddtitionalFilter(
+    static void joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,

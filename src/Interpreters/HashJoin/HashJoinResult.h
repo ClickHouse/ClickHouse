@@ -38,16 +38,12 @@ public:
 
     JoinResultBlock next() override;
 
-    void setNextBlock(ScatteredBlock && block);
-
     ~HashJoinResult() override;
 private:
     const LazyOutput lazy_output;
     const Properties properties;
 
     std::optional<ScatteredBlock> scattered_block;
-    /// Next unprocessed block
-    std::optional<ScatteredBlock> next_scattered_block;
 
     MutableColumns columns;
     IColumn::Offsets offsets;

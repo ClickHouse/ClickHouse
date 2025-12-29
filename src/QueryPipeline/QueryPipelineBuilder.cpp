@@ -306,7 +306,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
-    pipeline.addResources(resources);
+    pipeline.addResources(std::move(resources));
 
     if (will_limit_max_threads)
     {
@@ -487,26 +487,14 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
-            if (min_block_size_rows > 0 || min_block_size_bytes > 0)
+            for (auto & outport : outports)
             {
-                for (auto & outport : outports)
-                {
-                    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
-                    connect(*outport, squashing->getInputs().front());
-                    processors.emplace_back(squashing);
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
-                    connect(squashing->getOutputPort(), adding_joined->getInputs().front());
-                    processors.emplace_back(std::move(adding_joined));
-                }
-            }
-            else
-            {
-                for (auto & outport : outports)
-                {
-                    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
-                    connect(*outport, adding_joined->getInputs().front());
-                    processors.emplace_back(std::move(adding_joined));
-                }
+                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+                connect(*outport, squashing->getInputs().front());
+                processors.emplace_back(squashing);
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                connect(squashing->getOutputPort(), adding_joined->getInputs().front());
+                processors.emplace_back(std::move(adding_joined));
             }
             return processors;
         };
@@ -560,19 +548,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        OutputPort * left_port = *lit;
-        if (min_block_size_rows > 0 || min_block_size_bytes > 0)
-        {
-            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
-            connect(*left_port, squashing->getInputs().front());
-            left_port = &squashing->getOutputPort();
-            left->pipe.processors->emplace_back(std::move(squashing));
-        }
+        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+        connect(**lit, squashing->getInputs().front());
 
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
 
-        connect(*left_port, joining->getInputs().front());
+        connect(squashing->getOutputPort(), joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
@@ -604,6 +586,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
+        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 

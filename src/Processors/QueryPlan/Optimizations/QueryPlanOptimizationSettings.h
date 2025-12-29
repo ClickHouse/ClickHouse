@@ -59,8 +59,6 @@ struct QueryPlanOptimizationSettings
     bool merge_filter_into_join_condition;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
-    bool try_use_top_k_optimization;
-    bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -78,7 +76,6 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
-    bool read_in_order_through_join;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -120,11 +117,6 @@ struct QueryPlanOptimizationSettings
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
 
-    bool use_skip_indexes_for_top_k;
-    bool use_top_k_dynamic_filtering;
-    bool use_skip_indexes_on_data_read;
-    size_t max_limit_for_top_k_optimization = 0;
-
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
@@ -145,8 +137,6 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
-
-    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
     /// Please, avoid using this
     ///

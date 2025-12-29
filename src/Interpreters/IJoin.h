@@ -55,9 +55,6 @@ public:
     struct JoinResultBlock
     {
         Block block;
-        /// Pointer to next block to process, if any.
-        /// Should be used once we got last result and is_last is true.
-        ScatteredBlock * next_block = nullptr;
         bool is_last = true;
     };
 

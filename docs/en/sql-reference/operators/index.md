@@ -1,5 +1,6 @@
 ---
 description: 'Documentation for Operators'
+displayed_sidebar: 'sqlreference'
 sidebar_label: 'Operators'
 sidebar_position: 38
 slug: /sql-reference/operators/
@@ -82,40 +83,6 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
-
-### is not distinct from operator (`<=>`) {#is-not-distinct-from}
-
-:::note
-From 25.10 you can use `<=>` in the same way as any other operator.
-Before 25.10 it could only be used in JOIN expressions, for example:
-
-```sql
-CREATE TABLE a (x String) ENGINE = Memory;
-INSERT INTO a VALUES ('ClickHouse');
-
-SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
-
-┌─x──────────┬─a2.x───────┐
-│ ClickHouse │ ClickHouse │
-└────────────┴────────────┘
-```
-:::
-
-The `<=>` operator is the `NULL`-safe equality operator, equivalent to `IS NOT DISTINCT FROM`.
-It works like the regular equality operator (`=`), but it treats `NULL` values as comparable. 
-Two `NULL` values are considered equal, and a `NULL` compared to any non-`NULL` value returns 0 (false) rather than `NULL`.
-
-```sql
-SELECT
-  'ClickHouse' <=> NULL,
-  NULL <=> NULL
-```
-
-```response
-┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
-│                        0 │                        1 │
-└──────────────────────────┴──────────────────────────┘
-```
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 

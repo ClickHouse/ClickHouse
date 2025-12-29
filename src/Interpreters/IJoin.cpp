@@ -10,7 +10,7 @@ public:
 
     JoinResultBlock next() override
     {
-        return {std::move(block), nullptr, true};
+        return {std::move(block), true};
     }
 
 private:

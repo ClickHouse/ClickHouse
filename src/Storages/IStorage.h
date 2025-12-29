@@ -100,15 +100,6 @@ public:
 
     virtual bool isDataLake() const { return false; }
 
-    /// Returns true if the storage is an external database (MySQL, PostgreSQL, MongoDB, etc.)
-    virtual bool isExternalDatabase() const { return false; }
-
-    /// Returns true if the storage is object storage (S3, Azure, GCS, HDFS, etc.)
-    virtual bool isObjectStorage() const { return false; }
-
-    /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
-    virtual bool isMessageQueue() const { return false; }
-
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -171,6 +162,9 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
+    /// Returns true if the storage supports storing of data type Object.
+    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
+
     /// Returns true if the storage supports storing of dynamic subcolumns.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
@@ -207,10 +201,7 @@ public:
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
-    {
-        return metadata.get();
-    }
+    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
     /// Same as getInMemoryMetadataPtr() but may return nullopt in some specific engines like Alias
     virtual std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const { return getInMemoryMetadataPtr(); }
@@ -253,7 +244,7 @@ public:
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;
+    virtual void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
@@ -756,6 +747,12 @@ public:
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+    }
+
+    /// Creates a storage snapshot from given metadata and columns, which are used in query.
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     /// Creates a storage snapshot but without holding a data specific to storage.
