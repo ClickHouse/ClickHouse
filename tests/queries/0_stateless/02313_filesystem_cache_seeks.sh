@@ -21,7 +21,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; d
     # `s3_cache_multi` storage policy is incompatible with types that use multiple streams.
     # To ensure compatibility, force `serialization_info_version` to `default` in this case.
     if [ "$STORAGE_POLICY" = "s3_cache_multi" ]; then
-        STRING_SERIALIZE_SETTING=", serialization_info_version = 'default'"
+        STRING_SERIALIZE_SETTING=", serialization_info_version = 'basic'"
     else
         STRING_SERIALIZE_SETTING=""
     fi

@@ -356,7 +356,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
     }
     {
@@ -372,7 +372,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
     }
     {
@@ -388,7 +388,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
     }
     {
@@ -404,7 +404,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
     }
     {
@@ -420,7 +420,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
     }
     {
@@ -436,7 +436,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
     }
 }

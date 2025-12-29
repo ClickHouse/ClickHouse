@@ -90,6 +90,11 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
+    /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
+      * Otherwise, convert all replicated columns to ordinary columns.
+      */
+    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
@@ -115,6 +120,9 @@ private:
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    ColumnPtr executeWithoutReplicatedColumns(
+         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     bool short_circuit_function_evaluation_for_nulls = false;
     double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
@@ -147,6 +155,7 @@ public:
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     virtual bool isCompilable() const { return false; }
 
@@ -474,6 +483,11 @@ public:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
+    /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
+      * Otherwise, convert all replicated columns to ordinary columns.
+      */
+    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
+
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
@@ -528,6 +542,7 @@ public:
 
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 

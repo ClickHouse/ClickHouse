@@ -43,7 +43,7 @@ This setting should be used with extra caution since forwarded addresses can be 
 
 ## backups {#backups}
 
-Settings for backups, used when executing the [`BACKUP` and `RESTORE`](../backup.md) statements.
+Settings for backups, used when executing the [`BACKUP` and `RESTORE`](/operations/backup/overview) statements.
 
 The following settings can be configured by sub-tags:
 
@@ -94,6 +94,25 @@ This setting is configured by default as:
 <backups>
     ....
 </backups>
+```
+
+## background_schedule_pool_log {#background_schedule_pool_log}
+
+Contains information about all background tasks that are executed via various background pools.
+
+```xml
+<background_schedule_pool_log>
+    <database>system</database>
+    <table>background_schedule_pool_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+    <!-- Only tasks longer than duration_threshold_milliseconds will be logged. Zero means log everything -->
+    <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
+</background_schedule_pool_log>
 ```
 
 ## bcrypt_workfactor {#bcrypt_workfactor}
@@ -380,7 +399,7 @@ See also:
 
 ## format_schema_path {#format_schema_path}
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
 
 **Example**
 
@@ -2533,3 +2552,24 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 **See Also**
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
+
+## zookeeper_log {#zookeeper_log}
+
+Settings for the [`zookeeper_log`](/operations/system-tables/zookeeper_log) system table.
+
+The following settings can be configured by sub-tags:
+
+<SystemLogParameters/>
+
+**Example**
+
+```xml
+<clickhouse>
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
+    </zookeeper_log>
+</clickhouse>
+```

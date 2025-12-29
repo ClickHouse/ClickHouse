@@ -24,7 +24,8 @@ public:
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows_,
-        size_t max_block_size_bytes_);
+        size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_);
 
     const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -112,6 +113,7 @@ private:
         AggregatingMergedData(
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
+            std::optional<size_t> max_dynamic_subcolumns_,
             ColumnsDefinition & def_);
 
         void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;

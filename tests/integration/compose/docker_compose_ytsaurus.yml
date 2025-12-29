@@ -10,4 +10,16 @@ services:
             YT_PROXY: ytsaurus_backend1:${YTSAURUS_PROXY_PORT}
         ports:
             - ${YTSAURUS_PROXY_PORT}:${YTSAURUS_PROXY_PORT}
-        entrypoint: yt_local start --proxy-port ${YTSAURUS_PROXY_PORT} --local-cypress-dir /var/lib/yt/local-cypress --ytserver-all-path /usr/bin/ytserver-all --sync --fqdn ytsaurus_backend1 --proxy-config '{coordinator={public_fqdn="ytsaurus_backend1:${YTSAURUS_PROXY_PORT}"}}' --node-count 1 --queue-agent-count 1 --address-resolver-config '{enable_ipv4=%true;enable_ipv6=%false;}' --native-client-supported --id primary -c '{name=query-tracker}'  --enable-auth --create-admin-user
+        entrypoint: yt_local start --proxy-port ${YTSAURUS_PROXY_PORT}
+                    --local-cypress-dir /var/lib/yt/local-cypress
+                    --ytserver-all-path /usr/bin/ytserver-all
+                    --sync --fqdn ytsaurus_backend1
+                    --proxy-config '{coordinator={public_fqdn="ytsaurus_backend1:${YTSAURUS_PROXY_PORT}"}}'
+                    --node-count 1
+                    --queue-agent-count 1
+                    --address-resolver-config '{enable_ipv4=%true;enable_ipv6=%false;}'
+                    --listen-port-pool ${YTSAURUS_INTERNAL_PORTS_LIST}
+                    --native-client-supported
+                    --id primary -c '{name=query-tracker}'
+                    --enable-auth
+                    --create-admin-user

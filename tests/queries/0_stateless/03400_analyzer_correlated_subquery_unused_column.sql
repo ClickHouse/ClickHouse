@@ -12,8 +12,6 @@ CREATE TABLE users2 (uid Int16, name String, age Int16) ENGINE=MergeTree() ORDER
 
 INSERT INTO users2 VALUES (1231, 'John', 33);
 
-SET enable_parallel_replicas = 0;
-
 -- { echoOn }
 
 SET allow_experimental_correlated_subqueries = 1;

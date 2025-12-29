@@ -4,9 +4,9 @@ FROM ubuntu:22.04
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:19.1.4"
+ARG LLVM_APT_VERSION="1:21.1.5~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -43,7 +43,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list.d/kitware.list
 
 # moreutils - provides ts fo FT
-# expect, bzip2 - requried by FT
+# expect, bzip2, less - requried by FT
 # bsdmainutils - provides hexdump for FT
 # nasm - nasm copiler for one of submodules, required from normal build
 # yasm - asssembler for libhdfs3, required from normal build
@@ -51,6 +51,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
 RUN apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
@@ -63,6 +64,7 @@ RUN apt-get update \
         python3-pip \
         zstd \
         moreutils \
+        less \
         expect \
         bsdmainutils \
         pv \

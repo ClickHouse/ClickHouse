@@ -24,12 +24,11 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
-//  * column_mapper
-//  * allow_geoparquet_parser
-//  * test on files from https://github.com/apache/parquet-testing
+//  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
+//  * test on files from https://github.com/apache/parquet-testing and https://www.timestored.com/data/sample/parquet
+//  * look at issues in 00900_long_parquet_load.sh
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
-//  * assert that memory usage is zero at the end, the reset()s are easy to miss
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * make writer write DataPageV2
 //  * make writer write PageEncodingStats
@@ -37,8 +36,6 @@ namespace DB::Parquet
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
 //  * support or deprecate the preserve-order setting
-//  * stats (reuse the ones from the other PR?)
-//     - number of row groups that were split into chunks
 //  * add comments everywhere
 //  * progress indication and estimating bytes to read; allow negative total_bytes_to_read?
 //  * cache FileMetaData in something like SchemaCache
@@ -64,7 +61,7 @@ namespace DB::Parquet
 //     - no columns to read outside prewhere
 //     - no columns to read, but not trivial count either
 //     - ROW POLICY, with and without prewhere, with old and new reader
-//     - prewhere with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
+//     - prewhere and other skipping with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
 //     - prewhere on virtual columns (do they end up in additional_columns?)
 //     - prewhere with weird filter type (LowCardinality(UInt8), Nullable(UInt8), const UInt8)
 //     - prewhere involving arrays and tuples
@@ -156,7 +153,7 @@ struct Reader
         size_t column_idx;
         /// Index in parquet `schema` (in FileMetaData).
         size_t schema_idx;
-        String name;
+        String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
         PageDecoderInfo decoder;
 
         DataTypePtr raw_decoded_type; // not Nullable
@@ -192,7 +189,7 @@ struct Reader
 
     struct OutputColumnInfo
     {
-        String name;
+        String name; // possibly mapped by ColumnMapper
         /// Range in primitive_columns.
         size_t primitive_start = 0;
         size_t primitive_end = 0;
@@ -391,6 +388,7 @@ struct Reader
         size_t row_group_idx; // in parquet file
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
+        bool need_to_process = false;
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
@@ -455,8 +453,10 @@ struct Reader
     size_t total_primitive_columns_in_file = 0;
     std::vector<OutputColumnInfo> output_columns;
     /// Maps idx_in_output_block to index in output_columns. I.e.:
-    /// sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
-    std::vector<size_t> sample_block_to_output_columns_idx;
+    ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
+    /// nullopt if the column is produced by PREWHERE expression:
+    ///     prewhere_steps[?].idx_in_output_block == i
+    std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
     /// The added columns are used as inputs to prewhere expression, then discarded.
@@ -472,7 +472,7 @@ struct Reader
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
-    void prefilterAndInitRowGroups();
+    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -504,7 +504,7 @@ struct Reader
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
 
-    void applyPrewhere(RowSubgroup & row_subgroup);
+    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter
@@ -524,7 +524,8 @@ private:
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
+    bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);

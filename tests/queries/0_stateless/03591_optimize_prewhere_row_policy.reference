@@ -2,6 +2,7 @@
 
 SET use_query_condition_cache = 0;
 SET enable_parallel_replicas = 0;
+SET allow_statistics_optimize = 0;
 DROP TABLE IF EXISTS 03591_test;
 DROP ROW POLICY IF EXISTS 03591_rp ON 03591_test;
 CREATE TABLE 03591_test (a Int32, b Int32) ENGINE=MergeTree ORDER BY tuple();
