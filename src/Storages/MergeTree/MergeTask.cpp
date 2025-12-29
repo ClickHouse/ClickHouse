@@ -321,6 +321,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// Key columns required for merge, must not be expired early.
     global_ctx->merge_required_key_columns = key_columns;
 
+    auto add_index_columns_to_merge_stage = [&](const auto & index_columns)
+    {
+        for (const auto & index_column : index_columns)
+        {
+            if (storage_columns.contains(index_column))
+                key_columns.insert(index_column);
+            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
+            else
+                key_columns.insert(String(Nested::getColumnFromSubcolumn(index_column, storage_columns)));
+        }
+    };
+
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
     for (const auto & index : skip_indexes)
@@ -335,6 +347,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         if (index.type == "text")
         {
             global_ctx->text_indexes_to_merge.push_back(index);
+
+            if (index_columns.size() > 1)
+                add_index_columns_to_merge_stage(index_columns);
         }
         else if (index_columns.size() == 1)
         {
@@ -347,15 +362,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         }
         else
         {
-            for (const auto & index_column : index_columns)
-            {
-                if (storage_columns.contains(index_column))
-                    key_columns.insert(index_column);
-                /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
-                else
-                    key_columns.insert(String(Nested::getColumnFromSubcolumn(index_column, storage_columns)));
-            }
-
+            add_index_columns_to_merge_stage(index_columns);
             global_ctx->merging_skip_indexes.push_back(index);
         }
     }
@@ -535,6 +542,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         !patch_parts.empty() ||
         global_ctx->cleanup ||
         global_ctx->deduplicate ||
+        hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     prepareProjectionsToMergeAndRebuild();
@@ -802,6 +810,23 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
     global_ctx->gathering_columns.emplace_back(name, type);
 }
 
+bool MergeTask::hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part)
+{
+    for (const auto & part : future_part->parts)
+    {
+        if (part->hasLightweightDelete())
+            return true;
+    }
+
+    for (const auto & patch_part : future_part->patch_parts)
+    {
+        if (patch_part->hasLightweightDelete())
+            return true;
+    }
+
+    return false;
+}
+
 bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx)
 {
     if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
@@ -813,27 +838,7 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_lightweight_delete])
         return false;
 
-    bool has_lightweight_delete = false;
-
-    for (const auto & part : global_ctx.future_part->parts)
-    {
-        if (part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    for (const auto & patch_part : global_ctx.future_part->patch_parts)
-    {
-        if (patch_part->hasLightweightDelete())
-        {
-            has_lightweight_delete = true;
-            break;
-        }
-    }
-
-    return has_lightweight_delete;
+    return hasLightweightDelete(global_ctx.future_part);
 }
 
 
@@ -969,7 +974,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
             return;
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
-        Chunk squashed_chunk = Squashing::squash(projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}));
+        Chunk squashed_chunk = Squashing::squash(
+            projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
+            projection_squash_plan.getHeader());
+
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -990,7 +998,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
         auto & projection_squash_plan = ctx->projection_squashes[i];
-        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
+        auto squashed_chunk = Squashing::squash(
+            projection_squash_plan.flush(),
+            projection_squash_plan.getHeader());
+
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
@@ -1318,26 +1329,12 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// Add expression step for indexes
     MergeTreeIndices indexes_to_recalc;
-    IndicesDescription indexes_to_recalc_description;
+    auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
+
+    if (indexes_it != global_ctx->skip_indexes_by_column.end())
     {
-        auto indexes_it = global_ctx->skip_indexes_by_column.find(column_name);
-
-        if (indexes_it != global_ctx->skip_indexes_by_column.end())
-        {
-            indexes_to_recalc_description = indexes_it->second;
-            indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
-
-            auto indices_expression = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
-            auto indices_expression_dag = indices_expression->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*merge_column_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
-            indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
-
-            auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
-                merge_column_query_plan.getCurrentHeader(),
-                ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
-
-            merge_column_query_plan.addStep(std::move(calculate_indices_expression_step));
-        }
+        indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
+        addSkipIndexesExpressionSteps(merge_column_query_plan, indexes_it->second, global_ctx);
     }
 
     /// If merge may reduce rows, rebuild text indexes for the resulting part.
@@ -1512,7 +1509,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
-    if (global_ctx->merged_part_offsets && !global_ctx->projections_to_merge.empty())
+    if (global_ctx->merged_part_offsets && !global_ctx->merged_part_offsets->isFinalized())
         global_ctx->merged_part_offsets->flush();
 
     for (const auto & projection : global_ctx->projections_to_merge)
@@ -1699,6 +1696,21 @@ void MergeTask::MergeTextIndexStage::cancel() noexcept
         task->cancel();
 }
 
+std::vector<TextIndexSegment> MergeTask::MergeTextIndexStage::getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const
+{
+    auto it = global_ctx->build_text_index_transforms.find(part_name);
+    if (it == global_ctx->build_text_index_transforms.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index transform for index {} and part {} not found", index_name, part_name);
+
+    for (const auto & transform : it->second)
+    {
+        if (transform->hasIndex(index_name))
+            return transform->getSegments(index_name, part_idx);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index transform for index {} and part {} not found", index_name, part_name);
+}
+
 bool MergeTask::MergeTextIndexStage::prepare() const
 {
     if (global_ctx->parent_part)
@@ -1721,20 +1733,15 @@ bool MergeTask::MergeTextIndexStage::prepare() const
 
     auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
-    for (size_t index_idx = 0; index_idx < global_ctx->text_indexes_to_merge.size(); ++index_idx)
+    for (const auto & index : global_ctx->text_indexes_to_merge)
     {
-        const auto & index = global_ctx->text_indexes_to_merge[index_idx];
         auto index_ptr = MergeTreeIndexFactory::instance().get(index);
         std::vector<TextIndexSegment> segments;
 
         if (global_ctx->merge_may_reduce_rows)
         {
             /// Text index was built for the resulting part.
-            auto it = global_ctx->build_text_index_transforms.find(global_ctx->new_data_part->name);
-            if (it == global_ctx->build_text_index_transforms.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", global_ctx->new_data_part->name);
-
-            segments = it->second->getSegments(index_idx, 0);
+            segments = getTextIndexSegments(global_ctx->new_data_part->name, index.name, 0);
         }
         else
         {
@@ -1751,11 +1758,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 {
                     /// Otherwise, it should be materialized on merge.
                     /// Take the segments from the build text index transform.
-                    auto it = global_ctx->build_text_index_transforms.find(part->name);
-                    if (it == global_ctx->build_text_index_transforms.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Build text index transform not found for part {}", part->name);
-
-                    auto part_segments = it->second->getSegments(index_idx, part_idx);
+                    auto part_segments = getTextIndexSegments(part->name, index.name, part_idx);
                     std::move(part_segments.begin(), part_segments.end(), std::back_inserter(segments));
                 }
             }
@@ -2137,8 +2140,8 @@ private:
 class BuildTextIndexStep : public ITransformingStep
 {
 public:
-    BuildTextIndexStep(SharedHeader header_, std::shared_ptr<BuildTextIndexTransform> transform_)
-        : ITransformingStep(header_, header_, getTraits())
+    BuildTextIndexStep(SharedHeader input_header_, SharedHeader output_header_, std::shared_ptr<BuildTextIndexTransform> transform_)
+        : ITransformingStep(input_header_, output_header_, getTraits())
         , transform(std::move(transform_))
     {
     }
@@ -2174,13 +2177,55 @@ private:
     std::shared_ptr<BuildTextIndexTransform> transform;
 };
 
+void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)
+{
+    auto indices_expression = indices_description.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+    auto indices_expression_dag = indices_expression->getActionsDAG().clone();
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+    indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
+
+    auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
+        plan.getCurrentHeader(),
+        ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
+
+    plan.addStep(std::move(calculate_indices_expression_step));
+}
+
 void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx)
 {
-    const auto & header = plan.getCurrentHeader();
-    auto read_column_names = header->getNamesAndTypesList().getNameSet();
-    auto text_indexes_to_build = getTextIndexesToBuildMerge(global_ctx->text_indexes_to_merge, read_column_names, data_part, global_ctx->merge_may_reduce_rows);
+    if (global_ctx->text_indexes_to_merge.empty())
+        return;
 
-    if (text_indexes_to_build.empty())
+    auto original_header = plan.getCurrentHeader();
+    auto read_column_names = original_header->getNameSet();
+
+    IndicesDescription description_to_build;
+    std::vector<MergeTreeIndexPtr> indexes_to_build;
+
+    for (const auto & index : global_ctx->text_indexes_to_merge)
+    {
+        auto required_columns = index.expression->getRequiredColumns();
+
+        bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column)
+        {
+            return read_column_names.contains(column);
+        });
+
+        if (!read_any_required_column)
+            continue;
+
+        auto index_ptr = MergeTreeIndexFactory::instance().get(index);
+
+        /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
+        /// Build index if it is not materialized in the data part.
+        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName()))
+        {
+            description_to_build.push_back(index);
+            indexes_to_build.push_back(std::move(index_ptr));
+        }
+    }
+
+    if (indexes_to_build.empty())
         return;
 
     if (!global_ctx->temporary_text_index_storage)
@@ -2188,6 +2233,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         auto new_part_path = global_ctx->new_data_part->getDataPartStorage().getRelativePath();
         global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path);
     }
+
+    addSkipIndexesExpressionSteps(plan, description_to_build, global_ctx);
 
     MergeTreeWriterSettings writer_settings(
         global_ctx->data->getContext()->getSettingsRef(),
@@ -2201,17 +2248,20 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         /*blocks_are_granules_size=*/ false);
 
     auto transform = std::make_shared<BuildTextIndexTransform>(
-        header,
+        plan.getCurrentHeader(),
         "tmp_" + data_part.name,
-        std::move(text_indexes_to_build),
+        std::move(indexes_to_build),
         global_ctx->temporary_text_index_storage,
         std::move(writer_settings),
         global_ctx->compression_codec,
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension());
 
-    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(header, transform);
+    /// Pass original header as output header to remove temporary columns added by the transform.
+    /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.
+    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(plan.getCurrentHeader(), original_header, transform);
+
     /// Save transform to the context to be able to take segments for merging from it later.
-    global_ctx->build_text_index_transforms.emplace(data_part.name, transform);
+    global_ctx->build_text_index_transforms[data_part.name].push_back(std::move(transform));
     plan.addStep(std::move(build_text_index_step));
 }
 
@@ -2454,18 +2504,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     /// Secondary indices expressions
     if (!global_ctx->merging_skip_indexes.empty())
-    {
-        auto indices_expression = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
-        auto indices_expression_dag = indices_expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*merge_parts_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
-        indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
-
-        auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
-            merge_parts_query_plan.getCurrentHeader(),
-            ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
-
-        merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
-    }
+        addSkipIndexesExpressionSteps(merge_parts_query_plan, global_ctx->merging_skip_indexes, global_ctx);
 
     if (!subqueries.empty())
         addCreatingSetsStep(merge_parts_query_plan, std::move(subqueries), global_ctx->context);

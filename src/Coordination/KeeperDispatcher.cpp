@@ -14,14 +14,19 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperReconfiguration.h>
 
+#include <IO/ReadHelpers.h>
 #include <Disks/IDisk.h>
 
 #include <atomic>
 #include <future>
 #include <chrono>
 #include <limits>
+
+#include <fmt/ranges.h>
 
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
@@ -63,6 +68,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int SYSTEM_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int ABORTED;
 }
 
 namespace
@@ -1027,6 +1034,394 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
     }
     return result;
 }
+
+
+void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, KeeperDispatcher::ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count)
+{
+    for (int64_t attempt = 0; attempt <= retry_count; ++attempt)
+    {
+        if (check_callback(server.get()))
+        {
+            LOG_DEBUG(log, "Configuration update {} already applied, nothing to do", action);
+            return;
+        }
+
+        pushClusterUpdates({action});
+        Stopwatch watch;
+        LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
+        while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
+        {
+            if (keeper_context->isShutdownCalled())
+                throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
+
+            if (check_callback(server.get()))
+            {
+                LOG_DEBUG(log, "Configuration update {} applied successfully", action);
+                return;
+            }
+
+            std::this_thread::sleep_for(1000ms);
+        }
+        LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
+    }
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded (with retries count {}) waiting for configuration update {} to happen", action, retry_count);
+}
+
+void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command)
+{
+    if (reconfig_command->has("preconditions"))
+    {
+        auto latest_config = server->getKeeperStateMachine()->getClusterConfig();
+        auto preconditions = reconfig_command->getObject("preconditions");
+        if (preconditions->has("members"))
+        {
+            std::unordered_set<int32_t> nodes;
+            auto members = preconditions->getArray("members");
+            for (size_t i = 0; i < members->size(); ++i)
+                nodes.insert(members->getElement<int32_t>(i));
+
+            auto servers_in_config = latest_config->get_servers();
+            if (nodes.size() != servers_in_config.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Precondition failed: expected members size {}, actual {}",
+                    nodes.size(),
+                    servers_in_config.size());
+
+            for (const auto & participant : servers_in_config)
+            {
+                if (!nodes.contains(participant->get_id()))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Precondition failed: member with with id {} found in cluster, but precondition members are {}",
+                        participant->get_id(), fmt::join(nodes, ", "));
+            }
+        }
+
+        if (preconditions->has("leaders"))
+        {
+            std::unordered_set<int32_t> leaders;
+            auto leaders_array = preconditions->getArray("leaders");
+            for (size_t i = 0; i < leaders_array->size(); ++i)
+                leaders.insert(leaders_array->getElement<int32_t>(i));
+
+            if (!server->isLeaderAlive())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Precondition failed: expected leader id {} but there is no leader currently",
+                    fmt::join(leaders, ", "));
+
+            if (!leaders.contains(server->getLeaderID()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Precondition failed: expected leader id {} does not match actual leader id {}",
+                    fmt::join(leaders, ", "),
+                    server->getLeaderID());
+        }
+    }
+
+}
+void KeeperDispatcher::checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command)
+{
+    if (!reconfig_command->has("actions"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command must have 'actions' field");
+
+    auto actions = reconfig_command->getArray("actions");
+    /// sever_id -> leader
+    std::unordered_map<int32_t, bool> state_model;
+
+    auto config = server->getKeeperStateMachine()->getClusterConfig();
+    auto leader_id = server->getLeaderID();
+    for (const auto & srv : config->get_servers())
+    {
+        int32_t server_id = srv->get_id();
+        state_model[server_id] = server_id == leader_id;
+    }
+    auto is_leader = [&state_model](int32_t server_id) -> bool
+    {
+        auto it = state_model.find(server_id);
+        if (it == state_model.end())
+            return false;
+        return it->second;
+    };
+
+    for (const auto & action_json : *actions)
+    {
+        const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+        if (action_obj->has("remove_members"))
+        {
+            auto remove_members = action_obj->getArray("remove_members");
+            for (const auto & member_id_json : *remove_members)
+            {
+                int32_t member_id = member_id_json.convert<int32_t>();
+                if (member_id == server->getServerID())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Reconfigure command cannot remove current server id {} from cluster because it would make other servers ignore all the commands from this one",
+                        member_id);
+                }
+                if (is_leader(member_id))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Reconfigure command cannot remove leader server id {} from cluster, transfer leadership first and than remove it",
+                        member_id);
+                }
+                state_model.erase(member_id);
+            }
+        }
+        else if (action_obj->has("add_members"))
+        {
+            auto add_members = action_obj->getArray("add_members");
+            for (const auto & member_id_json : *add_members)
+            {
+                const auto & member_obj = member_id_json.extract<Poco::JSON::Object::Ptr>();
+                int32_t member_id = member_obj->getValue<int32_t>("id");
+                if (state_model.contains(member_id))
+                {
+                    LOG_INFO(log,
+                        "Reconfigure command cannot add server id {} to cluster because it's already present, will do nothing",
+                        member_id);
+                }
+                state_model[member_id] = false;
+            }
+        }
+        else if (action_obj->has("transfer_leadership"))
+        {
+            bool found = false;
+            std::vector<int32_t> leader_ids;
+            const auto & leader_ids_array = action_obj->getArray("transfer_leadership");
+            if (leader_ids_array->size() == 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Reconfigure command 'transfer_leadership' action must have non-empty list of server ids");
+            }
+
+            /// Leader is going to be transferred, reset state model
+            for (auto & [server_id, _] : state_model)
+            {
+                state_model[server_id] = false;
+            }
+
+            for (const auto & leader_id_json : *leader_ids_array)
+            {
+                int32_t current_leader_id = leader_id_json.convert<int32_t>();
+                leader_ids.push_back(current_leader_id);
+                if (state_model.contains(current_leader_id))
+                {
+                    found = true;
+                    state_model[current_leader_id] = true;
+                }
+            }
+
+            if (!found)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Reconfigure command cannot transfer leadership to any of server ids [{}] because they are not present in cluster",
+                    fmt::join(leader_ids, ", "));
+            }
+        }
+        else if (action_obj->has("set_priority"))
+        {
+            const auto & set_priority_obj = action_obj->getArray("set_priority");
+            for (const auto & priority_change: *set_priority_obj)
+            {
+                const auto & priority_change_obj = priority_change.extract<Poco::JSON::Object::Ptr>();
+                int member_id = priority_change_obj->getValue<int>("id");
+                int priority = priority_change_obj->getValue<int>("priority");
+                if (is_leader(member_id) && priority == 0)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Reconfigure command cannot set priority 0 for server {}, because it can be potentially a leader", member_id);
+                }
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown action in reconfigure command");
+        }
+    }
+}
+
+Poco::JSON::Object::Ptr KeeperDispatcher::reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command)
+try
+{
+    if (!server->isLeaderAlive())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reconfigure cluster because there is no active leader");
+
+    checkReconfigCommandPreconditions(reconfig_command);
+    checkReconfigCommandActions(reconfig_command);
+
+    LOG_DEBUG(log, "Preconditions passed, executing reconfiguration");
+    size_t max_action_wait_time_ms = reconfig_command->has("max_action_wait_time_ms")
+        ? reconfig_command->getValue<size_t>("max_action_wait_time_ms")
+        : 60000;
+
+    size_t max_total_wait_time_ms = reconfig_command->has("max_total_wait_time_ms")
+        ? reconfig_command->getValue<size_t>("max_total_wait_time_ms")
+        : 300000;
+
+    auto actions = reconfig_command->getArray("actions");
+    Stopwatch total_watch;
+    for (const auto & action_json : *actions)
+    {
+
+        UInt64 time_left_for_action = max_action_wait_time_ms;
+        UInt64 time_spent = total_watch.elapsedMilliseconds();
+        UInt64 time_left_total = max_total_wait_time_ms > time_spent ? max_total_wait_time_ms - time_spent : 0;
+        UInt64 time_left = std::min(time_left_for_action, time_left_total);
+
+        const auto & action_obj = action_json.extract<Poco::JSON::Object::Ptr>();
+
+        int64_t retry_count = 1;
+        if (action_obj->has("retry"))
+            retry_count = std::min(retry_count, action_obj->getValue<int64_t>("retry"));
+
+        if (action_obj->has("remove_members"))
+        {
+            auto remove_members = action_obj->getArray("remove_members");
+            for (const auto & member_id_json : *remove_members)
+            {
+                int32_t member_id = member_id_json.convert<int32_t>();
+                RemoveRaftServer remove_action{member_id};
+                auto remove_callback = [this, member_id](KeeperServer * server_) -> bool
+                {
+                    auto config = server_->getKeeperStateMachine()->getClusterConfig();
+
+                    if (config->get_server(member_id) == nullptr)
+                    {
+                        LOG_INFO(log, "Skip removing server id {} from cluster because it's not present in current configuration: {}",
+                            member_id, serializeClusterConfig(config));
+                        return true;
+                    }
+                    else
+                    {
+                        LOG_INFO(
+                            log, "Waiting for removing server id {} from cluster configuration: {}",
+                            member_id, serializeClusterConfig(config));
+                        return false;
+                    }
+                };
+                executeClusterUpdateActionAndWaitConfigChange(remove_action, std::move(remove_callback), time_left, retry_count);
+            }
+        }
+        else if (action_obj->has("add_members"))
+        {
+            auto add_members = action_obj->getArray("add_members");
+            for (const auto & member_id_json : *add_members)
+            {
+                const auto & member_obj = member_id_json.extract<Poco::JSON::Object::Ptr>();
+                int member_id = member_obj->getValue<int32_t>("id");
+                std::string endpoint = member_obj->getValue<std::string>("endpoint");
+                bool learner = member_obj->has("learner") ? member_obj->getValue<bool>("learner") : false;
+                int priority = member_obj->has("priority") ? member_obj->getValue<int>("priority") : 1;
+                AddRaftServer add_action({RaftServerConfig{member_id, endpoint, learner, priority}});
+                auto add_callback = [this, member_id](KeeperServer * server_) -> bool
+                {
+                    auto config = server_->getKeeperStateMachine()->getClusterConfig();
+                    if (config->get_server(member_id) != nullptr)
+                    {
+                        LOG_INFO(
+                            log, "Skip adding server id {} to cluster because it's already present in current configuration",
+                            member_id);
+                        return true;
+                    }
+                    else
+                    {
+                        LOG_INFO(
+                            log, "Waiting for adding server id {} to cluster configuration",
+                            member_id);
+                        return false;
+                    }
+                };
+                executeClusterUpdateActionAndWaitConfigChange(add_action, std::move(add_callback), time_left, retry_count);
+            }
+        }
+        else if (action_obj->has("transfer_leadership"))
+        {
+            auto potential_laders = action_obj->getArray("transfer_leadership");
+            std::vector<int32_t> leader_ids;
+            for (const auto & leader_id_json : *potential_laders)
+                leader_ids.push_back(leader_id_json.convert<int32_t>());
+            std::shuffle(leader_ids.begin(), leader_ids.end(), thread_local_rng);
+
+            int32_t new_leader_id = leader_ids.front();
+            TransferLeadership transfer_action{new_leader_id};
+            auto check_callback = [this, new_leader_id](KeeperServer * server_) -> bool
+            {
+                if (server_->getLeaderID() == new_leader_id)
+                {
+                    LOG_INFO(
+                        log, "Leadership successfully transferred to server id {}",
+                        new_leader_id);
+                    return true;
+                }
+                else
+                {
+                LOG_INFO(
+                    log, "Waiting for leadership transfer to server id {}. Current leader id is {}",
+                    new_leader_id,
+                    server_->getLeaderID());
+
+                    return false;
+                }
+            };
+            executeClusterUpdateActionAndWaitConfigChange(transfer_action, std::move(check_callback), time_left, retry_count);
+        }
+        else if (action_obj->has("set_priority"))
+        {
+            const auto & set_priority_obj = action_obj->getArray("set_priority");
+            for (const auto & priority_change: *set_priority_obj)
+            {
+                const auto & priority_change_obj = priority_change.extract<Poco::JSON::Object::Ptr>();
+                int member_id = priority_change_obj->getValue<int>("id");
+                int priority = priority_change_obj->getValue<int>("priority");
+                UpdateRaftServerPriority update_priority_action{member_id, priority};
+                auto priority_callback = [this, member_id, priority](KeeperServer * server_) -> bool
+                {
+                    auto config = server_->getKeeperStateMachine()->getClusterConfig();
+                    auto server_in_config = config->get_server(member_id);
+                    if (server_in_config == nullptr)
+                    {
+                        LOG_INFO(
+                            log, "Cannot set priority for server id {} because it's not present in current configuration",
+                            member_id);
+                        return true;
+                    }
+                    else if (server_in_config->get_priority() == priority)
+                    {
+                        LOG_INFO(
+                            log, "Priority for server id {} successfully changed to {}", member_id, priority);
+                        return true;
+                    }
+                    else
+                    {
+                        LOG_INFO(
+                            log,
+                            "Waiting for setting priority {} for server id {} in cluster configuration, current {}", priority, member_id, server_in_config->get_priority());
+                        return false;
+                    }
+                };
+                executeClusterUpdateActionAndWaitConfigChange(update_priority_action, std::move(priority_callback), time_left, retry_count);
+            }
+        }
+        else
+        {
+            std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            action_obj->stringify(ss);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown reconfigure action {}", ss.str());
+        }
+    }
+
+    LOG_DEBUG(log, "Reconfiguration successfully applied");
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object();
+    result->set("status", "ok");
+    result->set("message", "Reconfiguration successfully applied");
+    return result;
+}
+catch (...)
+{
+    tryLogCurrentException(__PRETTY_FUNCTION__);
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object();
+    result->set("status", "error");
+    result->set("message", getCurrentExceptionMessage(false));
+    return result;
+}
+
 
 void KeeperDispatcher::cleanResources()
 {
