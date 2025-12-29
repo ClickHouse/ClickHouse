@@ -86,26 +86,28 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// Mind using the getResultType() method from PrometheusQueryToSQLConverter, not from the PrometheusQueryTree.
     if (converter.getResultType() == PrometheusQueryTree::ResultType::RANGE_VECTOR)
     {
-        writeRangeQueryHeader(response);
+        writeRangeVectorResponseHeader(response);
+        bool need_comma = false;
         while (executor.pull(result_block))
-            writeRangeQueryResponse(response, result_block);
-        writeRangeQueryFooter(response);
+            writeRangeVectorResponse(response, result_block, need_comma);
+        writeRangeVectorResponseFooter(response);
         return;
     }
     else if (converter.getResultType() == PrometheusQueryTree::ResultType::INSTANT_VECTOR)
     {
-        writeInstantQueryHeader(response);
+        writeInstantVectorResponseHeader(response);
+        bool need_comma = false;
         while (executor.pull(result_block))
-            writeInstantQueryResponse(response, result_block);
-        writeInstantQueryFooter(response);
+            writeInstantVectorResponse(response, result_block, need_comma);
+        writeInstantVectorResponseFooter(response);
         return;
     }
     else if (converter.getResultType() == PrometheusQueryTree::ResultType::SCALAR)
     {
-        writeInstantQueryHeader(response);
+        writeScalarResponseHeader(response);
         while (executor.pull(result_block))
-            writeScalarQueryResponse(response, result_block);
-        writeInstantQueryFooter(response);
+            writeScalarResponse(response, result_block);
+        writeScalarResponseFooter(response);
         return;
     }
     else
@@ -146,34 +148,14 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The label values endpoint is not implemented");
 }
 
-void DB::PrometheusHTTPProtocolAPI::writeInstantQueryHeader(WriteBuffer & response)
+void PrometheusHTTPProtocolAPI::writeScalarResponseHeader(WriteBuffer & response)
 {
-    writeString(R"({"status":"success","data":{)", response);
+    writeString(R"({"status":"success","data":{"resultType":"scalar","result":[)", response);
 }
 
-void DB::PrometheusHTTPProtocolAPI::writeScalarQueryResponse(WriteBuffer & response, const Block & result_block)
-{
-    chassert(!result_block.empty());
-    writeString(R"("resultType":"scalar","result":)", response);
-    writeScalarResult(response, result_block);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeInstantQueryResponse(WriteBuffer & response, const Block & result_block)
-{
-    writeString(R"("resultType":"vector","result":)", response);
-    writeVectorResult(response, result_block);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeInstantQueryFooter(WriteBuffer & response)
-{
-    writeString("}}", response);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeScalarResult(WriteBuffer & response, const Block & result_block)
+void PrometheusHTTPProtocolAPI::writeScalarResponse(WriteBuffer & response, const Block & result_block)
 {
     LOG_INFO(log, "Prometheus: Writing scalar result");
-
-    writeString("[", response);
 
     if (!result_block.empty() && result_block.rows() > 0)
     {
@@ -192,14 +174,20 @@ void DB::PrometheusHTTPProtocolAPI::writeScalarResult(WriteBuffer & response, co
         writeScalar(response, value);
         writeString("\"", response);
     }
-
-    writeString("]", response);
 }
 
-void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, const Block & result_block)
+void PrometheusHTTPProtocolAPI::writeScalarResponseFooter(WriteBuffer & response)
 {
-    writeString("[", response);
+    writeString("]}}", response);
+}
 
+void PrometheusHTTPProtocolAPI::writeInstantVectorResponseHeader(WriteBuffer & response)
+{
+    writeString(R"({"status":"success","data":{"resultType":"vector","result":[)", response);
+}
+
+void PrometheusHTTPProtocolAPI::writeInstantVectorResponse(WriteBuffer & response, const Block & result_block, bool & need_comma)
+{
     if (!result_block.empty() && result_block.rows() > 0)
     {
         const auto & time_column = result_block.getByName(TimeSeriesColumnNames::Time).column;
@@ -208,7 +196,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
 
         for (size_t i = 0; i < result_block.rows(); ++i)
         {
-            if (i > 0)
+            if (need_comma)
                 writeString(",", response);
 
             writeString("{", response);
@@ -235,13 +223,81 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             writeString("\"", response);
 
             writeString("]}", response);
+            need_comma = true;
         }
     }
-
-    writeString("]", response);
 }
 
-void DB::PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, const Block & result_block, size_t row_index)
+void PrometheusHTTPProtocolAPI::writeInstantVectorResponseFooter(WriteBuffer & response)
+{
+    writeString("]}}", response);
+}
+
+void PrometheusHTTPProtocolAPI::writeRangeVectorResponseHeader(WriteBuffer & response)
+{
+    writeString(R"({"status":"success","data":{"resultType":"matrix","result":[)", response);
+}
+
+void DB::PrometheusHTTPProtocolAPI::writeRangeVectorResponse(WriteBuffer & response, const Block & result_block, bool & need_comma)
+{
+    if (!result_block.empty() && result_block.rows() > 0)
+    {
+        const auto & ts_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
+        const auto & array_column = typeid_cast<const ColumnArray &>(*ts_column);
+        const auto & offsets = array_column.getOffsets();
+        const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+        const auto & timestamp_column = tuple_column.getColumn(0);
+        const auto & value_column = tuple_column.getColumn(1);
+
+        UInt32 timestamp_scale = getTimeseriesTimeScale(
+            typeid_cast<const DataTypeTuple &>(
+                *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+                .getElement(0));
+
+        // For range queries, we need to group results by metric labels
+        // This is a simplified implementation
+        for (size_t i = 0; i < result_block.rows(); ++i)
+        {
+            if (need_comma)
+                writeString(",", response);
+
+            writeString("{", response);
+
+            // Write metric labels using the shared function that skips __name__
+            writeString(R"("metric":)", response);
+            writeMetricLabels(response, result_block, i);
+            writeString(",", response);
+
+            // Extract time series data
+            writeString(R"("values":[)", response);
+
+            size_t start = (i == 0) ? 0 : offsets[i-1];
+            size_t end = offsets[i];
+
+            for (size_t j = start; j < end; ++j)
+            {
+                if (j > start)
+                    writeString(",", response);
+
+                writeString("[", response);
+                writeTimestamp(response, timestamp_column.getInt(j), timestamp_scale);
+                writeString(",\"", response);
+                writeScalar(response, value_column.getFloat64(j));
+                writeString("\"]", response);
+            }
+
+            writeString("]}", response);
+            need_comma = true;
+        }
+    }
+}
+
+void PrometheusHTTPProtocolAPI::writeRangeVectorResponseFooter(WriteBuffer & response)
+{
+    writeString(R"(]}})", response);
+}
+
+void PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, const Block & result_block, size_t row_index)
 {
     writeString("{", response);
 
@@ -279,69 +335,6 @@ void DB::PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, co
     }
 
     writeString("}", response);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeRangeQueryHeader(WriteBuffer & response)
-{
-    writeString(R"({"status":"success","data":{"resultType":"matrix","result":[)", response);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeRangeQueryFooter(WriteBuffer & response)
-{
-    writeString(R"(]}})", response);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeRangeQueryResponse(WriteBuffer & response, const Block & result_block)
-{
-    if (!result_block.empty() && result_block.rows() > 0)
-    {
-        const auto & ts_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
-        const auto & array_column = typeid_cast<const ColumnArray &>(*ts_column);
-        const auto & offsets = array_column.getOffsets();
-        const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
-        const auto & timestamp_column = tuple_column.getColumn(0);
-        const auto & value_column = tuple_column.getColumn(1);
-
-        UInt32 timestamp_scale = getTimeseriesTimeScale(
-            typeid_cast<const DataTypeTuple &>(
-                *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
-                .getElement(0));
-
-        // For range queries, we need to group results by metric labels
-        // This is a simplified implementation
-        for (size_t i = 0; i < result_block.rows(); ++i)
-        {
-            if (i > 0)
-                writeString(",", response);
-
-            writeString("{", response);
-
-            // Write metric labels using the shared function that skips __name__
-            writeString(R"("metric":)", response);
-            writeMetricLabels(response, result_block, i);
-            writeString(",", response);
-
-            // Extract time series data
-            writeString(R"("values":[)", response);
-
-            size_t start = (i == 0) ? 0 : offsets[i-1];
-            size_t end = offsets[i];
-
-            for (size_t j = start; j < end; ++j)
-            {
-                if (j > start)
-                    writeString(",", response);
-
-                writeString("[", response);
-                writeTimestamp(response, timestamp_column.getInt(j), timestamp_scale);
-                writeString(",\"", response);
-                writeScalar(response, value_column.getFloat64(j));
-                writeString("\"]", response);
-            }
-
-            writeString("]}", response);
-        }
-    }
 }
 
 void PrometheusHTTPProtocolAPI::writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale)

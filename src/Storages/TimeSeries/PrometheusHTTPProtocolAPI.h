@@ -65,22 +65,23 @@ public:
         const String & end_param);
 
 private:
-    /// Write JSON response for instant query result (including scalars)
-    void writeInstantQueryHeader(WriteBuffer & response);
-    void writeScalarQueryResponse(WriteBuffer & response, const Block & result_block);
-    void writeInstantQueryResponse(WriteBuffer & response, const Block & result_block);
-    void writeInstantQueryFooter(WriteBuffer & response);
+    /// Write JSON response for scalar result.
+    void writeScalarResponseHeader(WriteBuffer & response);
+    void writeScalarResponse(WriteBuffer & response, const Block & result_block);
+    void writeScalarResponseFooter(WriteBuffer & response);
 
-    /// Helper methods for writeInstantQueryResponse
-    void writeScalarResult(WriteBuffer & response, const Block & result_block);
-    void writeVectorResult(WriteBuffer & response, const Block & result_block);
+    /// Write JSON response for instant vector result.
+    void writeInstantVectorResponseHeader(WriteBuffer & response);
+    void writeInstantVectorResponse(WriteBuffer & response, const Block & result_block, bool & need_comma);
+    void writeInstantVectorResponseFooter(WriteBuffer & response);
+
+    /// Write JSON response for range vector result.
+    void writeRangeVectorResponseHeader(WriteBuffer & response);
+    void writeRangeVectorResponse(WriteBuffer & response, const Block & result_block, bool & need_comma);
+    void writeRangeVectorResponseFooter(WriteBuffer & response);
+
+    /// Helper methods.
     void writeMetricLabels(WriteBuffer & response, const Block & result_block, size_t row_index);
-
-    /// Write JSON response for range query result
-    void writeRangeQueryHeader(WriteBuffer & response);
-    void writeRangeQueryFooter(WriteBuffer & response);
-    void writeRangeQueryResponse(WriteBuffer & response, const Block & result_block);
-
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
 
