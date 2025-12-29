@@ -12,7 +12,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-#test1 'all'->no thread in pool for one mutation
 # disable fault injection; part ids are non-deterministic in case of insert retries
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0;
@@ -35,10 +34,11 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE rmt UPDATE num = num + 1 WHERE 1;
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, is_done \
+    SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, parts_postpone_reasons, \
     FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' ORDER BY \
     mutation_id;
 "
@@ -55,11 +55,12 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
-    SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled
+    SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, is_done \
+    SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, parts_postpone_reasons, \
     FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' ORDER BY \
     mutation_id;
 "
@@ -92,6 +93,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
@@ -114,6 +116,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE rmt UPDATE num = num + 4 WHERE 1;
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
