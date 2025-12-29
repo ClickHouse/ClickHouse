@@ -589,7 +589,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
 
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
-        tmp_data_scope = tmp_data_scope->childScope({}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+        tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
