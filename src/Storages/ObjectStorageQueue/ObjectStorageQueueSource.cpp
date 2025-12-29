@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/CurrentMetrics.h>
@@ -10,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
@@ -134,7 +136,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
     if (metadata->useBucketsForProcessing())
     {
-        for (size_t i = 0; i < metadata->getBucketsNum(); ++i)
+        buckets_num = metadata->getBucketsNum();
+        for (size_t i = 0; i < buckets_num; ++i)
             keys_cache_per_bucket.emplace(i, std::make_unique<ListedKeys>());
     }
 }
@@ -541,7 +544,7 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     chassert(object_info);
     if (metadata->useBucketsForProcessing())
     {
-        const auto bucket = metadata->getBucketForPath(object_info->getPath());
+        const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
         std::lock_guard lock(mutex);
         keys_cache_per_bucket.at(bucket)->keys.emplace_front(object_info, file_metadata);
     }
@@ -779,8 +782,16 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             chassert(!file_metadata);
 
-            const auto bucket = metadata->getBucketForPath(object_info->getPath());
-            auto & [bucket_keys, bucket_processor] = *keys_cache_per_bucket.at(bucket);
+            const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
+            auto bucket_it = keys_cache_per_bucket.find(bucket);
+            if (bucket_it == keys_cache_per_bucket.end())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Bucket {} not found in keys cache (buckets keys cache size: {}, expected buckets: {})",
+                    bucket, keys_cache_per_bucket.size(), metadata->getBucketsNum());
+            }
+            auto & [bucket_keys, bucket_processor] = *bucket_it->second;
 
             LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}, cached_keys: {}",
                      object_info->getFileName(),
@@ -842,8 +853,13 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         LOG_TEST(log, "Reached the end of file iterator");
         iterator_finished = true;
 
-        if (keys_cache_per_bucket.empty())
-            return {};
+        if (keys_cache_per_bucket.end() == std::find_if(
+                keys_cache_per_bucket.begin(),
+                keys_cache_per_bucket.end(),
+                [](const auto & v) { return !v.second->keys.empty(); }))
+        {
+            break;
+        }
     }
     return {};
 }
