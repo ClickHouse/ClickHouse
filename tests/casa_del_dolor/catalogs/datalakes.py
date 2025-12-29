@@ -222,7 +222,8 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
-        self.kafka_handler = KafkaHandler(cluster)
+        if cluster.with_kafka:
+            self.kafka_handler = KafkaHandler(cluster)
 
     def start_uc_server(self):
         with self.catalogs_lock:

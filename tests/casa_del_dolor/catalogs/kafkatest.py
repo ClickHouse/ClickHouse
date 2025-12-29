@@ -1,7 +1,8 @@
 import logging
+import random
 import traceback
 
-from integration.helpers.kafka.common_direct import *
+from integration.helpers.kafka.common_direct import KafkaAdminClient
 import integration.helpers.kafka.common as k
 
 
