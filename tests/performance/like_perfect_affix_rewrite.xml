@@ -1,0 +1,71 @@
+<test>
+  <settings>
+      <allow_experimental_analyzer>1</allow_experimental_analyzer>
+      <max_threads>1</max_threads>
+  </settings>
+
+  <substitutions>
+      <substitution>
+          <name>table_size</name>
+          <values>
+              <value>10000000</value>
+          </values>
+      </substitution>
+      <substitution>
+          <name>prefix_pattern</name>
+          <values>
+              <value>'prefix%'</value>
+          </values>
+      </substitution>
+      <substitution>
+          <name>suffix_pattern</name>
+          <values>
+              <value>'%suffix'</value>
+          </values>
+      </substitution>
+  </substitutions>
+
+  <create_query>
+      CREATE TABLE tab (
+          id UInt64,
+          str String,
+      ) ENGINE = MergeTree()
+      ORDER BY id
+  </create_query>
+
+  <fill_query>
+      INSERT INTO tab
+      SELECT
+          number,
+          concat('prefix', toString(number), 'suffix')
+      FROM numbers({table_size})
+  </fill_query>
+
+  <!-- Test prefix matching rewrite -->
+  <query>
+      SELECT count() FROM tab
+      WHERE str LIKE {prefix_pattern}
+      SETTINGS optimize_rewrite_like_perfect_affix=0
+  </query>
+
+  <query>
+      SELECT count() FROM tab
+      WHERE str LIKE {prefix_pattern}
+      SETTINGS optimize_rewrite_like_perfect_affix=1
+  </query>
+
+  <!-- Test suffix matching rewrite -->
+  <query>
+      SELECT count() FROM tab
+      WHERE str LIKE {suffix_pattern}
+      SETTINGS optimize_rewrite_like_perfect_affix=0
+  </query>
+
+  <query>
+      SELECT count() FROM tab
+      WHERE str LIKE {suffix_pattern}
+      SETTINGS optimize_rewrite_like_perfect_affix=1
+  </query>
+
+  <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+</test>

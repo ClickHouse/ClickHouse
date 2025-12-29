@@ -1,4 +1,4 @@
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 -- Tests text index parameter `dictionary_block_frontcoding_compression`.
 
@@ -9,8 +9,8 @@ CREATE TABLE tab
     id UInt32,
     text_fc String,
     text_raw String,
-    INDEX idx_raw(text_raw) TYPE text(tokenizer = 'default', dictionary_block_size = 6, dictionary_block_frontcoding_compression = 0), -- two raw dictionary blocks
-    INDEX idx_fc(text_fc) TYPE text(tokenizer = 'default', dictionary_block_size = 6, dictionary_block_frontcoding_compression = 1), -- two FC-coded dictionary blocks
+    INDEX idx_raw(text_raw) TYPE text(tokenizer = 'splitByNonAlpha', dictionary_block_size = 6, dictionary_block_frontcoding_compression = 0), -- two raw dictionary blocks
+    INDEX idx_fc(text_fc) TYPE text(tokenizer = 'splitByNonAlpha', dictionary_block_size = 6, dictionary_block_frontcoding_compression = 1), -- two FC-coded dictionary blocks
 )
 ENGINE = MergeTree()
 ORDER BY id;

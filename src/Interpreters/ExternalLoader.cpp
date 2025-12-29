@@ -473,7 +473,7 @@ public:
         /// Insert to the map those objects which added to the new configuration.
         for (const auto & [name, config] : new_configs->configs_by_name)
         {
-            if (infos.find(name) == infos.end())
+            if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
@@ -970,7 +970,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
-        ThreadGroupSwitcher switcher(thread_group, "ExternalLoader");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
         MemoryTrackerBlockerInThread memory_blocker;
@@ -1263,7 +1263,7 @@ public:
 private:
     void doPeriodicUpdates()
     {
-        setThreadName("ExterLdrReload");
+        DB::setThreadName(ThreadName::EXTERNAL_LOADER);
 
         LOG_DEBUG(log, "Starting periodic updates");
         SCOPE_EXIT_SAFE({

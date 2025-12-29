@@ -81,6 +81,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static bool emptyTimezoneAsUTC(const std::string & format_name, const FormatSettings & format_settings)
+{
+    return format_name == "Parquet" && format_settings.parquet.local_time_as_utc;
+}
+
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
 static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -186,7 +191,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view.data(), view.size());
+                ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -200,7 +205,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                     continue;
                 }
                 auto view = chunk.GetView(row_i);
-                ReadBufferFromMemory rb(view.data(), view.size());
+                ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
             }
         }
@@ -391,11 +396,14 @@ static ColumnWithTypeAndName readColumnWithDate64Data(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, bool empty_timezone_as_utc)
 {
     const auto & arrow_type = static_cast<const arrow::TimestampType &>(*(arrow_column->type()));
     const UInt8 scale = arrow_type.unit() * 3;
-    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, arrow_type.timezone());
+    String timezone = arrow_type.timezone();
+    if (timezone.empty() && empty_timezone_as_utc)
+        timezone = "UTC";
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -853,6 +861,7 @@ struct ReadColumnFromArrowColumnSettings
     bool case_insensitive_matching;
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
+    bool empty_timezone_as_utc;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -997,7 +1006,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<Int32>(arrow_column, column_name);
         }
         case arrow::Type::TIMESTAMP:
-            return readColumnWithTimestampData(arrow_column, column_name);
+            return readColumnWithTimestampData(arrow_column, column_name, settings.empty_timezone_as_utc);
         case arrow::Type::DECIMAL128:
             return readColumnWithDecimalData<arrow::Decimal128Array>(arrow_column, column_name);
         case arrow::Type::DECIMAL256:
@@ -1301,6 +1310,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
+                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + make_nullable_if_low_cardinality;
+                if (tmp_dict_column->size() != expected_dictionary_size)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Expected Dictionary size {}, real Dictionary size is {}. The discrepancy probably caused by duplicated values",
+                        expected_dictionary_size,
+                        tmp_dict_column->size());
+                }
+
                 dict_column.column = std::move(tmp_dict_column);
                 dict_info.values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
                 dict_info.dictionary_size = arrow_dict_column->length();
@@ -1315,7 +1334,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
             auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, make_nullable_if_low_cardinality);
-            auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column);
+            auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column, /*is_shared=*/true);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }
@@ -1443,9 +1462,9 @@ static void checkStatus(const arrow::Status & status, const String & column_name
 /// Create empty arrow column using specified field
 static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_ptr<arrow::Field> & field, const String & format_name)
 {
-    arrow::MemoryPool * pool = ArrowMemoryPool::instance();
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
-    arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
+    /// default_memory_pool() uses posix_memalign which is intercepted and counted in MemoryTracker.
+    arrow::Status status = MakeBuilder(arrow::default_memory_pool(), field->type(), &array_builder);
     checkStatus(status, field->name(), format_name);
 
     std::shared_ptr<arrow::Array> arrow_array;
@@ -1478,7 +1497,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
         .case_insensitive_matching = case_insensitive_matching,
         .allow_geoparquet_parser = allow_geoparquet_parser,
-        .enable_json_parsing = enable_json_parsing
+        .enable_json_parsing = enable_json_parsing,
+        .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1565,7 +1585,7 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Column '{}' is not presented in input data. Column name mapping is: {}",
+                    "Column '{}' is not present in input data. Column name mapping has {} columns",
                     column_name,
                     parquet_columns_to_clickhouse->size());
             }
@@ -1596,7 +1616,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_inferring_nullable_columns = true,
         .case_insensitive_matching = case_insensitive_matching,
         .allow_geoparquet_parser = allow_geoparquet_parser,
-        .enable_json_parsing = enable_json_parsing
+        .enable_json_parsing = enable_json_parsing,
+        .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
     };
 
     Columns columns;

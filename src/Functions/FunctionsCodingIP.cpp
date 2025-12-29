@@ -894,9 +894,9 @@ public:
 
         std::function<const char *(size_t)> get_ip_data;
         if (col_const_ip_in)
-            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data; };
+            get_ip_data = [col_const_ip_in](size_t) { return col_const_ip_in->getDataAt(0).data(); };
         else if (col_const_str_in)
-            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data; };
+            get_ip_data = [col_const_str_in](size_t) { return col_const_str_in->getDataAt(0).data(); };
         else if (col_ip_in)
             get_ip_data = [col_ip_in](size_t i) { return reinterpret_cast<const char *>(&col_ip_in->getData()[i]); };
         else if (col_str_in)
@@ -1205,7 +1205,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutipv6 = {1, 1};
     FunctionDocumentation::Category category_cutipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_cutipv6 = {description_cutipv6, syntax_cutipv6, arguments_cutipv6, returned_value_cutipv6, examples_cutipv6, introduced_in_cutipv6, category_cutipv6};
+    FunctionDocumentation documentation_cutipv6 = {description_cutipv6, syntax_cutipv6, arguments_cutipv6, {}, returned_value_cutipv6, examples_cutipv6, introduced_in_cutipv6, category_cutipv6};
 
     factory.registerFunction<FunctionCutIPv6>(documentation_cutipv6);
 
@@ -1229,13 +1229,87 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4toipv6 = {1, 1};
     FunctionDocumentation::Category category_ipv4toipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4toipv6 = {description_ipv4toipv6, syntax_ipv4toipv6, arguments_ipv4toipv6, returned_value_ipv4toipv6, examples_ipv4toipv6, introduced_in_ipv4toipv6, category_ipv4toipv6};
+    FunctionDocumentation documentation_ipv4toipv6 = {description_ipv4toipv6, syntax_ipv4toipv6, arguments_ipv4toipv6, {}, returned_value_ipv4toipv6, examples_ipv4toipv6, introduced_in_ipv4toipv6, category_ipv4toipv6};
 
     factory.registerFunction<FunctionIPv4ToIPv6>(documentation_ipv4toipv6);
 
-    factory.registerFunction<FunctionMACNumToString>();
-    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
-    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
+    FunctionDocumentation::Description description_macnumtostring = R"(
+Interprets a [`UInt64`](/sql-reference/data-types/int-uint) number as a MAC address in big endian format.
+Returns the corresponding MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form) as string.
+    )";
+    FunctionDocumentation::Syntax syntax_macnumtostring = "MACNumToString(num)";
+    FunctionDocumentation::Arguments arguments_macnumtostring = {
+        {"num", "UInt64 number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_macnumtostring = {"Returns a MAC address in format AA:BB:CC:DD:EE:FF.", {"String"}};
+    FunctionDocumentation::Examples examples_macnumtostring = {
+    {
+        "Usage example",
+        R"(
+SELECT MACNumToString(149809441867716) AS mac_address;
+        )",
+        R"(
+┌─mac_address───────┐
+│ 88:00:11:22:33:44 │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_macnumtostring = {1, 1};
+    FunctionDocumentation::Category category_macnumtostring = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_macnumtostring = {description_macnumtostring, syntax_macnumtostring, arguments_macnumtostring, {}, returned_value_macnumtostring, examples_macnumtostring, introduced_in_macnumtostring, category_macnumtostring};
+
+    factory.registerFunction<FunctionMACNumToString>(documentation_macnumtostring);
+
+    FunctionDocumentation::Description description_macstringtonum = R"(
+The inverse function of MACNumToString. If the MAC address has an invalid format, it returns 0.
+)";
+    FunctionDocumentation::Syntax syntax_macstringtonum = "MACStringToNum(s)";
+    FunctionDocumentation::Arguments arguments_macstringtonum = {
+        {"s", "MAC address string.", {"String"}}
+    };
+    FunctionDocumentation::Examples examples_macstringtonum = {
+    {
+        "Usage example",
+        R"(
+SELECT MACStringToNum('01:02:03:04:05:06') AS mac_numeric;
+        )",
+        R"(
+1108152157446
+        )"
+    }
+    };
+    FunctionDocumentation::ReturnedValue returned_value_macstringtonum = {"Returns a UInt64 number.", {"UInt64"}};
+    FunctionDocumentation::Category category_macstringtonum = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::IntroducedIn introduced_in_macstringtonum = {1, 1};
+    FunctionDocumentation documentation_macstringtonum = {description_macstringtonum, syntax_macstringtonum, arguments_macstringtonum, {}, returned_value_macstringtonum, examples_macstringtonum, introduced_in_macstringtonum, category_macstringtonum};
+
+    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>(documentation_macstringtonum);
+
+    FunctionDocumentation::Description description_macstringtooui = R"(
+Given a MAC address in format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form), returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
+    )";
+    FunctionDocumentation::Syntax syntax_macstringtooui = "MACStringToOUI(s)";
+    FunctionDocumentation::Arguments arguments_macstringtooui = {
+        {"s", "MAC address string.", {"String"}}
+    };
+    FunctionDocumentation::Examples examples_macstringtooui = {
+    {
+        "Usage example",
+        R"(
+SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
+        )",
+        R"(
+20566
+        )"
+    }
+    };
+    FunctionDocumentation::ReturnedValue returned_value_macstringtooui = {"First three octets as UInt64 number.", {"UInt64"}};
+    FunctionDocumentation::Category category_macstringtooui = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::IntroducedIn introduced_in_macstringtooui = {1, 1};
+    FunctionDocumentation documentation_macstringtooui = {description_macstringtooui, syntax_macstringtooui, arguments_macstringtooui, {}, returned_value_macstringtooui, examples_macstringtooui, introduced_in_macstringtooui, category_macstringtooui};
+
+    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>(documentation_macstringtooui);
 
     /// IPv6CIDRToRange function
     FunctionDocumentation::Description description_ipv6cidr = R"(
@@ -1259,7 +1333,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
     };
     FunctionDocumentation::IntroducedIn introduced_ipv6cidr = {20, 1};
     FunctionDocumentation::Category category_ipv6cidr = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6cidr = {description_ipv6cidr, syntax_ipv6cidr, arguments_ipv6cidr, returned_value_ipv6cidr, examples_ipv6cidr, introduced_ipv6cidr, category_ipv6cidr};
+    FunctionDocumentation documentation_ipv6cidr = {description_ipv6cidr, syntax_ipv6cidr, arguments_ipv6cidr, {}, returned_value_ipv6cidr, examples_ipv6cidr, introduced_ipv6cidr, category_ipv6cidr};
 
     factory.registerFunction<FunctionIPv6CIDRToRange>(documentation_ipv6cidr);
 
@@ -1285,7 +1359,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
     };
     FunctionDocumentation::IntroducedIn introduced_ipv4cidr = {20, 1};
     FunctionDocumentation::Category category_ipv4cidr = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4cidr = {description_ipv4cidr, syntax_ipv4cidr, arguments_ipv4cidr, returned_value_ipv4cidr, examples_ipv4cidr, introduced_ipv4cidr, category_ipv4cidr};
+    FunctionDocumentation documentation_ipv4cidr = {description_ipv4cidr, syntax_ipv4cidr, arguments_ipv4cidr, {}, returned_value_ipv4cidr, examples_ipv4cidr, introduced_ipv4cidr, category_ipv4cidr};
 
     factory.registerFunction<FunctionIPv4CIDRToRange>(documentation_ipv4cidr);
 
@@ -1320,7 +1394,7 @@ ARRAY JOIN addr;
     };
     FunctionDocumentation::IntroducedIn introduced_isipv4  = {21, 1};
     FunctionDocumentation::Category category_isipv4 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_isipv4 = {description_isipv4, syntax_isipv4, arguments_isipv4, returned_value_isipv4, examples_isipv4, introduced_isipv4, category_isipv4};
+    FunctionDocumentation documentation_isipv4 = {description_isipv4, syntax_isipv4, arguments_isipv4, {}, returned_value_isipv4, examples_isipv4, introduced_isipv4, category_isipv4};
 
     factory.registerFunction<FunctionIsIPv4String>(documentation_isipv4);
 
@@ -1354,7 +1428,7 @@ ARRAY JOIN addr;
     };
     FunctionDocumentation::IntroducedIn introduced_isipv6  = {21, 1};
     FunctionDocumentation::Category category_isipv6 = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_isipv6 = {description_isipv6, syntax_isipv6, arguments_isipv6, returned_value_isipv6, examples_isipv6, introduced_isipv6, category_isipv6};
+    FunctionDocumentation documentation_isipv6 = {description_isipv6, syntax_isipv6, arguments_isipv6, {}, returned_value_isipv6, examples_isipv6, introduced_isipv6, category_isipv6};
 
     factory.registerFunction<FunctionIsIPv6String>(documentation_isipv6);
 
@@ -1377,7 +1451,7 @@ Interprets the input using big-endian byte ordering.
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4numtostring  = {1, 1};
     FunctionDocumentation::Category category_ipv4numtostring = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4numtostring = {description_ipv4numtostring, syntax_ipv4numtostring, arguments_ipv4numtostring, returned_value_ipv4numtostring, example_ipv4numtostring, introduced_in_ipv4numtostring, category_ipv4numtostring};
+    FunctionDocumentation documentation_ipv4numtostring = {description_ipv4numtostring, syntax_ipv4numtostring, arguments_ipv4numtostring, {}, returned_value_ipv4numtostring, example_ipv4numtostring, introduced_in_ipv4numtostring, category_ipv4numtostring};
 
     factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>(documentation_ipv4numtostring);
 
@@ -1417,7 +1491,7 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4numtostringclassc  = {1, 1};
     FunctionDocumentation::Category category_ipv4numtostringclassc = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4numtostringclassc = {description_ipv4numtostringclassc, syntax_ipv4numtostringclassc, arguments_ipv4numtostringclassc, returned_value_ipv4numtostringclassc, examples_ipv4numtostringclassc, introduced_in_ipv4numtostringclassc, category_ipv4numtostringclassc};
+    FunctionDocumentation documentation_ipv4numtostringclassc = {description_ipv4numtostringclassc, syntax_ipv4numtostringclassc, arguments_ipv4numtostringclassc, {}, returned_value_ipv4numtostringclassc, examples_ipv4numtostringclassc, introduced_in_ipv4numtostringclassc, category_ipv4numtostringclassc};
 
     factory.registerFunction<FunctionIPv4NumToString<1, NameFunctionIPv4NumToStringClassC>>(documentation_ipv4numtostringclassc);
 
@@ -1440,7 +1514,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonum = {1, 1};
     FunctionDocumentation::Category category_ipv4stringtonum = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonum = {description_ipv4stringtonum, syntax_ipv4stringtonum, arguments_ipv4stringtonum, returned_value_ipv4stringtonum, examples_ipv4stringtonum, introduced_in_ipv4stringtonum, category_ipv4stringtonum};
+    FunctionDocumentation documentation_ipv4stringtonum = {description_ipv4stringtonum, syntax_ipv4stringtonum, arguments_ipv4stringtonum, {}, returned_value_ipv4stringtonum, examples_ipv4stringtonum, introduced_in_ipv4stringtonum, category_ipv4stringtonum};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv4stringtonum);
 
@@ -1466,7 +1540,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonumordefault  = {22, 3};
     FunctionDocumentation::Category category_ipv4stringtonumordefault = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonumordefault = {description_ipv4stringtonumordefault, syntax_ipv4stringtonumordefault, arguments_ipv4stringtonumordefault, returned_value_ipv4stringtonumordefault, examples_ipv4stringtonumordefault, introduced_in_ipv4stringtonumordefault, category_ipv4stringtonumordefault};
+    FunctionDocumentation documentation_ipv4stringtonumordefault = {description_ipv4stringtonumordefault, syntax_ipv4stringtonumordefault, arguments_ipv4stringtonumordefault, {}, returned_value_ipv4stringtonumordefault, examples_ipv4stringtonumordefault, introduced_in_ipv4stringtonumordefault, category_ipv4stringtonumordefault};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv4stringtonumordefault);
 
@@ -1497,7 +1571,7 @@ IPv4StringToNumOrNull('invalid') AS invalid;
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv4stringtonumornull = {22, 3};
     FunctionDocumentation::Category category_ipv4stringtonumornull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv4stringtonumornull = {description_ipv4stringtonumornull, syntax_ipv4stringtonumornull, arguments_ipv4stringtonumornull, returned_value_ipv4stringtonumornull, examples_ipv4stringtonumornull, introduced_in_ipv4stringtonumornull, category_ipv4stringtonumornull};
+    FunctionDocumentation documentation_ipv4stringtonumornull = {description_ipv4stringtonumornull, syntax_ipv4stringtonumornull, arguments_ipv4stringtonumornull, {}, returned_value_ipv4stringtonumornull, examples_ipv4stringtonumornull, introduced_in_ipv4stringtonumornull, category_ipv4stringtonumornull};
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv4stringtonumornull);
 
@@ -1580,7 +1654,7 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6numtostring = {1, 1};
     FunctionDocumentation::Category category_ipv6numtostring = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6numtostring = {description_ipv6numtostring, syntax_ipv6numtostring, arguments_ipv6numtostring, returned_value_ipv6numtostring, examples_ipv6numtostring, introduced_in_ipv6numtostring, category_ipv6numtostring};
+    FunctionDocumentation documentation_ipv6numtostring = {description_ipv6numtostring, syntax_ipv6numtostring, arguments_ipv6numtostring, {}, returned_value_ipv6numtostring, examples_ipv6numtostring, introduced_in_ipv6numtostring, category_ipv6numtostring};
 
     factory.registerFunction<FunctionIPv6NumToString>(documentation_ipv6numtostring);
 
@@ -1615,7 +1689,7 @@ SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '1
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonum = {1, 1};
     FunctionDocumentation::Category category_ipv6stringtonum = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
+    FunctionDocumentation documentation_ipv6stringtonum = {description_ipv6stringtonum, syntax_ipv6stringtonum, arguments_ipv6stringtonum, {}, returned_value_ipv6stringtonum, examples_ipv6stringtonum, introduced_in_ipv6stringtonum, category_ipv6stringtonum};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv6stringtonum);
 
@@ -1643,7 +1717,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumordefault = {22, 3};
     FunctionDocumentation::Category category_ipv6stringtonumordefault = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonumordefault = {description_ipv6stringtonumordefault, syntax_ipv6stringtonumordefault, arguments_ipv6stringtonumordefault, returned_value_ipv6stringtonumordefault, examples_ipv6stringtonumordefault, introduced_in_ipv6stringtonumordefault, category_ipv6stringtonumordefault};
+    FunctionDocumentation documentation_ipv6stringtonumordefault = {description_ipv6stringtonumordefault, syntax_ipv6stringtonumordefault, arguments_ipv6stringtonumordefault, {}, returned_value_ipv6stringtonumordefault, examples_ipv6stringtonumordefault, introduced_in_ipv6stringtonumordefault, category_ipv6stringtonumordefault};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv6stringtonumordefault);
 
@@ -1675,7 +1749,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_ipv6stringtonumornull = {22, 3};
     FunctionDocumentation::Category category_ipv6stringtonumornull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
+    FunctionDocumentation documentation_ipv6stringtonumornull = {description_ipv6stringtonumornull, syntax_ipv6stringtonumornull, arguments_ipv6stringtonumornull, {}, returned_value_ipv6stringtonumornull, examples_ipv6stringtonumornull, introduced_in_ipv6stringtonumornull, category_ipv6stringtonumornull};
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv6stringtonumornull);
 

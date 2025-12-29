@@ -11,7 +11,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-
 namespace DB
 {
 
@@ -60,6 +59,15 @@ void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num,
     {
         const auto & serialization = elems[element_index];
         serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr, settings);
+    }
+}
+
+void SerializationTuple::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    for (size_t element_index = 0; element_index < elems.size(); ++element_index)
+    {
+        const auto & serialization = elems[element_index];
+        serialization->serializeForHashCalculation(extractElementColumn(column, element_index), row_num, ostr);
     }
 }
 
@@ -136,14 +144,21 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('(', ostr);
-    for (size_t i = 0; i < elems.size(); ++i)
+    if (settings.pretty_format && settings.pretty.named_tuples_as_json && has_explicit_names)
     {
-        if (i != 0)
-            writeChar(',', ostr);
-        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+        serializeTextJSONPretty(column, row_num, ostr, settings, 1);
     }
-    writeChar(')', ostr);
+    else
+    {
+        writeChar('(', ostr);
+        for (size_t i = 0; i < elems.size(); ++i)
+        {
+            if (i != 0)
+                writeChar(',', ostr);
+            elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+        }
+        writeChar(')', ostr);
+    }
 }
 
 template <typename ReturnType>
@@ -293,7 +308,9 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         }
 
         writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        const auto final_indent = indent * settings.json.pretty_print_indent_multiplier;
+        if (final_indent > 1)
+            writeChar(settings.json.pretty_print_indent, final_indent, ostr);
         writeChar('}', ostr);
     }
     else
@@ -797,9 +814,11 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     auto mutable_column = column->assumeMutable();
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
-    settings.avg_value_size_hint = 0;
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+    {
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(
+            column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+    }
 
     typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
 }

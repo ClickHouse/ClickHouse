@@ -5,7 +5,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
-#include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 namespace ProfileEvents
 {
@@ -124,7 +124,9 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::NeedData;
 
     input_chunk = input.pull(true);
-    has_input = input_chunk.hasRows() || on_totals;
+
+    has_virtual_row = isVirtualRow(input_chunk);
+    has_input = input_chunk.hasRows() || on_totals || has_virtual_row;
     return Status::Ready;
 }
 
@@ -134,7 +136,7 @@ void JoiningTransform::work()
     {
         chassert(!output_chunk.has_value());
         transform(input_chunk);
-        has_input = join_result != nullptr;
+        has_input = input_chunk.hasRows() || join_result != nullptr;
     }
     else
     {
@@ -170,6 +172,8 @@ void JoiningTransform::work()
     }
 }
 
+/// transform should consume the input chunk and set the output chunk
+/// if not all data is consumed it may be set to the chunk and transform will be called again
 void JoiningTransform::transform(Chunk & chunk)
 {
     if (!initialized)
@@ -198,6 +202,12 @@ void JoiningTransform::transform(Chunk & chunk)
         res = outputs.front().getHeader().cloneEmpty();
         JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res);
     }
+    else if (has_virtual_row)
+    {
+        res = outputs.front().getHeader().cloneEmpty();
+        output_chunk = Chunk(res.getColumns(), res.rows());
+        output_chunk->setChunkInfos(std::move(chunk.getChunkInfos()));
+    }
     else
     {
         res = readExecute(chunk);
@@ -220,6 +230,13 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
 
     auto data = join_result->next();
+    if (data.is_last && data.next_block)
+    {
+        data.next_block->filterBySelector();
+        auto next_block = std::move(*data.next_block).getSourceBlock();
+        chunk.setColumns(next_block.getColumns(), next_block.rows());
+    }
+
     if (data.is_last)
         join_result.reset();
 

@@ -99,6 +99,7 @@ void collectSymbolsFromProgramHeaders(
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
      */
+    __msan_unpoison(&info->addr, sizeof(info->addr));
     __msan_unpoison(&info->phnum, sizeof(info->phnum));
     __msan_unpoison(&info->phdr, sizeof(info->phdr));
     for (size_t header_index = 0; header_index < info->phnum; ++header_index)
@@ -128,51 +129,49 @@ void collectSymbolsFromProgramHeaders(
 
         size_t sym_cnt = 0;
         {
-            const auto * it = dyn_begin;
-            while (true)
+            for (const auto * it = dyn_begin; ; ++it)
             {
                 __msan_unpoison(it, sizeof(*it));
-                if (it->tag != DynamicTableTag::Null)
+
+                if (it->tag == DynamicTableTag::Null)
                     break;
+
+                if (it->tag != DynamicTableTag::GNU_HASH)
+                    continue;
 
                 uint64_t base_address = correct_address(info->addr, it->ptr);
 
-                if (it->tag == DynamicTableTag::GNU_HASH)
+                /// This code based on Musl-libc.
+
+                const uint32_t * buckets = nullptr;
+                const uint32_t * hashval = nullptr;
+
+                const uint32_t * hash = reinterpret_cast<const uint32_t *>(base_address);
+
+                /// Unpoison the GNU hash table header (4 uint32_t values: nbuckets, symoffset, bloom_size, maskwords)
+                __msan_unpoison(hash, 4 * sizeof(uint32_t));
+
+                buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
+
+                __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
+
+                for (uint32_t i = 0; i < hash[0]; ++i)
+                    sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
+
+                if (sym_cnt)
                 {
-                    /// This code based on Musl-libc.
+                    sym_cnt -= hash[1];
+                    hashval = buckets + hash[0] + sym_cnt;
 
-                    const uint32_t * buckets = nullptr;
-                    const uint32_t * hashval = nullptr;
-
-                    const uint32_t * hash = reinterpret_cast<const uint32_t *>(base_address);
-
-                    __msan_unpoison(&hash[0], sizeof(*hash));
-                    __msan_unpoison(&hash[1], sizeof(*hash));
-                    __msan_unpoison(&hash[2], sizeof(*hash));
-
-                    buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
-
-                    __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
-
-                    for (uint32_t i = 0; i < hash[0]; ++i)
-                        sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
-
-                    if (sym_cnt)
+                    do
                     {
-                        sym_cnt -= hash[1];
-                        hashval = buckets + hash[0] + sym_cnt;
-                        __msan_unpoison(&hashval, sizeof(hashval));
-                        do
-                        {
-                            ++sym_cnt;
-                        }
-                        while (!(*hashval++ & 1));
+                        __msan_unpoison(hashval, sizeof(*hashval));
+                        ++sym_cnt;
                     }
-
-                    break;
+                    while (!(*hashval++ & 1));
                 }
 
-                ++it;
+                break;
             }
         }
 
@@ -239,6 +238,7 @@ void collectSymbolsFromProgramHeaders(
 #if !defined USE_MUSL
 String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
 {
+    __msan_unpoison(&info->addr, sizeof(info->addr));
     __msan_unpoison(&info->phnum, sizeof(info->phnum));
     __msan_unpoison(&info->phdr, sizeof(info->phdr));
     for (size_t header_index = 0; header_index < info->phnum; ++header_index)
@@ -515,8 +515,27 @@ void SymbolIndex::load()
     }), data.symbols.end());
 }
 
-const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * offset) const
+const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 {
+    /// Symbols are stored as file offsets.
+    /// Callers may pass either absolute runtime addresses OR file offsets.
+    /// - Coverage  pass absolute addresses
+    /// - system.stack_trace (after PR #82809) already stores file offsets
+    ///
+    /// Strategy: Try to find containing object. If found, input is absolute address → convert.
+    /// If not found, assume input is already a file offset → use directly.
+
+    const Object * object = findObject(address);
+    const void * offset = address;
+
+    if (object)
+    {
+        /// Input is an absolute address, convert to file offset
+        offset = reinterpret_cast<const void *>(
+            reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
+    }
+    /// else: input is likely already a file offset, use it directly
+
     return find(offset, data.symbols);
 }
 

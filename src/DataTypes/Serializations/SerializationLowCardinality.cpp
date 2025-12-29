@@ -622,7 +622,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             if (column_is_empty)
                 low_cardinality_column.setSharedDictionary(global_dictionary);
 
-            auto local_column = ColumnLowCardinality::create(global_dictionary, std::move(indexes_column));
+            auto local_column = ColumnLowCardinality::create(global_dictionary, std::move(indexes_column), /*is_shared=*/true);
             low_cardinality_column.insertRangeFrom(*local_column, 0, num_rows);
         }
         else
