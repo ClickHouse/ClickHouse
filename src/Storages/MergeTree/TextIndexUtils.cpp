@@ -324,7 +324,7 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params.posting_list_block_size);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);

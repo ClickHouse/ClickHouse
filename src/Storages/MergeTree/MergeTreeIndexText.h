@@ -145,6 +145,8 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
         /// If unset, the number of blocks is stored as an additional VarUInt.
         SingleBlock = 1ULL << 2,
+        /// If set, the posting lists are encoded and stored in a compressed format on disk.
+        CompressedPostings = 1ULL << 3,
     };
 
     static void serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr);
@@ -226,7 +228,7 @@ struct TextIndexSerialization
     static TokenPostingsInfo serializePostings(
         PostingListBuilder & postings,
         MergeTreeIndexWriterStream & postings_stream,
-        size_t posting_list_block_size);
+        const MergeTreeIndexTextParams & params);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);

@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 
 
 #include <base/range.h>
@@ -147,6 +148,13 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 head
 
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
+    if (header & Flags::CompressedPostings)
+    {
+        auto postings = std::make_shared<PostingList>();
+        PostingListCodec::decode(istr, *postings);
+        return postings;
+    }
+
     if (header & Flags::RawPostings)
     {
         std::vector<UInt32> values(cardinality);
@@ -669,12 +677,19 @@ void serializeTokensImpl(
 TokenPostingsInfo TextIndexSerialization::serializePostings(
     PostingListBuilder & postings,
     MergeTreeIndexWriterStream & postings_stream,
-    size_t posting_list_block_size)
+    const MergeTreeIndexTextParams & params)
 {
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
     info.header = 0;
     info.cardinality = postings.size();
+
+    if (params.enable_posting_list_compression)
+    {
+        info.header |= CompressedPostings;
+        PostingListCodec::encode(postings, params.posting_list_block_size, info, postings_stream.plain_hashing);
+        return info;
+    }
 
     if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
@@ -687,7 +702,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header |= RawPostings;
         info.header |= SingleBlock;
     }
-    else if (info.cardinality <= posting_list_block_size)
+    else if (info.cardinality <= params.posting_list_block_size)
     {
         info.header |= SingleBlock;
     }
@@ -702,7 +717,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     {
         chassert(postings.isLarge());
         postings.getLarge().runOptimize();
-        auto blocks = splitPostings(postings.getLarge(), posting_list_block_size);
+        auto blocks = splitPostings(postings.getLarge(), params.posting_list_block_size);
 
         for (const auto & block : blocks)
         {
