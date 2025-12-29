@@ -1,0 +1,48 @@
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_not_equals_injective_function_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(p)
+            Condition: (reverse(p) not in [\'cba\', \'cba\'])
+            Parts: 1/1
+            Granules: 1000/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+1000
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_not_equals_injective_function_dag)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(p), hex(p)))
+            Condition: (reverse(tuple(reverse(p), hex(p))) not in [(\'616263\', \'cba\'), (\'616263\', \'cba\')])
+            Parts: 1/1
+            Granules: 1001/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+1000
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_not_equals_injective_function_dag_complex)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(tuple(reverse(lower(p)), hex(lower(p))))
+            Condition: (reverse(tuple(reverse(lower(p)), hex(lower(p)))) not in [(\'616263\', \'cba\'), (\'616263\', \'cba\')])
+            Parts: 1/1
+            Granules: 1001/10000
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)
+1000
