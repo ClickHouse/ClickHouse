@@ -1275,7 +1275,6 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 }
 
 
-
 bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
@@ -1313,14 +1312,7 @@ bool applyDeterministicDagToColumn(
     Block block;
     block.insert({col, type, input_name});
 
-    try
-    {
-        dag.actions->execute(block, false, true);
-    }
-    catch (...)
-    {
-        return false;
-    }
+    dag.actions->execute(block, false, true);
 
     const auto & res = block.getByName(dag.output_name);
     out_column = res.column;
