@@ -40,3 +40,5 @@ def test_warning():
     assert node.query("SELECT count() = 0 FROM system.warnings where startsWith(message, 'Server has databases (for example `testdb`) with Ordinary engine')") == "1\n"
 
     node.query("DROP DATABASE testdb")
+    node.stop_clickhouse()
+    node.start_clickhouse()
