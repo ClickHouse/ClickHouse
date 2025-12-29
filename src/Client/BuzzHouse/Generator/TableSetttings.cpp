@@ -14,10 +14,11 @@ namespace BuzzHouse
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+        static const DB::Strings & choices
+            = {"''", "'none'", "'SNAPPY'", "'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
-    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
+    {"''", "'none'", "'SNAPPY'", "'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
@@ -634,6 +635,32 @@ static std::unordered_map<String, CHSetting> mySQLTableSettings = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
     {"connection_auto_close", trueOrFalseSettingNoOracle}};
 
+static std::unordered_map<String, CHSetting> kafkaTableSettings
+    = {{"kafka_schema_registry_skip_bytes", CHSetting(bytesRange, {}, false)},
+       {"kafka_num_consumers",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 32)); }, {}, false)},
+       {"kafka_max_block_size", CHSetting(highRange, {}, false)},
+       {"kafka_skip_broken_messages", CHSetting(highRange, {}, false)},
+       {"kafka_commit_every_batch", trueOrFalseSetting},
+       {"kafka_client_id",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 16)); }, {}, false)},
+       {"kafka_poll_max_batch_size", CHSetting(highRange, {}, false)},
+       {"kafka_thread_per_consumer", threadSetting},
+       {"kafka_handle_error_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings & choices = {"'default'", "'stream'", "'dead_letter_queue'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'default'", "'stream'", "'dead_letter_queue'"},
+            false)},
+       {"kafka_commit_on_select", trueOrFalseSetting},
+       {"kafka_max_rows_per_message", CHSetting(rowsRange, {}, false)},
+       {"kafka_compression_codec", compressSetting},
+       {"kafka_compression_level",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-1, 12)); }, {}, false)}};
+
 static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};
 
@@ -722,6 +749,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         setTableSettings.erase(entry);
         joinTableSettings.erase(entry);
         embeddedRocksDBTableSettings.erase(entry);
+        kafkaTableSettings.erase(entry);
         mySQLTableSettings.erase(entry);
         mergeTreeColumnSettings.erase(entry);
         s3Settings.erase(entry);
@@ -779,7 +807,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {HDFS, {}},
          {Hive, {}},
          {JDBC, {}},
-         {Kafka, {}},
+         {Kafka, kafkaTableSettings},
          {NATS, {}},
          {ODBC, {}},
          {RabbitMQ, {}},

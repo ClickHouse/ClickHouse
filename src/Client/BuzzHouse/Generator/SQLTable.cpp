@@ -290,6 +290,19 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
         }
+        else if (t.isKafkaEngine())
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_topic"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_key"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp_ms"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "name"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers", "value"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}));
+        }
         if (!this->inside_projection || rg.nextSmallNumber() < 2)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
@@ -1265,11 +1278,23 @@ void StatementGenerator::generateEngineDetails(
     else if (
         te->has_engine()
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
-            || b.isRedisEngine() || b.isExternalDistributedEngine()))
+            || b.isRedisEngine() || b.isExternalDistributedEngine() || b.isKafkaEngine() || b.isURLEngine()))
     {
         if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
-            connections.createExternalDatabaseTable(rg, *t, entries, te);
+            svs = svs ? svs : te->mutable_setting_values();
+            connections.createExternalDatabaseTable(rg, *t, entries, te, svs);
+        }
+        if (b.isURLEngine())
+        {
+            if (b.file_format.has_value())
+            {
+                te->add_params()->set_in_out(b.file_format.value());
+            }
+            if (b.file_comp.has_value())
+            {
+                te->add_params()->set_svalue(b.file_comp.value());
+            }
         }
     }
     else if (te->has_engine() && b.isMergeEngine())
@@ -1406,21 +1431,6 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(nested_rows_dist(rg.generator));
         }
     }
-    else if (te->has_engine() && b.isURLEngine())
-    {
-        if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
-        {
-            connections.createExternalDatabaseTable(rg, *t, entries, te);
-        }
-        if (b.file_format.has_value())
-        {
-            te->add_params()->set_in_out(b.file_format.value());
-        }
-        if (b.file_comp.has_value())
-        {
-            te->add_params()->set_svalue(b.file_comp.value());
-        }
-    }
     else if (te->has_engine() && b.isKeeperMapEngine())
     {
         te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
@@ -1437,7 +1447,8 @@ void StatementGenerator::generateEngineDetails(
         {
             if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
             {
-                connections.createExternalDatabaseTable(rg, *t, entries, te);
+                svs = svs ? svs : te->mutable_setting_values();
+                connections.createExternalDatabaseTable(rg, *t, entries, te, svs);
             }
         }
         else
@@ -2228,7 +2239,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(URL);
         }
-        if (connections.hasDolorConnection() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
+        if (connections.hasDolorConnection() && fc.kafka_server.has_value() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
         {
             this->ids.emplace_back(Kafka);
         }

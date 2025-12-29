@@ -696,7 +696,7 @@ logger.jetty.level = warn
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
         next_catalog_impl = None
 
@@ -782,7 +782,7 @@ logger.jetty.level = warn
         saved_exception = None
         catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
         catalog_type = LakeCatalogs.NoCatalog
         catalog_impl = None

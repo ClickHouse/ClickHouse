@@ -349,7 +349,7 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     return nullptr;
 }
 
-void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
+void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues *)
 {
     if (t.isExternalDistributedEngine())
     {
@@ -592,7 +592,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     return nullptr;
 }
 
-void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
+void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues *)
 {
     if (t.isExternalDistributedEngine())
     {
@@ -781,7 +781,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     }
 }
 
-void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
+void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te, SettingValues *)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
     te->add_params()->set_svalue(t.getTableName());
@@ -861,7 +861,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 }
 #endif
 
-void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te)
+void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te, SettingValues *)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_num(rg.nextBool() ? 0 : rg.randomInt<uint32_t>(0, 15));
@@ -928,7 +928,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     }
 }
 
-void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
+void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te, SettingValues *)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
@@ -1411,7 +1411,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 }
 #endif
 
-void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
+void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te, SettingValues *)
 {
     te->add_params()->set_rvalue(sc.named_collection);
 }
@@ -1427,7 +1427,7 @@ bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, co
     return true;
 }
 
-void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
+void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te, SettingValues *)
 {
     te->add_params()->set_rvalue(sc.named_collection);
 }
@@ -1443,7 +1443,7 @@ bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, 
     return true;
 }
 
-void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
+void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues *)
 {
     te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
 }
@@ -1515,7 +1515,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
             UNREACHABLE();
     }
     buf += fmt::format(
-        R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
+        R"({{"seed":{},"database_name":"{}","storage":"{}","engine":"{}","catalog":"{}"}})",
         rg.nextInFullRange(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
@@ -1653,16 +1653,12 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
         collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
-
-    chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
+    /// Common information
     buf += fmt::format(
-        R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
+        R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextInFullRange(),
-        t.getSparkCatalogName(),
         t.getDatabaseName(),
         t.getTableName(false),
-        t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
-        t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
         t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
@@ -1671,7 +1667,20 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
             R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
         first = false;
     }
-    buf += "]}";
+    buf += "]";
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    {
+        buf += fmt::format(
+            R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
+            t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
+            t.getSparkCatalogName(),
+            t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
+    }
+    else if (t.isKafkaEngine())
+    {
+        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", t.topic.value(), t.group.value());
+    }
+    buf += "}";
     fc.outf << "--External table " << buf << std::endl;
     return httpPut("/sparktable", buf);
 }
@@ -1681,133 +1690,146 @@ bool DolorIntegration::reRunCreateTable(const String & body)
     return httpPut("/sparktable", body);
 }
 
-void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
+void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues * svs)
 {
-    const LakeCatalog catalog = t.getLakeCatalog();
-
-    if (catalog == LakeCatalog::None)
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
     {
-        te->add_params()->set_rvalue(
-            t.isOnS3() ? fc.minio_server.value().named_collection : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
-    }
-    else
-    {
-        const Catalog * cat = nullptr;
-        String catalog_url;
-        String catalog_str;
-        SettingValues * svs = te->mutable_setting_values();
+        const LakeCatalog catalog = t.getLakeCatalog();
 
-        switch (catalog)
+        if (catalog == LakeCatalog::None)
         {
-            case LakeCatalog::Glue:
-                cat = &sc.glue_catalog.value();
-                catalog_str = "glue";
-                catalog_url = fmt::format("http://{}:{}", cat->server_hostname, cat->port);
-                break;
-            case LakeCatalog::REST:
-                cat = &sc.rest_catalog.value();
-                catalog_str = "rest";
-                catalog_url = fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path);
-                break;
-            case LakeCatalog::Hive:
-                cat = &sc.hive_catalog.value();
-                catalog_str = "hive";
-                catalog_url = fmt::format("thrift://{}:{}", cat->server_hostname, cat->port);
-                break;
-            case LakeCatalog::Unity:
-                cat = &sc.unity_catalog.value();
-                catalog_str = t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity";
-                catalog_url = fmt::format(
-                    "http://{}:{}{}{}",
-                    cat->server_hostname,
-                    cat->port,
-                    cat->path,
-                    t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
-                break;
-            default:
-                UNREACHABLE();
+            te->add_params()->set_rvalue(
+                t.isOnS3() ? fc.minio_server.value().named_collection
+                           : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
         }
-
-        /// The other storages are not tested yet
-        chassert(t.isOnS3());
-        if (rg.nextMediumNumber() < 6)
+        else
         {
-            /// Mess up with the catalog
-            catalog_str = rg.pickRandomly(catalogs);
-        }
-        uint32_t added_sct = 0;
-        uint32_t added_warehouse = 0;
-        uint32_t added_endpoint = 0;
-        uint32_t added_region = 0;
-        uint32_t added_url = 0;
-        const uint32_t toadd_sct = rg.nextMediumNumber() < 96;
-        const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
-        const uint32_t toadd_endpoint = rg.nextMediumNumber() < 96;
-        const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
-        const uint32_t toadd_url = rg.nextMediumNumber() < 96;
-        const uint32_t total_to_add = toadd_sct + toadd_warehouse + toadd_endpoint + toadd_region + toadd_url;
+            const Catalog * cat = nullptr;
+            String catalog_url;
+            String catalog_str;
 
-        for (uint32_t i = 0; i < total_to_add; i++)
-        {
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-            const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
-            const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-            const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
-            const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
-            const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
-            const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
-            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-            const uint32_t nopt = next_dist(rg.generator);
-
-            if (add_sct && nopt < (add_sct + 1))
+            switch (catalog)
             {
-                sv->set_property("storage_catalog_type");
-                sv->set_value("'" + catalog_str + "'");
-                added_sct++;
+                case LakeCatalog::Glue:
+                    cat = &sc.glue_catalog.value();
+                    catalog_str = "glue";
+                    catalog_url = fmt::format("http://{}:{}", cat->server_hostname, cat->port);
+                    break;
+                case LakeCatalog::REST:
+                    cat = &sc.rest_catalog.value();
+                    catalog_str = "rest";
+                    catalog_url = fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path);
+                    break;
+                case LakeCatalog::Hive:
+                    cat = &sc.hive_catalog.value();
+                    catalog_str = "hive";
+                    catalog_url = fmt::format("thrift://{}:{}", cat->server_hostname, cat->port);
+                    break;
+                case LakeCatalog::Unity:
+                    cat = &sc.unity_catalog.value();
+                    catalog_str = t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity";
+                    catalog_url = fmt::format(
+                        "http://{}:{}{}{}",
+                        cat->server_hostname,
+                        cat->port,
+                        cat->path,
+                        t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
+                    break;
+                default:
+                    UNREACHABLE();
             }
-            else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
-            {
-                sv->set_property("storage_warehouse");
-                sv->set_value("'" + t.getDatabaseName() + "'");
-                added_warehouse++;
-            }
-            else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
-            {
-                /// The key-value format is not well supported for catalogs at the moment
-                const ServerCredentials & minio = fc.minio_server.value();
 
-                te->add_params()->set_svalue(t.getTablePath(fc));
-                te->add_params()->set_svalue(minio.password);
-                te->add_params()->set_svalue(minio.secret);
-                if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+            /// The other storages are not tested yet
+            chassert(t.isOnS3());
+            if (rg.nextMediumNumber() < 6)
+            {
+                /// Mess up with the catalog
+                catalog_str = rg.pickRandomly(catalogs);
+            }
+            uint32_t added_sct = 0;
+            uint32_t added_warehouse = 0;
+            uint32_t added_endpoint = 0;
+            uint32_t added_region = 0;
+            uint32_t added_url = 0;
+            const uint32_t toadd_sct = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_endpoint = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
+            const uint32_t toadd_url = rg.nextMediumNumber() < 96;
+            const uint32_t total_to_add = toadd_sct + toadd_warehouse + toadd_endpoint + toadd_region + toadd_url;
+
+            for (uint32_t i = 0; i < total_to_add; i++)
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+                const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
+                const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
+                const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
+                const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
+                const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
+                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
+                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+                const uint32_t nopt = next_dist(rg.generator);
+
+                if (add_sct && nopt < (add_sct + 1))
                 {
-                    te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
-                    if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
-                    {
-                        te->add_params()->set_svalue(t.file_comp.value());
-                    }
+                    sv->set_property("storage_catalog_type");
+                    sv->set_value("'" + catalog_str + "'");
+                    added_sct++;
                 }
-                sv->set_property("object_storage_endpoint");
-                sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                added_endpoint++;
-            }
-            else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
-            {
-                sv->set_property("storage_region");
-                sv->set_value("'" + cat->region + "'");
-                added_region++;
-            }
-            else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
-            {
-                sv->set_property("storage_catalog_url");
-                sv->set_value("'" + catalog_url + "'");
-                added_url++;
-            }
-            else
-            {
-                UNREACHABLE();
+                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
+                {
+                    sv->set_property("storage_warehouse");
+                    sv->set_value("'" + t.getDatabaseName() + "'");
+                    added_warehouse++;
+                }
+                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
+                {
+                    /// The key-value format is not well supported for catalogs at the moment
+                    const ServerCredentials & minio = fc.minio_server.value();
+
+                    te->add_params()->set_svalue(t.getTablePath(fc));
+                    te->add_params()->set_svalue(minio.password);
+                    te->add_params()->set_svalue(minio.secret);
+                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+                    {
+                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
+                        {
+                            te->add_params()->set_svalue(t.file_comp.value());
+                        }
+                    }
+                    sv->set_property("object_storage_endpoint");
+                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                    added_endpoint++;
+                }
+                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
+                {
+                    sv->set_property("storage_region");
+                    sv->set_value("'" + cat->region + "'");
+                    added_region++;
+                }
+                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
+                {
+                    sv->set_property("storage_catalog_url");
+                    sv->set_value("'" + catalog_url + "'");
+                    added_url++;
+                }
+                else
+                {
+                    UNREACHABLE();
+                }
             }
         }
+    }
+    else if (t.isKafkaEngine())
+    {
+        const String & host = fc.kafka_server.has_value() ? fc.kafka_server.value().server_hostname : "localhost";
+        const uint16_t & port = fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092;
+
+        te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
+        te->add_params()->set_svalue(t.topic.value()); /// topic
+        te->add_params()->set_svalue(t.group.value()); /// group
+        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
     }
 }
 
@@ -1881,7 +1903,7 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
 }
 
 void ExternalIntegrations::createExternalDatabaseTable(
-    RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te)
+    RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te, SettingValues * svs)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1919,7 +1941,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
-    next->setTableEngineDetails(rg, t, te);
+    next->setTableEngineDetails(rg, t, te, svs);
 }
 
 bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const String & body)
