@@ -417,6 +417,14 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    bool canConstantBeWrappedByDeterministicInjectiveFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
     /// specifies key column position / type. Besides that it produces the

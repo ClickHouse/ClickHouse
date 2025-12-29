@@ -1411,6 +1411,157 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     return true;
 }
 
+static bool isDeterministicTransformInjective(const ActionsDAG & dag, const String & input_name, const String & output_name)
+{
+    const ActionsDAG::Node * output_node = nullptr;
+    for (const auto * node : dag.getOutputs())
+    {
+        if (node->result_name == output_name)
+        {
+            output_node = node;
+            break;
+        }
+    }
+
+    if (!output_node)
+        return false;
+
+    struct InjectiveInfo
+    {
+        bool depends_on_input = false;
+        bool injective = false;
+    };
+
+    std::unordered_map<const ActionsDAG::Node *, InjectiveInfo> memo;
+    memo.reserve(dag.getNodes().size());
+
+    auto dfs = [&](const ActionsDAG::Node * node, const auto & self) -> InjectiveInfo
+    {
+        if (auto it = memo.find(node); it != memo.end())
+            return it->second;
+
+        InjectiveInfo res;
+
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::INPUT: {
+                res.depends_on_input = (node->result_name == input_name);
+                res.injective = res.depends_on_input;
+                break;
+            }
+            case ActionsDAG::ActionType::COLUMN: {
+                res.depends_on_input = false;
+                res.injective = false;
+                break;
+            }
+            case ActionsDAG::ActionType::ALIAS: {
+                if (node->children.size() != 1)
+                    break;
+                res = self(node->children.front(), self);
+                break;
+            }
+            case ActionsDAG::ActionType::FUNCTION: {
+                if (!node->function_base)
+                    break;
+
+                bool depends_on_input = false;
+                bool has_injective_argument = false;
+
+                ColumnsWithTypeAndName sample_args;
+                sample_args.reserve(node->children.size());
+
+                for (const auto * child : node->children)
+                {
+                    sample_args.push_back({child->column, child->result_type, child->result_name});
+
+                    const auto child_info = self(child, self);
+                    depends_on_input |= child_info.depends_on_input;
+                    has_injective_argument |= child_info.injective;
+                }
+
+                res.depends_on_input = depends_on_input;
+                res.injective = depends_on_input && has_injective_argument && node->function_base->isInjective(sample_args);
+                break;
+            }
+            default:
+                break;
+        }
+
+        memo.emplace(node, res);
+        return res;
+    };
+
+    return dfs(output_node, dfs).injective;
+}
+
+bool KeyCondition::canConstantBeWrappedByDeterministicInjectiveFunctions(
+    const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    Field & out_value,
+    DataTypePtr & out_type)
+{
+    String expr_name = node.getColumnName();
+
+    if (!info.key_subexpr_names.contains(expr_name))
+    {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
+        ///
+        /// Note: for negative values, we can filter more partitions then needed.
+        expr_name = node.getColumnNameWithModuloLegacy();
+
+        if (!info.key_subexpr_names.contains(expr_name))
+            return false;
+    }
+
+    if (out_value.isNull())
+        return false;
+
+    /// `NaN != NaN` is true. This breaks equivalence for `notEquals` transformations. So, skip.
+    if (isNaN(out_value))
+        return false;
+
+    DeterministicKeyTransformDag dag;
+    auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
+        expr_name,
+        info,
+        out_key_column_num,
+        out_key_column_type,
+        dag);
+
+    if (!can_transform_constant)
+        return false;
+
+    if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name))
+        return false;
+
+    auto const_column = out_type->createColumnConst(1, out_value);
+
+    ColumnPtr transformed_const_column;
+    DataTypePtr transformed_const_type;
+    bool constant_transformed = applyDeterministicDagToColumn(
+        const_column,
+        out_type,
+        expr_name,
+        dag,
+        transformed_const_column,
+        transformed_const_type);
+
+    if (!constant_transformed)
+        return false;
+
+    out_value = (*transformed_const_column)[0];
+    out_type = transformed_const_type;
+    return true;
+}
+
 
 void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
@@ -2490,10 +2641,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 is_constant_transformed = true;
             }
             else if (
-                (func_name == "equals" || func_name == "notEquals")
+                func_name == "equals"
                 && canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
             {
                 is_constant_transformed = true;
+            }
+            else if (
+                func_name == "notEquals"
+                && canConstantBeWrappedByDeterministicInjectiveFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+            {
             }
             else
                 return false;
