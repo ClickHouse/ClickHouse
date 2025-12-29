@@ -1181,69 +1181,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     return true;
 }
 
-/// Looking for possible transformation of `column = constant` into `partition_expr = function(constant)`
-bool KeyCondition::canConstantBeWrappedByFunctions(
-    const RPNBuilderTreeNode & node,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    Field & out_value,
-    DataTypePtr & out_type)
-{
-    String expr_name = node.getColumnName();
-
-    if (!info.key_subexpr_names.contains(expr_name))
-    {
-        /// Let's check another one case.
-        /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
-        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
-        ///
-        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions then needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
-            return false;
-    }
-
-    if (out_value.isNull())
-        return false;
-
-    MonotonicFunctionsChain transform_functions;
-    auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
-        node.getTreeContext().getQueryContext(),
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_column_type,
-        transform_functions,
-        [](const IFunctionBase & func, const IDataType &) { return func.isDeterministic(); });
-
-    if (!can_transform_constant)
-        return false;
-
-    auto const_column = out_type->createColumnConst(1, out_value);
-
-    ColumnPtr transformed_const_column;
-    DataTypePtr transformed_const_type;
-    bool constant_transformed = applyFunctionChainToColumn(
-        const_column,
-        out_type,
-        transform_functions,
-        transformed_const_column,
-        transformed_const_type);
-
-    if (!constant_transformed)
-        return false;
-
-    out_value = (*transformed_const_column)[0];
-    out_type = transformed_const_type;
-    return true;
-}
-
 bool KeyCondition::extractDeterministicFunctionsDagFromKey(
     const String & expr_name,
     const BuildInfo & info,

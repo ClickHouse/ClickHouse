@@ -409,14 +409,6 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    bool canConstantBeWrappedByFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
-
     bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
