@@ -187,6 +187,46 @@ def test_distributed_insert_select_to_rmt_limit(started_cluster):
     )
 
 
+def test_distributed_insert_select_to_rmt_where(started_cluster):
+    table = "t_rmt_target"
+    cluster_name = "cluster_1_shard_3_replicas"
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
+    )
+
+    node1.query(
+        f"""
+    CREATE TABLE {table} ON CLUSTER {cluster_name} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/32c614a9-13af-43c5-848c-a3f62a78e390/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
+
+    node1.query(
+        f"""
+    INSERT INTO {table} SELECT * FROM s3Cluster(
+        '{cluster_name}',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
+    ) WHERE b = 100 SETTINGS parallel_distributed_insert_select=2;
+        """
+    )
+
+    node1.query(f"SYSTEM SYNC REPLICA {table}")
+
+    assert (
+        int(
+            node1.query(
+                f"SELECT count(*) FROM {table};"
+            ).strip()
+        ) == 99
+    )
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
+    )
+
+
 def test_distributed_insert_select_to_rmt_cte_const(started_cluster):
     table = "t_rmt_target"
     cluster_name = "cluster_1_shard_3_replicas"
