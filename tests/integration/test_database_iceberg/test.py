@@ -723,21 +723,21 @@ def test_three_part_identifier(started_cluster):
         assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
 
 
-def test_ambiguous_identifier(started_cluster):
+def test_database_priority_over_namespace(started_cluster):
     """
-    Test ambiguity detection for 2-part identifiers in DataLakeCatalog.
+    Test that database.table interpretation takes priority over namespace.table.
     
     Scenario:
-    - We have a regular database named 'ns' with table 'table1'
-    - We have a DataLakeCatalog database with table 'ns.table1'
-    - When in the DataLakeCatalog and querying 'ns.table1', it should detect ambiguity
-      (could be db 'ns' table 'table1' OR table 'ns.table1' in current database)
+    - We have a regular database named 'ns_xxx' with table 'table1'
+    - We have a DataLakeCatalog database with table 'ns_xxx.table1'
+    - When querying 'ns_xxx.table1', it should resolve to the regular database
+      (database.table takes priority over namespace.table in current database)
     """
     node = started_cluster.instances["node1"]
 
-    test_ref = f"test_ambiguous_{uuid.uuid4().hex[:8]}"
+    test_ref = f"test_priority_{uuid.uuid4().hex[:8]}"
     namespace = f"ns_{test_ref}"
-    table_name = "ambig_table"
+    table_name = "priority_table"
 
     catalog = load_catalog_impl(started_cluster)
 
@@ -745,8 +745,8 @@ def test_ambiguous_identifier(started_cluster):
     catalog.create_namespace(namespace)
     iceberg_table = create_table(catalog, namespace, table_name)
 
-    # Insert data into iceberg table
-    data = [generate_record() for _ in range(3)]
+    # Insert data into iceberg table (5 rows)
+    data = [generate_record() for _ in range(5)]
     df = pa.Table.from_pylist(data)
     iceberg_table.append(df)
 
@@ -757,19 +757,21 @@ def test_ambiguous_identifier(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
     node.query(f"CREATE DATABASE `{namespace}`")
     
-    # Create a table with the same name in the regular database
+    # Create a table with the same name in the regular database (3 rows)
     node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
     node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
 
-    # Now test: when in the DataLakeCatalog database, querying namespace.table should be ambiguous
+    # When in the DataLakeCatalog database, querying namespace.table should resolve
+    # to the regular database (db.table takes priority)
     node.query(f"USE {CATALOG_NAME}")
 
-    try:
-        # This should fail with ambiguous identifier error
-        node.query(f"SELECT * FROM {namespace}.{table_name}")
-        assert False, "Should have raised an ambiguity error"
-    except Exception as e:
-        assert "AMBIGUOUS" in str(e).upper(), f"Expected AMBIGUOUS error, got: {e}"
+    # This should return 3 rows (from regular database), not 5 (from iceberg)
+    count = int(node.query(f"SELECT count() FROM {namespace}.{table_name}"))
+    assert count == 3, f"Expected 3 rows from regular database, got {count}"
+
+    # To access the iceberg table, use backticks
+    count_iceberg = int(node.query(f"SELECT count() FROM `{namespace}.{table_name}`"))
+    assert count_iceberg == 5, f"Expected 5 rows from iceberg table, got {count_iceberg}"
 
     # Cleanup
     node.query(f"DROP DATABASE IF EXISTS `{namespace}`")

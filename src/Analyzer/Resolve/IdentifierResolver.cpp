@@ -148,13 +148,6 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 
 /// Resolve identifier functions implementation
 
-struct TableResolutionCandidate
-{
-    std::shared_ptr<TableNode> node;
-    std::string database_name;
-    std::string table_name;
-};
-
 /// here we try resolving a table with explicit database and table names
 static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & database_name, const std::string & table_name, const ContextPtr & context)
 {
@@ -212,10 +205,10 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 3)
+    if (parts_size < 1 || parts_size > 2)
         throw Exception(
             ErrorCodes::INVALID_IDENTIFIER,
-            "Expected table identifier to contain from 1 to 3 parts. Actual '{}'",
+            "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
             table_identifier.getFullName());
 
     /// table prefix from session context (set by USE db.prefix)
@@ -224,10 +217,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     String current_database = context->getCurrentDatabase();
     bool is_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
 
-    if (is_datalake)
+    if (is_datalake && context->hasSessionContext())
     {
-        if (auto session = context->getSessionContext())
-            table_prefix = session->getCurrentTablePrefix();
+        table_prefix = context->getSessionContext()->getCurrentTablePrefix();
     }
 
     /// Single part: table name, possibly with prefix
@@ -250,59 +242,31 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// Two parts: could be db.table or table with dots in current database
     /// The parser already joined extra parts into the table name, so parts[0] is
     /// potential database and parts[1] is potential table name (may contain dots)
-    std::vector<TableResolutionCandidate> candidates;
-
-    /// Try as database.table
     std::string db_name = table_identifier[0];
     std::string tbl_name = table_identifier[1];
+
+    /// First, try as database.table (standard interpretation)
     if (auto result = tryResolveTableWithNames(db_name, tbl_name, context))
-    {
-        candidates.push_back({result, db_name, tbl_name});
-    }
+        return result;
 
     /// For DataLakeCatalog databases, also try as table with dots in current database
-    if (is_datalake)
+    /// but only if the first part is NOT a known database (to avoid false ambiguity)
+    if (is_datalake && !DatabaseCatalog::instance().isDatabaseExist(db_name))
     {
         std::string full_table_name = table_identifier.getFullName();
         if (auto result = tryResolveTableWithNames({}, full_table_name, context))
-        {
-            candidates.push_back({result, {}, full_table_name});
-        }
+            return result;
 
         /// If prefix is set, also try prefix.full_table_name
         if (!table_prefix.empty())
         {
             std::string prefixed_name = table_prefix + "." + full_table_name;
             if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
-            {
-                candidates.push_back({result, {}, prefixed_name});
-            }
+                return result;
         }
     }
 
-    if (candidates.empty())
-        return {};
-
-    if (candidates.size() == 1)
-        return candidates[0].node;
-
-    /// Multiple candidates found - this is ambiguous
-    std::string candidates_str;
-    for (const auto & candidate : candidates)
-    {
-        if (!candidates_str.empty())
-            candidates_str += ", ";
-        if (candidate.database_name.empty())
-            candidates_str += "table `" + candidate.table_name + "` in current database";
-        else
-            candidates_str += "database `" + candidate.database_name + "` table `" + candidate.table_name + "`";
-    }
-
-    throw Exception(
-        ErrorCodes::AMBIGUOUS_IDENTIFIER,
-        "Ambiguous table identifier '{}'. Could refer to: {}. Please use backticks to qualify the exact name.",
-        table_identifier.getFullName(),
-        candidates_str);
+    return {};
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
