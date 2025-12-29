@@ -118,8 +118,59 @@ const char * FunctionPolygonsIntersection<SphericalPoint>::name = "polygonsInter
 
 REGISTER_FUNCTION(PolygonsIntersection)
 {
-    factory.registerFunction<FunctionPolygonsIntersection<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonsIntersection<SphericalPoint>>();
+    FunctionDocumentation::Description description_cartesian = R"(
+Calculates the intersection of polygons.
+    )";
+    FunctionDocumentation::Syntax syntax_cartesian = "polygonsIntersectionCartesian(polygon1, polygon2)";
+    FunctionDocumentation::Arguments arguments_cartesian = {
+        {"polygon1", "The first Polygon.", {"Polygon"}},
+        {"polygon2", "The second Polygon.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cartesian = {"Returns the intersection of the polygons as a MultiPolygon.", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples_cartesian =
+    {
+    {
+        "Intersection example",
+        R"(
+SELECT wkt(polygonsIntersectionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (2.6, 2.), (2.9, 1.), (3., 0.), (0., 0.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
+        )",
+        R"(
+MULTIPOLYGON(((1 2.9,2 2.6,2.6 2,2.9 1,1 1,1 2.9)))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {21, 4};
+    FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_cartesian = {description_cartesian, syntax_cartesian, arguments_cartesian, {}, returned_value_cartesian, examples_cartesian, introduced_in_cartesian, category_cartesian};
+
+    factory.registerFunction<FunctionPolygonsIntersection<CartesianPoint>>(function_documentation_cartesian);
+
+    FunctionDocumentation::Description description_spherical = R"(
+Calculates the intersection (AND) between polygons, coordinates are spherical.
+    )";
+    FunctionDocumentation::Syntax syntax_spherical = "polygonsIntersectionSpherical(polygon1, polygon2)";
+    FunctionDocumentation::Arguments arguments_spherical = {
+        {"polygon1", "First Polygon with spherical coordinates.", {"Polygon"}},
+        {"polygon2", "Second Polygon with spherical coordinates.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_spherical = {"Returns the intersection of the polygons as a MultiPolygon.", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples_spherical =
+    {
+    {
+        "Spherical intersection example",
+        R"(
+SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 6)), b), a), polygonsIntersectionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]])))
+        )",
+        R"(
+MULTIPOLYGON(((4.3666 50.8434,4.36024 50.8436,4.34956 50.8536,4.35268 50.8567,4.36794 50.8525,4.3666 50.8434)))
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {21, 4};
+    FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_spherical = {description_spherical, syntax_spherical, arguments_spherical, {}, returned_value_spherical, examples_spherical, introduced_in_spherical, category_spherical};
+
+    factory.registerFunction<FunctionPolygonsIntersection<SphericalPoint>>(function_documentation_spherical);
 }
 
 }
