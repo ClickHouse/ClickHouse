@@ -1016,10 +1016,7 @@ public:
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
     bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
-    void setInsertionTable(
-        StorageID db_and_table,
-        std::optional<Names> column_names = std::nullopt,
-        std::optional<ColumnsDescription> columns_description = std::nullopt);
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> columns_description = std::nullopt);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
     const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }

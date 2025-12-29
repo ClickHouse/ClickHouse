@@ -721,3 +721,108 @@ def test_three_part_identifier(started_cluster):
         assert False, "Should have raised exception for non-existent table"
     except Exception as e:
         assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+
+def test_ambiguous_identifier(started_cluster):
+    """
+    Test ambiguity detection for 2-part identifiers in DataLakeCatalog.
+    
+    Scenario:
+    - We have a regular database named 'ns' with table 'table1'
+    - We have a DataLakeCatalog database with table 'ns.table1'
+    - When in the DataLakeCatalog and querying 'ns.table1', it should detect ambiguity
+      (could be db 'ns' table 'table1' OR table 'ns.table1' in current database)
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ambiguous_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "ambig_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # Create namespace and table in Iceberg catalog
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    # Insert data into iceberg table
+    data = [generate_record() for _ in range(3)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    # Create the DataLakeCatalog database
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Create a regular database with the same name as the namespace
+    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+    node.query(f"CREATE DATABASE `{namespace}`")
+    
+    # Create a table with the same name in the regular database
+    node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
+    node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
+
+    # Now test: when in the DataLakeCatalog database, querying namespace.table should be ambiguous
+    node.query(f"USE {CATALOG_NAME}")
+
+    try:
+        # This should fail with ambiguous identifier error
+        node.query(f"SELECT * FROM {namespace}.{table_name}")
+        assert False, "Should have raised an ambiguity error"
+    except Exception as e:
+        assert "AMBIGUOUS" in str(e).upper(), f"Expected AMBIGUOUS error, got: {e}"
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+
+
+def test_use_database_with_namespace(started_cluster):
+    """
+    Test USE db.namespace syntax for DataLakeCatalog databases.
+    
+    After USE demo.my_namespace:
+    - Current database is set to 'demo'
+    - Table prefix is set to 'my_namespace'
+    - SELECT * FROM table resolves to my_namespace.table in demo
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_use_ns_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "use_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # Create namespace and table in Iceberg catalog
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    # Insert data into iceberg table
+    data = [generate_record() for _ in range(5)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    # Create the DataLakeCatalog database
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Test USE db.namespace syntax
+    node.query(f"USE {CATALOG_NAME}.{namespace}")
+
+    # Now SELECT * FROM table_name should resolve to namespace.table_name
+    count = int(node.query(f"SELECT count() FROM {table_name}"))
+    assert count == 5, f"Expected 5 rows after USE db.namespace, got {count}"
+
+    # Verify we can also use the full path
+    count_full = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"))
+    assert count_full == 5, f"Expected 5 rows with full path, got {count_full}"
+
+    # Switch to a different namespace - verify prefix is cleared when switching to regular db
+    node.query("USE default")
+    
+    # Now the short name should not resolve
+    try:
+        node.query(f"SELECT * FROM {table_name}")
+        assert False, "Should have failed - table doesn't exist in default database"
+    except Exception as e:
+        assert "UNKNOWN_TABLE" in str(e) or "doesn't exist" in str(e)
+
+

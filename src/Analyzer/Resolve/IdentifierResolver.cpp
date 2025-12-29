@@ -172,7 +172,7 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
 
     if (is_temporary_table)
     {
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+        storage = DatabaseCatalog::instance().getTable(storage_id, context);
     }
     else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
     {

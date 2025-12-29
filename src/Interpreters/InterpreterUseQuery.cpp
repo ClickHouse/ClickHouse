@@ -15,12 +15,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-/// Helper to throw unknown database error
-static void throwUnknownDatabase(const String & database_name)
-{
-    throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}'", database_name);
-}
-
 BlockIO InterpreterUseQuery::execute()
 {
     const String & new_target = query_ptr->as<ASTUseQuery &>().getDatabase();
@@ -53,8 +47,7 @@ BlockIO InterpreterUseQuery::execute()
     }
 
     /// Neither exact database nor db.prefix interpretation worked
-    throwUnknownDatabase(new_target);
-    return {}; /// unreachable
+    throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}'", new_target);
 }
 
 void registerInterpreterUseQuery(InterpreterFactory & factory)
