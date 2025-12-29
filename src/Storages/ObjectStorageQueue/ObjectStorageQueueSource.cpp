@@ -136,6 +136,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
     if (metadata->useBucketsForProcessing())
     {
+        /// Save buckets_num here,
+        /// because it can change afterwards in StorageObjectStorageQueueMetadata
+        /// due to buckets migration scheme via ALTER.
         buckets_num = metadata->getBucketsNum();
         for (size_t i = 0; i < buckets_num; ++i)
             keys_cache_per_bucket.emplace(i, std::make_unique<ListedKeys>());
