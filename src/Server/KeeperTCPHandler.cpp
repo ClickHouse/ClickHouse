@@ -408,7 +408,7 @@ void KeeperTCPHandler::runImpl()
     if (!isHandShake(four_letter_cmd))
     {
         connected.store(true, std::memory_order_relaxed);
-        tryExecuteFourLetterWordCmd(four_letter_cmd);
+        tryExecuteFourLetterWordCmd(four_letter_cmd, *in);
         return;
     }
 
@@ -609,7 +609,7 @@ bool KeeperTCPHandler::isHandShake(int32_t handshake_length)
     || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
 }
 
-bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in_)
 {
     if (!FourLetterCommandFactory::instance().isKnown(command))
     {
@@ -622,12 +622,20 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         return false;
     }
 
+    std::optional<std::string> maybe_argument;
+    if (FourLetterCommandFactory::instance().supportArguments(command))
+    {
+        String argument;
+        Coordination::read(argument, in_);
+        maybe_argument = argument;
+    }
+
     auto command_ptr = FourLetterCommandFactory::instance().get(command);
     LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
 
     try
     {
-        String res = command_ptr->run();
+        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
         out->write(res.data(), res.size());
         out->next();
     }

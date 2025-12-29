@@ -715,16 +715,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
-    if (has_lightweight_delete_materialization)
-    {
-        auto & stage = stages.emplace_back(context);
-        stage.affects_all_columns = true;
-
-        need_rebuild_indexes = true;
-        need_rebuild_projections = true;
-    }
-
-    if (has_rewrite_parts)
+    if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
         stage.affects_all_columns = true;
@@ -1427,6 +1418,19 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     }
 }
 
+std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
+{
+    const auto & names = stage.filter_column_names;
+    if (names.empty())
+        return std::nullopt;
+
+    ActionsDAG::NodeRawConstPtrs nodes(names.size());
+    for (size_t i = 0; i < names.size(); ++i)
+        nodes[i] = &stage.expressions_chain.steps[i]->actions()->dag.findInOutputs(names[i]);
+
+    return ActionsDAG::buildFilterActionsDAG(nodes);
+}
+
 void MutationsInterpreter::Source::read(
     Stage & first_stage,
     QueryPlan & plan,
@@ -1454,20 +1458,6 @@ void MutationsInterpreter::Source::read(
 
     if (data)
     {
-        const auto & steps = first_stage.expressions_chain.steps;
-        const auto & names = first_stage.filter_column_names;
-        size_t num_filters = names.size();
-
-        std::optional<ActionsDAG> filter;
-        if (!first_stage.filter_column_names.empty())
-        {
-            ActionsDAG::NodeRawConstPtrs nodes(num_filters);
-            for (size_t i = 0; i < num_filters; ++i)
-                nodes[i] = &steps[i]->actions()->dag.findInOutputs(names[i]);
-
-            filter = ActionsDAG::buildFilterActionsDAG(nodes);
-        }
-
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
             plan,
@@ -1479,7 +1469,7 @@ void MutationsInterpreter::Source::read(
             required_columns,
             nullptr,
             mutation_settings.apply_deleted_mask,
-            std::move(filter),
+            createFilterDAGForStage(first_stage),
             false,
             false,
             context_,
@@ -1488,6 +1478,7 @@ void MutationsInterpreter::Source::read(
     else
     {
         auto select = std::make_shared<ASTSelectQuery>();
+        std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
         select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
         for (const auto & column_name : first_stage.output_columns)
@@ -1500,8 +1491,11 @@ void MutationsInterpreter::Source::read(
         if (!first_stage.filters.empty())
         {
             ASTPtr where_expression;
+
             if (first_stage.filters.size() == 1)
+            {
                 where_expression = first_stage.filters[0];
+            }
             else
             {
                 auto coalesced_predicates = std::make_shared<ASTFunction>();
@@ -1511,11 +1505,18 @@ void MutationsInterpreter::Source::read(
                 coalesced_predicates->arguments->children = first_stage.filters;
                 where_expression = std::move(coalesced_predicates);
             }
+
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+
+            if (auto filter = createFilterDAGForStage(first_stage))
+                filter_actions_dag = std::make_shared<ActionsDAG>(std::move(*filter));
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create filter DAG for stage with non-empty filters");
         }
 
         SelectQueryInfo query_info;
         query_info.query = std::move(select);
+        query_info.filter_actions_dag = std::move(filter_actions_dag);
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
         Names extracted_column_names;
@@ -1555,7 +1556,7 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
     plan.setConcurrencyControl(false);
 
     source.read(first_stage, plan, metadata_snapshot, context, settings);
-    addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
+    addDelayedCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
@@ -1586,7 +1587,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
         }
 
-        addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
+        addDelayedCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);

@@ -185,8 +185,6 @@ std::optional<String> optimizeUseNormalProjections(
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
-    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
-
     auto parent_reading_select_result = reading->getAnalyzedResult();
     if (!parent_reading_select_result)
         parent_reading_select_result = reading->selectRangesToRead();
@@ -250,6 +248,7 @@ std::optional<String> optimizeUseNormalProjections(
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
             {
+                MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
                 filterPartsAndCollectProjectionCandidates(
                     *reading,
                     *projection,
@@ -267,6 +266,7 @@ std::optional<String> optimizeUseNormalProjections(
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
+        MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
@@ -367,6 +367,7 @@ std::optional<String> optimizeUseNormalProjections(
             {query.filter_node});
     }
 
+    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);
     auto projection_reading = reader.readFromParts(
         /*parts=*/{},
         reading->getMutationsSnapshot()->cloneEmpty(),
