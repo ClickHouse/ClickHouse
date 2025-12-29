@@ -24,18 +24,6 @@ target_include_directories (_simdcomp SYSTEM PUBLIC
     "${LIBRARY_DIR}/src"
 )
 
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_simdcomp PRIVATE -g0)
-endif()
-
-target_compile_options(_simdcomp PRIVATE
-        -Wno-unused-parameter
-        -Wno-sign-compare
-        -Wno-missing-field-initializers
-        -Wno-unused-function
-        -Wno-unused-variable
-        -Wno-implicit-fallthrough
-        -Wno-implicit-function-declaration
-)
+target_compile_options (_simdcomp PRIVATE -g0)
 
 add_library (ch_contrib::simdcomp ALIAS _simdcomp)

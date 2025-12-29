@@ -1,0 +1,43 @@
+#include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <IO/Operators.h>
+#include <config.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+void PostingListCodecFactory::isAllowedCodec(std::string_view codec, const std::vector<String> & allowed_codecs, std::string_view caller_name)
+{
+    if (std::ranges::find(allowed_codecs, codec) == allowed_codecs.end())
+    {
+        WriteBufferFromOwnString buf;
+        for (size_t i = 0; i < allowed_codecs.size(); ++i)
+        {
+            if (i < allowed_codecs.size() - 1)
+                buf << "'" << allowed_codecs[0] << "', "; /// asserted not empty in constructor
+            else
+                buf << "and '" << allowed_codecs[i] << "'";
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index '{}' supports only codec {}, received '{}'", caller_name, buf.str(), codec);
+    }
+}
+
+std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCodec(std::string_view codec_name, const std::vector<String> & allowed_codecs, const String & caller_name, bool only_validate)
+{
+    isAllowedCodec(codec_name, allowed_codecs, caller_name);
+    if (only_validate || codec_name.empty() || codec_name == "none")
+        return {};
+#if USE_SIMDCOMP
+    if (codec_name == SIMDCompCodec::getName())
+        return std::make_unique<SIMDCompCodec>();
+#endif
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec: '{}' for index '{}'", codec_name, caller_name);
+}
+
+}
