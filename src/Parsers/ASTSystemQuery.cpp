@@ -4,9 +4,9 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <xray/xray_interface.h>
 
 namespace DB
 {
@@ -425,10 +425,26 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+        {
+            ostr << ' ';
+            print_identifier(fail_point_name);
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ostr << ' ';
             print_identifier(fail_point_name);
+            if (fail_point_action == FailPointAction::PAUSE)
+            {
+                ostr << ' ';
+                print_keyword("PAUSE");
+            }
+            else if (fail_point_action == FailPointAction::RESUME)
+            {
+                ostr << ' ';
+                print_keyword("RESUME");
+            }
             break;
         }
         case Type::REFRESH_VIEW:

@@ -732,18 +732,27 @@ class Utils:
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
                 path_out = f"{parent}/{name}.tar.gz"
+                archive_name = f"{name}.tar.gz"
                 Shell.check(
-                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
+                    f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
                 path_out = f"{path}.gz"
                 Shell.check(
-                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
+                    f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
+            elif not path_obj.exists():
+                raise RuntimeError(
+                    f"Failed to compress file [{path}]: path does not exist"
+                )
+            else:
+                raise RuntimeError(f"Failed to compress file [{path}]")
+        else:
+            raise RuntimeError(f"Failed to compress file [{path}]: no gzip installed")
         return path_out
 
     @classmethod
@@ -970,12 +979,7 @@ class TeePopen:
         # Search backwards for "Traceback"
         for i in range(len(buffer) - 1, -1, -1):
             if "Traceback" in buffer[i]:
-                return "\n".join(buffer[i:])
+                return "".join(buffer[i:])
 
         # Fallback: return last max_lines
-        return "\n".join(buffer[-max_lines:])
-
-
-if __name__ == "__main__":
-
-    Utils.compress_gz("/tmp/test/")
+        return "".join(buffer[-max_lines:])

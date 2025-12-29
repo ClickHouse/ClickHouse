@@ -165,6 +165,10 @@ public:
 
 #endif
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+        int direction, int nan_direction_hint) const override;
+
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -252,6 +256,8 @@ public:
 #endif
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void filter(const IColumn::Filter & filt) override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
