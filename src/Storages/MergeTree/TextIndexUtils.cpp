@@ -106,10 +106,12 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , marks_file_extension(std::move(marks_file_extension_))
     , segment_numbers(indexes.size(), 0)
 {
-    for (const auto & index : indexes)
+
+    for (size_t i = 0; i < indexes.size(); ++i)
     {
-        auto aggregator = index->createIndexAggregator();
+        auto aggregator = indexes[i]->createIndexAggregator();
         aggregators.push_back(std::move(aggregator));
+        index_position_by_name.emplace(indexes[i]->index.name, i);
     }
 }
 
@@ -155,8 +157,13 @@ void BuildTextIndexTransform::finalize()
     }
 }
 
-std::vector<TextIndexSegment> BuildTextIndexTransform::getSegments(size_t index_idx, size_t part_idx) const
+std::vector<TextIndexSegment> BuildTextIndexTransform::getSegments(const String & index_name, size_t part_idx) const
 {
+    auto it = index_position_by_name.find(index_name);
+    if (it == index_position_by_name.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in BuildTextIndexTransform", index_name);
+
+    size_t index_idx = it->second;
     std::vector<TextIndexSegment> segments;
 
     for (size_t i = 0; i < segment_numbers[index_idx]; ++i)

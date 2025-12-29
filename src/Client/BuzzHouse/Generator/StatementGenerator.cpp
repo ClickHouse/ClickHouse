@@ -307,8 +307,9 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
         sv->set_property(next);
         sv->set_value(
-            (create && ov.contains("0")) ? "1"
-                                         : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
+            (create && ov.size() == 2 && ov.contains("0") && ov.contains("1"))
+                ? "1"
+                : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
     }
     this->ids.clear();
 }

@@ -81,7 +81,7 @@ WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
     -- AND check_name = '{job_name}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND ((head_ref = 'master' AND pull_request_number = 0) OR pull_request_number != 0)
+    AND ((pull_request_number = 0 AND head_ref = '{self.head_ref}') OR (pull_request_number != 0 AND base_ref = '{self.base_ref}'))
 GROUP BY day
 ORDER BY day DESC
 """
