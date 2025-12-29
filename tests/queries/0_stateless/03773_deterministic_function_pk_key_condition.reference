@@ -224,6 +224,29 @@ SELECT count()
 FROM test_expr
 WHERE not lower(pod) = 'vector-abc-001';
 90000
+DROP TABLE IF EXISTS test_dag_execution;
+CREATE TABLE test_dag_execution
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY toUUID(p);
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+0
+EXPLAIN indexes = 1
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_dag_execution)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
 SET enable_analyzer = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
@@ -448,3 +471,26 @@ SELECT count()
 FROM test_expr
 WHERE not lower(pod) = 'vector-abc-001';
 90000
+DROP TABLE IF EXISTS test_dag_execution;
+CREATE TABLE test_dag_execution
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY toUUID(p);
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+0
+EXPLAIN indexes = 1
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter (WHERE)
+        ReadFromMergeTree (default.test_dag_execution)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1

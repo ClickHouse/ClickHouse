@@ -126,6 +126,22 @@ SELECT count()
 FROM test_expr
 WHERE not lower(pod) = 'vector-abc-001';
 
+DROP TABLE IF EXISTS test_dag_execution;
+
+CREATE TABLE test_dag_execution
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY toUUID(p);
+
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+
+EXPLAIN indexes = 1
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+
 SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS events;
@@ -247,3 +263,19 @@ WHERE not lower(pod) = 'vector-abc-001';
 SELECT count()
 FROM test_expr
 WHERE not lower(pod) = 'vector-abc-001';
+
+DROP TABLE IF EXISTS test_dag_execution;
+
+CREATE TABLE test_dag_execution
+(
+    p String
+)
+ENGINE = MergeTree
+ORDER BY toUUID(p);
+
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
+
+EXPLAIN indexes = 1
+SELECT count() FROM test_dag_execution WHERE p = 'not-a-uuid';
