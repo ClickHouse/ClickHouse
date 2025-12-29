@@ -1275,6 +1275,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 }
 
 
+
 bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
