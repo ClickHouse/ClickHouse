@@ -1409,7 +1409,7 @@ void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMappi
 
 ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
 {
-    ActionsDAG dag(stream_header->getColumnsWithTypeAndName());
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
 
     ActionsDAG::NodeMapping node_map;
     auto second_dag = ActionsDAG::cloneSubDAG(keys, node_map, false);
