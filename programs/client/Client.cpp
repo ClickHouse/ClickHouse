@@ -714,6 +714,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
+        ("tls-sni-override", po::value<std::string>(), "Override the SNI host name used for TLS connections")
         ("no-secure", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
@@ -853,6 +854,8 @@ void Client::processOptions(
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.contains("secure"))
         config().setBool("secure", true);
+    if (options.contains("tls-sni-override"))
+        config().setString("tls-sni-override", options["tls-sni-override"].as<std::string>());
     if (options.contains("no-secure"))
         config().setBool("no-secure", true);
     if (options.contains("user") && !options["user"].defaulted())
