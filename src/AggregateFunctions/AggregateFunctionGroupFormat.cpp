@@ -1,0 +1,238 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <Columns/ColumnString.h>
+#include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <IO/VarInt.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/IOutputFormat.h>
+
+#include <Common/assert_cast.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace
+{
+
+struct GroupFormatData
+{
+    MutableColumns columns;
+};
+
+class AggregateFunctionGroupFormat final : public IAggregateFunctionDataHelper<GroupFormatData, AggregateFunctionGroupFormat>
+{
+public:
+    AggregateFunctionGroupFormat(
+        const DataTypes & argument_types_,
+        const Array & parameters_,
+        String format_name_,
+        FormatSettings format_settings_,
+        ContextPtr context_)
+        : IAggregateFunctionDataHelper<GroupFormatData, AggregateFunctionGroupFormat>(
+              argument_types_, parameters_, std::make_shared<DataTypeString>())
+        , format_name(std::move(format_name_))
+        , format_settings(std::move(format_settings_))
+        , context(std::move(context_))
+    {
+        size_t num_columns = argument_types.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            String name = "c" + std::to_string(i + 1);
+            header.insert({argument_types[i], name});
+        }
+    }
+
+    String getName() const override { return "groupFormat"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    {
+        new (place) GroupFormatData;
+        auto & data = this->data(place);
+        data.columns.reserve(argument_types.size());
+        for (const auto & type : argument_types)
+            data.columns.emplace_back(type->createColumn());
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto & data = this->data(place);
+        for (size_t i = 0; i < data.columns.size(); ++i)
+            data.columns[i]->insertFrom(*columns[i], row_num);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        auto & data = this->data(place);
+        const auto & rhs_data = this->data(rhs);
+        for (size_t i = 0; i < data.columns.size(); ++i)
+            data.columns[i]->insertRangeFrom(*rhs_data.columns[i], 0, rhs_data.columns[i]->size());
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
+    {
+        const auto & data = this->data(place);
+        UInt64 num_columns = data.columns.size();
+        UInt64 num_rows = num_columns ? data.columns.front()->size() : 0;
+
+        writeVarUInt(num_columns, buf);
+        writeVarUInt(num_rows, buf);
+
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const auto & column = data.columns[i];
+            const auto & type = argument_types[i];
+            auto serialization = type->getDefaultSerialization();
+            NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, DBMS_TCP_PROTOCOL_VERSION);
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
+    {
+        auto & data = this->data(place);
+        UInt64 num_columns = 0;
+        UInt64 num_rows = 0;
+        readVarUInt(num_columns, buf);
+        readVarUInt(num_rows, buf);
+
+        if (num_columns != argument_types.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "State of aggregate function {} contains {} columns but {} columns are expected",
+                getName(),
+                num_columns,
+                argument_types.size());
+
+        data.columns.clear();
+        data.columns.reserve(num_columns);
+
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const auto & type = argument_types[i];
+            auto serialization = type->getDefaultSerialization();
+            ColumnPtr column = type->createColumn();
+            NativeReader::readData(*serialization, column, buf, nullptr, num_rows, nullptr, nullptr);
+            data.columns.emplace_back(column->assumeMutable());
+        }
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        auto & data = this->data(place);
+        auto & column_string = assert_cast<ColumnString &>(to);
+
+        WriteBufferFromOwnString buffer;
+        auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, context, format_settings);
+
+        if (!data.columns.empty())
+        {
+            Columns columns;
+            columns.reserve(data.columns.size());
+            for (const auto & column : data.columns)
+                columns.emplace_back(column->getPtr());
+            auto block = header.cloneWithColumns(columns);
+            if (block.rows())
+                output->write(block);
+        }
+
+        output->finalize();
+        auto result_view = buffer.stringView();
+        column_string.insertData(result_view.data(), result_view.size());
+    }
+
+private:
+    String format_name;
+    FormatSettings format_settings;
+    ContextPtr context;
+    Block header;
+};
+
+AggregateFunctionPtr createAggregateFunctionGroupFormat(
+    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+{
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
+
+    if (parameters.size() != 1)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one parameter: format name", name);
+
+    if (parameters[0].getType() != Field::Types::String)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First parameter for aggregate function {} should be a string format name", name);
+
+    auto format_name = parameters[0].safeGet<String>();
+    FormatFactory::instance().checkFormatName(format_name);
+
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context is not initialized");
+
+    const Settings & settings_ref = settings ? *settings : context->getSettingsRef();
+    ContextPtr format_context = context;
+    if (settings)
+    {
+        auto context_copy = Context::createCopy(context);
+        context_copy->setSettings(settings_ref);
+        format_context = std::move(context_copy);
+    }
+
+    auto format_settings = getFormatSettings(format_context, settings_ref);
+    format_settings.json.valid_output_on_exception = false;
+    format_settings.xml.valid_output_on_exception = false;
+
+    return std::make_shared<AggregateFunctionGroupFormat>(
+        argument_types, parameters, std::move(format_name), std::move(format_settings), std::move(format_context));
+}
+
+}
+
+void registerAggregateFunctionGroupFormat(AggregateFunctionFactory & factory)
+{
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+
+    FunctionDocumentation::Description description = R"(
+Formats the rows in each group using the specified output format and returns the result as a string.
+
+The format name is passed as a parameter, and the arguments are the columns to format.
+Column names are generated as c1, c2, ... in the formatted output.
+)";
+    FunctionDocumentation::Syntax syntax = "groupFormat(format)(x, y, ...)";
+    FunctionDocumentation::Parameters parameters
+        = {{"format", "Output format name. For example, JSONEachRow, CSV, TabSeparated.", {"String"}}};
+    FunctionDocumentation::Arguments arguments = {{"x, y, ...", "Expressions to format as rows.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Formatted output for the group.", {"String"}};
+    FunctionDocumentation::Examples examples
+        = {{"Basic usage",
+            R"(
+SELECT groupFormat('JSONEachRow')(number, toString(number))
+FROM numbers(3)
+            )",
+            R"(
+{"c1":0,"c2":"0"}
+{"c1":1,"c2":"1"}
+{"c1":2,"c2":"2"}
+            )"}};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, {}, category};
+
+    factory.registerFunction("groupFormat", {createAggregateFunctionGroupFormat, properties, documentation});
+}
+
+}
