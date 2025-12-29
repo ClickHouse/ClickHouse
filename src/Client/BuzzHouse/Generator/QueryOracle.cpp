@@ -277,6 +277,7 @@ void QueryOracle::dumpTableContent(
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
+    SettingValues * svs = nullptr;
     Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
@@ -331,16 +332,22 @@ void QueryOracle::generateExportQuery(
     if (rg.nextSmallNumber() < 10)
     {
         const auto & settings = can_test_oracle_result ? serverSettings : formatSettings;
-        gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
-        const SettingValues & svs = ins->setting_values();
 
-        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_oracle_result; i++)
+        svs = ins->mutable_setting_values();
+        gen.generateSettingValues(rg, settings, svs);
+        for (int i = 0; i < (svs->other_values_size() + 1) && can_test_oracle_result; i++)
         {
-            const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
+            const SetValue & osv = i == 0 ? svs->set_value() : svs->other_values(i - 1);
             const CHSetting & ochs = settings.at(osv.property());
 
             can_test_oracle_result &= !ochs.changes_behavior;
         }
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        svs = svs ? svs : ins->mutable_setting_values();
+        finishSettings(svs);
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -597,6 +604,12 @@ void QueryOracle::generateImportQuery(
         /// The oracle expects to read all the lines from the file
         sv->set_property("input_format_csv_detect_header");
         sv->set_value("0");
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        svs = svs ? svs : nins->mutable_setting_values();
+        finishSettings(svs);
     }
 }
 
