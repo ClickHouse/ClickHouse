@@ -1833,11 +1833,13 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     }
 }
 
-bool DolorIntegration::performExternalCommand(const uint64_t seed, const bool async, const String & cname, const String & tname)
+bool DolorIntegration::performExternalCommand(
+    const uint64_t seed, const bool async, const String & engine, const String & cname, const String & tname)
 {
     return httpPut(
         "/sparkupdate",
-        fmt::format(R"({{"seed":{},"async":{},"catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, cname, tname));
+        fmt::format(
+            R"({{"seed":{},"async":{},"engine":"{}","catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, engine, cname, tname));
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1975,7 +1977,7 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
 }
 
 bool ExternalIntegrations::performExternalCommand(
-    const uint64_t seed, const bool async, const IntegrationCall ic, const String & cname, const String & tname)
+    const uint64_t seed, const bool async, const IntegrationCall ic, const String & engine, const String & cname, const String & tname)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1991,10 +1993,10 @@ bool ExternalIntegrations::performExternalCommand(
     {
         if (async)
         {
-            worker.enqueue([next, seed, cname, tname]() { next->performExternalCommand(seed, true, cname, tname); });
+            worker.enqueue([next, seed, engine, cname, tname]() { next->performExternalCommand(seed, true, engine, cname, tname); });
             return true;
         }
-        return next->performExternalCommand(seed, false, cname, tname);
+        return next->performExternalCommand(seed, false, engine, cname, tname);
     }
     return false;
 }

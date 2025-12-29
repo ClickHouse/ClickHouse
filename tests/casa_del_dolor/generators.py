@@ -130,6 +130,13 @@ class BuzzHouseGenerator(Generator):
                 "user": "",
                 "password": "clickhouse",
             }
+        if args.with_kafka:
+            buzz_config["kafka"] = {
+                "server_hostname": cluster.kafka_host,
+                "port": cluster.kafka_port,
+                "user": "",
+                "password": "",
+            }
         if args.with_nginx:
             buzz_config["http"] = {
                 "server_hostname": cluster.nginx_host,
