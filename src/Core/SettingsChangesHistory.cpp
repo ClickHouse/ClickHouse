@@ -45,6 +45,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
+            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
+            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -79,9 +82,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},
-            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
-            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
-            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"query_plan_optimize_join_order_algorithm", "greedy", "greedy", "New experimental setting."},
             {"s3_path_filter_limit", 0, 1000, "New setting"},
             {"format_capn_proto_max_message_size", 0, 1_GiB, "Prevent allocating large amount of memory"},
