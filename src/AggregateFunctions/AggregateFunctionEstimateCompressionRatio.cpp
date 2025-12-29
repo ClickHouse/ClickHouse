@@ -59,11 +59,12 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
-        /// WriteBuffer can be cancelled on exception
-        if (compressed_buf && !compressed_buf->isCanceled())
-            compressed_buf->finalize();
-        if (null_buf && !null_buf->isCanceled())
-            null_buf->finalize();
+        /// Real cancellation can happen only in case of exception
+        /// In other cases the data will be read via finalizeAndGetSizes()
+        if (compressed_buf)
+            compressed_buf->cancel();
+        if (null_buf)
+            null_buf->cancel();
     }
 };
 
