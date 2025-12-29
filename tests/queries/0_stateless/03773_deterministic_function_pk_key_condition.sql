@@ -20,28 +20,39 @@ ORDER BY (team_id, toDate(timestamp), event, cityHash64(person_id), cityHash64(u
 
 INSERT INTO events (uuid, person_id, event, timestamp, team_id)
 VALUES (
-    generateUUIDv4(),
-    generateUUIDv4(),
+    '017adbc0-98b5-0000-3f74-619a368fe65d',
+    '017adbc0-98b5-0000-3f74-619a368fe65d',
     'page_view',
     now64(6, 'UTC'),
     1
 );
 
-EXPLAIN indexes = 1
-SELECT  uuid, timestamp
+SELECT count()
 FROM events e
-WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65d';
+WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
 
 EXPLAIN indexes = 1
-SELECT  uuid, timestamp
+SELECT count()
 FROM events e
-WHERE person_id > '017adbc0-98b5-0000-3f74-619a368fe65d';
+WHERE person_id = '017adbc0-98b5-0000-3f74-619a368fe65e';
+
+SELECT count()
+FROM events e
+WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
 
 EXPLAIN indexes = 1
-SELECT  uuid, timestamp
+SELECT count()
 FROM events e
-WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65d';
+WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
 
+SELECT count()
+FROM events e
+WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM events e
+WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
 
 
 DROP TABLE IF EXISTS test;
