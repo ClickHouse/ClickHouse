@@ -674,7 +674,7 @@ FROM ontime;
     FunctionDocumentation::IntroducedIn introduced_in_topK = {1, 1};
     FunctionDocumentation::Category category_topK = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_topK = {description_topK, syntax_topK, arguments_topK, parameters_topK, returned_value_topK, examples_topK, introduced_in_topK, category_topK};
-    
+
     factory.registerFunction("topK", { createAggregateFunctionTopK<false, false>, properties, documentation_topK });
 
     FunctionDocumentation::Description description_topKWeighted = R"(

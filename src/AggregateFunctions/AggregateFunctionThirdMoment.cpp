@@ -79,12 +79,12 @@ SELECT skewPop(number) FROM numbers(100);
     {
         "Right-skewed distribution",
         R"(
-SELECT skewPop(x) FROM (SELECT pow(number, 2) AS x FROM numbers(10));        
+SELECT skewPop(x) FROM (SELECT pow(number, 2) AS x FROM numbers(10));
         )",
         R"(
 ┌─────────skewPop(x)─┐
 │ 0.6735701055423582 │
-└────────────────────┘        
+└────────────────────┘
         )"
     };
     FunctionDocumentation::IntroducedIn introduced_in_skewPop = {20, 1};

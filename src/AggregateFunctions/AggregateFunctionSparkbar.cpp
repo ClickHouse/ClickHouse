@@ -393,7 +393,7 @@ sparkbar(buckets[, min_x, max_x])(x, y)
         {"max_x", "Optional. The interval end.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Arguments arguments_sparkbar = {
-        {"x", "The field with values.", {"const String"}}},
+        {"x", "The field with values.", {"const String"}},
         {"y", "The field with the frequency of values.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_sparkbar = {"Returns the frequency histogram.", {"String"}};
