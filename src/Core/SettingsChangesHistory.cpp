@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -76,7 +77,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
-            {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
             {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
             {"type_json_skip_invalid_typed_paths", false, false, "Allow skipping typed paths that fail type coercion in JSON columns"},

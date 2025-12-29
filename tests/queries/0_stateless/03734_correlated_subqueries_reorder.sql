@@ -1,13 +1,16 @@
--- SET param__internal_join_table_stat_hints = '{
---     "lineitem": { "cardinality": 1000, "distinct_keys": { "l_extendedprice": 100, "l_partkey": 1000, "l_quantity": 100 } },
---     "part": { "cardinality": 10, "distinct_keys": { "p_partkey": 1, "p_name": 100, "p_brand": 10 } }
--- }';
-SET query_plan_optimize_join_order_limit = 0;
+SET enable_analyzer = 1;
 
-SET allow_statistics_optimize = 0;
+SET param__internal_join_table_stat_hints = '{
+    "lineitem": { "cardinality": 100, "distinct_keys": { "l_extendedprice": 100, "l_partkey": 1000, "l_quantity": 100 } },
+    "part": { "cardinality": 1000, "distinct_keys": { "p_partkey": 1000, "p_name": 100, "p_brand": 1000 } }
+}';
+SET query_plan_optimize_join_order_limit = 10;
+SET allow_statistics_optimize = 1;
 
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;
+
+SET enable_parallel_replicas = 0;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,
