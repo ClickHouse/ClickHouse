@@ -1,8 +1,6 @@
-#include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
-#include <base/defines.h>
 #include <Poco/Util/Application.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -21,7 +19,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/NativeWriter.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
@@ -30,7 +27,6 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <base/sort.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
@@ -44,6 +40,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+
 
 namespace ProfileEvents
 {
@@ -690,27 +687,25 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
 
     {
         std::lock_guard<std::mutex> lock(mutex);
-
         if (aggregate_functions_description_to_count[aggregate_functions_description_hash_key]++ < params.min_count_to_compile_aggregate_expression)
             return;
     }
 
+    auto compile = [&] ()
+    {
+        LOG_TRACE(log, "Compile expression {}", functions_description);
+        auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
+        return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+    };
+
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(aggregate_functions_description_hash_key, [&] ()
-        {
-            LOG_TRACE(log, "Compile expression {}", functions_description);
-
-            auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
-            return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
-        });
+        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(aggregate_functions_description_hash_key, compile);
         compiled_aggregate_functions_holder = std::static_pointer_cast<CompiledAggregateFunctionsHolder>(compiled_function_cache_entry);
     }
     else
     {
-        LOG_TRACE(log, "Compile expression {}", functions_description);
-        auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
-        compiled_aggregate_functions_holder = std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+        compiled_aggregate_functions_holder = compile();
     }
 }
 

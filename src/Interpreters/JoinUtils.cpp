@@ -600,7 +600,9 @@ static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Bl
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
+    /// Use the "fastrange" method from Daniel Lemire:
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
+        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)

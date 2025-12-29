@@ -19,15 +19,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr UInt64 MIN_NGRAM_SIZE = 1;
-static constexpr UInt64 MAX_NGRAM_SIZE = 8;
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
 static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MIN_LENGTH = 3;
 static constexpr UInt64 DEFAULT_SPARSE_GRAMS_MAX_LENGTH = 100;
+
+/// Unlike for sparse ngrams, there is no upper length for ngrams.
+/// Such a limit historically existed for the text index and SQL function hasToken() but not for the bloom filter skip index.
+/// Since the lower/upper limit checks in this file are central to all of these, we need to go with the lowest common denominator for backward compatibility.
 
 namespace
 {
@@ -37,7 +39,7 @@ void assertParamsCount(size_t params_count, size_t max_count, std::string_view t
     if (params_count > max_count)
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "'{}' tokenizer accepts at most {} parameters, but got {}",
             tokenizer, max_count, params_count);
     }
@@ -58,7 +60,7 @@ Type castAs(const Field & field, std::string_view argument_name)
     if (!result.has_value())
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Tokenizer argument '{}' expected to be of type {}, but got type: {}",
             argument_name, fieldTypeToString(Field::TypeToEnum<Type>::value), field.getTypeName());
     }
@@ -73,13 +75,12 @@ UInt64 TokenizerFactory::extractNgramParam(std::span<const Field> params)
     assertParamsCount(params.size(), 1, NgramsTokenExtractor::getExternalName());
 
     auto ngram_size = params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params[0], "ngram_size");
-    if (ngram_size < 1 || ngram_size > 8)
+    if (ngram_size < MIN_NGRAM_SIZE)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Incorrect param of tokenizer '{}': ngram length must be between {} and {}, but got {}",
+            "Incorrect param of tokenizer '{}': ngram length must be at least {}, but got {}",
             NgramsTokenExtractor::getExternalName(),
             MIN_NGRAM_SIZE,
-            MAX_NGRAM_SIZE,
             ngram_size);
 
     return ngram_size;
@@ -100,7 +101,7 @@ std::vector<String> TokenizerFactory::extractSplitByStringParam(std::span<const 
     if (values.empty())
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Incorrect params of tokenizer '{}': separators cannot be empty",
             SplitByStringTokenExtractor::getExternalName());
     }
@@ -126,19 +127,19 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     if (params.size() > 2)
         min_cutoff_length = castAs<UInt64>(params[2], "min_cutoff_length");
 
-    if (min_length < 3)
+    if (min_length < DEFAULT_SPARSE_GRAMS_MIN_LENGTH)
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Unexpected parameter of tokenizer '{}': minimal length must be at least {}, but got {}",
             tokenizer_name,
             DEFAULT_SPARSE_GRAMS_MIN_LENGTH,
             min_length);
     }
-    if (max_length > 100)
+    if (max_length > DEFAULT_SPARSE_GRAMS_MAX_LENGTH)
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Unexpected parameter of tokenizer '{}': maximal length must be at most {}, but got {}",
             tokenizer_name,
             DEFAULT_SPARSE_GRAMS_MAX_LENGTH,
@@ -147,7 +148,7 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     if (min_length > max_length)
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Unexpected parameter of tokenizer '{}': minimal length {} cannot be larger than maximal length {}",
             tokenizer_name,
             min_length,
@@ -156,7 +157,7 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     if (min_cutoff_length.has_value() && min_cutoff_length.value() < min_length)
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Unexpected parameter of tokenizer '{}': minimal cutoff length {} cannot be smaller than minimal length {}",
             tokenizer_name,
             min_cutoff_length.value(),
@@ -165,7 +166,7 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     if (min_cutoff_length.has_value() && min_cutoff_length.value() > max_length)
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Unexpected parameter of tokenizer '{}': minimal cutoff length {} cannot be larger than maximal length {}",
             tokenizer_name,
             min_cutoff_length.value(),
