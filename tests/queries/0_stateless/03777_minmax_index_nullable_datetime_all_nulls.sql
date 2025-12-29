@@ -12,7 +12,8 @@ CREATE TABLE test_nullable_datetime_partition
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(event_time)
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
 
 -- Insert data where all event_time values are NULL
 -- This will create a part where minmax index has POSITIVE_INFINITY (Null type)
@@ -39,7 +40,8 @@ CREATE TABLE test_nullable_datetime64_partition
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(event_time)
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
 
 INSERT INTO test_nullable_datetime64_partition (id, event_time) VALUES (1, NULL), (2, NULL), (3, NULL);
 
