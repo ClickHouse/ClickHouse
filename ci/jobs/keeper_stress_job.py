@@ -77,7 +77,7 @@ def main():
     os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
     # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
     os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
-    os.environ.setdefault("KEEPER_COMPOSE_DOWN_TIMEOUT", "60")
+    os.environ.setdefault("KEEPER_COMPOSE_DOWN_TIMEOUT", "30")
     os.environ.setdefault("KEEPER_CLEAN_ARTIFACTS", "1")
     os.environ.setdefault("CI_HEARTBEAT_SEC", "60")
     # Default to running tests with pytest-xdist workers (can be overridden)
@@ -100,6 +100,7 @@ def main():
 
     stop_watch = Utils.Stopwatch()
     results = []
+    files_to_attach = []
 
     # Ensure docker-in-docker is up for nested compose workloads
     os.makedirs("./ci/tmp", exist_ok=True)
@@ -258,11 +259,11 @@ def main():
     extra.append("--timeout-method=signal")
     try:
         cpus = os.cpu_count() or 8
-        # Heuristic: at most half the CPUs, capped at 16, minimum 6
         heuristic_workers = str(min(16, max(6, cpus // 2)))
     except Exception:
         heuristic_workers = "12"
-    xdist_workers = os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or heuristic_workers
+    _xd_env = (os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or "").lower()
+    xdist_workers = heuristic_workers if (_xd_env in ("", "auto")) else _xd_env
     extra.append(f"-n {xdist_workers}")
     try:
         is_parallel = xdist_workers not in ("1", "no", "0")
@@ -341,6 +342,12 @@ def main():
         )
     )
 
+    try:
+        per_test = timeout_val
+        pytest_proc_timeout = max(3600, min(10200, max(9000, per_test * 4)))
+    except Exception:
+        pytest_proc_timeout = 9000
+    pytest_log_file = f"{temp_dir}/pytest_stdout.log"
     results.append(
         Result.from_pytest_run(
             command=cmd,
@@ -348,10 +355,20 @@ def main():
             name="Keeper Stress",
             env=env,
             pytest_report_file=report_file,
-            logfile=None,
+            logfile=pytest_log_file,
+            timeout_seconds=pytest_proc_timeout,
         )
     )
     pytest_result_ok = results[-1].is_ok()
+    try:
+        for p in [pytest_log_file, report_file, junit_file]:
+            try:
+                if Path(p).exists():
+                    files_to_attach.append(str(p))
+            except Exception:
+                pass
+    except Exception:
+        pass
     try:
         tests = failures = errors = skipped = 0
         summary_txt = None

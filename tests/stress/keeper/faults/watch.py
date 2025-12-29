@@ -55,10 +55,23 @@ def _f_watch_flood(ctx, nodes, leader, step):
 
     def _make_watch(p: str):
         try:
-            def _cb(data, stat):
+            def _cb(event):
+                try:
+                    zk.exists(p, watch=_cb)
+                except Exception:
+                    try:
+                        zk.get(p, watch=_cb)
+                    except Exception:
+                        pass
                 return True
-            w = DataWatch(zk, p, func=_cb)
-            return w
+            try:
+                zk.exists(p, watch=_cb)
+            except Exception:
+                try:
+                    zk.get(p, watch=_cb)
+                except Exception:
+                    pass
+            return p
         except Exception:
             return None
 

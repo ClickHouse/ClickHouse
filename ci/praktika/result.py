@@ -402,6 +402,7 @@ class Result(MetaClasses.Serializable):
         env=None,
         pytest_report_file=None,
         logfile=None,
+        timeout_seconds=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -441,7 +442,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            _res = Shell.check(full_command, verbose=True)
+            _res = Shell.check(full_command, verbose=True, timeout=timeout_seconds, log_file=logfile)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )
