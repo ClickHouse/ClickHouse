@@ -18,9 +18,8 @@ class SchemaCache;
 class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
-public:
-    using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
+public:
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
@@ -30,6 +29,7 @@ public:
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
+        StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
@@ -51,6 +51,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
+        StorageMetadataPtr storage_metadata,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
@@ -60,17 +61,17 @@ public:
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
-        bool skip_object_metadata = false);
+        bool skip_object_metadata = false,
+        bool with_tags = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration,
-        const ObjectInfo & object_info,
-        bool include_connection_info = true);
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
 protected:
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
+    StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
@@ -185,6 +186,7 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
@@ -235,6 +237,7 @@ public:
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
+        bool with_tags_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -249,8 +252,9 @@ private:
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
-    bool ignore_non_existent_files;
-    bool skip_object_metadata;
+    const bool ignore_non_existent_files;
+    const bool skip_object_metadata;
+    const bool with_tags;
 };
 
 /*

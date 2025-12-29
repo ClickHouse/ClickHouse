@@ -14,23 +14,23 @@ from helpers.s3_tools import (
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_schema_evolution")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
         )
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
         .master("local")
     )
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def started_cluster_iceberg_schema_evolution():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)

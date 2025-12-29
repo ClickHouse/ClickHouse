@@ -86,7 +86,8 @@ JoinStep::JoinStep(
     size_t max_streams_,
     NameSet required_output_,
     bool keep_left_read_in_order_,
-    bool use_new_analyzer_)
+    bool use_new_analyzer_,
+    bool use_join_disjunctions_push_down_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
     , min_block_size_rows(min_block_size_rows_)
@@ -95,6 +96,8 @@ JoinStep::JoinStep(
     , required_output(std::move(required_output_))
     , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
+    , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
+    , disjunctions_optimization_applied(false)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -111,7 +114,11 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    if (primary_key_sharding.empty())
+    /// Sharding requires both pipelines to have the same number of streams.
+    /// When stream counts don't match, fall back to the
+    /// regular join pipeline which handles different stream counts
+    bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+    if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
@@ -165,7 +172,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin())
+    if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
@@ -186,6 +193,16 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 bool JoinStep::allowPushDownToRight() const
 {
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
+}
+
+void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
+{
+    if (disable_squashing)
+    {
+        min_block_size_rows = 0;
+        min_block_size_bytes = 0;
+    }
+    keep_left_read_in_order = true;
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const

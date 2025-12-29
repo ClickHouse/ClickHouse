@@ -57,8 +57,8 @@ struct FunctionDetectProgrammingLanguageImpl
             const size_t str_len = offsets[i] - offsets[i - 1];
 
             std::unordered_map<String, Float64> data_freq;
-            StringRef prev_command;
-            StringRef command;
+            std::string_view prev_command;
+            std::string_view command;
 
             /// Select all commands from the string
             for (size_t ind = 0; ind < str_len; ++ind)
@@ -71,13 +71,13 @@ struct FunctionDetectProgrammingLanguageImpl
                 while (ind < str_len && !isWhitespaceASCII(str[ind]))
                     ++ind;
 
-                command = {str + prev_ind, ind - prev_ind};
+                command = std::string_view{reinterpret_cast<const char *>(str) + prev_ind, ind - prev_ind};
 
                 /// We add both unigrams and bigrams to later search for them in the dictionary
-                if (prev_command.data)
-                    data_freq[prev_command.toString() + command.toString()] += 1;
+                if (prev_command.data())
+                    data_freq[fmt::format("{}{}", prev_command, command)] += 1;
 
-                data_freq[command.toString()] += 1;
+                data_freq[std::string{command}] += 1;
                 prev_command = command;
             }
 
@@ -116,7 +116,22 @@ using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<Funct
 
 REGISTER_FUNCTION(DetectProgrammingLanguage)
 {
-    factory.registerFunction<FunctionDetectProgrammingLanguage>();
+    FunctionDocumentation::Description description = R"(
+Determines the programming language from a given source code snippet.
+)";
+    FunctionDocumentation::Syntax syntax = "detectProgrammingLanguage('source_code')";
+    FunctionDocumentation::Arguments arguments = {
+        {"source_code", "String representation of the source code to analyze.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns programming language", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"C++ code detection", "SELECT detectProgrammingLanguage('#include <iostream>')", "C++"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDetectProgrammingLanguage>(documentation);
 }
 
 }

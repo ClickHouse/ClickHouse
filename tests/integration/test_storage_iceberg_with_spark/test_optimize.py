@@ -32,7 +32,7 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
-    snapshot_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
+    snapshot_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
     snapshot_timestamp = datetime.now(timezone.utc)
 
     time.sleep(0.1)
@@ -70,14 +70,14 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_timestamp_ms = {int(snapshot_timestamp.timestamp() * 1000)}") == instance.query(
         "SELECT number FROM numbers(20, 80)"
     )
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
-    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 90

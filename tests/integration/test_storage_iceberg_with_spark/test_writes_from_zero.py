@@ -31,18 +31,18 @@ def test_writes_from_zero(started_cluster_iceberg_with_spark, format_version, st
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n'
 
-    if storage_type != "local":
+    if storage_type == "azure":
         return
 
     default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
+    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
         f.write(b"3")
 
-    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 2

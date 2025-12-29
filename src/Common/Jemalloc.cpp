@@ -4,6 +4,7 @@
 
 #include <Core/ServerSettings.h>
 #include <Common/Exception.h>
+#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
 #include <Common/MemoryTracker.h>
@@ -68,7 +69,7 @@ void setProfileActive(bool value)
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string flushProfile(const std::string & file_prefix)
+std::string_view flushProfile(const std::string & file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;
@@ -77,7 +78,7 @@ std::string flushProfile(const std::string & file_prefix)
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
         mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
-        return std::string{getLastFlushProfileForThread()};
+        return getLastFlushProfileForThread();
     }
 
     static std::atomic<size_t> profile_counter{0};
@@ -85,7 +86,7 @@ std::string flushProfile(const std::string & file_prefix)
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
-    return std::string{getLastFlushProfileForThread()};
+    return getLastFlushProfileForThread();
 }
 
 void setBackgroundThreads(bool enabled)
@@ -112,13 +113,17 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
 
     try
     {
-        StackTrace::FramePointers frame_pointers;
+        FramePointers frame_pointers;
         auto stacktrace_size = std::min<size_t>(backtrace_length, frame_pointers.size());
-        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *));
+        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *)); // NOLINT(bugprone-bitwise-pointer-cast)
         TraceSender::send(
             TraceType::JemallocSample,
             StackTrace(std::move(frame_pointers), stacktrace_size),
-            TraceSender::Extras{.size = static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+            TraceSender::Extras{
+                .size = static_cast<Int64>(usize),
+                .ptr = const_cast<void *>(ptr),
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+            });
     }
     catch (...)
     {
@@ -137,7 +142,11 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
         TraceSender::send(
             TraceType::JemallocSample,
             StackTrace(),
-            TraceSender::Extras{.size = -static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+            TraceSender::Extras{
+                .size = -static_cast<Int64>(usize),
+                .ptr = const_cast<void *>(ptr),
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+            });
     }
     catch (...)
     {
@@ -145,11 +154,15 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
     }
 }
 
-thread_local std::string last_flush_profile;
+thread_local std::array<char, 256> last_flush_profile_buffer;
+thread_local std::string_view last_flush_profile;
 
 void setLastFlushProfile(const char * filename)
 {
-    last_flush_profile = filename;
+    DENY_ALLOCATIONS_IN_SCOPE;
+    auto last_flush_profile_size = std::min(last_flush_profile_buffer.size(), strlen(filename));
+    std::memcpy(last_flush_profile_buffer.data(), filename, last_flush_profile_size);
+    last_flush_profile = std::string_view{last_flush_profile_buffer.data(), last_flush_profile_size};
 }
 
 }

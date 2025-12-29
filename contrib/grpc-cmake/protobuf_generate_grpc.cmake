@@ -19,6 +19,18 @@ protobuf_generate_grpc_cpp(<SRCS> <HDRS>
 # Function to generate C++ files from .proto files.
 # This function is a modified version of the function PROTOBUF_GENERATE_CPP() copied from https://github.com/Kitware/CMake/blob/master/Modules/FindProtobuf.cmake.
 function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
+
+  # ClickHouse build: Use the native plugins when cross-compiling
+  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(NATIVE_gRPC_CPP_PLUGIN "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
+    set(NATIVE_gRPC_PYTHON_PLUGIN "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_python_plugin")
+    set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+  else ()
+    set(NATIVE_gRPC_CPP_PLUGIN $<TARGET_FILE:grpc_cpp_plugin>)
+    set(NATIVE_gRPC_PYTHON_PLUGIN $<TARGET_FILE:grpc_python_plugin>)
+    set(NATIVE_protoc $<TARGET_FILE:protoc>)
+  endif()
+
   cmake_parse_arguments(protobuf_generate_grpc_cpp "" "EXPORT_MACRO;DESCRIPTORS" "" ${ARGN})
 
   set(_proto_files "${protobuf_generate_grpc_cpp_UNPARSED_ARGUMENTS}")
@@ -116,9 +128,9 @@ function(protobuf_generate_grpc)
 
   if(NOT protobuf_generate_grpc_PLUGIN)
     if(protobuf_generate_grpc_LANGUAGE STREQUAL cpp)
-      set(protobuf_generate_grpc_PLUGIN "grpc_cpp_plugin")
+      set(protobuf_generate_grpc_PLUGIN ${NATIVE_gRPC_CPP_PLUGIN})
     elseif(protobuf_generate_grpc_LANGUAGE STREQUAL python)
-      set(protobuf_generate_grpc_PLUGIN "grpc_python_plugin")
+      set(protobuf_generate_grpc_PLUGIN ${NATIVE_gRPC_PYTHON_PLUGIN})
     else()
       message(SEND_ERROR "Error: protobuf_generate_grpc given unknown Language ${LANGUAGE}, please provide a value for PLUGIN")
       return()
@@ -187,12 +199,12 @@ function(protobuf_generate_grpc)
 
     add_custom_command(
       OUTPUT ${_generated_srcs}
-      COMMAND $<TARGET_FILE:protoc>
+      COMMAND ${NATIVE_protoc}
       ARGS --${protobuf_generate_grpc_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --grpc_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
-           --plugin=protoc-gen-grpc=$<TARGET_FILE:${protobuf_generate_grpc_PLUGIN}>
+           --plugin=protoc-gen-grpc=${protobuf_generate_grpc_PLUGIN}
            ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} protoc ${protobuf_generate_grpc_PLUGIN}
+      DEPENDS ${_abs_file} ${NATIVE_protoc} ${protobuf_generate_grpc_PLUGIN}
       COMMENT "Running ${protobuf_generate_grpc_LANGUAGE} protocol buffer compiler on ${_proto}"
       VERBATIM)
   endforeach()
