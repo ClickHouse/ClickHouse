@@ -110,7 +110,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
-    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
@@ -129,8 +129,6 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
@@ -177,6 +175,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 namespace fs = std::filesystem;
@@ -626,8 +625,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
-    bool enable_deflate_qpl_codec = skip_checks || context_->getSettingsRef()[Setting::enable_deflate_qpl_codec];
-    bool enable_zstd_qat_codec = skip_checks || context_->getSettingsRef()[Setting::enable_zstd_qat_codec];
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -688,7 +685,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
         }
 
         if (col_decl.statistics_desc)
@@ -779,8 +776,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
+                if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -2572,6 +2569,13 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
+    /// When converting to replicated, remove all transaction metadata files
+    if (to_replicated && !engine_name.starts_with("Replicated"))
+    {
+        String table_data_path = database->getTableDataPath(create);
+        clearTransactionMetadata(table_data_path, getContext());
+    }
+
     /// Set new engine
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
@@ -2586,6 +2590,52 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         /*content=*/statement,
         /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+}
+
+void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
+{
+    LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", table_data_path);
+
+    /// Use disk API to remove transaction metadata files from all disks
+    auto disks = local_context->getDisksMap();
+    size_t total_removed = 0;
+
+    for (const auto & [disk_name, disk] : disks)
+    {
+        try
+        {
+            /// Skip if the table data path doesn't exist on this disk
+            if (!disk->existsDirectory(table_data_path))
+                continue;
+
+            /// Iterate through all parts in the table data directory
+            for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
+            {
+                String part_name = it->name();
+                String part_path = fs::path(table_data_path) / part_name;
+
+                /// Check if it's a directory (part directory)
+                if (!disk->existsDirectory(part_path))
+                    continue;
+
+                /// Try to remove txn_version.txt file
+                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+                if (disk->existsFile(txn_file))
+                {
+                    disk->removeFile(txn_file);
+                    total_removed++;
+                }
+            }
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                           "Cannot ATTACH AS REPLICATED: failed to clear transaction metadata on disk {}, due to {}",
+                           disk_name, getCurrentExceptionMessage(false));
+        }
+    }
+
+    LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

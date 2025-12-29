@@ -549,32 +549,46 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
-    for (const auto & [processor, holders] : bucket_holders)
+    for (auto & [processor, holders] : bucket_holders)
     {
-        LOG_TEST(log, "Releasing {} bucket holders for processor {}", holders.size(), processor);
-
-        for (auto it = holders.begin(); it != holders.end(); ++it)
+        std::string buckets_str;
+        size_t released_holders = 0;
+        for (auto it = holders.begin(); it != holders.end();)
         {
             const auto & holder = *it;
             const auto bucket = holder->getBucketInfo()->bucket;
-            if (!holder->isFinished())
+            /// Only the last holder in the list of holders can be non-finished.
+            if (std::next(it) == holders.end())
             {
-                /// Only the last holder in the list of holders can be non-finished.
-                chassert(std::next(it) == holders.end());
-
-                /// Do not release non-finished bucket holder. We will continue processing it.
-                LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);
-                break;
+                if (!holder->isFinished())
+                {
+                    /// Do not release non-finished bucket holder. We will continue processing it.
+                    LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);
+                    break;
+                }
             }
+            else
+                chassert(holder->isFinished());
 
             /// Release bucket lock.
             holder->release();
+            ++released_holders;
 
             /// Reset bucket processor in cached state.
             auto cached_info = listed_keys_cache.find(bucket);
             if (cached_info != listed_keys_cache.end())
                 cached_info->second.processor.reset();
+
+            if (!buckets_str.empty())
+                buckets_str += ", ";
+            buckets_str += toString(bucket);
+
+            it = holders.erase(it);
         }
+        LOG_TRACE(log, "Released {} bucket holders for processor {} "
+                  "(released buckets: {}, remaining holders: {}, remaining bucket: {})",
+                  released_holders, processor, buckets_str,
+                  holders.size(), holders.empty() ? "" : toString(holders.front()->getBucketInfo()->bucket));
     }
 }
 
@@ -606,6 +620,17 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         ? nullptr
         : bucket_holder_it->second.back().get();
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (current_bucket_holder)
+    {
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+            chassert(current_bucket_holder->checkBucketOwnership(zk_client));
+        });
+    }
+#endif
+
     auto current_processor = toString(processor);
 
     LOG_TEST(
@@ -632,44 +657,50 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// Check correctness just in case.
                 if (!bucket_processor.has_value())
                 {
+                    LOG_TRACE(log, "Set processor {} for bucket {}", current_processor, bucket);
                     bucket_processor = current_processor;
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
+                    std::optional<std::string> processor_info;
+                    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+                    {
+                        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                        processor_info = current_bucket_holder->getProcessorInfo(zk_client);
+                    });
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Expected current processor {} to be equal to {} for bucket {} ({})",
+                        "Expected current processor {} to be equal to {} for bucket {} "
+                        "(current bucket: {}, owner: {}, bucket holders: {})",
                         current_processor,
                         bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                        bucket, bucketHoldersToString());
+                        bucket,
+                        current_bucket_holder->getBucketInfo()->toString(),
+                        processor_info.value_or("None"), bucketHoldersToString());
                 }
 
-                if (current_bucket_holder)
+                if (!bucket_keys.empty())
                 {
-                    if (!bucket_keys.empty())
-                    {
-                        /// Take the key from the front, the order is important.
-                        auto [object_info, file_metadata] = bucket_keys.front();
-                        bucket_keys.pop_front();
+                    /// Take the key from the front, the order is important.
+                    auto [object_info, file_metadata] = bucket_keys.front();
+                    bucket_keys.pop_front();
 
-                            LOG_TEST(log, "Current bucket: {}, will process file: {}",
-                                    bucket, object_info->getFileName());
+                    LOG_TEST(log, "Current bucket: {}, will process file: {}", bucket, object_info->getFileName());
 
-                        return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
-                    }
-
-                    LOG_TEST(log, "Cache of bucket {} is empty", bucket);
-
-                    /// No more keys in bucket, remove it from cache.
-                    listed_keys_cache.erase(it);
+                    return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
                 }
+
+                LOG_TEST(log, "Cache of bucket {} is empty", bucket);
+
+                /// No more keys in bucket, remove it from cache.
+                listed_keys_cache.erase(it);
             }
             else
             {
                 LOG_TEST(log, "Cache of bucket {} is empty", bucket);
             }
 
-            if (current_bucket_holder && iterator_finished)
+            if (iterator_finished)
             {
                 /// Bucket is fully processed, but we will release it later
                 /// - once we write and commit files via commit() method.
@@ -720,11 +751,13 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                     continue;
                 }
 
-                LOG_TRACE(log, "Processor {} acquired bucket: {}", current_processor, bucket);
-
                 bucket_holder_it->second.push_back(acquired_bucket);
                 current_bucket_holder = bucket_holder_it->second.back().get();
+                const std::string previous_processor = bucket_processor.has_value() ? toString(bucket_processor.value()) : "None";
                 bucket_processor = current_processor;
+
+                LOG_TRACE(log, "Processor {} acquired bucket: {} (keys cache: {}, processor: {}, previous processor: {})",
+                          current_processor, bucket, it->second.keys.size(), it->second.processor.value(), previous_processor);
 
                 /// Take the key from the front, the order is important.
                 auto [object_info, file_metadata] = bucket_keys.front();
@@ -1004,7 +1037,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 }
             }
 
-            LOG_DEBUG(log, "Will process file: {}", file_metadata->getPath());
+            LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
         }

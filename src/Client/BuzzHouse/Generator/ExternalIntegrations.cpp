@@ -104,7 +104,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         /// Remove partition by
         te.clear_partition_by();
     }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree)
     {
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
@@ -250,7 +250,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             t.db->setName(newd.mutable_database());
-            t.db->finishDatabaseSpecification(deng, t.db->nparams > 0);
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= !performQuery(buf + ";");
         }
@@ -285,7 +285,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -1591,7 +1591,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         const uint32_t add_type = 3 * static_cast<uint32_t>(added_type < toadd_type);
         const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(added_endpoint < toadd_endpoint);
+        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
         const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
         const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
         const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
@@ -1752,7 +1752,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
             const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
             const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
-            const uint32_t add_endpoint = 3 * static_cast<uint32_t>(added_endpoint < toadd_endpoint);
+            const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
             const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
             const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
             const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;

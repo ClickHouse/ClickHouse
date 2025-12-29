@@ -104,8 +104,6 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -182,7 +180,6 @@ namespace DB::ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int USER_EXPIRED;
     extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_TABLE;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
 
@@ -1186,16 +1183,10 @@ void TCPHandler::startInsertQuery(QueryState & state)
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        const auto & table_id = state.query_context->getInsertionTable();
         if (state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
         {
-            if (!table_id.empty())
-            {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, state.query_context);
-                if (!storage_ptr)
-                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
-                sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
-            }
+            if (state.query_context->hasInsertionTableColumnsDescription())
+                sendTableColumns(state, state.query_context->getInsertionTableColumnsDescription().value());
         }
     }
 
@@ -1218,7 +1209,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
-        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true));
+
+        auto result_chunk = Squashing::squash(
+            squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true),
+            squashing.getHeader());
 
         sendLogs(state);
         sendInsertProfileEvents(state);
@@ -1234,7 +1228,9 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
         }
     }
 
-    Chunk result_chunk = Squashing::squash(squashing.flush());
+    Chunk result_chunk = Squashing::squash(
+        squashing.flush(),
+        squashing.getHeader());
     if (!result_chunk)
     {
         return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context);
@@ -2549,9 +2545,7 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
             method,
             level,
             !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs],
-            query_settings[Setting::enable_deflate_qpl_codec],
-            query_settings[Setting::enable_zstd_qat_codec]);
+            query_settings[Setting::allow_experimental_codecs]);
 
         return CompressionCodecFactory::instance().get(method, level);
     }

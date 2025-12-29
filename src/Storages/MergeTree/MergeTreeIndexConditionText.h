@@ -1,7 +1,6 @@
 #pragma once
 #include <memory>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
@@ -15,6 +14,9 @@ using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 
 class TextIndexPostingsCache;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
+
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
 
 enum class TextSearchMode : uint8_t
 {
@@ -71,7 +73,6 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
-    bool useBloomFilter() const { return use_bloom_filter; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
@@ -81,13 +82,8 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
     TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
-
-    bool useHeaderCache() const { return use_header_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
-
-    bool usePostingsCache() const { return use_postings_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
 private:
@@ -154,22 +150,14 @@ private:
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
-    /// Bloom filter can be disabled for better testing of dictionary analysis.
-    bool use_bloom_filter = true;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Using text index dictionary block cache can be enabled to reduce I/O
-    bool use_dictionary_block_cache;
     /// Instance of the text index dictionary block cache
     TextIndexDictionaryBlockCachePtr dictionary_block_cache;
-    /// Using text index header cache can be enabled to reduce I/O
-    bool use_header_cache;
     /// Instance of the text index dictionary block cache
     TextIndexHeaderCachePtr header_cache;
-    /// Using text index posting list cache can be enabled to reduce I/O
-    bool use_postings_cache;
     /// Instance of the text index dictionary block cache
     TextIndexPostingsCachePtr postings_cache;
 };
