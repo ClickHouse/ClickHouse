@@ -46,6 +46,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
             {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
+            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
+            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
+            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
