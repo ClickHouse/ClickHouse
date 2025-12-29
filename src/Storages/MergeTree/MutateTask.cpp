@@ -336,11 +336,19 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::UPDATE)
+            {
+                for_interpreter.push_back(command);
+
+                /// Update column can change the set of substreams for column if it
+                /// changes serialization (for example from Sparse to not Sparse).
+                /// We add it "for renames" because these set of commands also removes redundant files
+                for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -980,7 +988,7 @@ static NameToNameVector collectFilesForRenames(
                 if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
                     add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
             }
-            else if (command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 /// Remove files for streams that exist in source_part,
                 /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
