@@ -2385,7 +2385,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
       */
     Field const_value;
     DataTypePtr const_type;
-    bool atom_is_relaxed = false;
 
     if (node.isFunction())
     {
@@ -2544,15 +2543,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 is_constant_transformed = true;
             }
             else if (
-                single_point && func_name == "equals"
-                && canConstantBeWrappedByFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+                (func_name == "equals" || func_name == "notEquals")
+                && canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
             {
-                is_constant_transformed = true;
-            }
-            else if (
-                canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
-            {
-                atom_is_relaxed = true;
                 is_constant_transformed = true;
             }
             else
@@ -2646,9 +2639,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 else if (func_name == "greater")
                     func_name = "greaterOrEquals";
 
-                relaxed = true;
+                out.relaxed = true;
             }
-
         }
         else
         {
@@ -2666,7 +2658,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.key_columns.push_back(key_column_num);
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
-        out.relaxed |= atom_is_relaxed;
 
         bool valid_atom = atom_it->second(out, const_value);
         if (valid_atom && out.relaxed)
