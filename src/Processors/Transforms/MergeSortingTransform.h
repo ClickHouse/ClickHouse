@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Transforms/SortingTransform.h>
+#include <Common/Logger.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
 #include <Interpreters/TemporaryDataOnDisk.h>

@@ -307,8 +307,9 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
 
         sv->set_property(next);
         sv->set_value(
-            (create && ov.contains("0")) ? "1"
-                                         : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
+            (create && ov.size() == 2 && ov.contains("0") && ov.contains("1"))
+                ? "1"
+                : ((ov.empty() || rg.nextSmallNumber() < 4) ? sett.random_func(rg, fc) : rg.pickRandomly(ov)));
     }
     this->ids.clear();
 }
@@ -555,31 +556,30 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
-        const bool has_tables = next.has_with_cols || !tables.empty();
+        const bool has_tables = collectionHas<SQLTable>(attached_tables);
         const bool has_to
             = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
 
-        chassert(this->entries.empty());
-        for (uint32_t i = 0; i < view_ncols; i++)
-        {
-            std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
-            entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
-        }
         if (!has_to)
         {
+            chassert(this->entries.empty());
+            for (uint32_t i = 0; i < view_ncols; i++)
+            {
+                std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
+                entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
+            }
             for (uint32_t i = 0; i < view_ncols; i++)
             {
                 next.cols.insert(i);
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
+            if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
+            {
+                generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
+            }
+            this->entries.clear();
         }
-        if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
-        {
-            generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
-        }
-        this->entries.clear();
-
-        if (has_to)
+        else
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(next.has_with_cols ? table_to_lambda : attached_tables));
@@ -814,6 +814,12 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
         t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4));
     ot->set_use_force(rg.nextBool());
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        ot->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
@@ -874,7 +880,12 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
     }
-    ct->set_single_result(rg.nextSmallNumber() < 4);
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        ct->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 bool StatementGenerator::tableOrFunctionRef(
@@ -906,7 +917,7 @@ bool StatementGenerator::tableOrFunctionRef(
 
     /// Only schema, table declarations are allowed inside cluster and remote functions
     const uint32_t engine_func
-        = (10 + (70 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
+        = (10 + (170 * static_cast<uint32_t>(t.isAnyQueueEngine()))) * static_cast<uint32_t>(t.isEngineReplaceable() && !cluster_or_remote);
     const uint32_t url_func = 5 * static_cast<uint32_t>(!cluster_or_remote);
     const uint32_t simple_est = 85;
     const uint32_t prob_space2 = engine_func + url_func + simple_est;
@@ -1047,6 +1058,12 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
             sv->set_property("describe_include_subcolumns");
             sv->set_value(rg.nextBool() ? "1" : "0");
         }
+    }
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        dt->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
     }
 }
 
@@ -1549,7 +1566,13 @@ uint32_t StatementGenerator::getIdentifierFromString(const String & tname) const
 }
 
 std::optional<String> StatementGenerator::alterSingleTable(
-    RandomGenerator & rg, SQLTable & t, const uint32_t nalters, const bool no_oracle, const bool can_update, Alter * at)
+    RandomGenerator & rg,
+    SQLTable & t,
+    const uint32_t nalters,
+    const bool no_oracle,
+    const bool can_update,
+    const bool in_parallel,
+    Alter * at)
 {
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
@@ -1663,7 +1686,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
             }
 
             /// Add small chance to add to a nested column
-            if (rg.nextSmallNumber() < 4)
+            if (!in_parallel && nalters == 1 && rg.nextSmallNumber() < 4)
             {
                 for (const auto & [key, val] : t.cols)
                 {
@@ -1766,7 +1789,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
             }
 
             /// Add small chance to modify a nested column
-            if (rg.nextSmallNumber() < 4)
+            if (!in_parallel && nalters == 1 && rg.nextSmallNumber() < 4)
             {
                 for (const auto & [key, val] : t.cols)
                 {
@@ -2470,7 +2493,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
     return t.getCluster();
 }
 
-void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
+void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_parallel, Alter * at)
 {
     const uint32_t alter_view = 5 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t alter_table = 15 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
@@ -2544,7 +2567,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     {
         SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-        cluster = this->alterSingleTable(rg, t, nalters, true, true, at);
+        cluster = this->alterSingleTable(rg, t, nalters, true, true, in_parallel, at);
     }
     else if (alter_database && nopt2 < (alter_view + alter_table + alter_database + 1))
     {
@@ -4118,6 +4141,12 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     {
         generateSettingValues(rg, serverSettings, st->mutable_setting_values());
     }
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
+    {
+        st->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+    }
 }
 
 std::optional<String> StatementGenerator::backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
@@ -4627,7 +4656,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
                + alter + 1))
     {
-        generateAlter(rg, sq->mutable_alter());
+        generateAlter(rg, in_parallel, sq->mutable_alter());
     }
     else if (
         set_values
@@ -5313,6 +5342,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                                 {
                                     SQLColumn & ncol = t.staged_cols.at(cname);
                                     delete entry.subtype;
+                                    chassert(ncol.tp);
                                     entry.subtype = ncol.tp;
                                     ncol.tp = nullptr;
                                     break;
