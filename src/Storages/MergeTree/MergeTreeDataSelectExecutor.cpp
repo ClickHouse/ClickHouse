@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
+    extern const SettingsUInt64 merge_tree_exclusion_search_max_steps;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsUInt64 parallel_replica_offset;
@@ -1724,28 +1725,45 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.index_granularity_bytes);
 
         size_t steps = 0;
+        auto has_step_limit = settings[Setting::merge_tree_exclusion_search_max_steps] > 0;
+        auto reached_step_limit = false;
 
         for (const auto & part_range : part_with_ranges.ranges)
         {
-            /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-            /// At each step, take the left segment and check if it fits.
-            /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-            /// If the segment is already of one mark length, add it to response and discard it.
-
-            std::vector<MarkRange> ranges_stack = {part_range};
-            while (!ranges_stack.empty())
+            size_t previous_res_size = res.size();
+            std::deque<MarkRange> ranges_to_process = {part_range};
+            while (!ranges_to_process.empty())
             {
-                MarkRange range = ranges_stack.back();
-                ranges_stack.pop_back();
+                MarkRange range;
+                if (has_step_limit)
+                {
+                    /// Use the deque as a queue. With a step limit, it is better to evaluate ranges
+                    /// breadth-first in order to prune the largest ranges first. The ranges will be
+                    /// re-sorted and merged since they can be inserted out of order.
+                    range = ranges_to_process.front();
+                    ranges_to_process.pop_front();
+                }
+                else
+                {
+                    /// Use the deque as a stack. There will always be disjoint suspicious segments
+                    /// on the stack, the leftmost one at the top (back).
+                    /// At each step, take the left segment and check if it fits.
+                    /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
+                    /// If the segment is already of one mark length, add it to response and discard it.
+                    range = ranges_to_process.back();
+                    ranges_to_process.pop_back();
+                }
 
                 ++steps;
+                if (has_step_limit && steps == settings[Setting::merge_tree_exclusion_search_max_steps])
+                    reached_step_limit = true;
 
                 auto result = check_in_range(
                     range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
                 if (!result.can_be_true)
                     continue;
 
-                if (range.end == range.begin + 1)
+                if (range.end == range.begin + 1 || reached_step_limit)
                 {
                     /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
                     if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
@@ -1763,15 +1781,36 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
                 else
                 {
-                    /// Break the segment and put the result on the stack from right to left.
+                    /// Break the segment and put the result in the deque from right to left.
                     size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
                     size_t end;
 
                     for (end = range.end; end > range.begin + step; end -= step)
-                        ranges_stack.emplace_back(end - step, end);
+                        ranges_to_process.emplace_back(end - step, end);
 
-                    ranges_stack.emplace_back(range.begin, end);
+                    ranges_to_process.emplace_back(range.begin, end);
                 }
+            }
+
+            if (has_step_limit)
+            {
+                /// When there is a step limit, ranges are processed breadth-first, and may not have
+                /// been inserted in sorted order, so here we re-sort and merge them beore returning.
+                std::sort(res.begin() + previous_res_size, res.end());
+                size_t write = previous_res_size;
+                for (size_t read = previous_res_size; read != res.size(); ++read)
+                {
+                    if (res[read].begin <= res[write].end + 1)
+                    {
+                        res[write].end = res[read].end;
+                    }
+                    else
+                    {
+                        ++write;
+                        res[write] = res[read];
+                    }
+                }
+                res.resize(write + 1);
             }
         }
 
