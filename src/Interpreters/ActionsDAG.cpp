@@ -904,7 +904,12 @@ static ColumnWithTypeAndName executeActionForPartialResult(
             try
             {
                 if (only_constant_arguments)
-                    res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+                {
+                    if (input_rows_count)
+                        res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+                    else
+                        res_column.column = res_column.type->createColumn();
+                }
                 else
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
             }

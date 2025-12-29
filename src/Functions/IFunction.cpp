@@ -155,14 +155,13 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
         if (arguments_to_remain_constants.end()
             != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
         {
-            temporary_columns.emplace_back(ColumnWithTypeAndName{column.column->cloneResized(input_rows_count > 0 ? 1 : 0), column.type, column.name});
+            temporary_columns.emplace_back(ColumnWithTypeAndName{column.column->cloneResized(1), column.type, column.name});
         }
         else
         {
             have_converted_columns = true;
-            const auto & data_column = assert_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr();
             temporary_columns.emplace_back(
-                ColumnWithTypeAndName{input_rows_count > 0 ? data_column : data_column->cloneEmpty(), column.type, column.name});
+                ColumnWithTypeAndName{assert_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name});
         }
     }
 
@@ -175,15 +174,12 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
             "Number of arguments for function {} doesn't match: the function requires more arguments",
             getName());
 
-    ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, input_rows_count > 0 ? 1 : 0, dry_run);
+    ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, 1, dry_run);
 
     /// extremely rare case, when we have function with completely const arguments
     /// but some of them produced by non isDeterministic function
     if (result_column->size() > 1)
         result_column = result_column->cloneResized(1);
-
-    if (input_rows_count == 0)
-        return result_column;
 
     return ColumnConst::create(result_column, input_rows_count);
 }
