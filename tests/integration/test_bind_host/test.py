@@ -3,8 +3,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
+node1 = cluster.add_instance(
+    "node1",
     main_configs=[
         "configs/config.d/remote_servers.xml",
         "configs/config.d/ssl_conf.xml",
@@ -13,13 +13,13 @@ node = cluster.add_instance(
     ],
     ipv4_address="10.5.96.11",
 )
-node_bind_host = cluster.add_instance(
-    "node_bind_host",
+node2 = cluster.add_instance(
+    "node2",
     main_configs=["configs/config.d/remote_servers.xml"],
     ipv4_address="10.5.96.12",
 )
-node_bind_host_secure = cluster.add_instance(
-    "node_bind_host_secure",
+node3 = cluster.add_instance(
+    "node3",
     main_configs=[
         "configs/config.d/remote_servers.xml",
         "configs/config.d/ssl_conf.xml",
@@ -28,8 +28,8 @@ node_bind_host_secure = cluster.add_instance(
     ],
     ipv4_address="10.5.96.13",
 )
-node_bind_host_fail = cluster.add_instance(
-    "node_bind_host_fail",
+node4 = cluster.add_instance(
+    "node4",
     main_configs=["configs/config.d/remote_servers.xml"],
     ipv4_address="10.5.96.14",
 )
@@ -44,11 +44,11 @@ def start_cluster():
             node.query("DROP TABLE IF EXISTS mem")
             node.query("CREATE TABLE mem (key Int) Engine=Memory()")
             node.query("INSERT INTO mem VALUES (1), (2)")
-        # add extra ip address for bind_host in node_bind_host and node_bind_host_secure
-        node_bind_host.exec_in_container(
+        # add extra ip address for bind_host in node2 and node3
+        node2.exec_in_container(
             ["bash", "-c", "ip addr add 10.5.96.22/12 dev eth0"], privileged=True, user="root"
         )
-        node_bind_host_secure.exec_in_container(
+        node3.exec_in_container(
             ["bash", "-c", "ip addr add 10.5.96.23/12 dev eth0"], privileged=True, user="root"
         )
         yield cluster
@@ -60,38 +60,35 @@ def start_cluster():
 
 
 def test_bind_host(start_cluster):
-    node_bind_host.query("""
+    node2.query("DROP TABLE IF EXISTS dist")
+    node2.query("""
         CREATE TABLE dist
         Engine=Distributed(test_cluster_bind_host, currentDatabase(), mem)
     """)
-    assert node_bind_host.query("SELECT count() FROM dist") == "4\n"
-
-    # clean up
-    node_bind_host.query("DROP TABLE IF EXISTS dist")
+    assert node2.query("SELECT count() FROM dist") == "4\n"
 
 
 def test_bind_host_secure(start_cluster):
-    node_bind_host_secure.query("""
+    node3.query("DROP TABLE IF EXISTS dist")
+    node3.query("""
         CREATE TABLE dist
         Engine=Distributed(test_cluster_bind_host_secure, currentDatabase(), mem)
     """)
-    assert node_bind_host_secure.query("SELECT count() FROM dist") == "4\n"
-
-    # clean up
-    node_bind_host_secure.query("DROP TABLE IF EXISTS dist")
+    assert node3.query("SELECT count() FROM dist") == "4\n"
 
 
 def test_bind_host_fail(start_cluster):
-    node_bind_host_fail.query("""
+    node4.query("DROP TABLE IF EXISTS dist")
+    node4.query("""
         CREATE TABLE dist
         Engine=Distributed(test_cluster_bind_host_fail, currentDatabase(), mem)
     """)
-    # node can not be connected with wrong bind_host 1.2.3.4
-    # Code: 210. DB::NetException: Net Exception: Cannot assign requested address: 1.2.3.4:0 (node:9000). (NETWORK_ERROR)
+    # node1 can not be connected with wrong bind_host 1.2.3.4
+    # Code: 210. DB::NetException: Net Exception: Cannot assign requested address: 1.2.3.4:0 (node1:9000). (NETWORK_ERROR)
     with pytest.raises(Exception, match="ALL_CONNECTION_TRIES_FAILED"):
-        node_bind_host_fail.query("SELECT count() FROM dist")
-    # node_bind_host can be successfully connected using 10.5.96.14 without wrong bind_host 1.2.3.4
-    assert node_bind_host_fail.query("SELECT count() FROM dist SETTINGS skip_unavailable_shards=1") == "2\n"
+        node4.query("SELECT count() FROM dist")
 
-    # clean up
-    node_bind_host_fail.query("DROP TABLE IF EXISTS dist")
+    # `skip_unavailable_shards=1` can skip the first shard (contains node1)
+    # 2 rows: node2 can be successfully connected using 10.5.96.14 without wrong bind_host 1.2.3.4
+    # 2 rows: node4 is the initiator node, so no need to send subquery over network because of localhost optimization
+    assert node4.query("SELECT count() FROM dist SETTINGS skip_unavailable_shards=1") == "4\n"

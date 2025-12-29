@@ -3,14 +3,14 @@
         <test_cluster_bind_host>
             <shard>
                 <replica>
-                    <host>node</host>
+                    <host>node1</host>
                     <port>9000</port>
                     <bind_host>10.5.96.22</bind_host>
                 </replica>
             </shard>
             <shard>
                 <replica>
-                    <host>node_bind_host</host>
+                    <host>node2</host>
                     <port>9000</port>
                     <bind_host>10.5.96.22</bind_host>
                 </replica>
@@ -19,7 +19,7 @@
         <test_cluster_bind_host_secure>
             <shard>
                 <replica>
-                    <host>node</host>
+                    <host>node1</host>
                     <port>9440</port>
                     <secure>1</secure>
                     <bind_host>10.5.96.23</bind_host>
@@ -27,7 +27,7 @@
             </shard>
             <shard>
                 <replica>
-                    <host>node_bind_host_secure</host>
+                    <host>node3</host>
                     <port>9440</port>
                     <secure>1</secure>
                     <bind_host>10.5.96.23</bind_host>
@@ -37,21 +37,21 @@
         <test_cluster_bind_host_fail>
             <shard>
                 <replica>
-                    <host>node</host>
+                    <host>node1</host>
                     <port>9000</port>
                     <bind_host>1.2.3.4</bind_host>
                 </replica>
             </shard>
             <shard>
                 <replica>
-                    <host>node_bind_host_fail</host>
+                    <host>node4</host>
                     <port>9000</port>
                     <bind_host>1.2.3.4</bind_host>
                 </replica>
             </shard>
             <shard>
                 <replica>
-                    <host>node_bind_host</host>
+                    <host>node2</host>
                     <port>9000</port>
                 </replica>
             </shard>
