@@ -168,9 +168,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     WriteBufferFromOwnString rewritten_query;
 
     if (query.full)
-        rewritten_query << "SELECT name, engine FROM system.";
+    {
+    rewritten_query << "SELECT name, engine FROM system.";
+    }
     else
+    {
         rewritten_query << "SELECT name FROM system.";
+    }
 
     if (query.dictionaries)
         rewritten_query << "dictionaries ";
