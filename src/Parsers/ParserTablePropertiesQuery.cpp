@@ -1,7 +1,6 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 
 #include <Common/typeid_cast.h>
