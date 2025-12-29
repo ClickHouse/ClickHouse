@@ -1285,27 +1285,31 @@ bool applyDeterministicDagToColumn(
 {
     ColumnPtr col = in_column->convertToFullIfNeeded();
     DataTypePtr type = removeLowCardinality(in_type);
+    DataTypePtr dag_input_type = removeLowCardinality(dag.input_type);
 
-    if (!type->equals(*dag.input_type))
+    if (!type->equals(*dag_input_type))
     {
-        if (canBeSafelyCast(type, dag.input_type))
+        if (canBeSafelyCast(type, dag_input_type))
         {
-            col = castColumnAccurate({col, type, ""}, dag.input_type);
-            type = dag.input_type;
+            col = castColumnAccurate({col, type, ""}, dag_input_type);
+            type = dag_input_type;
         }
-        else if (!dag.input_type->isNullable() && !dag.input_type->canBeInsideNullable())
+        else if (!dag_input_type->isNullable() && !dag_input_type->canBeInsideNullable())
         {
             return false;
         }
         else
         {
-            col = castColumnAccurateOrNull({col, type, ""}, dag.input_type);
+            col = castColumnAccurateOrNull({col, type, ""}, dag_input_type);
             const auto & n = assert_cast<const ColumnNullable &>(*col);
             for (char8_t b : n.getNullMapData())
                 if (b)
                     return false;
-            col = n.getNestedColumnPtr();
-            type = removeNullable(dag.input_type);
+
+            if (!dag_input_type->isNullable())
+                col = n.getNestedColumnPtr();
+
+            type = dag_input_type;
         }
     }
 
@@ -1317,6 +1321,8 @@ bool applyDeterministicDagToColumn(
     const auto & res = block.getByName(dag.output_name);
     out_column = res.column;
     out_type = res.type;
+
+    out_column = out_column->convertToFullColumnIfConst();
 
     if (out_column->isNullable())
     {
