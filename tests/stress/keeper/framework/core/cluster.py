@@ -48,8 +48,9 @@ class ClusterBuilder:
 
         cluster = ClickHouseCluster(self.file_anchor, name=cname)
         base_dir = pathlib.Path(cluster.base_dir)
-        # Use a unique configs subdir per cluster name to avoid xdist collisions
-        conf_dir = base_dir / "configs" / cname
+        # Write generated configs under the ephemeral instances dir for this cluster
+        # to avoid repo workspace collisions and ensure existence in CI workers
+        conf_dir = pathlib.Path(cluster.instances_dir) / "configs" / cname
         try:
             if conf_dir.exists():
                 shutil.rmtree(conf_dir, ignore_errors=True)
@@ -254,6 +255,14 @@ class ClusterBuilder:
             full_xml = "<clickhouse>" + keeper_server + net_block + prom_block + disks_block + "</clickhouse>"
             cfg_path = (conf_dir / f"keeper_config_{name}.xml").resolve()
             cfg_path.write_text(full_xml)
+            # Also write to legacy tests path for compatibility with any callers that still
+            # reference tests/stress/keeper/tests/configs/<cname>/... during startup
+            try:
+                legacy_dir = (base_dir / "configs" / cname)
+                legacy_dir.mkdir(parents=True, exist_ok=True)
+                (legacy_dir / f"keeper_config_{name}.xml").write_text(full_xml)
+            except Exception:
+                pass
             cfgs = [str(cfg_path)]
             inst = cluster.add_instance(
                 name,
