@@ -81,13 +81,17 @@ MergeTreeWriterStream::MergeTreeWriterStream(
 {
 }
 
-void MergeTreeWriterStream::addToChecksums(MergeTreeDataPartChecksums & checksums)
+void MergeTreeWriterStream::addToChecksums(MergeTreeDataPartChecksums & checksums, bool is_compressed)
 {
     String name = escaped_column_name;
 
-    checksums.files[name + data_file_extension].is_compressed = true;
-    checksums.files[name + data_file_extension].uncompressed_size = compressed_hashing.count();
-    checksums.files[name + data_file_extension].uncompressed_hash = compressed_hashing.getHash();
+    if (is_compressed)
+    {
+        checksums.files[name + data_file_extension].is_compressed = true;
+        checksums.files[name + data_file_extension].uncompressed_size = compressed_hashing.count();
+        checksums.files[name + data_file_extension].uncompressed_hash = compressed_hashing.getHash();
+    }
+
     checksums.files[name + data_file_extension].file_size = plain_hashing.count();
     checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
 

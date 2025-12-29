@@ -15,7 +15,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _is_praktika_job
+from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -105,7 +105,7 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_DATA={
+            WORKFLOW_STATUS_DATA={
                 Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
                     "outputs": {
                         "data": json.dumps(
@@ -250,6 +250,7 @@ class Runner:
         debug=False,
         path="",
         path_1="",
+        workers=None,
     ):
         # re-set envs for local run
         env = _Environment.get()
@@ -356,6 +357,9 @@ class Runner:
         if path_1:
             print(f"Custom --path_1 [{path_1}] will be passed to job's script")
             cmd += f" --path_1 {path_1}"
+        if workers is not None:
+            print(f"Custom --workers [{workers}] will be passed to job's script")
+            cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
@@ -459,16 +463,8 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        elif (
-            not result.is_ok()
-            and workflow.enable_merge_ready_status
-            and not job.allow_merge_on_failure
-        ):
-            print("set required label")
-            result.set_required_label()
 
         result.update_duration()
-        # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
         job_outputs = env.JOB_KV_DATA
@@ -591,6 +587,7 @@ class Runner:
                                     test_case_result.name,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
+                                    job_name=job.name,
                                 ),
                             )
                     result.dump()
@@ -611,13 +608,29 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        workflow_result = None
+        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        if workflow.enable_open_issues_check:
+            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            #   to upload updated job and workflow results to S3
+            try:
+                if is_final_job:
+                    # re-check entire workflow in the final job as some new issues may appear
+                    workflow_result = Result.from_fs(workflow.name)
+                    _check_and_link_open_issues(workflow_result, job_name="")
+                else:
+                    _check_and_link_open_issues(result, job_name=job.name)
+            except Exception as e:
+                print(f"ERROR: failed to check open issues: {e}")
+                traceback.print_exc()
+                if is_final_job:
+                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
+
+        # always in the end
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
             workflow_result = Result.from_fs(workflow.name)
-
-            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
                 workflow_storage_usage = StorageUsage.from_dict(
                     workflow_result.ext.get("storage_usage", {})
@@ -642,6 +655,7 @@ class Runner:
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
             _GH_Auth(workflow)
+            workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
                     workflow_result
@@ -723,6 +737,7 @@ class Runner:
         debug=False,
         path="",
         path_1="",
+        workers=None,
     ):
         res = True
         setup_env_code = -10
@@ -751,7 +766,7 @@ class Runner:
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
 
-        if res and (not local_run or pr or sha or branch):
+        if res and (not local_run or ((pr or branch) and sha)):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:
@@ -780,6 +795,7 @@ class Runner:
                     debug=debug,
                     path=path,
                     path_1=path_1,
+                    workers=workers,
                 )
                 res = run_code == 0
                 if not res:

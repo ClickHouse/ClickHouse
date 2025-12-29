@@ -111,14 +111,16 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
 {
     MapTwoLevel::LookupResult found = nullptr;
     auto prev_it = end;
+    bool first = true;
     for (auto it = begin; it != end; ++it)
     {
-        if (*it == *prev_it)
+        if (!first && *it == *prev_it)
         {
             assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
+        first = false;
         prev_it = it;
 
         bool inserted;
@@ -279,6 +281,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 1)
     {
+        std::cerr << "Method 1:\n";
         /** Option 1.
           * In different threads, we aggregate independently into different hash tables.
           * Then merge them together.
@@ -289,8 +292,8 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate1(
-                std::ref(maps[i]),
+            pool.scheduleOrThrowOnError([&, i] { aggregate1(
+                maps[i],
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -335,6 +338,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 12)
     {
+        std::cerr << "Method 12:\n";
         /** The same, but with optimization for consecutive identical values.
           */
 
@@ -343,8 +347,8 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate12(
-                                    std::ref(maps[i]),
+            pool.scheduleOrThrowOnError([&, i] { aggregate12(
+                                    maps[i],
                                     data.begin() + (data.size() * i) / num_threads,
                                     data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -390,11 +394,12 @@ int main(int argc, char ** argv)
 
     if (!method || method == 11)
     {
+        std::cerr << "Method 11:\n";
         /** Option 11.
           * Same as option 1, but with merge, the order of the cycles is changed,
           *  which potentially can give better cache locality.
           *
-          * In practice, there is no difference.
+          * In practice, it is much worse.
           */
 
         std::vector<Map> maps(num_threads);
@@ -402,8 +407,8 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate1(
-                std::ref(maps[i]),
+            pool.scheduleOrThrowOnError([&, i] { aggregate1(
+                maps[i],
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -465,6 +470,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 2)
     {
+        std::cerr << "Method 2:\n";
         /** Option 2.
           * In different threads, we aggregate independently into different two-level hash tables.
           * Then merge them together, parallelizing by the first level buckets.
@@ -478,8 +484,8 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate2(
-                std::ref(maps[i]),
+            pool.scheduleOrThrowOnError([&, i] { aggregate2(
+                maps[i],
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -504,7 +510,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
+            pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
 
@@ -526,13 +532,14 @@ int main(int argc, char ** argv)
 
     if (!method || method == 22)
     {
+        std::cerr << "Method 22:\n";
         std::vector<MapTwoLevel> maps(num_threads);
 
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate22(
-                                    std::ref(maps[i]),
+            pool.scheduleOrThrowOnError([&, i] { aggregate22(
+                                    maps[i],
                                     data.begin() + (data.size() * i) / num_threads,
                                     data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -557,7 +564,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
+            pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
 
@@ -579,6 +586,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 3)
     {
+        std::cerr << "Method 3:\n";
         /** Option 3.
           * In different threads, we aggregate independently into different hash tables,
           *  until their size becomes large enough.
@@ -596,10 +604,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate3(
-                std::ref(local_maps[i]),
-                std::ref(global_map),
-                std::ref(mutex),
+            pool.scheduleOrThrowOnError([&, i] { aggregate3(
+                local_maps[i],
+                global_map,
+                mutex,
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -649,6 +657,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 33)
     {
+        std::cerr << "Method 33:\n";
         /** Option 33.
          * In different threads, we aggregate independently into different hash tables,
          *  until their size becomes large enough.
@@ -662,10 +671,10 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate33(
-                std::ref(local_maps[i]),
-                std::ref(global_map),
-                std::ref(mutex),
+            pool.scheduleOrThrowOnError([&, i] { aggregate33(
+                local_maps[i],
+                global_map,
+                mutex,
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -715,6 +724,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 4)
     {
+        std::cerr << "Method 4:\n";
         /** Option 4.
           * In different threads, we aggregate independently into different hash tables,
           *  until their size becomes large enough.
@@ -731,9 +741,9 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate4(
-                std::ref(local_maps[i]),
-                std::ref(global_map),
+            pool.scheduleOrThrowOnError([&, i] { aggregate4(
+                local_maps[i],
+                global_map,
                 mutexes.data(),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
@@ -784,9 +794,11 @@ int main(int argc, char ** argv)
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
     }
 
-/*    if (!method || method == 5)
+#if 0
+    if (!method || method == 5)
     {
-    */  /** Option 5.
+        std::cerr << "Method 5:\n";
+      /** Option 5.
           * In different threads, we aggregate independently into different hash tables,
           *  until their size becomes large enough.
           * If the size of the local hash table is large and there is no element in it,
@@ -794,16 +806,16 @@ int main(int argc, char ** argv)
           *  and if the latch can not be captured, then insert it into the local one.
           * Then merge all local hash tables into the global one.
           */
-/*
-        Map local_maps[num_threads];
+
+        std::vector<Map> local_maps(num_threads);
         MapSmallLocks global_map;
 
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate5(
-                std::ref(local_maps[i]),
-                std::ref(global_map),
+            pool.scheduleOrThrowOnError([&, i] { aggregate5(
+                local_maps[i],
+                global_map,
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -849,23 +861,24 @@ int main(int argc, char ** argv)
             << std::endl;
 
         std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
-    }*/
+    }
 
-    /*if (!method || method == 6)
+    if (!method || method == 6)
     {
-        *//** Option 6.
+        std::cerr << "Method 6:\n";
+        /** Option 6.
           * In different threads, we aggregate independently into different hash tables.
           * Then "merge" them, passing them in the same order of the keys.
           * Quite a slow option.
           */
-/*
+
         std::vector<Map> maps(num_threads);
 
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate1(
-                std::ref(maps[i]),
+            pool.scheduleOrThrowOnError([&, i] { aggregate1(
+                maps[i],
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
 
@@ -914,7 +927,8 @@ int main(int argc, char ** argv)
             << " (" << n / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << size << std::endl << std::endl;
-    }*/
+    }
+#endif
 
     return 0;
 }

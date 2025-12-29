@@ -4,7 +4,7 @@
 
 #if USE_SSL
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <string>
 
 namespace DB
@@ -141,6 +141,8 @@ public:
     {
         return delegate->tryGetBlobsFromTransactionIfExists(path);
     }
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage
@@ -175,6 +177,11 @@ public:
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
 
+    bool areBlobPathsRandom() const override
+    {
+        return delegate->areBlobPathsRandom();
+    }
+
     bool existsFile(const std::string & path) const override
     {
         return delegate->existsFile(wrappedPath(path));
@@ -208,11 +215,6 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
 
     bool supportsStat() const override { return delegate->supportsStat(); }
-
-    bool supportsPartitionCommand(const PartitionCommand & command) const override
-    {
-        return delegate->supportsPartitionCommand(command);
-    }
 
     struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
 

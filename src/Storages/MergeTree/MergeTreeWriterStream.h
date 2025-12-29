@@ -59,13 +59,11 @@ struct MergeTreeWriterStream
     bool is_prefinalized = false;
 
     void preFinalize();
-
     void finalize();
     void cancel() noexcept;
-
     void sync() const;
 
-    void addToChecksums(MergeTreeDataPartChecksums & checksums);
+    void addToChecksums(MergeTreeDataPartChecksums & checksums, bool is_compressed);
     MarkInCompressedFile getCurrentMark() const;
 };
 

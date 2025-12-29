@@ -76,7 +76,7 @@ class ColumnStatistics
 {
 public:
     using StatsMap = std::map<StatisticsType, StatisticsPtr>;
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
+    ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, DataTypePtr data_type_);
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
@@ -102,6 +102,7 @@ private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
+    DataTypePtr data_type;
     UInt64 rows = 0; /// the number of rows in the column
 };
 
@@ -143,6 +144,8 @@ public:
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
+
+    StatisticsPtr getSingleStats(const SingleStatisticsDescription & stats_desc, DataTypePtr data_type) const;
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);
