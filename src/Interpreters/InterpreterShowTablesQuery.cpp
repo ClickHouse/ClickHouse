@@ -169,7 +169,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     if (query.full)
     {
-    rewritten_query << "SELECT name, engine FROM system.";
+        rewritten_query << "SELECT name, engine FROM system.";
     }
     else
     {

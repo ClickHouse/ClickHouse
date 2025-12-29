@@ -669,3 +669,55 @@ def test_not_specified_catalog_type(started_cluster):
     )
     with pytest.raises(Exception):
         node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_three_part_identifier(started_cluster):
+    """
+    Test 3-part compound identifier syntax: db.namespace.table
+    This allows accessing tables with single-level namespaces without backticks.
+    For example: SELECT * FROM demo.my_namespace.my_table
+    Instead of:  SELECT * FROM demo.`my_namespace.my_table`
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_three_part_identifier_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_ns"  # Single-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+    # Insert test data
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Test 1: 3-part identifier SELECT (db.namespace.table)
+    # This should work the same as demo.`namespace.table`
+    count_3part = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"))
+    assert count_3part == num_rows, f"Expected {num_rows} rows, got {count_3part}"
+
+    # Test 2: Compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+    assert count_3part == count_backtick, "3-part and backtick syntax should return same results"
+
+    # Test 3: EXISTS TABLE with 3-part identifier
+    exists_result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{namespace}.{table_name}").strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # Test 4: DESCRIBE with 3-part identifier
+    desc_3part = node.query(f"DESCRIBE {CATALOG_NAME}.{namespace}.{table_name}")
+    desc_backtick = node.query(f"DESCRIBE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert desc_3part == desc_backtick, "DESCRIBE output should match between syntaxes"
+
+    # Test 5: Non-existent table with 3-part identifier
+    try:
+        node.query(f"SELECT * FROM {CATALOG_NAME}.{namespace}.nonexistent_table")
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
