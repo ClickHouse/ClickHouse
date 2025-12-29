@@ -208,9 +208,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
         /// Check can output?
         if (output.isFinished())
         {
-            /// Once an output port is finished nothing can be pushed to it anymore
-            while (!chunks_cache.empty() && chunks_cache.front().output_port->isFinished())
-                chunks_cache.pop_front();
+            chunks_cache.pop_front();
             return Status::Finished;
         }
         if (!output.canPush())
