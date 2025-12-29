@@ -42,7 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.1",
         {
             {"trace_profile_events_list", "", "", "New setting"},
-            {"max_insert_block_size_bytes", 0, 0, "New settings that allows to control the size of blocks in bytes during parsing of data in Row Input Format and."},
+            {"max_insert_block_size_bytes", 0, 0, "New setting that allows to control the size of blocks in bytes during parsing of data in Row Input Format."},
             {"max_insert_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "An alias for max_insert_block_size."}
         });
         addSettingsChanges(settings_changes_history, "25.12",
