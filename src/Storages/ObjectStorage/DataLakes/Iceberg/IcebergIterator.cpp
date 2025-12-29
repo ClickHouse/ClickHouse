@@ -41,6 +41,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
@@ -136,15 +137,16 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
                 persistent_components,
                 local_context,
                 log,
-                data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_path,
+                data_snapshot->manifest_list_entries[manifest_file_index].manifest_file_absolute_path,
                 data_snapshot->manifest_list_entries[manifest_file_index].added_sequence_number,
-                data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id);
+                data_snapshot->manifest_list_entries[manifest_file_index].added_snapshot_id,
+                *secondary_storages);
             internal_data_index = 0;
         }
         auto files = files_generator(current_manifest_file_content);
         while (internal_data_index < files.size())
         {
-            const auto & manifest_file_entry = files[internal_data_index++];
+            auto & manifest_file_entry = files[internal_data_index++];
             if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
             {
                 previous_entry_schema = manifest_file_entry->schema_id;
@@ -175,7 +177,13 @@ std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
             switch (pruning_status)
             {
                 case PruningReturnStatus::NOT_PRUNED:
+                {
+                    auto [storage_to_use, resolved_key] = resolveObjectStorageForPath(
+                        persistent_components.table_location, manifest_file_entry->file_path, object_storage, *secondary_storages, local_context);
+                    manifest_file_entry->storage_to_use = storage_to_use;
+                    manifest_file_entry->resolved_key = resolved_key;
                     return manifest_file_entry;
+                }
                 case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
                     ++min_max_index_pruned_files;
                     break;
@@ -212,7 +220,8 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     const ActionsDAG * filter_dag_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<SecondaryStorages> secondary_storages_)
     : object_storage(object_storage_)
     , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , local_context(local_context_)
@@ -233,6 +242,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , persistent_components(persistent_components_)
     , files_generator(files_generator_)
     , log(getLogger("IcebergIterator"))
+    , secondary_storages(secondary_storages_)
     , manifest_file_content_type(manifest_file_content_type_)
 {
 }
@@ -244,7 +254,8 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<SecondaryStorages> secondary_storages_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , table_state_snapshot(table_snapshot_)
@@ -258,7 +269,8 @@ IcebergIterator::IcebergIterator(
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          persistent_components_)
+          persistent_components_,
+          secondary_storages_)
     , deletes_iterator(
           object_storage,
           local_context_,
@@ -273,10 +285,12 @@ IcebergIterator::IcebergIterator(
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          persistent_components_)
+          persistent_components_,
+          secondary_storages_)
     , blocking_queue(100)
     , producer_task(std::nullopt)
     , callback(std::move(callback_))
+    , secondary_storages(secondary_storages_)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
@@ -333,16 +347,14 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntryPtr manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        IcebergDataObjectInfoPtr object_info
-            = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
+        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(
+            *manifest_file_entry, table_state_snapshot->schema_id, manifest_file_entry->storage_to_use, manifest_file_entry->resolved_key);
+
         for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
-        {
             object_info->addPositionDeleteObject(position_delete);
-        }
+
         for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files, true))
-        {
             object_info->addEqualityDeleteObject(equality_delete);
-        }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;

@@ -34,7 +34,7 @@ struct IcebergHistoryRecord
     DB::DateTime64 made_current_at;
     Int64 parent_id;
     bool is_current_ancestor;
-    String manifest_list_path;
+    String manifest_list_absolute_path;
 
     Int32 added_files = 0;
     Int32 added_records = 0;
