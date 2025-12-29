@@ -3539,6 +3539,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
 
+            /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
+            /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
+            if (unlikely(isNaN(key_range.left) || isNaN(key_range.right)))
+                contains = false;
+
             rpn_stack.emplace_back(intersects, !contains);
 
             // we don't create bloom_filter_data if monotonic_functions_chain is present
