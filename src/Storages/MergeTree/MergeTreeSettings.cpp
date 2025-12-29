@@ -293,6 +293,13 @@ namespace ErrorCodes
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
     )", 0) \
+    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_wide_part, Field("auto"), R"(
+    The maximum number of dynamic subcolumns that can be created in every column in the Wide data part after merge.
+    It allows to reduce number of files created in Wide data part regardless of dynamic parameters specified in the data type.
+
+    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
+    after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
+    )", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(
