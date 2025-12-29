@@ -42,7 +42,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
