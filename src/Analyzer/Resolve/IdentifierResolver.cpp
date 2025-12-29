@@ -176,6 +176,8 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
     }
     else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
     {
+        /// If table is the target of a refreshable materialized view, it needs additional
+        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
         std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
     }
     else
