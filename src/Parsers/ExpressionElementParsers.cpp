@@ -408,26 +408,13 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
         }
 
-        if (parts.size() == 1)
-        {
-            node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
-        }
-        else if (parts.size() == 2)
-        {
-            node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
-        }
-        else if (parts.size() == 3)
-        {
-            /// For compound table names with one namespace level: db.namespace.table
-            /// E.g., "mydb.ns.table" becomes database="mydb", table="ns.table"
-            String table_name = parts[1] + "." + parts[2];
-            node = std::make_shared<ASTTableIdentifier>(parts[0], table_name, std::move(params));
-        }
-        else
-        {
-            /// more than 3 parts (db.ns1.ns2.table) is not supported
+        if (parts.size() > 2)
             return false;
-        }
+
+        if (parts.size() == 1)
+            node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
+        else
+            node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
     }
     else

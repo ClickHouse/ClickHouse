@@ -1,6 +1,5 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
@@ -22,8 +21,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_table(Keyword::TABLE);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
-    /// Use ParserCompoundIdentifier to support compound names like db.namespace.table
-    ParserCompoundIdentifier name_p(/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true);
+    ParserToken s_dot(TokenType::Dot);
+    ParserIdentifier name_p(true);
 
     ASTPtr database;
     ASTPtr table;
@@ -119,42 +118,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
         query->temporary = temporary;
 
-        ASTPtr compound_name;
-        if (!name_p.parse(pos, compound_name, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-
-        /// Handle compound identifier (can be table, db.table, or db.namespace.table)
-        /// Only one namespace level is supported (max 3 parts)
-        if (auto * identifier = compound_name->as<ASTIdentifier>())
+        if (s_dot.ignore(pos, expected))
         {
-            const auto & parts = identifier->name_parts;
-            if (parts.size() == 1)
-            {
-                /// Just table name
-                table = compound_name;
-            }
-            else if (parts.size() == 2)
-        {
-                /// database.table
-                database = std::make_shared<ASTIdentifier>(parts[0]);
-                table = std::make_shared<ASTIdentifier>(parts[1]);
-            }
-            else if (parts.size() == 3)
-            {
-                /// database.namespace.table -> database = parts[0], table = namespace.table
-                database = std::make_shared<ASTIdentifier>(parts[0]);
-                table = std::make_shared<ASTIdentifier>(parts[1] + "." + parts[2]);
-            }
-            else
-            {
-                /// More than 3 parts not supported - only one namespace level allowed
+            database = table;
+            if (!name_p.parse(pos, table, expected))
                 return false;
-            }
-        }
-        else
-        {
-            /// Non-identifier (shouldn't happen with ParserCompoundIdentifier)
-            table = compound_name;
         }
     }
 

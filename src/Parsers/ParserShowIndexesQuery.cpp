@@ -41,34 +41,16 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     const auto * table_id = from1->as<ASTIdentifier>();
     if (!table_id)
         return false;
-
-    const auto & parts = table_id->name_parts;
-    if (parts.size() == 1)
+    query->table = table_id->shortName();
+    if (table_id->compound())
+        query->database = table_id->name_parts[0];
+    else
     {
-        /// Just table name, check for optional FROM db
-        query->table = parts[0];
         if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
             if (!ParserIdentifier().parse(pos, from2, expected))
                 return false;
         tryGetIdentifierNameInto(from2, from2_str);
         query->database = from2_str;
-    }
-    else if (parts.size() == 2)
-    {
-        /// database.table
-        query->database = parts[0];
-        query->table = parts[1];
-    }
-    else if (parts.size() == 3)
-    {
-        /// database.namespace.table -> database = parts[0], table = namespace.table
-        query->database = parts[0];
-        query->table = parts[1] + "." + parts[2];
-    }
-    else
-    {
-        /// More than 3 parts not supported
-        return false;
     }
 
     if (ParserKeyword(Keyword::WHERE).ignore(pos, expected))

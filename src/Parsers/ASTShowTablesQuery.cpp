@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
@@ -21,10 +21,6 @@ ASTPtr ASTShowTablesQuery::clone() const
 
 String ASTShowTablesQuery::getFrom() const
 {
-    if (!from)
-        return {};
-    if (const auto * id = from->as<ASTIdentifier>())
-        return id->name();
     String name;
     tryGetIdentifierNameInto(from, name);
     return name;
