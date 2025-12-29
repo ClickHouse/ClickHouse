@@ -179,8 +179,8 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 

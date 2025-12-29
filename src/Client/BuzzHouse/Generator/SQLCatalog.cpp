@@ -100,7 +100,7 @@ void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
 
 void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    if (isDataLakeCatalogDatabase())
+    if (isDataLakeCatalogDatabase() && fc.dolor_server.has_value())
     {
         const uint32_t glue_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().glue_catalog.has_value());
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
@@ -534,7 +534,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                     (integration == IntegrationCall::Dolor) ? "/test/" : "",
                     tname);
             }
-            else
+            else if (fc.dolor_server.has_value() && fc.minio_server.has_value())
             {
                 const Catalog * cat = nullptr;
                 const ServerCredentials & sc = fc.dolor_server.value();
@@ -670,7 +670,7 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        return bucket_path.value();
+        return bucket_path.has_value() ? bucket_path.value() : "test";
     }
     if (isFileEngine())
     {
@@ -678,9 +678,13 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
     }
     if (isURLEngine())
     {
-        const ServerCredentials & sc = fc.http_server.value();
+        if (fc.http_server.has_value())
+        {
+            const ServerCredentials & sc = fc.http_server.value();
 
-        return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
+            return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
+        }
+        return "test";
     }
     if (isKeeperMapEngine())
     {
@@ -698,7 +702,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
 {
     if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
-        String res = bucket_path.value();
+        String res = bucket_path.has_value() ? bucket_path.value() : "test";
         /// Replace PARTITION BY str
         const size_t partition_pos = res.find(PARTITION_STR);
         if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
