@@ -191,9 +191,9 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
         if (database)
             storage = database->tryGetTable(table_name, context);
     }
-
     if (!storage)
         return {};
+
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -210,10 +210,10 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1)
+    if (parts_size < 1 || parts_size > 3)
         throw Exception(
             ErrorCodes::INVALID_IDENTIFIER,
-            "Expected table identifier to contain at least 1 part. Actual '{}'",
+            "Expected table identifier to contain from 1 to 3 parts. Actual '{}'",
             table_identifier.getFullName());
 
     /// table prefix from session context (set by USE db.prefix)
@@ -250,7 +250,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// potential database and parts[1] is potential table name (may contain dots)
     std::vector<TableResolutionCandidate> candidates;
 
-    /// Try as database.table (original interpretation)
+    /// Try as database.table
     std::string db_name = table_identifier[0];
     std::string tbl_name = table_identifier[1];
     if (auto result = tryResolveTableWithNames(db_name, tbl_name, context))
