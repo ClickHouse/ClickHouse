@@ -569,7 +569,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     /// Insert value into the column.
-    /// For Dynamic type we cannot just insert Field as we loose information about the data type.
+    /// For Dynamic type we cannot just insert Field as we lose information about the data type.
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicSubcolumns())
     {
