@@ -160,13 +160,6 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     return ptr_resolver->resolve_v6(address.toString());
 }
 
-std::unordered_set<String> reverseResolveWithCache(
-    CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> & cache, const Poco::Net::IPAddress & address)
-{
-    auto [result, _ ] = cache.getOrSet(address, [&address]() { return std::make_shared<std::unordered_set<String>>(reverseResolveImpl(address)); });
-    return *result;
-}
-
 Poco::Net::IPAddress pickAddress(const DNSResolver::IPAddresses & addresses)
 {
     return addresses.front();
@@ -266,6 +259,12 @@ DNSResolver::IPAddresses DNSResolver::resolveIPAddressWithCache(const std::strin
     return result->addresses;
 }
 
+std::unordered_set<String> DNSResolver::reverseResolveWithCache(const Poco::Net::IPAddress & address)
+{
+    auto [result, _ ] = impl->cache_address.getOrSet(address, [&address]() { return std::make_shared<std::unordered_set<String>>(reverseResolveImpl(address)); });
+    return *result;
+}
+
 Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
 {
     return pickAddress(resolveHostAll(host)); // random order -> random pick
@@ -340,7 +339,7 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
         return reverseResolveImpl(address);
 
     addToNewAddresses(address);
-    return reverseResolveWithCache(impl->cache_address, address);
+    return reverseResolveWithCache(address);
 }
 
 void DNSResolver::dropCache()
@@ -498,7 +497,7 @@ bool DNSResolver::updateHost(const String & host)
 
 bool DNSResolver::updateAddress(const Poco::Net::IPAddress & address)
 {
-    const auto old_value = reverseResolveWithCache(impl->cache_address, address);
+    const auto old_value = reverseResolveWithCache(address);
     auto new_value = reverseResolveImpl(address);
     const bool result = old_value != new_value;
     impl->cache_address.set(address, std::make_shared<std::unordered_set<String>>(std::move(new_value)));

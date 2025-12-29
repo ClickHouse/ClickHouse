@@ -105,6 +105,7 @@ private:
 
     IPAddresses resolveIPAddressWithCache(const std::string & host);
     IPAddresses getResolvedIPAdressessWithFiltering(const std::string & host);
+    std::unordered_set<String> reverseResolveWithCache(const Poco::Net::IPAddress & address);
 };
 
 }
