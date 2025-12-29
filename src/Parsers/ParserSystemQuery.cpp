@@ -280,6 +280,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->fail_point_name = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
@@ -287,6 +296,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->fail_point_name = ast->as<ASTIdentifier &>().name();
             else
                 return false;
+
+            /// Optional PAUSE or RESUME keyword
+            if (ParserKeyword(Keyword::PAUSE).ignore(pos, expected))
+                res->fail_point_action = ASTSystemQuery::FailPointAction::PAUSE;
+            else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
+                res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
+
             break;
         }
 
