@@ -2228,6 +2228,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(URL);
         }
+        if (connections.hasDolorConnection() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
+        {
+            this->ids.emplace_back(Kafka);
+        }
         if (allow_mysql_tbl || allow_postgresql_tbl)
         {
             this->ids.emplace_back(ExternalDistributed);

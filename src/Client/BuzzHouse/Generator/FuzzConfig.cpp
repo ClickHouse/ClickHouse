@@ -312,7 +312,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"shared", allow_shared},
            {"datalakecatalog", allow_datalakecatalog},
            {"arrowflight", allow_arrowflight},
-           {"alias", allow_alias}};
+           {"alias", allow_alias},
+           {"kafka", allow_kafka}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",

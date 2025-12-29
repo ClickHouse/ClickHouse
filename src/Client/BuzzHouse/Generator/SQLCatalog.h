@@ -324,6 +324,8 @@ public:
 
     bool isAliasEngine() const;
 
+    bool isKafkaEngine() const;
+
     bool isNotTruncableEngine() const;
 
     bool isEngineReplaceable() const;

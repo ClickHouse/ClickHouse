@@ -68,7 +68,7 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
     allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
     allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
-    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44);
+    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45);
 
 extern const DB::Strings compressionMethods;
 
