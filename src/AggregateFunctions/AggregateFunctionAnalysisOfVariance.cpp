@@ -129,7 +129,7 @@ There should be at least one group with the number of observations greater than 
 analysisOfVariance(val, group_no)
     )";
     FunctionDocumentation::Arguments arguments_analysisOfVariance = {
-        {"val", "Value.", {"(U)Int*", "Float*", "Decimal"},
+        {"val", "Value.", {"(U)Int*", "Float*", "Decimal"}},
         {"group_no", "Group number that `val` belongs to.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_analysisOfVariance = {"Returns a tuple with the F-statistic and p-value.", {"Tuple(Float64, Float64)"}};
