@@ -1,3 +1,7 @@
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 0;
+SET query_plan_join_swap_table = 0;
+
 CREATE TABLE users (uid UInt64, name String, age Int16) ENGINE=MergeTree ORDER BY uid;
 
 INSERT INTO users VALUES (1231, 'John', 33);
