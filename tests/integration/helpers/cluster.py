@@ -5760,7 +5760,16 @@ class ClickHouseInstance:
             f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}"
         )
         for path in self.custom_main_config_paths:
-            shutil.copy(path, self.config_d_dir)
+            src = path
+            if not os.path.exists(src):
+                try:
+                    base = Path(self.cluster.instances_dir) / "configs"
+                    found = next(base.glob(f"*/{os.path.basename(src)}"), None)
+                    if found and found.exists():
+                        src = str(found)
+                except Exception:
+                    pass
+            shutil.copy(src, self.config_d_dir)
 
         # Copy users.d configs
         for path in self.custom_user_config_paths:
