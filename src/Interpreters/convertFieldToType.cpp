@@ -169,10 +169,16 @@ Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
-    if (from_type_hint && from_type_hint->equals(type))
-    {
+    /// Special case for Bool: even if types are "equal" (UInt8 equals Bool because they share
+    /// the same underlying type), we need to convert the value to 0/1 when target is Bool
+    /// but source is not Bool (e.g., plain UInt8). Otherwise, values like 10 or 255 would be
+    /// stored as-is in the set instead of being converted to true (1).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/92980
+    bool target_is_bool = (type.getName() == "Bool");
+    bool source_is_bool = from_type_hint && (from_type_hint->getName() == "Bool");
+
+    if (from_type_hint && from_type_hint->equals(type) && !(target_is_bool && !source_is_bool))
         return src;
-    }
 
     WhichDataType which_type(type);
     WhichDataType which_from_type;
@@ -756,7 +762,15 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_value.isNull())
         return from_value;
 
-    if (from_type_hint && from_type_hint->equals(to_type))
+    /// Special case for Bool: even if types are "equal" (UInt8 equals Bool because they share
+    /// the same underlying type), we need to convert the value to 0/1 when target is Bool
+    /// but source is not Bool (e.g., plain UInt8). Otherwise, values like 10 or 255 would be
+    /// stored as-is in the set instead of being converted to true (1).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/92980
+    bool target_is_bool = (to_type.getName() == "Bool");
+    bool source_is_bool = from_type_hint && (from_type_hint->getName() == "Bool");
+
+    if (from_type_hint && from_type_hint->equals(to_type) && !(target_is_bool && !source_is_bool))
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
@@ -769,7 +783,8 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         if (WhichDataType(nested_type).isNothing())
             return {};
 
-        if (from_type_hint && from_type_hint->equals(nested_type))
+        bool nested_target_is_bool = (nested_type.getName() == "Bool");
+        if (from_type_hint && from_type_hint->equals(nested_type) && !(nested_target_is_bool && !source_is_bool))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings);
     }
