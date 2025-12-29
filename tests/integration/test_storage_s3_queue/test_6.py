@@ -95,7 +95,8 @@ def started_cluster():
 @pytest.mark.parametrize("engine_name", ["S3Queue",
                                          "AzureQueue",
                                          ])
-def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads_num, buckets, hosts):
+@pytest.mark.parametrize("test_stage", [1, 2, 3, 4])
+def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads_num, buckets, hosts, test_stage):
     instances = [started_cluster.instances["instance"]]
     if hosts == 2:
         instances.append(started_cluster.instances["instance2"])
@@ -152,20 +153,22 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
                 break
             time.sleep(1)
 
-    expected_data = [
-        '1,1,1,"2025-01-01","Amsterdam"',
-        '1,1,3,"2025-01-01","Amsterdam"',
-        '1,3,1,"2025-01-01","Copenhagen"', 
-        '1,3,3,"2025-01-01","Copenhagen"',
-        '3,1,1,"2025-01-03","Amsterdam"',
-        '3,1,3,"2025-01-03","Amsterdam"',
-    ]
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    if test_stage == 1:
+        expected_data = [
+            '1,1,1,"2025-01-01","Amsterdam"',
+            '1,1,3,"2025-01-01","Amsterdam"',
+            '1,3,1,"2025-01-01","Copenhagen"', 
+            '1,3,3,"2025-01-01","Copenhagen"',
+            '3,1,1,"2025-01-03","Amsterdam"',
+            '3,1,3,"2025-01-03","Amsterdam"',
+        ]
+        wait_for_data(instances[0], dst_table_name, len(expected_data))
 
-    data = ""
-    for node in instances:
-        data += node.query(f"SELECT column1, column2, column3, date, city FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+        data = ""
+        for node in instances:
+            data += node.query(f"SELECT column1, column2, column3, date, city FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
+        compare_data(data, expected_data, buckets)
+        return
 
     # Add new files to same partitions
     # One in the middle and one in the end
@@ -176,30 +179,32 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-03/city=Amsterdam/file2.csv", b"3,1,2\n")
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-03/city=Amsterdam/file4.csv", b"3,1,4\n")
 
-    # Only new files on the end (file4.csv) should be visible
-    expected_data = [
-        "1,1,1",
-        "1,1,3",
-        "1,1,4",
-        "1,3,1",
-        "1,3,3",
-        "1,3,4",
-        "3,1,1",
-        "3,1,3",
-        "3,1,4",
-    ]
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    if test_stage == 2:
+        # Only new files on the end (file4.csv) should be visible
+        expected_data = [
+            "1,1,1",
+            "1,1,3",
+            "1,1,4",
+            "1,3,1",
+            "1,3,3",
+            "1,3,4",
+            "3,1,1",
+            "3,1,3",
+            "3,1,4",
+        ]
+        wait_for_data(instances[0], dst_table_name, len(expected_data))
 
-    # With buckets we can get some files from the middle, if those files are last in bucket, but not global last.
-    # It depends of hashes of file paths.
-    # This sleep is for additional time for processing.
-    if buckets > 1:
-        time.sleep(10)
+        # With buckets we can get some files from the middle, if those files are last in bucket, but not global last.
+        # It depends of hashes of file paths.
+        # This sleep is for additional time for processing.
+        if buckets > 1:
+            time.sleep(10)
 
-    data = ""
-    for node in instances:
-        data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+        data = ""
+        for node in instances:
+            data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
+        compare_data(data, expected_data, buckets)
+        return
 
     # Add new city and new date
     # All should be visible
@@ -207,28 +212,30 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-01/city=Berlin/file4.csv", b"1,2,4\n")
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-02/city=Amsterdam/file2.csv", b"2,1,2\n")
 
-    expected_data += [
-        "1,2,2",
-        "1,2,4",
-        "2,1,2",
-    ]
-    expected_data.sort()
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    if test_stage == 3:
+        expected_data += [
+            "1,2,2",
+            "1,2,4",
+            "2,1,2",
+        ]
+        expected_data.sort()
+        wait_for_data(instances[0], dst_table_name, len(expected_data))
 
-    if buckets > 1:
-        time.sleep(10)
+        if buckets > 1:
+            time.sleep(10)
 
-    data = ""
-    for node in instances:
-        data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+        data = ""
+        for node in instances:
+            data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
+        compare_data(data, expected_data, buckets)
 
-    instances[0].restart_clickhouse()
+        instances[0].restart_clickhouse()
 
-    data = ""
-    for node in instances:
-        data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+        data = ""
+        for node in instances:
+            data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
+        compare_data(data, expected_data, buckets)
+        return
 
     # Add some records
     # Only few should be visible
@@ -238,42 +245,43 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-01/city=Berlin/file3.csv", b"1,2,3\n") # Skipped
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-01/city=Berlin/file5.csv", b"1,2,5\n") # Added
 
-    expected_data += [
-        "1,2,5",
-        "2,1,3",
-    ]
-    expected_data.sort()
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    if test_stage == 4:
+        expected_data += [
+            "1,2,5",
+            "2,1,3",
+        ]
+        expected_data.sort()
+        wait_for_data(instances[0], dst_table_name, len(expected_data))
 
-    if buckets > 1:
-        time.sleep(10)
+        if buckets > 1:
+            time.sleep(10)
 
-    data = ""
-    for node in instances:
-        data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+        data = ""
+        for node in instances:
+            data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
+        compare_data(data, expected_data, buckets)
 
-    zk = started_cluster.get_kazoo_client("zoo1")
-    processed_nodes = []
-    if (buckets == 1):
-        processed_nodes = zk.get_children(f"{keeper_path}/processed")
-    else:
-        for i in range(buckets):
-            # Files are linked to buckets by hash of file path.
-            # Path contains random table name, so distributing files to buckets is not predictable.
-            # In rare case bucket can have zero processed files.
-            if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
-                continue
-            bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
-            for node in bucket_nodes:
-                if node not in processed_nodes:
-                    processed_nodes.append(node)
-    processed_nodes.sort()
-    expected_nodes = [
-        "date=2025-01-01_city=Amsterdam",
-        "date=2025-01-01_city=Berlin",
-        "date=2025-01-01_city=Copenhagen",
-        "date=2025-01-02_city=Amsterdam",
-        "date=2025-01-03_city=Amsterdam",
-    ]
-    assert processed_nodes == expected_nodes
+        zk = started_cluster.get_kazoo_client("zoo1")
+        processed_nodes = []
+        if (buckets == 1):
+            processed_nodes = zk.get_children(f"{keeper_path}/processed")
+        else:
+            for i in range(buckets):
+                # Files are linked to buckets by hash of file path.
+                # Path contains random table name, so distributing files to buckets is not predictable.
+                # In rare case bucket can have zero processed files.
+                if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
+                    continue
+                bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
+                for node in bucket_nodes:
+                    if node not in processed_nodes:
+                        processed_nodes.append(node)
+        processed_nodes.sort()
+        expected_nodes = [
+            "date=2025-01-01_city=Amsterdam",
+            "date=2025-01-01_city=Berlin",
+            "date=2025-01-01_city=Copenhagen",
+            "date=2025-01-02_city=Amsterdam",
+            "date=2025-01-03_city=Amsterdam",
+        ]
+        assert processed_nodes == expected_nodes
