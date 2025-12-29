@@ -60,6 +60,7 @@ static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POST
 static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 512;
 static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
 static constexpr UInt64 DEFAULT_POSTING_LIST_BLOCK_SIZE = 1024 * 1024;
+static constexpr UInt64 DEFAULT_ENABLE_POSTING_LIST_COMPRESSION = false;
 
 bool DictionaryBlockBase::empty() const
 {
@@ -919,7 +920,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         for (size_t i = block_begin; i < block_end; ++i)
         {
             auto & postings = *tokens_and_postings[i].second;
-            auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params.posting_list_block_size);
+            auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params);
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
 
             if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
@@ -1197,6 +1198,7 @@ static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
+static const String ARGUMENT_ENABLE_POSTING_LIST_COMPRESSION = "enable_posting_list_compression";
 
 namespace
 {
@@ -1331,11 +1333,13 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 posting_list_block_size = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
+    bool enable_posting_list_compression = extractOption<bool>(options, ARGUMENT_ENABLE_POSTING_LIST_COMPRESSION).value_or(DEFAULT_ENABLE_POSTING_LIST_COMPRESSION);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
+        enable_posting_list_compression,
         preprocessor};
 
     if (!options.empty())
@@ -1371,6 +1375,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
+
+    extractOption<bool>(options, ARGUMENT_ENABLE_POSTING_LIST_COMPRESSION).value_or(DEFAULT_ENABLE_POSTING_LIST_COMPRESSION);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));

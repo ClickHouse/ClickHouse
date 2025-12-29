@@ -75,6 +75,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
+    bool enable_posting_list_compression = false;
     String preprocessor;
 };
 
