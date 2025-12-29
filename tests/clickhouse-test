@@ -1947,6 +1947,19 @@ class TestCase:
         )
 
         if result_is_different:
+            # If --record is enabled, copy stdout to reference file
+            if self.testcase_args.record:
+                import shutil
+                shutil.copy2(self.stdout_file, self.reference_file)
+                description += "\tReference file updated\n"
+                return TestResult(
+                    self.name,
+                    TestStatus.OK,
+                    None,
+                    total_time,
+                    description,
+                )
+
             with Popen(
                 [
                     "diff",
@@ -4015,6 +4028,12 @@ def parse_args():
     )
     parser.add_argument(
         "--no-long", action="store_true", dest="no_long", help="Do not run long tests"
+    )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        default=False,
+        help="Automatically update reference files when stdout differs from reference",
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"
