@@ -310,6 +310,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
     {"apply_mutations_on_fly", trueOrFalseSettingNoOracle},
+    {"apply_ttl_on_fly", trueOrFalseSettingNoOracle},
+
     {"apply_patch_parts", trueOrFalseSetting},
     {"apply_settings_from_server", trueOrFalseSettingNoOracle},
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
