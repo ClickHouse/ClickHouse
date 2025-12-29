@@ -10,6 +10,8 @@ namespace DB
 {
 
 class IObjectStorage;
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 
 /// Thread-safe wrapper for secondary object storages map
 struct SecondaryStorages
@@ -52,7 +54,7 @@ void validateSupportedColumns(
     const StorageObjectStorageConfiguration & configuration);
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-    PathWithMetadata & object_info,
+    RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
@@ -98,5 +100,11 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const DB::ObjectStoragePtr & base_storage,
     SecondaryStorages & secondary_storages,
     const DB::ContextPtr & context);
+
+/// Iceberg-specific helper: get resolved storage from ObjectInfo if it's IcebergDataObjectInfo
+ObjectStoragePtr getResolvedStorageFromObjectInfo(const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage);
+
+/// Iceberg-specific helper: get absolute path from ObjectInfo if it's IcebergDataObjectInfo
+std::optional<String> getAbsolutePathFromObjectInfo(const ObjectInfoPtr & object_info);
 
 }

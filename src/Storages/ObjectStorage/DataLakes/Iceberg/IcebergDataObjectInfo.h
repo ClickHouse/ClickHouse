@@ -49,14 +49,14 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// It is also used to create a filter for the data object in the position delete transform.
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
 
-    explicit IcebergDataObjectInfo(const PathWithMetadata & path_);
+    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
 
     /// Sometimes data files are located outside the table location and even in a different storage.
     explicit IcebergDataObjectInfo(
-        Iceberg::ManifestFileEntry data_manifest_file_entry_,
+        const Iceberg::ManifestFileEntry & data_manifest_file_entry_,
         Int32 schema_id_relevant_to_iterator_,
-        ObjectStoragePtr resolved_storage,
-        const String & resolved_key);
+        ObjectStoragePtr resolved_storage_,
+        const String & resolved_key_);
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
@@ -71,7 +71,23 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     void addPositionDeleteObject(Iceberg::ManifestFileEntryPtr position_delete_object);
 
     void addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object);
+
+    std::optional<String> getAbsolutePath() const
+    {
+        if (info.data_object_file_absolute_path.empty())
+            return std::nullopt;
+        return info.data_object_file_absolute_path;
+    }
+
+    ObjectStoragePtr getResolvedStorage() const { return resolved_storage; }
+
+    void setResolvedStorage(ObjectStoragePtr storage) { resolved_storage = std::move(storage); }
+
     Iceberg::IcebergObjectSerializableInfo info;
+
+private:
+    /// For files located in a different storage than the table's main storage
+    ObjectStoragePtr resolved_storage;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

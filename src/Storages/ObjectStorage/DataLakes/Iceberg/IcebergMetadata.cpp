@@ -950,7 +950,7 @@ void IcebergMetadata::addDeleteTransformers(
             auto [delete_storage_to_use, resolved_delete_key] = resolveObjectStorageForPath(
                 persistent_components.table_location, delete_file.file_path, object_storage, *secondary_storages, local_context);
 
-            PathWithMetadata delete_file_object(resolved_delete_key, std::nullopt, delete_file.file_path, delete_storage_to_use);
+            RelativePathWithMetadata delete_file_object(resolved_delete_key);
             {
                 auto schema_read_buffer = createReadBuffer(delete_file_object, delete_storage_to_use, local_context, log);
                 auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);

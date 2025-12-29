@@ -192,9 +192,9 @@ Plan getPlan(
                     plan.partitions.push_back({});
 
                 auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
-                    persistent_table_components.table_location, data_file.file_path, object_storage, secondary_storages, context);
+                    persistent_table_components.table_location, data_file->file_path, object_storage, secondary_storages, context);
 
-                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file, 0, resolved_storage, resolved_key);
+                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(*data_file, 0, resolved_storage, resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 std::string path_identifier = resolved_storage->getDescription() + ":" + resolved_storage->getObjectsNamespace() + "|" + resolved_key;
                 if (!plan.path_to_data_file.contains(path_identifier))
@@ -249,10 +249,10 @@ static void writeDataFiles(
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
             sample_block, data_file->data_object_info, object_storage, format_settings, context, table_location, secondary_storages);
 
-        ObjectStoragePtr storage_to_use = data_file->data_object_info->getObjectStorage();
+        ObjectStoragePtr storage_to_use = data_file->data_object_info->getResolvedStorage();
         if (!storage_to_use)
             storage_to_use = object_storage;
-        PathWithMetadata object_info(data_file->data_object_info->getPath());
+        RelativePathWithMetadata object_info(data_file->data_object_info->getPath());
         auto read_buffer = createReadBuffer(object_info, storage_to_use, context, getLogger("IcebergCompaction"));
 
         const Settings & settings = context->getSettingsRef();

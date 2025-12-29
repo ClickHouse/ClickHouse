@@ -85,7 +85,7 @@ Iceberg::ManifestFilePtr getManifestFile(
         auto [storage_to_use, resolved_key_in_storage] = resolveObjectStorageForPath(
             persistent_table_components.table_location, absolute_path, object_storage, secondary_storages, local_context);
 
-        PathWithMetadata manifest_object_info(resolved_key_in_storage, std::nullopt, absolute_path, storage_to_use);
+        RelativePathWithMetadata manifest_object_info(resolved_key_in_storage);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
@@ -135,7 +135,7 @@ ManifestFileCacheKeys getManifestList(
         auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
             persistent_table_components.table_location, absolute_path, object_storage, secondary_storages, local_context);
 
-        PathWithMetadata object_info(key_in_storage, std::nullopt, absolute_path, storage_to_use);
+        RelativePathWithMetadata object_info(key_in_storage);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled

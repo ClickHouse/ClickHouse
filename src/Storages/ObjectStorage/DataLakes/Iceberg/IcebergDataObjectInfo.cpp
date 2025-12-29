@@ -43,11 +43,10 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 #if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
-    : ObjectInfo(PathWithMetadata(data_manifest_file_entry_->file_path, std::nullopt,
-                   data_manifest_file_entry_->file_path_from_metadata.empty() ? std::nullopt : std::make_optional(data_manifest_file_entry_->file_path_from_metadata)))
+    : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_->file_path))
     , info{
           data_manifest_file_entry_->file_path_from_metadata,
-          String{},
+          data_manifest_file_entry_->file_path_from_metadata,  // absolute path
           data_manifest_file_entry_->schema_id,
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_->added_sequence_number,
@@ -55,37 +54,30 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {}}
 {
-    if (path_with_metadata.absolute_path.has_value())
-        info.data_object_file_absolute_path = path_with_metadata.absolute_path.value();
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
-    Iceberg::ManifestFileEntry data_manifest_file_entry_,
+    const Iceberg::ManifestFileEntry & data_manifest_file_entry_,
     Int32 schema_id_relevant_to_iterator_,
-    ObjectStoragePtr resolved_storage,
-    const String & resolved_key)
-    : ObjectInfo(PathWithMetadata(resolved_key, std::nullopt,
-                       data_manifest_file_entry_.file_path.empty() ? std::nullopt : std::make_optional(data_manifest_file_entry_.file_path),
-                       resolved_storage))
-, info{
-    data_manifest_file_entry_.file_path_from_metadata,
-    String{},
-    data_manifest_file_entry_.schema_id,
-    schema_id_relevant_to_iterator_,
-    data_manifest_file_entry_.added_sequence_number,
-    data_manifest_file_entry_.file_format,
-    /* position_deletes_objects */ {},
-    /* equality_deletes_objects */ {}}
+    ObjectStoragePtr resolved_storage_,
+    const String & resolved_key_)
+    : ObjectInfo(RelativePathWithMetadata(resolved_key_))
+    , info{
+        data_manifest_file_entry_.file_path_from_metadata,
+        data_manifest_file_entry_.file_path,  // absolute path
+        data_manifest_file_entry_.schema_id,
+        schema_id_relevant_to_iterator_,
+        data_manifest_file_entry_.added_sequence_number,
+        data_manifest_file_entry_.file_format,
+        /* position_deletes_objects */ {},
+        /* equality_deletes_objects */ {}}
+    , resolved_storage(std::move(resolved_storage_))
 {
-    if (path_with_metadata.absolute_path.has_value())
-        info.data_object_file_absolute_path = path_with_metadata.absolute_path.value();
 }
 
-IcebergDataObjectInfo::IcebergDataObjectInfo(const PathWithMetadata & path_)
+IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)
     : ObjectInfo(path_)
 {
-    if (path_with_metadata.absolute_path.has_value())
-        info.data_object_file_absolute_path = path_with_metadata.absolute_path.value();
 }
 
 std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(

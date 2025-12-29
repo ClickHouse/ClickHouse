@@ -25,6 +25,9 @@
 #if USE_HDFS
 #include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #endif
+#if USE_AVRO
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#endif
 
 
 namespace DB
@@ -644,6 +647,27 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
                 cfg.setString(config_prefix + ".endpoint", endpoint);
             }
         });
+}
+
+ObjectStoragePtr getResolvedStorageFromObjectInfo(const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage)
+{
+#if USE_AVRO
+    if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
+    {
+        if (auto resolved = iceberg_info->getResolvedStorage())
+            return resolved;
+    }
+#endif
+    return default_storage;
+}
+
+std::optional<String> getAbsolutePathFromObjectInfo(const ObjectInfoPtr & object_info)
+{
+#if USE_AVRO
+    if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
+        return iceberg_info->getAbsolutePath();
+#endif
+    return std::nullopt;
 }
 
 }

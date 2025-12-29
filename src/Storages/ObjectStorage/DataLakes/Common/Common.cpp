@@ -17,7 +17,7 @@ std::vector<String> listFiles(
         object_storage,
         path,
         prefix,
-        [&suffix](const PathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
+        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
 }
 
 
@@ -25,10 +25,10 @@ std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix,
-    const std::function<bool(const PathWithMetadata &)> & check_need)
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
     auto key = std::filesystem::path(path) / prefix;
-    PathsWithMetadata files_with_metadata;
+    RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;
     for (const auto & file_with_metadata : files_with_metadata)

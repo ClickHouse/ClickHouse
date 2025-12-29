@@ -16,10 +16,10 @@ public:
     virtual bool isValid() = 0;
 
     /// Return the current element.
-    virtual PathWithMetadataPtr current() = 0;
+    virtual RelativePathWithMetadataPtr current() = 0;
 
     /// This will initiate prefetching the next batch in background, so it can be obtained faster when needed.
-    virtual std::optional<PathsWithMetadata> getCurrentBatchAndScheduleNext() = 0;
+    virtual std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() = 0;
 
     /// Returns the number of elements in the batches that were fetched so far.
     virtual size_t getAccumulatedSize() const = 0;
@@ -36,7 +36,7 @@ private:
     /// Return the current batch of elements.
     /// It is unspecified how batches are formed.
     /// But this method can be used for more efficient processing.
-    virtual PathsWithMetadata currentBatch() = 0;
+    virtual RelativePathsWithMetadata currentBatch() = 0;
 };
 
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
@@ -45,7 +45,7 @@ class ObjectStorageIteratorFromList : public IObjectStorageIterator
 {
 public:
     /// Everything is represented by just a single batch.
-    explicit ObjectStorageIteratorFromList(PathsWithMetadata && batch_)
+    explicit ObjectStorageIteratorFromList(RelativePathsWithMetadata && batch_)
         : batch(std::move(batch_))
         , batch_iterator(batch.begin()) {}
 
@@ -59,11 +59,11 @@ public:
 
     bool isValid() override { return batch_iterator != batch.end(); }
 
-    PathWithMetadataPtr current() override;
+    RelativePathWithMetadataPtr current() override;
 
-    PathsWithMetadata currentBatch() override { return batch; }
+    RelativePathsWithMetadata currentBatch() override { return batch; }
 
-    std::optional<PathsWithMetadata> getCurrentBatchAndScheduleNext() override
+    std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override
     {
         if (batch.empty())
             return {};
@@ -76,8 +76,8 @@ public:
     size_t getAccumulatedSize() const override { return batch.size(); }
 
 private:
-    PathsWithMetadata batch;
-    PathsWithMetadata::iterator batch_iterator;
+    RelativePathsWithMetadata batch;
+    RelativePathsWithMetadata::iterator batch_iterator;
 };
 
 }

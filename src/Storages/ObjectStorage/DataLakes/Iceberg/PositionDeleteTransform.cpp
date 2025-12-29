@@ -77,7 +77,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             table_location, position_deletes_object.file_path, object_storage, secondary_storages, context);
 
         auto object_metadata = delete_storage_to_use->getObjectMetadata(resolved_key, /*with_tags=*/ false);
-        PathWithMetadata object_info(resolved_key, object_metadata, position_deletes_object.file_path, delete_storage_to_use);
+        RelativePathWithMetadata object_info(resolved_key, object_metadata);
 
         String format = position_deletes_object.file_format;
         if (boost::to_lower_copy(format) != "parquet")

@@ -268,7 +268,7 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     std::string data = "12345678901234567890";
     object_metadata.size_bytes = data.size();
     object_metadata.etag = "tag1";
-    DB::PathWithMetadata path_with_metadata("test_key", object_metadata);
+    DB::RelativePathWithMetadata path_with_metadata("test_key", object_metadata);
     auto buf = DB::createReadBuffer(path_with_metadata, object_storage, query_context, log);
 
     auto session = std::make_shared<CountedSession>();

@@ -112,7 +112,7 @@ bool IObjectStorageIteratorAsync::isValid()
     return !is_finished;
 }
 
-PathWithMetadataPtr IObjectStorageIteratorAsync::current()
+RelativePathWithMetadataPtr IObjectStorageIteratorAsync::current()
 {
     std::lock_guard lock(mutex);
 
@@ -123,7 +123,7 @@ PathWithMetadataPtr IObjectStorageIteratorAsync::current()
 }
 
 
-PathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
+RelativePathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
 {
     std::lock_guard lock(mutex);
 
@@ -133,7 +133,7 @@ PathsWithMetadata IObjectStorageIteratorAsync::currentBatch()
     return current_batch;
 }
 
-std::optional<PathsWithMetadata> IObjectStorageIteratorAsync::getCurrentBatchAndScheduleNext()
+std::optional<RelativePathsWithMetadata> IObjectStorageIteratorAsync::getCurrentBatchAndScheduleNext()
 {
     std::lock_guard lock(mutex);
 
