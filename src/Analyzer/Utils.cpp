@@ -18,15 +18,14 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
