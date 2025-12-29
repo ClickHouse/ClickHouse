@@ -1316,7 +1316,18 @@ bool applyDeterministicDagToColumn(
     Block block;
     block.insert({col, type, input_name});
 
-    dag.actions->execute(block, false, true);
+    /// This can throw. For example, `ORDER BY toUUID(p)` where p is String.
+    /// Then,`WHERE p = 'not-a-uuid'` will throw. Maybe `CAST` function arguments could be checked earlier;
+    /// however, there could be other functions that can throw on some inputs.
+    try
+    {
+        dag.actions->execute(block, false, true);
+    }
+    catch (...)
+    {
+        /// If any error occurs during the execution of the DAG, we cannot transform the constant
+        return false;
+    }
 
     const auto & res = block.getByName(dag.output_name);
     out_column = res.column;
