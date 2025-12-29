@@ -8,9 +8,6 @@ cache_hits = 0, cache_misses = 1
 --- cache hit on the first dictionary block.
 1
 cache_hits = 1, cache_misses = 0
---- no profile events when cache is disabled.
-1
-cache_hits = 0, cache_misses = 0
 Clear text index cache
 --- cache miss on the first dictionary block.
 1

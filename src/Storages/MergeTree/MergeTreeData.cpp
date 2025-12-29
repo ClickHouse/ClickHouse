@@ -186,7 +186,7 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
@@ -4102,9 +4102,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::allow_experimental_full_text_index])
+    if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
+                "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
@@ -4566,6 +4566,26 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
+static bool hasTextIndexMaterialization(const MutationCommands & commands, StorageMetadataPtr metadata_snapshot)
+{
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return false;
+
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::MATERIALIZE_INDEX)
+            continue;
+
+        auto it = std::ranges::find_if(secondary_indices, [&](const IndexDescription & index) { return index.name == command.index_name; });
+        if (it == secondary_indices.end())
+            continue;
+
+        if (it->type == "text" || it->type == "vector_similarity")
+            return true;
+    }
+    return false;
+}
 
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
@@ -4584,6 +4604,21 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "UPDATE or DELETE over the table '{}' is forbidden because it has secondary indexes. Check the MergeTree setting "
                     "'alter_column_secondary_index_mode' to change this behaviour",
                     getStorageID().getNameForLogs());
+        }
+    }
+
+    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr()))
+    {
+        auto data_parts = getDataPartsVectorForInternalUsage();
+
+        for (const auto & part : data_parts)
+        {
+            if (part->rows_count > std::numeric_limits<UInt32>::max())
+            {
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
+                    part->name, part->rows_count, std::numeric_limits<UInt32>::max());
+            }
         }
     }
 }
@@ -7134,14 +7169,13 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
     {
         if (!shared_parts_list)
         {
-            auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *shared_lock_holder);
-
             /// Convert read to write lock, and re-check the shared_parts_list
             shared_lock_holder.reset();
             lock_holder.emplace(data_parts_mutex, /*data_=*/ nullptr);
 
             if (!shared_parts_list)
             {
+                auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *lock_holder);
                 shared_ranges_in_parts = std::make_shared<const RangesInDataParts>(parts);
                 shared_parts_list = std::make_shared<const DataPartsVector>(std::move(parts));
             }
@@ -9663,7 +9697,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
+        return std::make_shared<AddDeduplicationInfoTransform>(header);
     });
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
