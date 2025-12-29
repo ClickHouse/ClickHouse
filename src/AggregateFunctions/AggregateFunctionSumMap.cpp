@@ -767,7 +767,7 @@ Totals one or more `value` arrays according to the keys specified in the `key` a
 - The number of elements in `key` and all `value` arrays must be the same for each row that is totaled.
 :::
     )";
-    FunctionDocumentation::Syntax sumMap_syntax = R"(
+    FunctionDocumentation::Syntax sumMappedArrays_syntax = R"(
 sumMappedArrays(key, value1 [, value2, ...])
 sumMappedArrays(Tuple(key, value1 [, value2, ...]))
     )";
@@ -868,7 +868,7 @@ Calculates the minimum from `value` array according to the keys specified in the
 minMappedArrays(key, value)
 minMappedArrays(Tuple(key, value))
     )";
-    FunctionDocumentation::Arguments minMap_arguments = {
+    FunctionDocumentation::Arguments minMappedArrays_arguments = {
         {"key", "Array of keys.", {"Array(T)"}},
         {"value", "Array of values.", {"Array(T)"}}
     };

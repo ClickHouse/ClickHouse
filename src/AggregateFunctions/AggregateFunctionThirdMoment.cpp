@@ -86,6 +86,7 @@ SELECT skewPop(x) FROM (SELECT pow(number, 2) AS x FROM numbers(10));
 │ 0.6735701055423582 │
 └────────────────────┘
         )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_skewPop = {20, 1};
     FunctionDocumentation::Category category_skewPop = FunctionDocumentation::Category::AggregateFunction;

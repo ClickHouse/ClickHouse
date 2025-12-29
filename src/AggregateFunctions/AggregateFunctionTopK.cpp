@@ -751,7 +751,7 @@ approx_top_k(N[, reserved])(column)
     FunctionDocumentation::Parameters parameters_approx_top_k = {
         {"N", "The number of elements to return. Default value: `10`. Maximum value of `N = 65536`.", {"UInt64"}},
         {"reserved", "Optional. Defines how many cells reserved for values. If `uniq(column) > reserved`, the result will be approximate. Default value: `N * 3`.", {"UInt64"}},
-    }
+    };
     FunctionDocumentation::ReturnedValue returned_value_approx_top_k = {"Returns an array of the approximately most frequent values and their counts, sorted in descending order of approximate frequency.", {"Array"}};
     FunctionDocumentation::Examples examples_approx_top_k = {
     {
