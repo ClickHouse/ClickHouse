@@ -36,14 +36,14 @@ BlockIO InterpreterUseQuery::execute()
         return {};
     }
 
-    /// If not an exact database, try to interpret as "database.table_prefix"
+    /// If not an exact database, try to interpret as "database.table_prefix" for DataLakeCatalog
     size_t dot_pos = new_target.find('.');
     if (dot_pos != String::npos)
     {
         String db_part = new_target.substr(0, dot_pos);
         String prefix_part = new_target.substr(dot_pos + 1);
 
-        if (catalog.isDatabaseExist(db_part))
+        if (catalog.isDatabaseExist(db_part) && catalog.isDatalakeCatalog(db_part))
         {
             getContext()->checkAccess(AccessType::SHOW_DATABASES, db_part);
             session_context->setCurrentDatabase(db_part);

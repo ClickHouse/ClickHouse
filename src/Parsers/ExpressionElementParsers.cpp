@@ -416,15 +416,17 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         {
             node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         }
+        else if (parts.size() == 3)
+        {
+            /// For compound table names with one namespace level: db.namespace.table
+            /// E.g., "mydb.ns.table" becomes database="mydb", table="ns.table"
+            String table_name = parts[1] + "." + parts[2];
+            node = std::make_shared<ASTTableIdentifier>(parts[0], table_name, std::move(params));
+        }
         else
         {
-            /// For compound table names like "namespace1.sub.table", join all parts after the first
-            /// into the table name. First part is treated as potential database name.
-            /// E.g., "a.b.c.d" becomes database="a", table="b.c.d"
-            String table_name = parts[1];
-            for (size_t i = 2; i < parts.size(); ++i)
-                table_name += "." + parts[i];
-            node = std::make_shared<ASTTableIdentifier>(parts[0], table_name, std::move(params));
+            /// more than 3 parts (db.ns1.ns2.table) is not supported
+            return false;
         }
         node->as<ASTTableIdentifier>()->uuid = uuid;
     }

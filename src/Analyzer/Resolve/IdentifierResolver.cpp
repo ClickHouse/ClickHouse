@@ -217,9 +217,16 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             table_identifier.getFullName());
 
     /// table prefix from session context (set by USE db.prefix)
+    /// Only applies to DataLakeCatalog databases
     String table_prefix;
-    if (auto session = context->getSessionContext())
-        table_prefix = session->getCurrentTablePrefix();
+    String current_database = context->getCurrentDatabase();
+    bool is_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
+
+    if (is_datalake)
+    {
+        if (auto session = context->getSessionContext())
+            table_prefix = session->getCurrentTablePrefix();
+    }
 
     /// Single part: table name, possibly with prefix
     if (parts_size == 1)
@@ -232,7 +239,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             std::string prefixed_name = table_prefix + "." + table_name;
             if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
                 return result;
-        } /// TODO: consider removing prefixes if there are >1 prefix (because local db can have dots)
+        }
 
         /// Fall back to just table_name
         return tryResolveTableWithNames({}, table_name, context);
@@ -251,20 +258,23 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         candidates.push_back({result, db_name, tbl_name});
     }
 
-    /// Try as table with dots in current database
-    std::string full_table_name = table_identifier.getFullName();
-    if (auto result = tryResolveTableWithNames({}, full_table_name, context))
+    /// For DataLakeCatalog databases, also try as table with dots in current database
+    if (is_datalake)
     {
-        candidates.push_back({result, {}, full_table_name});
-    }
-
-    /// If prefix is set, also try prefix.full_table_name
-    if (!table_prefix.empty())
-    {
-        std::string prefixed_name = table_prefix + "." + full_table_name;
-        if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
+        std::string full_table_name = table_identifier.getFullName();
+        if (auto result = tryResolveTableWithNames({}, full_table_name, context))
         {
-            candidates.push_back({result, {}, prefixed_name});
+            candidates.push_back({result, {}, full_table_name});
+        }
+
+        /// If prefix is set, also try prefix.full_table_name
+        if (!table_prefix.empty())
+        {
+            std::string prefixed_name = table_prefix + "." + full_table_name;
+            if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
+            {
+                candidates.push_back({result, {}, prefixed_name});
+            }
         }
     }
 
