@@ -3610,6 +3610,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes", index_name);
 
             index_task.index = *index_it;
+            index_task.is_final = is_final;
         }
 
         for (const auto & [column_name, column_type] : columns)
@@ -3638,8 +3639,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
         storage_snapshot->metadata,
-        std::move(new_virtual_columns),
-        std::move(storage_snapshot->data));
+        std::move(new_virtual_columns));
 
     if (output_header != nullptr)
     {

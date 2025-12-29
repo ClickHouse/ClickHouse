@@ -979,12 +979,7 @@ class TeePopen:
         # Search backwards for "Traceback"
         for i in range(len(buffer) - 1, -1, -1):
             if "Traceback" in buffer[i]:
-                return "\n".join(buffer[i:])
+                return "".join(buffer[i:])
 
         # Fallback: return last max_lines
-        return "\n".join(buffer[-max_lines:])
-
-
-if __name__ == "__main__":
-
-    Utils.compress_gz("/tmp/test/")
+        return "".join(buffer[-max_lines:])
