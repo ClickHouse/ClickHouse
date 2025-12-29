@@ -252,8 +252,9 @@ class ClusterBuilder:
             )
             # Emit valid XML document with root <clickhouse>: keeper_server + listen_host + prometheus (+disks only if using S3)
             full_xml = "<clickhouse>" + keeper_server + net_block + prom_block + disks_block + "</clickhouse>"
-            (conf_dir / f"keeper_config_{name}.xml").write_text(full_xml)
-            cfgs = [f"configs/{cname}/keeper_config_{name}.xml"]
+            cfg_path = (conf_dir / f"keeper_config_{name}.xml").resolve()
+            cfg_path.write_text(full_xml)
+            cfgs = [str(cfg_path)]
             inst = cluster.add_instance(
                 name,
                 main_configs=cfgs,
