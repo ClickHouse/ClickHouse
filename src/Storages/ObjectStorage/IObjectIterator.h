@@ -16,17 +16,17 @@ extern const int LOGICAL_ERROR;
 
 struct ObjectInfo
 {
-    RelativePathWithMetadata relative_path_with_metadata;
+    PathWithMetadata path_with_metadata;
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     ObjectInfo() = default;
 
     explicit ObjectInfo(const String & relative_path_)
-        : relative_path_with_metadata(RelativePathWithMetadata(relative_path_))
+        : path_with_metadata(PathWithMetadata(relative_path_))
     {
     }
-    explicit ObjectInfo(RelativePathWithMetadata relative_path_with_metadata_)
-        : relative_path_with_metadata(relative_path_with_metadata_)
+    explicit ObjectInfo(PathWithMetadata path_with_metadata_)
+        : path_with_metadata(path_with_metadata_)
     {
     }
 
@@ -34,16 +34,19 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
-    virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
+    virtual std::string getFileName() const { return path_with_metadata.getFileName(); }
+    virtual std::string getPath() const { return path_with_metadata.relative_path; }
+    virtual std::optional<std::string> getAbsolutePath() const { return path_with_metadata.absolute_path; }
     virtual bool isArchive() const { return false; }
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
-    void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
+    std::optional<ObjectMetadata> getObjectMetadata() const { return path_with_metadata.metadata; }
+    void setObjectMetadata(const ObjectMetadata & metadata) { path_with_metadata.metadata = metadata; }
+
+    ObjectStoragePtr getObjectStorage() const { return path_with_metadata.object_storage_to_use; }
 
     FileBucketInfoPtr file_bucket_info;
 

@@ -93,7 +93,7 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+    void listObjects(const std::string & path, PathsWithMetadata & children, size_t max_keys) const override;
 
     String getObjectsNamespace() const override { return ""; }
 

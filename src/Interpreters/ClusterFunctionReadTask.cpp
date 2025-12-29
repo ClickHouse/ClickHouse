@@ -37,12 +37,15 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
     {
         iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
+        if (object->path_with_metadata.absolute_path.has_value())
+            iceberg_info.value().data_object_file_absolute_path = object->path_with_metadata.absolute_path.value();
     }
 #endif
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
     file_bucket_info = object->file_bucket_info;
+    absolute_path = object->getAbsolutePath();
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -60,8 +63,10 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     if (iceberg_info.has_value())
     {
 #if USE_AVRO
-        auto iceberg_object = std::make_shared<IcebergDataObjectInfo>(RelativePathWithMetadata{path});
+        auto iceberg_object = std::make_shared<IcebergDataObjectInfo>(PathWithMetadata{path, std::nullopt, absolute_path});
         iceberg_object->info = iceberg_info.value();
+        if (!iceberg_info->data_object_file_absolute_path.empty())
+            iceberg_object->path_with_metadata.absolute_path = iceberg_info->data_object_file_absolute_path;
         object = iceberg_object;
 #else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg support is disabled");
@@ -73,6 +78,9 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     }
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
+
+    if (absolute_path.has_value() && !absolute_path.value().empty())
+        object->path_with_metadata.absolute_path = absolute_path;
 
     return object;
 }
