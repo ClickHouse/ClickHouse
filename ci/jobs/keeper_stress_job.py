@@ -112,7 +112,7 @@ def main():
                 stderr=subprocess.STDOUT,
             )
         # wait until docker responds
-        for i in range(60):
+        for i in range(90):
             if Shell.check("docker info > /dev/null", verbose=True):
                 break
             time.sleep(2)
@@ -360,6 +360,18 @@ def main():
         )
     )
     pytest_result_ok = results[-1].is_ok()
+    # Best-effort: ensure keeper artifacts are world-readable for attachment/triage
+    try:
+        results.append(
+            Result.from_commands_run(
+                name="Fix permissions for keeper artifacts",
+                command=[
+                    f"chmod -R a+rX {repo_dir}/tests/stress/keeper/tests/_instances-* || true",
+                ],
+            )
+        )
+    except Exception:
+        pass
     try:
         for p in [pytest_log_file, report_file, junit_file]:
             try:
