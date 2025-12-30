@@ -357,6 +357,7 @@ try
         KeeperClientBase client(stream, stream);
         client.zookeeper = keeper_client->get();
         client.cwd = cwd;
+        client.ask_confirmation = false;  // Confirmations are not supported in UI
 
         client.processQueryText(command);
         response_json.set("result", stream.str());

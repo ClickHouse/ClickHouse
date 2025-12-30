@@ -1,5 +1,3 @@
-#include <Client/ClientApplicationBase.h>
-#include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
@@ -62,11 +60,8 @@ void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)
     std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }
 
-bool KeeperClientBase::processQueryText(const String & text)
+void KeeperClientBase::processQueryText(const String & text)
 {
-    if (exit_strings.find(text) != exit_strings.end())
-        return false;
-
     try
     {
         if (waiting_confirmation)
@@ -74,7 +69,7 @@ bool KeeperClientBase::processQueryText(const String & text)
             waiting_confirmation = false;
             if (text.size() == 1 && (text == "y" || text == "Y"))
                 confirmation_callback();
-            return true;
+            return;
         }
 
         KeeperParser parser;
@@ -100,7 +95,7 @@ bool KeeperClientBase::processQueryText(const String & text)
             if (!res)
             {
                 cerr << message << "\n";
-                return true;
+                return;
             }
 
             auto * query = res->as<ASTKeeperQuery>();
@@ -113,7 +108,6 @@ bool KeeperClientBase::processQueryText(const String & text)
     {
         cerr << err.message() << "\n";
     }
-    return true;
 }
 
 KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)

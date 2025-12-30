@@ -32,13 +32,14 @@ public:
     zkutil::ZooKeeperPtr zookeeper;
     std::filesystem::path cwd = "/";
     std::function<void()> confirmation_callback;
+    bool ask_confirmation = true;
 
     inline static std::map<String, Command> commands;
 
     std::ostream & cout;
     std::ostream & cerr;
 
-    bool processQueryText(const String & text);
+    void processQueryText(const String & text);
 
     virtual ~KeeperClientBase() = default;
 
@@ -46,7 +47,6 @@ protected:
 
     void loadCommands(std::vector<Command> && new_commands);
 
-    bool ask_confirmation = true;
     bool waiting_confirmation = false;
 
     std::vector<String> registered_commands_and_four_letter_words;
