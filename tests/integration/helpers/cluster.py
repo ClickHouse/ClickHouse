@@ -4196,6 +4196,8 @@ services:
                 {net_aliases}
                     {net_alias1}
         init: {init_flag}
+        {devices}
+            {loop_control_device}
 """
 
 
@@ -4441,6 +4443,11 @@ class ClickHouseInstance:
         self.docker_init_flag = use_docker_init_flag
         self.with_dolor = with_dolor
         self.privileged_docker = privileged_docker
+
+        self.devices = self.loop_control_device = ""
+        if add_loop_control_device:
+            self.devices = "devices:"
+            self.loop_control_device = "- /dev/loop-control"
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5823,6 +5830,8 @@ class ClickHouseInstance:
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
                     privileged=self.privileged_docker,
+                    devices=self.devices,
+                    loop_control_device=self.loop_control_device
                 )
             )
 
