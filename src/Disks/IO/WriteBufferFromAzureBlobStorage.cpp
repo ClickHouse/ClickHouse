@@ -254,7 +254,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
                             azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
                     },
                     max_unexpected_write_error_retries,
-                    0);
+                    /* cost */0);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
