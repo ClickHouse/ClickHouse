@@ -328,8 +328,14 @@ void BackgroundSchedulePool::join()
         shutdown = true;
 
         /// Unlock threads
-        tasks_cond_var.notify_all();
-        delayed_tasks_cond_var.notify_all();
+        {
+            std::lock_guard tasks_lock(tasks_mutex);
+            tasks_cond_var.notify_all();
+        }
+        {
+            std::lock_guard tasks_lock(delayed_tasks_mutex);
+            delayed_tasks_cond_var.notify_all();
+        }
 
         /// Join all worker threads to avoid any recursive calls to schedule()/scheduleAfter() from the task callbacks
         {
