@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -200,8 +201,18 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
-        auto constant_value_ast = getCachedAST(from_column);
+        ASTPtr constant_value_ast = getCachedAST(from_column);
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
+
+        /// special handling for DateTime64 (including Nullable): _CAST(string, DateTime64) fails for short numeric strings like '1.000'
+        /// instead, we first cast to Decimal64, then to DateTime64:
+        /// _CAST(_CAST('1.000', 'Decimal64(3)'), 'DateTime64(3, tz)')
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(constant_value_type).get()))
+        {
+            auto decimal_type_ast = std::make_shared<ASTLiteral>("Decimal64(" + std::to_string(datetime64_type->getScale()) + ")");
+            constant_value_ast = makeASTFunction("_CAST", std::move(constant_value_ast), std::move(decimal_type_ast));
+        }
+
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 
