@@ -257,9 +257,6 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
-        /// for the has atom, otherwise NOT has (...) can produce false negatives.
-        bool disable_exact_set_evaluation = false;
-
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
