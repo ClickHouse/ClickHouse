@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <config.h>
 
 #if USE_NURAFT
@@ -11,6 +10,7 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPPathHints.h>
+#include <Server/KeeperHTTPStorageHandler.h>
 
 namespace DB
 {
@@ -39,27 +39,29 @@ private:
 
 class KeeperHTTPReadinessHandler : public HTTPRequestHandler, WithContext
 {
-private:
-    LoggerPtr log;
-    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-
 public:
     explicit KeeperHTTPReadinessHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+
+private:
+    LoggerPtr log;
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 };
 
 class KeeperHTTPCommandsHandler : public HTTPRequestHandler
 {
+public:
+    KeeperHTTPCommandsHandler(
+        std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+        std::shared_ptr<KeeperHTTPClient> keeper_client_);
+
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+
 private:
     LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-    std::shared_ptr<zkutil::ZooKeeper> keeper_client;
-
-public:
-    explicit KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
-
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    std::shared_ptr<KeeperHTTPClient> keeper_client;
 };
 
 HTTPRequestHandlerFactoryPtr createKeeperHTTPHandlerFactory(

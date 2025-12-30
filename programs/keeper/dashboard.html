@@ -151,17 +151,42 @@
             box-shadow: 0 0 1rem var(--shadow-color);
         }
 
-        #displayStorageData,
-        #command-scrolling-container,
-        #command,
-        #command-output {
+        #displayStorageData {
             min-width: 100%;
             font-size: 11pt;
             padding-left: 0.25rem;
             padding-right: 0.25rem;
             background-color: var(--input-background-color);
             resize: none;
-            /* height: 11pt; */
+        }
+
+        #command {
+            font-size: 11pt;
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+            background-color: var(--input-background-color);
+            resize: none;
+            overflow: hidden;
+        }
+
+        #command-output {
+            font-size: 11pt;
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+            background-color: var(--input-background-color);
+            margin: 0;
+            overflow: visible;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        #command-scrolling-container {
+            font-size: 11pt;
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+            background-color: var(--input-background-color);
+            overflow-y: auto;
+            overflow-x: hidden;
         }
 
         #toggle-light,
@@ -372,56 +397,197 @@
             margin-left: 16rem;
         }
 
-        .storage_viewer_container * {
-            position: relative;
-            box-sizing: border-box;
+        .cli-link {
+            color: var(--text-color);
         }
 
-        .storage_viewer_container ul {
-            padding-left: 1em;
-            list-style-type: none;
+        .cli-link:hover {
+            color: var(--header-text-color);
         }
 
-        .storage_viewer_container>ul:first-of-type {
-            padding: 0;
+        .cli-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
         }
 
-        .storage_viewer_container li span.storage_node_description {
+        .cli-button {
+            display: inline-block;
+            background-color: transparent;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.9rem;
+            color: var(--header-text-color);
+            text-align: center;
             cursor: pointer;
-            padding-left: 5px;
-            padding-bottom: 4px;
-            display: block;
-            text-align: left;
+            border: 1px solid var(--storage-ui-button-border-color);
         }
 
-        .storage_viewer_container li span.storage_node_description:hover {
+        .cli-button:hover {
+            background-color: var(--storage-ui-button-hover-color);
+        }
+
+        .cli-hint {
+            color: var(--misc-text-color);
+            font-size: 0.85em;
+        }
+
+        .command-prompt {
+            display: flex;
+            align-items: center;
+            background-color: var(--input-background-color);
+        }
+
+        .command-prompt-symbol {
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+            user-select: none;
+        }
+
+        #command-cwd {
+            color: var(--misc-text-color);
+            padding-right: 0.5rem;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        /* File Manager Styles */
+        .fm-container {
+            display: flex;
+            flex-direction: column;
+            height: 60vh;
+        }
+
+        .fm-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background-color: var(--element-background-color);
+            border-bottom: 1px solid var(--shadow-color);
+        }
+
+        .fm-breadcrumb {
+            display: flex;
+            align-items: center;
+            flex: 1;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .fm-breadcrumb-item {
+            cursor: pointer;
+            padding: 0.2rem 0.4rem;
+            color: var(--text-color);
+        }
+
+        .fm-breadcrumb-item:hover {
+            background-color: var(--storage-path-hover-color);
+            color: var(--header-text-color);
+        }
+
+        .fm-breadcrumb-separator {
+            color: var(--misc-text-color);
+            padding: 0 0.2rem;
+        }
+
+        .fm-list-container {
+            flex: 1;
+            overflow-y: auto;
+            background-color: var(--input-background-color);
+        }
+
+        .fm-list {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .fm-list th {
+            text-align: left;
+            padding: 0.5rem;
+            background-color: var(--element-background-color);
+            border-bottom: 1px solid var(--shadow-color);
+            position: sticky;
+            top: 0;
+            font-weight: normal;
+            color: var(--misc-text-color);
+        }
+
+        .fm-list td {
+            padding: 0.4rem 0.5rem;
+            border-bottom: 1px solid var(--shadow-color);
+        }
+
+        .fm-list tr {
+            cursor: pointer;
+            border-left: 3px solid transparent;
+        }
+
+        .fm-list tr:hover {
             background-color: var(--storage-path-hover-color);
         }
 
-        .storage_viewer_container li span.storage_node_description.storage_leaf {
-            margin-left: 1.5em;
-            margin-top: 0.2em;
+        .fm-list tr.selected {
+            background-color: var(--storage-path-hover-color);
+            border-left-color: var(--storage-path-selected-border-color);
         }
 
-        .storage_viewer_container span.storage_node_description.selected {
-            color: var(--header-color);
-            border-left: 4px solid var(--storage-path-selected-border-color);
-        }
-
-        .storage_viewer_container li span.storage_ui_icon,
-        .storage_viewer_container li span.storage_ui_icon * {
+        .fm-icon {
+            width: 1.2em;
             display: inline-block;
-            width: 1em;
-            font-size: 1.5rem;
+            text-align: center;
+            margin-right: 0.3rem;
         }
 
-        .storage_viewer_container input.storage_node_name_input {
-            height: 2rem;
-            width: 100%;
-            padding-left: 5px;
-            padding-bottom: 4px;
-            background-color: var(--input-background-color);
+        .fm-name {
+            color: var(--header-text-color);
         }
+
+        .fm-dir .fm-name {
+            font-weight: bold;
+        }
+
+        .fm-children-count {
+            color: var(--misc-text-color);
+            text-align: right;
+        }
+
+        .fm-new-node-input {
+            width: 100%;
+            padding: 0.4rem 0.5rem;
+            background-color: var(--input-background-color);
+            border: 1px solid var(--storage-ui-button-border-color);
+            color: var(--text-color);
+        }
+
+        /* ANSI terminal colors */
+        .ansi-black { color: #000; }
+        .ansi-red { color: #c41a16; }
+        .ansi-green { color: #26a269; }
+        .ansi-yellow { color: #a2734c; }
+        .ansi-blue { color: #1255bc; }
+        .ansi-magenta { color: #a347ba; }
+        .ansi-cyan { color: #2aa1b3; }
+        .ansi-white { color: #ccc; }
+        .ansi-bright-black { color: #666; }
+        .ansi-bright-red { color: #f44; }
+        .ansi-bright-green { color: #4e9a06; }
+        .ansi-bright-yellow { color: #fce94f; }
+        .ansi-bright-blue { color: #729fcf; }
+        .ansi-bright-magenta { color: #ef2929; }
+        .ansi-bright-cyan { color: #34e2e2; }
+        .ansi-bright-white { color: #fff; }
+        .ansi-bold { font-weight: bold; }
+        .ansi-underline { text-decoration: underline; }
+
+        [data-theme="dark"] .ansi-black { color: #555; }
+        [data-theme="dark"] .ansi-red { color: #f66; }
+        [data-theme="dark"] .ansi-green { color: #6d6; }
+        [data-theme="dark"] .ansi-yellow { color: #fd5; }
+        [data-theme="dark"] .ansi-blue { color: #6af; }
+        [data-theme="dark"] .ansi-magenta { color: #d6d; }
+        [data-theme="dark"] .ansi-cyan { color: #5dd; }
+        [data-theme="dark"] .ansi-white { color: #ddd; }
     </style>
 </head>
 
@@ -474,108 +640,105 @@
             <label for="tab_keeper_client">Keeper Client</label>
 
             <div class="tab__content">
-                <div style="display: flex; width: 100%;">
-                    <!-- Tree view side -->
-                    <div style="flex-basis: 40%; box-sizing: border-box; margin-right: 0.5rem;">
-                        <div id="storage-viewer-container"></div>
+                <div style="display: flex; width: 100%; gap: 1rem;">
+                    <!-- File Manager side -->
+                    <div class="fm-container" style="flex: 1; min-width: 0;">
+                        <div class="fm-toolbar">
+                            <button class="cli-button monospace" id="fm-up-btn" onclick="file_manager.goUp()" title="Go to parent directory">↑ Up</button>
+                            <button class="cli-button monospace" onclick="file_manager.reload()" title="Reload current directory">↻ Reload</button>
+                            <div class="fm-breadcrumb monospace" id="fm-breadcrumb"></div>
+                        </div>
+                        <div class="fm-list-container">
+                            <table class="fm-list monospace" id="fm-list">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 60%;">Name</th>
+                                        <th style="width: 20%; text-align: right;">Children</th>
+                                        <th style="width: 20%; text-align: right;">Data Size</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fm-list-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="fm-toolbar" style="border-top: 1px solid var(--shadow-color); border-bottom: none;">
+                            <button class="cli-button monospace" onclick="file_manager.createNode()">+ New Node</button>
+                            <button class="cli-button monospace" id="fm-delete-btn" onclick="file_manager.deleteSelected()">Delete</button>
+                            <span class="monospace" style="margin-left: auto; color: var(--misc-text-color);" id="fm-status"></span>
+                        </div>
                     </div>
 
-                    <div style="flex: 1; box-sizing: border-box; margin-left: 0.5rem">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="flex: 1; overflow-wrap: break-word;">
-                                <p id="displayStoragePath" class="monospace">--</p>
-                            </div>
-                            <div style="display: flex; gap: 10px;">
-                                <button class="storage-ui-button monospace" id="addChildButton"
-                                    onclick="storage_viewer.addNodeToSelectedNode()">
-                                    Add Child
-                                </button>
-                                <button class="storage-ui-button monospace" id="deleteButton"
-                                    onclick="storage_viewer.deleteSelectedNode()">
-                                    Delete
-                                </button>
-                            </div>
+                    <!-- Details panel -->
+                    <div style="flex: 0 0 320px; min-width: 280px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <h3 style="margin: 0;">Node Details</h3>
+                        </div>
+                        <p id="displayStoragePath" class="monospace" style="word-break: break-all; margin-bottom: 0.5rem;">--</p>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; font-size: 0.9em;">
+                            <div><span style="color: var(--misc-text-color);">numChildren:</span></div>
+                            <div id="displayStorageNumChildren" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">dataLength:</span></div>
+                            <div id="displayStorageDataLength" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">version:</span></div>
+                            <div id="displayStorageVersion" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">cversion:</span></div>
+                            <div id="displayStorageCVersion" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">aversion:</span></div>
+                            <div id="displayStorageAVersion" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">ephemeralOwner:</span></div>
+                            <div id="displayStorageEphemeralOwner" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">cZxid:</span></div>
+                            <div id="displayStorageCZxid" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">mZxid:</span></div>
+                            <div id="displayStorageMZxid" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">pZxid:</span></div>
+                            <div id="displayStoragePZxid" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">ctime:</span></div>
+                            <div id="displayStorageCtime" class="monospace">--</div>
+                            <div><span style="color: var(--misc-text-color);">mtime:</span></div>
+                            <div id="displayStorageMtime" class="monospace">--</div>
                         </div>
 
-                        <div style="display: flex;">
-                            <div style="flex-basis: 50%; box-sizing: border-box; margin-right: 0.1rem;">
-                                <h4>numChildren:</h4>
-                                <p id="displayStorageNumChildren" class="monospace">--</p>
-                                <h4>dataLength:</h4>
-                                <p id="displayStorageDataLength" class="monospace">--</p>
-                                <h4>version:</h4>
-                                <p id="displayStorageVersion" class="monospace">--</p>
-                                <h4>aversion:</h4>
-                                <p id="displayStorageAVersion" class="monospace">--</p>
-                                <h4>cversion:</h4>
-                                <p id="displayStorageCVersion" class="monospace">--</p>
-                                <h4>ctime:</h4>
-                                <p id="displayStorageCtime" class="monospace">--</p>
-                            </div>
-
-                            <div style="flex: 1; box-sizing: border-box; margin-left: 0.1rem">
-                                <h4>ephemeralOwner:</h4>
-                                <p id="displayStorageEphemeralOwner" class="monospace">--</p>
-                                <h4>cZxid:</h4>
-                                <p id="displayStorageCZxid" class="monospace">--</p>
-                                <h4>pZxid:</h4>
-                                <p id="displayStoragePZxid" class="monospace">--</p>
-                                <h4>mZxid:</h4>
-                                <p id="displayStorageMZxid" class="monospace">--</p>
-                                <h4>mtime:</h4>
-                                <p id="displayStorageMtime" class="monospace">--</p>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="display: flex; flex-direction: column; justify-content: flex-end;">
-                                <h1>Node Data:</h1>
-                            </div>
-                            <div style="display: flex; align-items: flex-start;">
-                                <button class="storage-ui-button monospace"
-                                    onclick="storage_viewer.saveSelectedNodeData()">Save</button>
-                            </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+                            <h3 style="margin: 0;">Node Data</h3>
+                            <button class="cli-button monospace" onclick="file_manager.saveData()">Save</button>
                         </div>
                         <textarea id="displayStorageData" spellcheck="false" data-gramm="false" class="monospace"
-                            style="height: 20em"></textarea>
+                            style="height: 15em; width: 100%; margin-top: 0.5rem;"></textarea>
                     </div>
                 </div>
             </div>
 
             <div class="tab__content">
-                <a href="https://clickhouse.com/docs/operations/utilities/clickhouse-keeper-client">
-                    <h3>Keeper Client</h3>
-                </a>
-                <a href="https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#four-letter-word-commands">
-                    <h3>4LW Commands</h3>
-                </a>
-                <p>Check "conf" for four_letter_word_allow_list.</p>
+                <div class="cli-toolbar">
+                    <div>
+                        <a class="cli-link" href="https://clickhouse.com/docs/operations/utilities/clickhouse-keeper-client">Keeper Client</a>
+                        &nbsp;|&nbsp;
+                        <a class="cli-link" href="https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#four-letter-word-commands">4LW Commands</a>
+                    </div>
+                    <div>
+                        <span class="cli-hint">Up/Down: history | Ctrl+L: clear</span>
+                        <button class="cli-button monospace" id="cli-clear-btn" onclick="clearCommandOutput()">Clear</button>
+                    </div>
+                </div>
 
-                <div>
-                    <h3 class="monospace" style="display: inline;">ruok: </h3>
-                    <p style="display: inline;">Tests if the server is running in a non-error state.</p>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <button class="cli-button monospace" onclick="runQuickCommand('ruok')" title="Tests if the server is running in a non-error state">ruok</button>
+                    <button class="cli-button monospace" onclick="runQuickCommand('mntr')" title="Outputs monitoring metrics">mntr</button>
+                    <button class="cli-button monospace" onclick="runQuickCommand('stat')" title="Lists brief details for the server">stat</button>
+                    <button class="cli-button monospace" onclick="runQuickCommand('conf')" title="Prints serving configuration">conf</button>
+                    <button class="cli-button monospace" onclick="runQuickCommand('ls \'/\'')" title="List root children">ls '/'</button>
+                    <button class="cli-button monospace" onclick="runQuickCommand('help')" title="Show available commands">help</button>
                 </div>
-                <div>
-                    <h3 class="monospace" style="display: inline;">mntr: </h3>
-                    <p style="display: inline;">Outputs a list of variables that could be used for monitoring the health
-                        of the cluster.</p>
-                </div>
-                <div>
-                    <h3 class="monospace" style="display: inline;">stat: </h3>
-                    <p style="display: inline;">Lists brief details for the server and connected clients.</p>
-                </div>
-                <div>
-                    <h3 class="monospace" style="display: inline;">conf: </h3>
-                    <p style="display: inline;">Prints details about serving configuration.</p>
-                </div>
-                <div style="margin-top: 1rem"> </div>
+
                 <div id="command-scrolling-container"
-                    style="display: flex; flex-direction: column; width: 100%; height: 40vh; overflow: auto;">
-                    <pre id="command-output" class="monospace" style="width: 100%;"></pre>
-                    <div name="command-div" style="display: flex; align-items: center;">
-                        <span class="monospace" style="padding-left: 0.25rem;">➜</span>
+                    style="display: flex; flex-direction: column; width: 100%; height: 40vh;">
+                    <pre id="command-output" class="monospace"></pre>
+                    <div class="command-prompt">
+                        <span class="monospace command-prompt-symbol">➜</span>
+                        <span class="monospace" id="command-cwd">/</span>
                         <textarea autofocus spellcheck="false" data-gramm="false" class="monospace" id="command"
-                            style="height: 15pt"></textarea>
+                            style="height: 15pt; flex: 1; border: none;"></textarea>
                     </div>
                 </div>
 
@@ -629,469 +792,475 @@
 </body>
 
 <script type="text/javascript">
+    let errorTimeout = null;
     function renderError(message) {
-        document.getElementById("error").innerText = message;
-        document.getElementById("error").style.display = "block";
+        const errorEl = document.getElementById("error");
+        errorEl.innerText = message;
+        errorEl.style.display = "block";
         document.getElementById("logo-container").style.display = "none";
+
+        if (errorTimeout) {
+            clearTimeout(errorTimeout);
+        }
+        errorTimeout = setTimeout(() => {
+            errorEl.style.display = "none";
+            document.getElementById("logo-container").style.display = "";
+        }, 5000);
     }
 
-    class StorageViewer {
-        constructor(container) {
-            this.container = container;
-            this.root = undefined;
-            this.selected_node = undefined;
+    class FileManager {
+        constructor() {
+            this.currentPath = "/";
+            this.currentStat = null;
+            this.parentPath = null;
+            this.parentStat = null;
+            this.children = []; // [{name, stat}]
+            this.selectedName = null; // null = current dir, ".." = parent, otherwise child name
+            this.selectedStat = null;
+            this.selectedData = null;
+            this.creatingNode = false;
         }
 
         async init() {
-            this.root = await this.loadRoot();
-            if (this.root.hasData()) {
-                await this.root.loadData();
-            }
-            this.root.select(); // select root
-            this.reload();
+            await this.navigateTo("/");
         }
 
-        async loadRoot() {
+        async navigateTo(path) {
+            this.currentPath = path;
+            this.selectedName = null;
+            this.selectedStat = null;
+            this.selectedData = null;
+            this.creatingNode = false;
+            await this.reload();
+            this.selectCurrentDir();
+        }
+
+        async reload() {
             const server_url = new URL(window.location);
-            server_url.pathname = "/api/v1/storage/list/";
+            server_url.pathname = `/api/v1/storage/list${this.currentPath}`;
 
-            const res = await fetch(server_url.toString());
-            const data = res.ok ? await res.json() : undefined;
+            try {
+                const res = await fetch(server_url.toString());
+                if (!res.ok) {
+                    renderError(`Failed to load path: ${this.currentPath}`);
+                    return;
+                }
+                const data = await res.json();
+                this.currentStat = data.stat;
+                this.children = [];
 
-            return data ? new StorageNode("/", undefined, data.stat, data.child_node_names) : undefined;
+                if (this.currentPath !== "/") {
+                    const parts = this.currentPath.split("/").filter(p => p);
+                    parts.pop();
+                    this.parentPath = "/" + parts.join("/");
+                } else {
+                    this.parentPath = null;
+                    this.parentStat = null;
+                }
+
+                if (this.parentPath !== null) {
+                    const parentUrl = new URL(window.location);
+                    parentUrl.pathname = `/api/v1/storage/list${this.parentPath || "/"}`;
+                    try {
+                        const parentRes = await fetch(parentUrl.toString());
+                        if (parentRes.ok) {
+                            const parentData = await parentRes.json();
+                            this.parentStat = parentData.stat;
+                        }
+                    } catch (e) {
+                        this.parentStat = null;
+                    }
+                }
+
+                const childPromises = data.child_node_names.map(async (name) => {
+                    const childPath = this.getChildPath(name);
+                    const childUrl = new URL(window.location);
+                    childUrl.pathname = `/api/v1/storage/list${childPath}`;
+                    try {
+                        const childRes = await fetch(childUrl.toString());
+                        if (childRes.ok) {
+                            const childData = await childRes.json();
+                            return { name, stat: childData.stat, numChildren: childData.child_node_names.length };
+                        }
+                    } catch (e) { }
+                    return { name, stat: null, numChildren: 0 };
+                });
+
+                this.children = await Promise.all(childPromises);
+                this.render();
+            } catch (e) {
+                renderError(`Failed to load: ${e}`);
+            }
         }
 
-        reload() {
-            if (this.container == null) {
-                console.warn("No container specified");
-                return;
-            }
-
-            if (this.root == null) {
-                console.warn("Root is not loaded");
-                return;
-            }
-
-            this.container.classList.add("storage_viewer_container");
-
-            let cnt = document.createElement("ul");
-
-            cnt.appendChild(this.root.render());
-
-            this.container.innerHTML = "";
-            this.container.appendChild(cnt);
-
-            this.renderSelectedNodeData();
+        getChildPath(name) {
+            return this.currentPath === "/" ? `/${name}` : `${this.currentPath}/${name}`;
         }
 
-        updateSelectedNode(node) {
-            if (this.selected_node !== undefined) {
-                this.selected_node.selected = false;
-            }
-            this.selected_node = node;
-            this.selected_node.selected = true;
+        selectCurrentDir() {
+            this.selectedName = null;
+            this.selectedStat = this.currentStat;
+            this.selectedData = null;
+            this.loadCurrentDirData();
+            this.renderDetails();
+            this.updateSelection();
         }
 
-        renderSelectedNodeData() {
-            // path
-            document.getElementById("displayStoragePath").innerText = this.selected_node?.path ?? "--";
-            // stat
-            document.getElementById("displayStorageAVersion").innerText = this.selected_node?.stat?.aversion ?? "--";
-            document.getElementById("displayStorageCZxid").innerText = this.selected_node?.stat?.czxid ?? "--";
-            document.getElementById("displayStorageCVersion").innerText = this.selected_node?.stat?.cversion ?? "--";
-            document.getElementById("displayStorageDataLength").innerText = this.selected_node?.stat?.dataLength ?? "--";
-            document.getElementById("displayStorageEphemeralOwner").innerText = this.selected_node?.stat?.ephemeralOwner ?? "--";
-            document.getElementById("displayStorageMZxid").innerText = this.selected_node?.stat?.mzxid ?? "--";
-            document.getElementById("displayStorageNumChildren").innerText = this.selected_node?.stat?.numChildren ?? "--";
-            document.getElementById("displayStoragePZxid").innerText = this.selected_node?.stat?.pzxid ?? "--";
-            document.getElementById("displayStorageVersion").innerText = this.selected_node?.stat?.version ?? "--";
-            if (this.selected_node?.stat?.mtime !== undefined) {
-                document.getElementById("displayStorageMtime").innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString("en-US", { hour12: false });
+        async selectParent() {
+            this.selectedName = "..";
+            this.selectedStat = this.parentStat;
+            this.selectedData = null;
+            this.updateSelection();
+            this.renderDetails();
+
+            if (this.parentStat?.dataLength > 0) {
+                const server_url = new URL(window.location);
+                server_url.pathname = `/api/v1/storage/get${this.parentPath || "/"}`;
+                try {
+                    const res = await fetch(server_url.toString());
+                    if (res.ok) {
+                        const buffer = await res.arrayBuffer();
+                        this.selectedData = new Uint8Array(buffer);
+                        this.renderDetails();
+                    }
+                } catch (e) { }
+            }
+        }
+
+        async loadCurrentDirData() {
+            if (this.currentStat?.dataLength > 0) {
+                const server_url = new URL(window.location);
+                server_url.pathname = `/api/v1/storage/get${this.currentPath}`;
+                try {
+                    const res = await fetch(server_url.toString());
+                    if (res.ok) {
+                        const buffer = await res.arrayBuffer();
+                        this.selectedData = new Uint8Array(buffer);
+                        this.renderDetails();
+                    }
+                } catch (e) { }
+            }
+        }
+
+        async selectChild(name) {
+            this.selectedName = name;
+            const child = this.children.find(c => c.name === name);
+            this.selectedStat = child?.stat || null;
+            this.selectedData = null;
+            this.updateSelection();
+            this.renderDetails();
+
+            if (this.selectedStat?.dataLength > 0) {
+                const path = this.getChildPath(name);
+                const server_url = new URL(window.location);
+                server_url.pathname = `/api/v1/storage/get${path}`;
+                try {
+                    const res = await fetch(server_url.toString());
+                    if (res.ok) {
+                        const buffer = await res.arrayBuffer();
+                        this.selectedData = new Uint8Array(buffer);
+                        this.renderDetails();
+                    }
+                } catch (e) { }
+            }
+        }
+
+        async openChild(name) {
+            await this.navigateTo(this.getChildPath(name));
+        }
+
+        async goUp() {
+            if (this.currentPath === "/") return;
+            const parts = this.currentPath.split("/").filter(p => p);
+            parts.pop();
+            const parentPath = "/" + parts.join("/");
+            await this.navigateTo(parentPath || "/");
+        }
+
+        render() {
+            this.renderBreadcrumb();
+            this.renderList();
+            this.renderStatus();
+            this.renderDetails();
+
+            document.getElementById("fm-up-btn").disabled = this.currentPath === "/";
+        }
+
+        renderBreadcrumb() {
+            const container = document.getElementById("fm-breadcrumb");
+            container.innerHTML = "";
+
+            const parts = this.currentPath.split("/").filter(p => p);
+
+            // Root
+            const rootSpan = document.createElement("span");
+            rootSpan.className = "fm-breadcrumb-item";
+            rootSpan.textContent = "/";
+            rootSpan.onclick = () => this.navigateTo("/");
+            container.appendChild(rootSpan);
+
+            let currentPath = "";
+            for (const part of parts) {
+                currentPath += "/" + part;
+                const path = currentPath;
+
+                const sep = document.createElement("span");
+                sep.className = "fm-breadcrumb-separator";
+                sep.textContent = "›";
+                container.appendChild(sep);
+
+                const span = document.createElement("span");
+                span.className = "fm-breadcrumb-item";
+                span.textContent = part;
+                span.onclick = () => this.navigateTo(path);
+                container.appendChild(span);
+            }
+        }
+
+        renderList() {
+            const tbody = document.getElementById("fm-list-body");
+            tbody.innerHTML = "";
+
+            if (this.currentPath !== "/") {
+                const trUp = document.createElement("tr");
+                trUp.className = "fm-parent-entry fm-dir";
+                trUp.dataset.name = "..";
+
+                const tdName = document.createElement("td");
+                const icon = document.createElement("span");
+                icon.className = "fm-icon";
+                icon.textContent = "📁";
+                tdName.appendChild(icon);
+                const nameSpan = document.createElement("span");
+                nameSpan.className = "fm-name";
+                nameSpan.textContent = "..";
+                tdName.appendChild(nameSpan);
+                trUp.appendChild(tdName);
+
+                const tdChildren = document.createElement("td");
+                tdChildren.className = "fm-children-count";
+                tdChildren.textContent = this.parentStat?.numChildren ?? "-";
+                trUp.appendChild(tdChildren);
+
+                const tdSize = document.createElement("td");
+                tdSize.className = "fm-children-count";
+                tdSize.textContent = this.parentStat?.dataLength ?? "-";
+                trUp.appendChild(tdSize);
+
+                trUp.onclick = () => this.selectParent();
+                trUp.ondblclick = () => this.goUp();
+                tbody.appendChild(trUp);
+            }
+
+            const sorted = [...this.children].sort((a, b) => {
+                const aIsDir = a.numChildren > 0;
+                const bIsDir = b.numChildren > 0;
+                if (aIsDir !== bIsDir) {
+                    return aIsDir ? -1 : 1; // Directories first
+                }
+                return a.name.localeCompare(b.name);
+            });
+
+            for (const child of sorted) {
+                const tr = document.createElement("tr");
+                tr.dataset.name = child.name;
+                const hasChildren = child.numChildren > 0;
+                if (hasChildren) tr.classList.add("fm-dir");
+
+                // Name cell
+                const tdName = document.createElement("td");
+                const icon = document.createElement("span");
+                icon.className = "fm-icon";
+                icon.textContent = hasChildren ? "📁" : "📄";
+                tdName.appendChild(icon);
+                const nameSpan = document.createElement("span");
+                nameSpan.className = "fm-name";
+                nameSpan.textContent = child.name;
+                tdName.appendChild(nameSpan);
+                tr.appendChild(tdName);
+
+                // Children count cell
+                const tdChildren = document.createElement("td");
+                tdChildren.className = "fm-children-count";
+                tdChildren.textContent = child.stat?.numChildren ?? "-";
+                tr.appendChild(tdChildren);
+
+                // Data size cell
+                const tdSize = document.createElement("td");
+                tdSize.className = "fm-children-count";
+                tdSize.textContent = child.stat?.dataLength ?? "-";
+                tr.appendChild(tdSize);
+
+                tr.onclick = () => this.selectChild(child.name);
+                tr.ondblclick = () => this.openChild(child.name);
+
+                tbody.appendChild(tr);
+            }
+
+            if (this.creatingNode) {
+                const tr = document.createElement("tr");
+                const td = document.createElement("td");
+                td.colSpan = 3;
+                const input = document.createElement("input");
+                input.type = "text";
+                input.className = "fm-new-node-input";
+                input.placeholder = "Enter node name...";
+                input.onkeydown = async (e) => {
+                    if (e.code === "Enter" && input.value.trim()) {
+                        await this.doCreateNode(input.value.trim());
+                    } else if (e.code === "Escape") {
+                        this.creatingNode = false;
+                        this.render();
+                    }
+                };
+                input.onblur = () => {
+                    this.creatingNode = false;
+                    this.render();
+                };
+                td.appendChild(input);
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+
+                setTimeout(() => input.focus(), 0);
+            }
+        }
+
+        updateSelection() {
+            const tbody = document.getElementById("fm-list-body");
+            for (const tr of tbody.querySelectorAll("tr")) {
+                tr.classList.toggle("selected", tr.dataset.name === this.selectedName);
+            }
+        }
+
+        renderStatus() {
+            const status = document.getElementById("fm-status");
+            status.textContent = `${this.children.length} items`;
+        }
+
+        renderDetails() {
+            const stat = this.selectedName ? this.selectedStat : this.currentStat;
+            let path;
+            if (this.selectedName === "..") {
+                path = this.parentPath || "/";
+            } else if (this.selectedName) {
+                path = this.getChildPath(this.selectedName);
             } else {
-                document.getElementById("displayStorageMtime").innerText = "--";
+                path = this.currentPath;
             }
-            if (this.selected_node?.stat?.mtime !== undefined) {
-                document.getElementById("displayStorageCtime").innerText = new Date(this.selected_node?.stat?.mtime).toLocaleString("en-US", { hour12: false });
+
+            document.getElementById("displayStoragePath").innerText = path || "--";
+            document.getElementById("displayStorageAVersion").innerText = stat?.aversion ?? "--";
+            document.getElementById("displayStorageCZxid").innerText = stat?.czxid ?? "--";
+            document.getElementById("displayStorageCVersion").innerText = stat?.cversion ?? "--";
+            document.getElementById("displayStorageDataLength").innerText = stat?.dataLength ?? "--";
+            document.getElementById("displayStorageEphemeralOwner").innerText = stat?.ephemeralOwner ?? "--";
+            document.getElementById("displayStorageMZxid").innerText = stat?.mzxid ?? "--";
+            document.getElementById("displayStorageNumChildren").innerText = stat?.numChildren ?? "--";
+            document.getElementById("displayStoragePZxid").innerText = stat?.pzxid ?? "--";
+            document.getElementById("displayStorageVersion").innerText = stat?.version ?? "--";
+
+            if (stat?.ctime !== undefined) {
+                document.getElementById("displayStorageCtime").innerText = new Date(stat.ctime).toLocaleString("en-US", { hour12: false });
             } else {
                 document.getElementById("displayStorageCtime").innerText = "--";
             }
-            // data
-            if (this.selected_node && this.selected_node.data) {
-                document.getElementById("displayStorageData").value = new TextDecoder("utf-8").decode(this.selected_node.data);
+            if (stat?.mtime !== undefined) {
+                document.getElementById("displayStorageMtime").innerText = new Date(stat.mtime).toLocaleString("en-US", { hour12: false });
+            } else {
+                document.getElementById("displayStorageMtime").innerText = "--";
+            }
+
+            // Data
+            if (this.selectedData) {
+                document.getElementById("displayStorageData").value = new TextDecoder("utf-8").decode(this.selectedData);
             } else {
                 document.getElementById("displayStorageData").value = "";
             }
-            // buttons
-            let delete_button = document.getElementById("deleteButton");
-            if (!this.selected_node || !this.selected_node.isLeaf() || this.selected_node.isRoot()) {
-                delete_button.disabled = true;
-                delete_button.setAttribute("title", "Only nodes with no children can be deleted.");
-            } else {
-                delete_button.disabled = false;
-                delete_button.removeAttribute("title");
-            }
+
+            const deleteBtn = document.getElementById("fm-delete-btn");
+            const canDelete = this.selectedName && this.selectedName !== ".." && this.selectedStat?.numChildren === 0;
+            deleteBtn.disabled = !canDelete;
         }
 
-        async saveSelectedNodeData() {
-            if (!this.selected_node) {
-                return;
-            }
-
-            let data_to_save = document.getElementById("displayStorageData").value;
-            let encoder = new TextEncoder();
-
-            let server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/set${this.selected_node.path}`;
-
-            let request_url = server_url.toString();
-            request_url += "?" + new URLSearchParams({ version: this.selected_node.version })
-
-            const res = await fetch(request_url,
-                {
-                    method: "POST",
-                    body: encoder.encode(data_to_save)
-                });
-            if (res.ok) {
-                await this.selected_node.reloadContent();
-            } else {
-                renderError(`Failed to save the node's data: ${res.statusText}`)
-            }
-
-            this.reload();
+        createNode() {
+            this.creatingNode = true;
+            this.render();
         }
 
-        async deleteSelectedNode() {
-            if (!this.selected_node) {
-                return;
-            }
+        async doCreateNode(name) {
+            const path = this.getChildPath(name);
+            const server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/create${path}`;
 
-            if (!this.selected_node.isLeaf()) {
-                return; // the button should be disabled
-            }
-
-            if (this.selected_node.isRoot()) {
-                return; // the button should be disabled
-            }
-            this.selected_node.parent.removeChild(this.selected_node.name());
-
-            let server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/remove${this.selected_node.path}`;
-
-            let request_url = server_url.toString();
-            request_url += "?" + new URLSearchParams({ version: this.selected_node.version })
-
-            const res = await fetch(request_url,
-                {
-                    method: "POST",
-                });
-            if (res.ok) {
-                await this.selected_node.parent.reloadContent();
-                await this.selected_node.parent.select();
-            } else {
-                renderError(`Failed to remove the node: ${res.statusText}`)
-            }
-
-            this.reload();
-        }
-
-        async addNodeToSelectedNode() {
-            if (!this.selected_node) {
-                return;
-            }
-            this.selected_node.makeChildStub();
-            // expand the node if not expanded
-            if (!this.selected_node.expanded) {
-                await this.selected_node.toggleExpanded();
-            }
-            this.reload();
-
-            // focus on the input after everything is rendered
-            let stub_name_input = document.getElementsByClassName("storage_node_name_input")[0];
-            stub_name_input.focus();
-        }
-    }
-
-    class StorageNodeStub {
-        constructor(parent) {
-            this.parent = parent
-        }
-
-        render() {
-            let result = document.createElement("li");
-            let input_field = document.createElement("input");
-            input_field.className = "storage_node_name_input"; // setting a class to your input field
-            input_field.storage_node = this;
-
-            input_field.onblur = function () {
-                // need to destroy the stub as user discarded the input
-                this.storage_node.destroy();
-                storage_viewer.reload();
-            }
-
-            // trigger event if user press Enter
-            input_field.addEventListener("keydown", async function (event) {
-                if (event.code === "Enter") {
-                    event.preventDefault();
-                    if (input_field.value === "") {
-                        // need to destroy the stub as user discarded the input
-                        this.storage_node.destroy();
-                        storage_viewer.reload();
-                        return;
-                    }
-
-                    await this.storage_node.parent.createChild(input_field.value);
-                    this.storage_node.destroy(); // we replaced the stub with a real node
-                    storage_viewer.reload();
-                }
-            });
-
-            result.appendChild(input_field);
-
-            return result;
-        }
-
-        destroy() {
-            this.parent.stub_child = undefined;
-        }
-
-    }
-
-    class StorageNode {
-        constructor(path, parent, stat, children_names = []) {
-            this.path = path;
-            this.stat = stat;
-            this.data = undefined;
-            this.version = stat?.version ?? undefined;
-            this.children_names = children_names;
-            this.children = []; // nodes themselves are lazy loaded
-            this.expanded = false;
-            this.selected = false;
-            this.parent = parent
-            this.stub_child = undefined; // StorageNodeStub reference if a child node is in creation
-        }
-
-        isLeaf() {
-            return (this.children_names.length === 0 && this.stub_child === undefined);
-        }
-
-        isRoot() {
-            return this.path === "/";
-        }
-
-        async reloadContent() {
-            let server_url = new URL(window.location);
-
-            let promises = [];
-            server_url.pathname = `/api/v1/storage/list${this.path}`;
-            promises.push(fetch(server_url.toString())
-                .then(res => res.ok ? res.json() : undefined)
-                .then(data => {
-                    if (data) {
-                        this.stat = data.stat;
-                        this.version = data.stat?.version ?? undefined;
-                        this.children_names = data.child_node_names;
-                    }
-                }));
-            promises.push(this.loadData());
-
-            await Promise.all(promises);
-        }
-
-        async expand() {
-            if (this.isLeaf()) {
-                console.warn("This node has no children.");
-                return;
-            }
-
-            let server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/list`;
-            let list_url = server_url.toString();
-
-            const childNodeRequests = this.children_names.map(child_name =>
-                fetch(list_url + this.getPathOfChild(child_name))
-                    .then(res => res.ok ? res.json() : undefined)
-                    .then(data => data ? new StorageNode(this.getPathOfChild(child_name), this, data.stat, data.child_node_names) : undefined)
-            );
-
-            this.children = await Promise.all(childNodeRequests);
-            this.expanded = true;
-        }
-
-        async collapse() {
-            if (storage_viewer.selected_node.isChildOf(this)) {
-                this.select();
-            }
-            this.children.forEach(function (child) {
-                child.collapse();
-            });
-            this.expanded = false;
-        }
-
-        render() {
-            let result = document.createElement("li");
-            let span_desc = document.createElement("span");
-            span_desc.className = "storage_node_description";
-            span_desc.storage_node = this;
-
-            span_desc.addEventListener("click", async function (e) {
-                let cur_el = e.target;
-
-                while (typeof cur_el.storage_node === "undefined" || cur_el.classList.contains("storage_viewer_container")) {
-                    cur_el = cur_el.parentElement;
-                }
-
-                let node_cur = cur_el.storage_node;
-
-                if (typeof node_cur === "undefined") {
+            try {
+                const res = await fetch(server_url.toString(), { method: "POST" });
+                if (!res.ok) {
+                    renderError(`Failed to create node: ${res.statusText}`);
                     return;
                 }
+                this.creatingNode = false;
+                await this.reload();
+                await this.selectChild(name);
+            } catch (e) {
+                renderError(`Failed to create node: ${e}`);
+            }
+        }
 
-                if (node_cur.hasData()) {
-                    await node_cur.loadData();
+        async deleteSelected() {
+            if (!this.selectedName || !this.selectedStat) return;
+            if (this.selectedStat.numChildren > 0) return;
+
+            const path = this.getChildPath(this.selectedName);
+            const server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/remove${path}`;
+            server_url.search = `?version=${this.selectedStat.version}`;
+
+            try {
+                const res = await fetch(server_url.toString(), { method: "POST" });
+                if (!res.ok) {
+                    renderError(`Failed to delete node: ${res.statusText}`);
+                    return;
                 }
-
-                node_cur.select();
-                storage_viewer.reload();
-            });
-
-            if (this.selected) {
-                span_desc.classList.add("selected");
+                this.selectedName = null;
+                this.selectedStat = null;
+                this.selectedData = null;
+                await this.reload();
+                this.selectCurrentDir();
+            } catch (e) {
+                renderError(`Failed to delete node: ${e}`);
             }
+        }
 
-            if (this.isLeaf()) {
-                span_desc.innerHTML = this.name() + "</span>";
-                span_desc.classList.add("storage_leaf");
+        async saveData() {
+            const path = this.selectedName ? this.getChildPath(this.selectedName) : this.currentPath;
+            const stat = this.selectedName ? this.selectedStat : this.currentStat;
+            if (!stat) return;
 
-                result.appendChild(span_desc);
-            } else {
-                let span_icon = document.createElement("span");
-                span_icon.className = "storage_ui_icon";
-                span_icon.style.fontFamily = "monospace";
-                span_icon.innerHTML = this.expanded ? "<span>&#x25BE;</span>" : "<span>&#x25B8;</span>";
+            const data = document.getElementById("displayStorageData").value;
+            const encoder = new TextEncoder();
 
-                span_icon.addEventListener("click", async function (e) {
-                    e.stopPropagation();
-                    let cur_el = e.target;
+            const server_url = new URL(window.location);
+            server_url.pathname = `/api/v1/storage/set${path}`;
+            server_url.search = `?version=${stat.version}`;
 
-                    while (typeof cur_el.storage_node === "undefined" || cur_el.classList.contains("storage_viewer_container")) {
-                        cur_el = cur_el.parentElement;
-                    }
-
-                    let node_cur = cur_el.storage_node;
-
-                    if (typeof node_cur === "undefined") {
-                        return;
-                    }
-
-                    if (!node_cur.isLeaf()) {
-                        await node_cur.toggleExpanded();
-                    }
-                    storage_viewer.reload();
+            try {
+                const res = await fetch(server_url.toString(), {
+                    method: "POST",
+                    body: encoder.encode(data)
                 });
-
-                span_desc.appendChild(span_icon);
-                span_desc.appendChild(document.createTextNode(this.name()));
-                result.appendChild(span_desc);
-
-                if (this.expanded) {
-                    let ul_container = document.createElement("ul");
-
-                    if (this.stub_child) {
-                        ul_container.appendChild(this.stub_child.render());
-                    }
-
-                    this.children.forEach(function (child) {
-                        ul_container.appendChild(child.render());
-                    });
-
-                    result.appendChild(ul_container)
+                if (!res.ok) {
+                    renderError(`Failed to save data: ${res.statusText}`);
+                    return;
                 }
+                await this.reload();
+                if (this.selectedName) {
+                    await this.selectChild(this.selectedName);
+                } else {
+                    this.selectCurrentDir();
+                }
+            } catch (e) {
+                renderError(`Failed to save data: ${e}`);
             }
-
-            return result;
-        }
-
-        async toggleExpanded() {
-            if (this.isLeaf()) {
-                return;
-            }
-            if (this.expanded) {
-                await this.collapse();
-            } else {
-                await this.expand();
-            }
-        };
-
-        select() {
-            storage_viewer.updateSelectedNode(this);
-        };
-
-        name() {
-            if (this.path === "/") {
-                return "/";
-            }
-            const split_path = this.path.split("/");
-            if (!split_path[split_path.length - 1]) {
-                split_path.pop();
-            }
-            return split_path.length > 0 ? split_path[split_path.length - 1] : "unknown";
-        }
-
-        getPathOfChild(child_name) {
-            return (this.path === "/" ? "" : this.path) + `/${child_name}`;
-        }
-
-        hasData() {
-            return (this.stat?.dataLength ?? 0) !== 0;
-        }
-
-        async loadData() {
-            let server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/get`;
-
-            const res = await fetch(server_url.toString() + this.path);
-            if (res.ok) {
-                const buffer = await res.arrayBuffer();
-                this.data = new Uint8Array(buffer);
-            } else {
-                this.data = undefined;
-            }
-        }
-
-        removeChild(child_name) {
-            this.children_names = this.children_names.filter(name => name !== child_name);
-            this.children = this.children.filter(child => child.name() !== child_name);
-        }
-
-        makeChildStub() {
-            this.stub_child = new StorageNodeStub(this);
-        }
-
-        async createChild(child_name) {
-            let server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/create`;
-            let create_url = server_url.toString();
-
-            const res = await fetch(create_url + this.getPathOfChild(child_name),
-                {
-                    method: "POST"
-                });
-
-            if (res.ok) {
-                this.children_names.push(child_name);
-                let new_child_node = new StorageNode(this.getPathOfChild(child_name), this, undefined, []);
-                // load necessary data for a new node
-                await new_child_node.reloadContent();
-                await this.reloadContent()
-                this.children.push(new_child_node);
-                new_child_node.select();
-            } else {
-                renderError(`Failed to create the node: ${res.statusText}`)
-            }
-        }
-
-        isChildOf(node) {
-            return this.path.startsWith(node.path);
         }
     }
 
@@ -1180,12 +1349,181 @@
         setColorTheme("dark", true);
     }
 
+    function ansiToHtml(text) {
+        const ansiRegex = /\x1b\[([0-9;]*)m/g;
+        const colorMap = {
+            '30': 'ansi-black', '31': 'ansi-red', '32': 'ansi-green', '33': 'ansi-yellow',
+            '34': 'ansi-blue', '35': 'ansi-magenta', '36': 'ansi-cyan', '37': 'ansi-white',
+            '90': 'ansi-bright-black', '91': 'ansi-bright-red', '92': 'ansi-bright-green',
+            '93': 'ansi-bright-yellow', '94': 'ansi-bright-blue', '95': 'ansi-bright-magenta',
+            '96': 'ansi-bright-cyan', '97': 'ansi-bright-white'
+        };
+
+        let result = '';
+        let lastIndex = 0;
+        let currentClasses = [];
+        let match;
+
+        while ((match = ansiRegex.exec(text)) !== null) {
+            const beforeText = text.slice(lastIndex, match.index);
+            if (beforeText) {
+                if (currentClasses.length > 0) {
+                    result += `<span class="${currentClasses.join(' ')}">${escapeHtml(beforeText)}</span>`;
+                } else {
+                    result += escapeHtml(beforeText);
+                }
+            }
+            lastIndex = match.index + match[0].length;
+
+            const codes = match[1].split(';').filter(c => c !== '');
+            for (const code of codes) {
+                if (code === '0' || code === '') {
+                    currentClasses = []; // Reset
+                } else if (code === '1') {
+                    currentClasses.push('ansi-bold');
+                } else if (code === '4') {
+                    currentClasses.push('ansi-underline');
+                } else if (colorMap[code]) {
+                    currentClasses = currentClasses.filter(c => !c.startsWith('ansi-') || c === 'ansi-bold' || c === 'ansi-underline');
+                    currentClasses.push(colorMap[code]);
+                }
+            }
+        }
+
+        const remainingText = text.slice(lastIndex);
+        if (remainingText) {
+            if (currentClasses.length > 0) {
+                result += `<span class="${currentClasses.join(' ')}">${escapeHtml(remainingText)}</span>`;
+            } else {
+                result += escapeHtml(remainingText);
+            }
+        }
+
+        return result;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // CLI state
+    let cli_history = [];
+    let cli_history_index = -1;
+    let cli_cwd = "/";
+
+    function clearCommandOutput() {
+        document.querySelector("#command-output").innerHTML = "";
+    }
+
+    function appendToOutput(text) {
+        const command_output = document.querySelector("#command-output");
+        command_output.innerHTML += ansiToHtml(text);
+    }
+
+    function updateCwdDisplay() {
+        document.getElementById("command-cwd").textContent = cli_cwd;
+    }
+
+    function runQuickCommand(command) {
+        let command_input = document.querySelector("#command");
+        command_input.value = command;
+        command_input.dispatchEvent(new KeyboardEvent("keydown", { code: "Enter" }));
+    }
+
+    function handleCdCommand(command) {
+        const trimmed = command.trim();
+        if (!trimmed.startsWith("cd ") && trimmed !== "cd") return false;
+
+        let newPath = trimmed === "cd" ? "/" : trimmed.substring(3).trim();
+
+        if ((newPath.startsWith("'") && newPath.endsWith("'")) ||
+            (newPath.startsWith('"') && newPath.endsWith('"'))) {
+            newPath = newPath.slice(1, -1);
+        }
+
+        let absolutePath;
+        if (newPath.startsWith("/")) {
+            absolutePath = newPath;
+        } else {
+            absolutePath = cli_cwd === "/" ? "/" + newPath : cli_cwd + "/" + newPath;
+        }
+
+        const parts = absolutePath.split("/");
+        const resolved = [];
+        for (const part of parts) {
+            if (part === "" || part === ".") {
+                continue;
+            } else if (part === "..") {
+                resolved.pop();
+            } else {
+                resolved.push(part);
+            }
+        }
+        cli_cwd = "/" + resolved.join("/");
+        updateCwdDisplay();
+        return true;
+    }
+
+    function executeCommand(command) {
+        let command_input = document.querySelector("#command");
+        let command_output = document.querySelector("#command-output");
+        let command_container = document.getElementById("command-scrolling-container");
+
+        if (command.trim() === "") return;
+
+        if (cli_history.length === 0 || cli_history[cli_history.length - 1] !== command) {
+            cli_history.push(command);
+        }
+        cli_history_index = cli_history.length;
+
+        appendToOutput(`➜ ${cli_cwd} ${command}\n`);
+        command_container.scrollTop = command_container.scrollHeight;
+
+        if (handleCdCommand(command)) {
+            command_input.focus();
+            return;
+        }
+
+        command_input.disabled = true;
+
+        const server_url = new URL(window.location);
+        server_url.pathname = "/api/v1/commands";
+        let url = server_url.toString();
+        fetch(url + "?" + new URLSearchParams({
+            command: command,
+            cwd: cli_cwd,
+        }).toString())
+            .then(response => response.json())
+            .then(data => {
+                if (data.result !== undefined) {
+                    appendToOutput(data.result);
+                } else if (data.message !== undefined) {
+                    appendToOutput(data.message);
+                } else {
+                    appendToOutput("Unexpected error\n");
+                }
+                if (!command_output.textContent.endsWith("\n")) {
+                    appendToOutput("\n");
+                }
+
+                command_input.disabled = false;
+                command_input.focus();
+                command_container.scrollTop = command_container.scrollHeight;
+            })
+            .catch(err => {
+                appendToOutput(`Unexpected error: ${err}\n`);
+                command_input.disabled = false;
+                command_input.focus();
+            });
+    }
+
     function setupCommandLine() {
         let command_input = document.querySelector("#command");
         let command_output = document.querySelector("#command-output");
         let command_container = document.getElementById("command-scrolling-container");
 
-        /// focus on command_input, but prevent losing the selection in command_output.
         command_container.addEventListener("mouseup", function (e) {
             if (e.target.id !== "command-output") {
                 command_input.focus();
@@ -1197,41 +1535,37 @@
 
         command_input.addEventListener("keydown", function (event) {
             if (event.code === "Enter") {
-                event.preventDefault(); // Prevents the normal form submission for Enter key
-
-                // Add command to history and clear input
+                event.preventDefault();
                 let command = command_input.value;
                 command_input.value = "";
-                command_output.append(`➜ ${command}\n`);
-                command_container.scrollTop = command_container.scrollHeight;
-                command_input.disabled = true;
-
-                const server_url = new URL(window.location);
-                server_url.pathname = "/api/v1/commands";
-                let url = server_url.toString();
-                fetch(url + "?" + new URLSearchParams({
-                    command: command,
-                }).toString())
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.result !== undefined) {
-                            command_output.append(`${data.result}`);
-                        } else if (data.message !== undefined) {
-                            command_output.append(`${data.message}`);
-                        } else {
-                            command_output.append("Unexpected error\n");
-                        }
-                        if (command_output.textContent.charAt(command_output.textContent.length - 1) !== "\n") {
-                            command_output.append("\n");
-                        }
-                        command_input.disabled = false;
-                        command_input.focus();
-                    })
-                    .catch(err => {
-                        command_output.append(`Unexpected error: ${err}\n`);
-                        command_input.disabled = false;
-                        command_input.focus();
-                    });
+                executeCommand(command);
+            } else if (event.code === "ArrowUp") {
+                event.preventDefault();
+                if (cli_history.length > 0 && cli_history_index > 0) {
+                    cli_history_index--;
+                    command_input.value = cli_history[cli_history_index];
+                }
+            } else if (event.code === "ArrowDown") {
+                event.preventDefault();
+                if (cli_history_index < cli_history.length - 1) {
+                    cli_history_index++;
+                    command_input.value = cli_history[cli_history_index];
+                } else {
+                    cli_history_index = cli_history.length;
+                    command_input.value = "";
+                }
+            } else if (event.code === "KeyL" && event.ctrlKey) {
+                // Ctrl+L to clear output
+                event.preventDefault();
+                clearCommandOutput();
+            } else if (event.code === "KeyC" && event.ctrlKey) {
+                // Ctrl+C clears current input
+                event.preventDefault();
+                if (command_input.value !== "") {
+                    appendToOutput(`➜ ${cli_cwd} ${command_input.value}^C\n`);
+                    command_input.value = "";
+                    cli_history_index = cli_history.length;
+                }
                 command_container.scrollTop = command_container.scrollHeight;
             }
         });
@@ -1241,17 +1575,20 @@
         fetchContentImpl();
     }
 
+    const STATS_UPDATE_INTERVAL_MS = 5000; // Update stats every 5 seconds
+
     async function start() {
         try {
             setupCommandLine();
             loadContent();
+            setInterval(loadContent, STATS_UPDATE_INTERVAL_MS);
         } catch (e) {
             renderError(`Failed to start: ${e}`)
         }
     }
 
-    let storage_viewer = new StorageViewer(document.getElementById("storage-viewer-container"));
-    storage_viewer.init();
+    let file_manager = new FileManager();
+    file_manager.init();
 
     start();
 

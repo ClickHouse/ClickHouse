@@ -757,15 +757,27 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     if (keeper_context->isShutdownCalled())
         return;
 
+    ZooKeeperResponseCallback callback;
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
+            callback = std::move(session_it->second);
             session_to_response_callback.erase(session_it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
+
+    /// Notify the callback that session is being closed before removing it
+    /// This allows clients to mark themselves as expired
+    if (callback)
+    {
+        auto close_response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        close_response->error = Coordination::Error::ZSESSIONEXPIRED;
+        callback(close_response, nullptr);
+    }
+
     {
         std::lock_guard lock(read_request_queue_mutex);
         read_request_queue.erase(session_id);

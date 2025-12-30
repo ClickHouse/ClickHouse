@@ -1004,10 +1004,10 @@ void GetAclCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
 
     for (const auto & acl : acls)
     {
-        std::cout << fmt::format("[{}] {} ", acl.scheme, acl.id);
+        client->cout << fmt::format("[{}] {} ", acl.scheme, acl.id);
         if (acl.permissions == Coordination::ACL::All)
         {
-            std::cout << "ALL";
+            client->cout << "ALL";
         }
         else
         {
@@ -1017,15 +1017,15 @@ void GetAclCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * cli
                 if (acl.permissions & perm)
                 {
                     if (!first)
-                        std::cout << "|";
-                    std::cout << name;
+                        client->cout << "|";
+                    client->cout << name;
                     first = false;
                 }
             }
             if (first)
-                std::cout << "NONE";
+                client->cout << "NONE";
         }
-        std::cout << "\n";
+        client->cout << "\n";
     }
 
 }

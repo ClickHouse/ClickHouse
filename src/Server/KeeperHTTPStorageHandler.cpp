@@ -2,21 +2,15 @@
 
 #if USE_NURAFT
 
-#include "IServer.h"
-
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
 
 #include <IO/HTTPCommon.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/CoordinationSettings.h>
-
-#include <memory>
 
 namespace DB
 {
@@ -24,11 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 namespace
@@ -117,20 +106,13 @@ bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerRespon
 }
 }
 
-KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_)
+KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(
+    std::shared_ptr<KeeperHTTPClient> keeper_client_,
+    size_t max_request_size_)
     : log(getLogger("KeeperHTTPStorageHandler"))
-    , server(server_)
-    , keeper_dispatcher(keeper_dispatcher_)
-    , session_timeout(
-          server.config().getUInt("keeper_server.http_control.storage.session_timeout", Coordination::DEFAULT_SESSION_TIMEOUT_MS)
-          * Poco::Timespan::MILLISECONDS)
-    , operation_timeout(
-          server.config().getUInt("keeper_server.http_control.storage.operation_timeout", Coordination::DEFAULT_OPERATION_TIMEOUT_MS)
-          * Poco::Timespan::MILLISECONDS)
-    , max_request_size(keeper_dispatcher_->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::max_request_size])
+    , keeper_client(std::move(keeper_client_))
+    , max_request_size(max_request_size_)
 {
-    keeper_client = zkutil::ZooKeeper::create_from_impl(
-        std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, operation_timeout));
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRequest(
@@ -165,7 +147,7 @@ void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string &
 {
     Coordination::Stat stat;
 
-    if (!keeper_client->exists(storage_path, &stat))
+    if (!keeper_client->get()->exists(storage_path, &stat))
     {
         setErrorResponseForZKCode(Coordination::Error::ZNONODE, response);
         return;
@@ -188,7 +170,7 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
 {
     Coordination::Stat stat;
     Strings result;
-    const auto error = keeper_client->tryGetChildren(storage_path, result, &stat);
+    const auto error = keeper_client->get()->tryGetChildren(storage_path, result, &stat);
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -210,7 +192,7 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
 void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
     String result;
-    if (!keeper_client->tryGet(storage_path, result))
+    if (!keeper_client->get()->tryGet(storage_path, result))
     {
         setErrorResponseForZKCode(Coordination::Error::ZNONODE, response);
         return;
@@ -236,7 +218,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
         return;
     }
 
-    const auto error = keeper_client->trySet(storage_path, getRawBytesFromRequest(request, max_request_size), maybe_request_version.value());
+    const auto error = keeper_client->get()->trySet(storage_path, getRawBytesFromRequest(request, max_request_size), maybe_request_version.value());
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -249,7 +231,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
-    const auto error = keeper_client->tryCreate(storage_path, getRawBytesFromRequest(request, max_request_size), zkutil::CreateMode::Persistent);
+    const auto error = keeper_client->get()->tryCreate(storage_path, getRawBytesFromRequest(request, max_request_size), zkutil::CreateMode::Persistent);
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -270,7 +252,7 @@ void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
         return;
     }
 
-    const auto error = keeper_client->tryRemove(storage_path, maybe_request_version.value());
+    const auto error = keeper_client->get()->tryRemove(storage_path, maybe_request_version.value());
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -332,25 +314,15 @@ try
 
     setResponseDefaultHeaders(response);
 
-    if (keeper_dispatcher->isServerActive())
+    try
     {
-        try
-        {
-            performZooKeeperRequest(opnum, storage_path, request, response);
-            return;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Error when executing Keeper storage operation: " + operation_name);
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-            *response.send() << getCurrentExceptionMessage(false) << '\n';
-        }
+        performZooKeeperRequest(opnum, storage_path, request, response);
     }
-    else
+    catch (...)
     {
-        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
-        *response.send() << "Service Unavailable.\n";
+        tryLogCurrentException(log, "Error when executing Keeper storage operation: " + operation_name);
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+        *response.send() << getCurrentExceptionMessage(false) << '\n';
     }
 }
 catch (...)

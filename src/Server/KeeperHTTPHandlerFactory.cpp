@@ -24,6 +24,8 @@
 #include <Server/KeeperNotFoundHandler.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
+#include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -32,6 +34,11 @@ namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
@@ -93,10 +100,13 @@ void addReadinessHandlerToFactory(
     factory.addHandler(readiness_handler);
 }
 
-void addCommandsHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
+void addCommandsHandlersToFactory(
+    KeeperHTTPRequestHandlerFactory & factory,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
+    std::shared_ptr<KeeperHTTPClient> keeper_client)
 {
-    auto creator = [keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPCommandsHandler>
-    { return std::make_unique<KeeperHTTPCommandsHandler>(keeper_dispatcher); };
+    auto creator = [keeper_dispatcher, keeper_client]() -> std::unique_ptr<KeeperHTTPCommandsHandler>
+    { return std::make_unique<KeeperHTTPCommandsHandler>(keeper_dispatcher, keeper_client); };
 
     auto commads_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPCommandsHandler>>(std::move(creator));
     commads_handler->attachNonStrictPath("/api/v1/commands");
@@ -107,10 +117,14 @@ void addCommandsHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory, std
 }
 
 void addStorageHandlersToFactory(
-    KeeperHTTPRequestHandlerFactory & factory, const IServer & server, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
+    KeeperHTTPRequestHandlerFactory & factory,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
+    std::shared_ptr<KeeperHTTPClient> keeper_client)
 {
-    auto creator = [&server, keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPStorageHandler>
-    { return std::make_unique<KeeperHTTPStorageHandler>(server, keeper_dispatcher); };
+    auto max_request_size = keeper_dispatcher->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::max_request_size];
+
+    auto creator = [keeper_client, max_request_size]() -> std::unique_ptr<KeeperHTTPStorageHandler>
+    { return std::make_unique<KeeperHTTPStorageHandler>(keeper_client, max_request_size); };
 
     auto storage_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
     storage_handler->attachNonStrictPath("/api/v1/storage");
@@ -120,16 +134,36 @@ void addStorageHandlersToFactory(
     factory.addHandler(storage_handler);
 }
 
+std::shared_ptr<KeeperHTTPClient> createKeeperClient(
+    const IServer & server,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
+{
+    auto session_timeout = Poco::Timespan(
+        server.config().getUInt("keeper_server.http_control.storage.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS)
+        * Poco::Timespan::MILLISECONDS);
+
+    /// Factory lambda allows ZooKeeper to create new sessions on reconnection
+    auto zk_client = zkutil::ZooKeeper::create_from_impl(
+        [keeper_dispatcher, session_timeout]()
+        {
+            return std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, session_timeout);
+        });
+
+    return std::make_shared<KeeperHTTPClient>(std::move(zk_client));
+}
+
 void addDefaultHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     const IServer & server,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     const Poco::Util::AbstractConfiguration & config)
 {
+    auto keeper_client = createKeeperClient(server, keeper_dispatcher);
+
     addReadinessHandlerToFactory(factory, keeper_dispatcher, config);
     addDashboardHandlersToFactory(factory, keeper_dispatcher);
-    addCommandsHandlersToFactory(factory, keeper_dispatcher);
-    addStorageHandlersToFactory(factory, server, keeper_dispatcher);
+    addCommandsHandlersToFactory(factory, keeper_dispatcher, keeper_client);
+    addStorageHandlersToFactory(factory, keeper_dispatcher, keeper_client);
 }
 
 static auto createHandlersFactoryFromConfig(
@@ -140,6 +174,8 @@ static auto createHandlersFactoryFromConfig(
     const String & prefix)
 {
     auto main_handler_factory = std::make_shared<KeeperHTTPRequestHandlerFactory>(name);
+
+    auto keeper_client = createKeeperClient(server, keeper_dispatcher);
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
@@ -167,9 +203,9 @@ static auto createHandlersFactoryFromConfig(
             else if (handler_type == "dashboard")
                 addDashboardHandlersToFactory(*main_handler_factory, keeper_dispatcher);
             else if (handler_type == "commands")
-                addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher);
+                addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
             else if (handler_type == "storage")
-                addStorageHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
+                addStorageHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
             else
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -246,11 +282,13 @@ void KeeperHTTPReadinessHandler::handleRequest(
     }
 }
 
-KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
-    : log(getLogger("KeeperHTTPCommandsHandler")), keeper_dispatcher(keeper_dispatcher_)
+KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+    std::shared_ptr<KeeperHTTPClient> keeper_client_)
+    : log(getLogger("KeeperHTTPCommandsHandler"))
+    , keeper_dispatcher(std::move(keeper_dispatcher_))
+    , keeper_client(std::move(keeper_client_))
 {
-    keeper_client = zkutil::ZooKeeper::create_from_impl(
-    std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS));
 }
 
 void KeeperHTTPCommandsHandler::handleRequest(
@@ -317,7 +355,7 @@ try
     {
         std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         KeeperClientBase client(stream, stream);
-        client.zookeeper = keeper_client;
+        client.zookeeper = keeper_client->get();
         client.cwd = cwd;
 
         client.processQueryText(command);

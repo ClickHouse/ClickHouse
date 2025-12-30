@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
 
 namespace DB::ErrorCodes
@@ -9,6 +10,64 @@ namespace DB::ErrorCodes
 
 namespace Coordination
 {
+
+KeeperOverDispatcher::KeeperOverDispatcher(
+    const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_,
+    const Poco::Timespan & session_timeout_)
+    : keeper_dispatcher(keeper_dispatcher_)
+    , session_timeout(session_timeout_)
+    , session_id(keeper_dispatcher_->getSessionID(session_timeout_.totalMilliseconds()))
+{
+    LOG_DEBUG(&Poco::Logger::get("KeeperOverDispatcher"), "Created KeeperOverDispatcher session {} with timeout {} ms", session_id, session_timeout_.totalMilliseconds());
+
+    /// Register session with a callback that dispatches responses based on XID
+    auto response_callback = [this](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    {
+        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
+        {
+            expired = true;
+            return;
+        }
+
+        ResponseCallback callback;
+        {
+            std::lock_guard lock(callbacks_mutex);
+            auto it = callbacks.find(response->xid);
+            if (it != callbacks.end())
+            {
+                callback = std::move(it->second);
+                callbacks.erase(it);
+            }
+        }
+
+        if (callback)
+            callback(response);
+    };
+
+    keeper_dispatcher->registerSession(session_id, response_callback);
+}
+
+KeeperOverDispatcher::~KeeperOverDispatcher()
+{
+    keeper_dispatcher->finishSession(session_id);
+}
+
+void KeeperOverDispatcher::finalize(const String & /* reason */)
+{
+    expired = true;
+}
+
+void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback)
+{
+    request->xid = next_xid++;
+
+    {
+        std::lock_guard lock(callbacks_mutex);
+        callbacks[request->xid] = std::move(callback);
+    }
+
+    keeper_dispatcher->putRequest(request, session_id, false);
+}
 
 void KeeperOverDispatcher::create(
     const String & path,
@@ -25,18 +84,10 @@ void KeeperOverDispatcher::create(
     request->is_sequential = is_sequential;
     request->acls = acls;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const CreateResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::remove(
@@ -48,18 +99,10 @@ void KeeperOverDispatcher::remove(
     request->path = path;
     request->version = version;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const RemoveResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::removeRecursive(
@@ -71,18 +114,10 @@ void KeeperOverDispatcher::removeRecursive(
     request->path = path;
     request->remove_nodes_limit = remove_nodes_limit;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const RemoveRecursiveResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::exists(
@@ -95,18 +130,16 @@ void KeeperOverDispatcher::exists(
 
     const auto request = std::make_shared<ZooKeeperExistsRequest>();
     request->path = path;
+    request->xid = next_xid++;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
+        std::lock_guard lock(callbacks_mutex);
+        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const ExistsResponse &>(*response));
+        };
+    }
 
-        callback(dynamic_cast<const ExistsResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
     keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
@@ -120,18 +153,16 @@ void KeeperOverDispatcher::get(
 
     const auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path;
+    request->xid = next_xid++;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
+        std::lock_guard lock(callbacks_mutex);
+        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const GetResponse &>(*response));
+        };
+    }
 
-        callback(dynamic_cast<const GetResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
     keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
@@ -146,18 +177,10 @@ void KeeperOverDispatcher::set(
     request->data = data;
     request->version = version;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const SetResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::list(
@@ -172,18 +195,16 @@ void KeeperOverDispatcher::list(
     const auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path;
     request->list_request_type = list_request_type;
+    request->xid = next_xid++;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
+        std::lock_guard lock(callbacks_mutex);
+        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const ListResponse &>(*response));
+        };
+    }
 
-        callback(dynamic_cast<const ListResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
     keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
@@ -195,18 +216,16 @@ void KeeperOverDispatcher::check(
     const auto request = std::make_shared<ZooKeeperCheckRequest>();
     request->path = path;
     request->version = version;
+    request->xid = next_xid++;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
+        std::lock_guard lock(callbacks_mutex);
+        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const CheckResponse &>(*response));
+        };
+    }
 
-        callback(dynamic_cast<const CheckResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
     keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
@@ -217,18 +236,10 @@ void KeeperOverDispatcher::sync(
     const auto request = std::make_shared<ZooKeeperSyncRequest>();
     request->path = path;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const SyncResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::reconfig(
@@ -244,18 +255,10 @@ void KeeperOverDispatcher::reconfig(
     request->new_members = new_members;
     request->version = version;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const ReconfigResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::multi(
@@ -271,36 +274,26 @@ void KeeperOverDispatcher::multi(
 {
     const auto request = std::shared_ptr<ZooKeeperMultiRequest>(new ZooKeeperMultiRequest(requests, {}));  // NOLINT(modernize-make-shared)
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
-
         callback(dynamic_cast<const MultiResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
-    keeper_dispatcher->putRequest(request, session_id, false);
+    });
 }
 
 void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
 {
     const auto request = std::make_shared<ZooKeeperGetACLRequest>();
     request->path = path;
+    request->xid = next_xid++;
 
-    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
-
-    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
-            return;
+        std::lock_guard lock(callbacks_mutex);
+        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const GetACLResponse &>(*response));
+        };
+    }
 
-        callback(dynamic_cast<const GetACLResponse &>(*response));
-    };
-
-    keeper_dispatcher->registerSession(session_id, response_callback);
     keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 

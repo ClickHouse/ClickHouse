@@ -1,5 +1,9 @@
 #pragma once
 
+#include <atomic>
+#include <mutex>
+#include <unordered_map>
+
 #include <Poco/Timespan.h>
 
 #include <Common/ZooKeeper/IKeeper.h>
@@ -14,17 +18,17 @@ class KeeperOverDispatcher final : public IKeeper
 public:
     explicit KeeperOverDispatcher(
         const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_,
-        const Poco::Timespan & session_timeout_)
-            : keeper_dispatcher(keeper_dispatcher_)
-            , session_timeout(session_timeout_) {}
-    ~KeeperOverDispatcher() override = default;
+        const Poco::Timespan & session_timeout_);
+    ~KeeperOverDispatcher() override;
 
-    bool isExpired() const override { return false; }
+    bool isExpired() const override { return expired; }
     std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
     String getConnectedHostPort() const override { return "KeeperOverDispatcher:0000"; }
     int64_t getConnectionXid() const override { return 0; }
-    int64_t getSessionID() const override { return 0; }
+    int64_t getSessionID() const override { return session_id; }
     int64_t getLastZXIDSeen() const override { return 0; }
+
+    using ResponseCallback = std::function<void(const ZooKeeperResponsePtr &)>;
 
     void create(
         const String & path,
@@ -90,16 +94,23 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    void finalize(const String & /* reason */) override {}
+    void finalize(const String & reason) override;
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag) const override { return false; }
 
     void getACL(const String & path, GetACLCallback  callback) override;
 
 private:
-    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
+    void pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback);
 
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan session_timeout;
+    int64_t session_id;
+    std::atomic<bool> expired{false};
+
+    std::mutex callbacks_mutex;
+    std::unordered_map<XID, ResponseCallback> callbacks;
+    std::atomic<XID> next_xid{1};
 };
 
 }

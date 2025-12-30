@@ -5,9 +5,10 @@
 
 #if USE_NURAFT
 
-#include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <mutex>
+
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Coordination/KeeperDispatcher.h>
+#include <Common/logger_useful.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 
 namespace DB
@@ -15,11 +16,37 @@ namespace DB
 
 class IServer;
 
+/// Thread-safe wrapper that handles automatic reconnection on session expiry
+class KeeperHTTPClient
+{
+public:
+    explicit KeeperHTTPClient(std::shared_ptr<zkutil::ZooKeeper> client_)
+        : client(std::move(client_))
+        , log(getLogger("KeeperHTTPClient")) {}
+
+    /// Returns current client, reconnecting if session has expired
+    std::shared_ptr<zkutil::ZooKeeper> get()
+    {
+        std::lock_guard lock(mutex);
+        LOG_TRACE(log, "get() called, session={}, expired={}", client->getClientID(), client->expired());
+        if (client->expired())
+            client = client->startNewSession();
+        return client;
+    }
+
+private:
+    std::mutex mutex;
+    std::shared_ptr<zkutil::ZooKeeper> client;
+    LoggerPtr log;
+};
+
 /// Response with the storage info or perform an action on a given node from request
 class KeeperHTTPStorageHandler : public HTTPRequestHandler
 {
 public:
-    KeeperHTTPStorageHandler(const IServer & server_, const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_);
+    KeeperHTTPStorageHandler(
+        std::shared_ptr<KeeperHTTPClient> keeper_client_,
+        size_t max_request_size_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -35,11 +62,7 @@ private:
     void performZooKeeperRemoveRequest(const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponse & response) const;
 
     LoggerPtr log;
-    const IServer & server;
-    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-    std::shared_ptr<zkutil::ZooKeeper> keeper_client;
-    Poco::Timespan session_timeout;
-    Poco::Timespan operation_timeout;
+    std::shared_ptr<KeeperHTTPClient> keeper_client;
     size_t max_request_size = 0;
 };
 

@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Coordination/KeeperConstants.h>
 
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -210,7 +211,9 @@ public:
                       std::shared_ptr<DB::ZooKeeperLog> zk_log_,
                       std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_);
 
-    static Ptr create_from_impl(std::unique_ptr<Coordination::IKeeper> existing_impl);
+    /// Creates ZooKeeper from a custom IKeeper implementation using a factory.
+    /// The factory is stored and used by startNewSession() for reconnection.
+    static Ptr create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -665,6 +668,9 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
+
+    /// Factory to create new IKeeper instances for reconnection (used by create_from_impl)
+    std::function<std::unique_ptr<Coordination::IKeeper>()> impl_factory;
 
     ZooKeeperArgs args;
 
