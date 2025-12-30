@@ -107,7 +107,8 @@ private:
                 if (memory.size() == adaptive_max_buffer_size)
                     throw Exception(
                         ErrorCodes::LIMIT_EXCEEDED,
-                        "Adaptive buffer size limit of {} bytes is exceeded for the file '{}'",
+                        "Adaptive buffer size limit of {} bytes is exceeded for the file '{}'. "
+                        "Consider using ZIP format for files of unknown size",
                         adaptive_max_buffer_size,
                         filename);
 
