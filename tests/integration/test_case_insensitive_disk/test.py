@@ -55,9 +55,10 @@ def started_cluster():
 
 def test(started_cluster):
     node1.query(
+        "DROP TABLE IF EXISTS test_case_sensitivity;"
         "CREATE TABLE test_case_sensitivity (x UInt64) "
         "ENGINE = MergeTree ORDER BY tuple()"
-        "SETTINGS storage_policy='casefold_policy', min_bytes_for_wide_part=1"
+        "SETTINGS storage_policy='casefold_policy', min_bytes_for_wide_part=1;"
     )
 
     node1.query("INSERT INTO test_case_sensitivity SELECT 42")
@@ -66,3 +67,6 @@ def test(started_cluster):
     )
     assert "x" not in filenames
     assert "ad991276876cc297cd7c8197dd3b2592" in filenames
+
+    node1.query("DROP TABLE test_case_sensitivity")
+
