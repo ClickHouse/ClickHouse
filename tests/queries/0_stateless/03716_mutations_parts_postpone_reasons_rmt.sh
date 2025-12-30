@@ -28,9 +28,10 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO rmt VALUES (3, 3);
 "
 
-#test1 'all'->no thread in pool for one mutation
+#test1 'all_parts'->no thread in pool for one mutation
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE rmt UPDATE num = num + 1 WHERE 1;
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
@@ -39,7 +40,7 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, parts_postpone_reasons, \
-    FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' ORDER BY \
+    is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' ORDER BY \
     mutation_id;
 "
 
@@ -50,24 +51,26 @@ $CLICKHOUSE_CLIENT --query "
 
 wait_for_mutation "rmt" "0000000000"
 
-#test2 'all'->no thread in pool for multiple mutations
+#test2 'all_parts'->no thread in pool for multiple mutations
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
-    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+    ALTER TABLE rmt UPDATE num = num + 3 WHERE 1;
+    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, parts_postpone_reasons, \
-    FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' ORDER BY \
+    is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' ORDER BY \
     mutation_id;
 "
 
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
-    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
     DROP TABLE rmt SYNC;
 "
 
@@ -89,9 +92,9 @@ $CLICKHOUSE_CLIENT --query "
 #test3 part->postpone reasons for one mutation
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE rmt UPDATE num = num + 1 WHERE 1;
-    ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
-    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
+    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
@@ -104,16 +107,17 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
-    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
 "
 
-wait_for_mutation "rmt" "0000000001"
+wait_for_mutation "rmt" "0000000000"
 
 #test4 part->postpone reasons for multiple mutations
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
+    ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
     ALTER TABLE rmt UPDATE num = num + 3 WHERE 1;
-    ALTER TABLE rmt UPDATE num = num + 4 WHERE 1;
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;

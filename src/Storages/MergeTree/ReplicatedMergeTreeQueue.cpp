@@ -2620,19 +2620,21 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         Names parts_in_progress = status.parts_in_progress.getParts();
 
         std::map<String, String> parts_postpone_reasons_map;
-        for (const auto & [part_name, postpone_reason] : current_parts_postpone_reasons)
-        {
-            if (part_name == PostponeReasons::ALL_PARTS_KEY)
+        if (!status.is_done) {
+            for (const auto & [part_name, postpone_reason] : current_parts_postpone_reasons)
             {
-                chassert(current_parts_postpone_reasons.size() == 1);
-                parts_postpone_reasons_map[part_name] = postpone_reason;
-            }
-            else
-            {
-                auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-                auto it = entry.block_numbers.find(part_info.getPartitionId());
-                if (it != entry.block_numbers.end() && part_info.getDataVersion() < it->second)
+                if (part_name == PostponeReasons::ALL_PARTS_KEY)
+                {
+                    chassert(current_parts_postpone_reasons.size() == 1);
                     parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
+                else
+                {
+                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+                    auto it = entry.block_numbers.find(part_info.getPartitionId());
+                    if (it != entry.block_numbers.end() && part_info.getDataVersion() < it->second)
+                        parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
             }
         }
 

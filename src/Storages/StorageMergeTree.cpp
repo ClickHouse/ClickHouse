@@ -1037,18 +1037,20 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         }
 
         std::map<String, String> parts_postpone_reasons_map;
-        for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
-        {
-            if (part_name == PostponeReasons::ALL_PARTS_KEY)
+        if (!parts_to_do_names.empty()) {
+            for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
             {
-                parts_postpone_reasons_map[part_name] = postpone_reason;
-                chassert(current_parts_postpone_reasons.size() == 1);
-            }
-            else
-            {
-                auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-                if (part_info.getDataVersion() < mutation_version)
+                if (part_name == PostponeReasons::ALL_PARTS_KEY)
+                {
                     parts_postpone_reasons_map[part_name] = postpone_reason;
+                    chassert(current_parts_postpone_reasons.size() == 1);
+                }
+                else
+                {
+                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+                    if (part_info.getDataVersion() < mutation_version)
+                        parts_postpone_reasons_map[part_name] = postpone_reason;
+                }
             }
         }
 

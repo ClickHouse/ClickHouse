@@ -21,12 +21,14 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO mt VALUES (3, 3);
 "
 
-#test1 'all'->no thread in pool for one mutation
+#test1 'all_parts'->no thread in pool for one mutation
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE mt UPDATE num = num + 1 WHERE 1;
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     SYSTEM NOTIFY FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
@@ -42,12 +44,15 @@ $CLICKHOUSE_CLIENT --query "
 
 wait_for_mutation "mt" "mutation_4.txt"
 
-#test2 part->ponstpone reasons for one mutation
+#test2 'all_parts'->no thread in pool for multiple mutations
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE mt UPDATE num = num + 2 WHERE 1;
-    SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
+    ALTER TABLE mt UPDATE num = num + 3 WHERE 1;
+    SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     SYSTEM NOTIFY FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
@@ -58,7 +63,7 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
-    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
+    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
     DROP TABLE mt SYNC;
 "
 
@@ -72,13 +77,14 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO mt VALUES (3, 3);
 "
 
-#test3 'all'->no thread in pool for multiple mutations
+#test3 part->postpone reasons in pool for one mutation
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE mt UPDATE num = num + 1 WHERE 1;
-    ALTER TABLE mt UPDATE num = num + 2 WHERE 1;
-    SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+    SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
     SYSTEM NOTIFY FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
@@ -89,18 +95,20 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
-    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+    SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
 "
 
-wait_for_mutation "mt" "mutation_5.txt"
+wait_for_mutation "mt" "mutation_4.txt"
 
 #test4 part->postpone reasons for multiple mutations
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
+    ALTER TABLE mt UPDATE num = num + 2 WHERE 1;
     ALTER TABLE mt UPDATE num = num + 3 WHERE 1;
-    ALTER TABLE mt UPDATE num = num + 4 WHERE 1;
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_max_part_size;
     SYSTEM NOTIFY FAILPOINT mt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE;
 "
 
 $CLICKHOUSE_CLIENT --query "
