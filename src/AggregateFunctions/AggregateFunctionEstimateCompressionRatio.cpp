@@ -59,10 +59,12 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
+        /// Real cancellation can happen only in case of exception
+        /// In other cases the data will be read via finalizeAndGetSizes()
         if (compressed_buf)
-            compressed_buf->finalize();
+            compressed_buf->cancel();
         if (null_buf)
-            null_buf->finalize();
+            null_buf->cancel();
     }
 };
 

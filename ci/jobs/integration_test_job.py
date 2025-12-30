@@ -212,6 +212,8 @@ def main():
     if args.workers:
         workers = args.workers
     else:
+        print("ncpu:", ncpu)
+        print("mem_gb:", mem_gb)
         workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
