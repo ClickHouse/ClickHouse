@@ -9,19 +9,30 @@ disk_name="s3_cache"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
-INSERT INTO test SELECT randomString(1000);
+CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(
+            type = cache,
+            name = '03032_dynamically_resize_filesystem_cache',
+            max_size = '1500',
+            max_file_segment_size = '100',
+            boundary_alignment = '100',
+            path = '03032_dynamically_resize_filesystem_cache/',
+            cache_policy='SLRU',
+            cache_on_write_operations= 1,
+            disk = 's3_disk');
+INSERT INTO test SELECT randomString(5000);
 "
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
 
 prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
-$CLICKHOUSE_CLIENT --query "SELECT current_size > 0, 'current size is non-zero' FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
 
 config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 
-new_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size * 0.8 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
+new_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size * 0.5 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
 sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|"  $config_path
+
+$CLICKHOUSE_CLIENT --query "SELECT current_size > $new_max_size, 'current size is non-zero' FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
 
 # echo $prev_max_size
 # echo $new_max_size
