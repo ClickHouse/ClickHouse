@@ -73,7 +73,7 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
+        AccessType source_access_type = AccessType::NONE;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
@@ -109,7 +109,7 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .source_access_type = std::nullopt,
+        .source_access_type = AccessType::NONE,
         .has_builtin_setting_fn = nullptr,
     });
 
@@ -136,7 +136,7 @@ public:
         return result;
     }
 
-    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
+    AccessType getSourceAccessType(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 

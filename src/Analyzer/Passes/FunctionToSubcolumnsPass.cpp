@@ -5,9 +5,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeQBit.h>
-#include <DataTypes/DataTypeObject.h>
 
 #include <Storages/IStorage.h>
 
@@ -22,18 +19,14 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
-
-#include <stack>
-
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
@@ -53,57 +46,12 @@ struct ColumnContext
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
 
-/// Before columns to substream optimization, we need to make sure, that column with such name as substream does not exists, otherwise the optimize will use it instead of substream.
-bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
-{
-    auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
-        return {};
-
-    const auto & storage_snapshot = table_node->getStorageSnapshot();
-    return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
-}
-
-void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
-{
-    /// Replace `length(argument)` with `argument.size`.
-    /// `argument` is String.
-
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
-        return;
-    node = std::make_shared<ColumnNode>(column, ctx.column_source);
-}
-
-template <bool positive>
-void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
-{
-    /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
-    /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
-    /// `argument` is String.
-
-    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
-        return;
-    auto & function_arguments_nodes = function_node.getArguments().getNodes();
-
-    function_arguments_nodes.clear();
-    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
-    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-    const auto * function_name = positive ? "equals" : "notEquals";
-    resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
-}
-
 void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size0`.
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
-        return;
-
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -115,9 +63,6 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
-        return;
-
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
     function_arguments_nodes.clear();
@@ -125,7 +70,6 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
     const auto * function_name = positive ? "equals" : "notEquals";
-    function_node.markAsOperator();
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 
@@ -155,21 +99,6 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         return NameAndTypePair{names[index - 1], types[index - 1]};
     }
 
-    /// Maybe negative index
-    if (value.getType() == Field::Types::Int64)
-    {
-        ssize_t index = value.safeGet<Int64>();
-        ssize_t size = types.size();
-
-        if (index == 0 || std::abs(index) > size)
-            return {};
-
-        if (index > 0)
-            return NameAndTypePair{names[index - 1], types[index - 1]};
-        else
-            return NameAndTypePair{names[size + index], types[size + index]};
-    }
-
     return {};
 }
 
@@ -185,33 +114,6 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         return {};
 
     return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
-}
-
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
-{
-    size_t index;
-
-    if (value.getType() == Field::Types::UInt64)
-        index = value.safeGet<UInt64>();
-    else
-        return {};
-
-    if (index == 0 || index > data_type_qbit.getElementSize())
-        return {};
-
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
-}
-
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeObject & data_type_object)
-{
-    if (value.getType() == Field::Types::String)
-    {
-        const auto & name = value.safeGet<String>();
-        if (auto type = data_type_object.tryGetSubcolumnType(name))
-            return NameAndTypePair{name, type};
-    }
-
-    return {};
 }
 
 template <typename DataType>
@@ -235,43 +137,11 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
-    if (sourceHasColumn(ctx.column_source, column.name))
-        return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
-}
-
-void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
-{
-    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
-    NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
-
-    auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
-    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
-    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
-    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
-
-    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
-    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
-    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
-
-    auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
-    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
-    resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
-
-    node = std::move(function_array_sort_node);
 }
 
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
-    {
-        {TypeIndex::String, "length"}, optimizeFunctionStringLength,
-    },
-    {
-        {TypeIndex::String, "empty"}, optimizeFunctionStringEmpty<true>,
-    },
-    {
-        {TypeIndex::String, "notEmpty"}, optimizeFunctionStringEmpty<false>,
-    },
     {
         {TypeIndex::Array, "length"}, optimizeFunctionLength,
     },
@@ -299,8 +169,6 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
-            if (sourceHasColumn(ctx.column_source, column.name))
-                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -313,21 +181,17 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
-            if (sourceHasColumn(ctx.column_source, column.name))
-                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
     {
-        {TypeIndex::Map, "mapContainsKey"},
+        {TypeIndex::Map, "mapContains"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
+            /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
-            if (sourceHasColumn(ctx.column_source, column.name))
-                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -342,13 +206,10 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name))
-                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
             auto function_node_not = std::make_shared<FunctionNode>("not");
-            function_node_not->markAsOperator();
 
             function_node_not->getArguments().getNodes().push_back(std::move(new_column_node));
             resolveOrdinaryFunctionNodeByName(*function_node_not, "not", ctx.context);
@@ -363,8 +224,6 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name))
-                return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -374,8 +233,6 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name))
-                return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
             function_arguments_nodes = {std::make_shared<ColumnNode>(column, ctx.column_source)};
@@ -388,22 +245,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     {
         {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
     },
-    {
-        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
-    },
-    {
-        {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
-    },
-    {
-        {TypeIndex::Object, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
-    },
 };
-
-bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
-{
-    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
-    return function_name != "distinctJSONPaths";
-}
 
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -491,7 +333,6 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
-            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
             return;
         }
     }
@@ -507,7 +348,6 @@ public:
             return {};
         }
 
-        /// TODO(ab): need to optimize for prewhere anyway
         /// Do not optimize if full column is requested in other context.
         /// It doesn't make sense because it doesn't reduce amount of read data
         /// and optimized functions are not computation heavy. But introducing
@@ -544,7 +384,6 @@ private:
 
     NameSet processed_tables;
     bool can_wrap_result_columns_with_nullable = false;
-    bool has_where_prewhere_or_group_by = false;
 
     void enterImpl(const TableNode & table_node)
     {
@@ -605,9 +444,6 @@ private:
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
 
-        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
-            return;
-
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
             ++optimized_identifiers_count[qualified_name];
     }
@@ -618,18 +454,13 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 {
 private:
     std::unordered_set<Identifier> identifiers_to_optimize;
-    std::unordered_set<const TableNode *> outer_joined_tables;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
 
-    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_,
-        std::unordered_set<Identifier> identifiers_to_optimize_,
-        std::unordered_set<const TableNode *> outer_joined_tables_)
-        : Base(std::move(context_))
-        , identifiers_to_optimize(std::move(identifiers_to_optimize_))
-        , outer_joined_tables(std::move(outer_joined_tables_))
+    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_, std::unordered_set<Identifier> identifiers_to_optimize_)
+        : Base(std::move(context_)), identifiers_to_optimize(std::move(identifiers_to_optimize_))
     {
     }
 
@@ -652,7 +483,7 @@ public:
         auto result_type = function_node->getResultType();
         auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
 
-        if (transformer_it != node_transformers.end() && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(table_node)))
+        if (transformer_it != node_transformers.end())
         {
             ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
             transformer_it->second(node, *function_node, ctx);
@@ -661,64 +492,6 @@ public:
                 node = buildCastFunction(node, result_type, getContext());
         }
     }
-};
-
-class GetOuterJoinedTablesVisitor : public InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitorWithContext<GetOuterJoinedTablesVisitor>;
-    using Base::Base;
-
-    void enterImpl(const QueryTreeNodePtr & node)
-    {
-        /// If we are inside the subtree of a JOIN.
-        if (!join_nodes_stack.empty())
-        {
-            const auto * current_join_node = join_nodes_stack.top();
-
-            /// If we are in the left (right) subtree of a LEFT (RIGHT) JOIN, skip this subtree
-            /// and mark all tables as outer-joined tables.
-            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpression().get() == node.get())
-                need_skip_subtree = true;
-            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpression().get() == node.get())
-                need_skip_subtree = true;
-        }
-
-        /// Once a JOIN node is entered, keep it on the stack until it is left.
-        if (const auto * join_node = node->as<JoinNode>(); join_node && !need_skip_subtree)
-        {
-            join_nodes_stack.push(join_node);
-            return;
-        }
-
-        if (const auto * table_node = node->as<TableNode>())
-        {
-            if (need_skip_subtree)
-                outer_joined_tables.insert(table_node);
-            return;
-        }
-    }
-
-    void leaveImpl(const QueryTreeNodePtr & node)
-    {
-        if (join_nodes_stack.empty())
-            return;
-
-        const auto * current_join_node = join_nodes_stack.top();
-
-        /// Leaving the left (or right) subtree of a LEFT (or RIGHT) JOIN.
-        if (node.get() == current_join_node->getRightTableExpression().get()
-         || node.get() == current_join_node->getLeftTableExpression().get())
-            need_skip_subtree = false;
-
-        /// Leaving a JOIN node.
-        if (node.get() == current_join_node)
-            join_nodes_stack.pop();
-    }
-
-    bool need_skip_subtree = false;
-    std::stack<const JoinNode *> join_nodes_stack;
-    std::unordered_set<const TableNode *> outer_joined_tables;
 };
 
 }
@@ -732,12 +505,7 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     if (identifiers_to_optimize.empty())
         return;
 
-    /// Tables appearing in LEFT or RIGHT JOIN may produce default values for missing rows.
-    /// Inserting a default into a null-mask (of type UInt8) gives a different result than inserting NULL into a Nullable column.
-    /// Therefore, functions on Nullable columns from outer-joined tables cannot be optimized.
-    GetOuterJoinedTablesVisitor outer_join_visitor(context);
-    outer_join_visitor.visit(query_tree_node);
-    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize), std::move(outer_join_visitor.outer_joined_tables));
+    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize));
     second_visitor.visit(query_tree_node);
 }
 

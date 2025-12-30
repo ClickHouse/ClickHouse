@@ -9,12 +9,17 @@ namespace DB
 {
 namespace
 {
-    void formatNameOrID(const String & str, bool is_id, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatNameOrID(const String & str, bool is_id, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         if (is_id)
-            ostr << "ID(" << quoteString(str) << ")";
+        {
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ID" << (settings.hilite ? IAST::hilite_none : "") << "("
+                          << quoteString(str) << ")";
+        }
         else
+        {
             ostr << backQuoteIfNeed(str);
+        }
     }
 }
 
@@ -22,7 +27,7 @@ void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 {
     if (empty())
     {
-        ostr << "NONE";
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
         return;
     }
 
@@ -32,8 +37,8 @@ void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     {
         if (std::exchange(need_comma, true))
             ostr << ", ";
-        ostr << (use_keyword_any ? "ANY" : "ALL")
-                     ;
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_keyword_any ? "ANY" : "ALL")
+                      << (settings.hilite ? IAST::hilite_none : "");
     }
     else
     {
@@ -48,13 +53,13 @@ void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << "CURRENT_USER";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CURRENT_USER" << (settings.hilite ? IAST::hilite_none : "");
         }
     }
 
     if (except_current_user || !except_names.empty())
     {
-        ostr << " EXCEPT ";
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (settings.hilite ? IAST::hilite_none : "");
         need_comma = false;
 
         for (const auto & name : except_names)
@@ -68,7 +73,7 @@ void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            ostr << "CURRENT_USER";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CURRENT_USER" << (settings.hilite ? IAST::hilite_none : "");
         }
     }
 }

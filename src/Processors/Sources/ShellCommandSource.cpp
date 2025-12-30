@@ -2,10 +2,8 @@
 
 #include <poll.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -15,7 +13,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <Core/Field.h>
 
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
@@ -161,8 +158,8 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (num_events <= 0)
+            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
             bool has_stdout = pfds[0].revents > 0;
@@ -345,7 +342,7 @@ namespace
             size_t command_read_timeout_milliseconds,
             ExternalCommandStderrReaction stderr_reaction,
             bool check_exit_code_,
-            SharedHeader sample_block_,
+            const Block & sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
@@ -375,16 +372,12 @@ namespace
             context_for_reading->setSetting("input_format_custom_detect_header", false);
             context = context_for_reading;
 
-            auto thread_group = CurrentThread::getGroup();
-
             try
             {
                 for (auto && send_data_task : send_data_tasks)
                 {
-                    send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
+                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
-
                         try
                         {
                             task();
@@ -393,15 +386,11 @@ namespace
                         {
                             std::lock_guard lock(send_data_lock);
                             exception_during_send_data = std::current_exception();
-                        }
 
-                        // In case of exception, the task should be reset in thread
-                        // worker function or else it breaks d'tor invariants such
-                        // as in ~WriteBuffer.
-                        //
-                        // For completed execution, the task reset allows to account
-                        // memory deallocation in sending data thread group.
-                        task = {};
+                            /// task should be reset inside catch block or else it breaks d'tor
+                            /// invariants such as in ~WriteBuffer.
+                            task = {};
+                        }
                     });
                 }
                 size_t max_block_size = configuration.max_block_size;
@@ -417,7 +406,7 @@ namespace
                     max_block_size = configuration.number_of_rows_to_read;
                 }
 
-                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -470,7 +459,7 @@ namespace
                         readChar(dummy, timeout_command_out);
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
-                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -539,7 +528,7 @@ namespace
 
         ContextPtr context;
         std::string format;
-        SharedHeader sample_block;
+        Block sample_block;
 
         std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
@@ -567,7 +556,7 @@ namespace
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(SharedHeader header, WriteBuffer & buffer_)
+        SendingChunkHeaderTransform(const Block & header, WriteBuffer & buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -684,7 +673,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         if (configuration.send_chunk_header)
         {
             /// We cannot use timeout_write_buffer directly since the output format may wrap the buffer, so we need to use a wrapper
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getSharedHeader(), *out->getWriteBufferPtr());
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), *out->getWriteBufferPtr());
             input_pipes[i].addTransform(std::move(transform));
         }
 
@@ -699,7 +688,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             executor.execute();
 
             timeout_write_buffer->finalize();
-            (*timeout_write_buffer).reset();
+            timeout_write_buffer->reset();
 
             if (!is_executable_pool)
             {
@@ -716,7 +705,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         configuration.command_read_timeout_milliseconds,
         configuration.stderr_reaction,
         configuration.check_exit_code,
-        std::make_shared<const Block>(std::move(sample_block)),
+        std::move(sample_block),
         std::move(process),
         std::move(tasks),
         source_configuration,

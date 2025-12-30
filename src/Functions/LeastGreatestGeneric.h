@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <base/map.h>
 
 namespace DB
 {

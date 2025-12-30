@@ -4,9 +4,9 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
+#include "Parsers/ASTExpressionList.h"
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTLiteral.h"
 
 
 namespace DB
@@ -90,7 +90,7 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     for (size_t i = 0; i < ast_args->children.size(); ++i)
     {
-        result->arguments.push_back(fieldToString(ast_args->children[i]->as<ASTLiteral>()->value));
+        result->arguments.push_back(toString(ast_args->children[i]->as<ASTLiteral>()->value));
     }
     if (!close_bracket.ignore(pos, expected))
         return false;

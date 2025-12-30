@@ -12,10 +12,15 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
 #include <Functions/IFunction.h>
+#include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IParser.h>
+#include <Parsers/Lexer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
 
@@ -103,6 +108,7 @@ public:
     }
     void commit()
     {
+        chars.push_back(0);
         offsets.push_back(chars.size());
     }
     void rollback()
@@ -186,7 +192,7 @@ public:
             GeneratorJSONPath<JSONParser> generator_json_path(res);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json = json_column.column->getDataAt(i);
+                std::string_view json = json_column.column->getDataAt(i).toView();
                 document_ok = json_parser.parse(json, document);
 
                 bool added_to_column = false;

@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -18,9 +19,6 @@ namespace DB
   */
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
-
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class TableNode : public IQueryTreeNode
 {

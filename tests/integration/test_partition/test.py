@@ -58,9 +58,7 @@ def test_partition_simple(partition_table_simple):
 
 
 def partition_complex_assert_columns_txt():
-    data_path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='partition_complex'"
-    ).strip()
+    path_to_parts = path_to_data + "data/test/partition_complex/"
     parts = TSV(
         q(
             "SELECT name FROM system.parts WHERE database='test' AND table='partition_complex'"
@@ -68,7 +66,7 @@ def partition_complex_assert_columns_txt():
     )
     assert len(parts) > 0
     for part_name in parts.lines:
-        path_to_columns = data_path + part_name + "/columns.txt"
+        path_to_columns = path_to_parts + part_name + "/columns.txt"
         # 2 header lines + 3 columns
         assert (
             instance.exec_in_container(["wc", "-l", path_to_columns]).split()[0] == "5"
@@ -105,8 +103,6 @@ def partition_complex_assert_checksums(after_detach=False):
             "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
-            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns_substreams.txt\n"
-            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns_substreams.txt\n"
             "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
             "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
             "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
@@ -136,8 +132,6 @@ def partition_complex_assert_checksums(after_detach=False):
             "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
-            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns_substreams.txt\n"
-            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns_substreams.txt\n"
             "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
             "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
             "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
@@ -159,7 +153,7 @@ def partition_table_complex(started_cluster):
     q("DROP TABLE IF EXISTS test.partition_complex")
     q(
         "CREATE TABLE test.partition_complex (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) "
-        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, serialization_info_version='basic', replace_long_file_name_to_hash=false"
+        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, replace_long_file_name_to_hash=false"
     )
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(31), 1)")
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(1), 2)")
@@ -247,11 +241,7 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     wait_for_delete_empty_parts(instance, "test.attach_partition")
     wait_for_delete_inactive_parts(instance, "test.attach_partition")
 
-    data_path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='attach_partition'"
-    ).strip()
-
-    path_to_detached = f"{data_path}/detached/"
+    path_to_detached = path_to_data + "data/test/attach_partition/detached/"
     instance.exec_in_container(["mkdir", "{}".format(path_to_detached + "0_5_5_0")])
     instance.exec_in_container(
         [
@@ -332,11 +322,7 @@ def test_drop_detached_parts(drop_detached_parts_table):
     q("ALTER TABLE test.drop_detached DETACH PARTITION 0")
     q("ALTER TABLE test.drop_detached DETACH PARTITION 1")
 
-    data_path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='drop_detached'"
-    ).strip()
-
-    path_to_detached = f"{data_path}/detached/"
+    path_to_detached = path_to_data + "data/test/drop_detached/detached/"
     instance.exec_in_container(
         ["mkdir", "{}".format(path_to_detached + "attaching_0_6_6_0")]
     )
@@ -415,39 +401,38 @@ def test_system_detached_parts(drop_detached_parts_table):
         )[:-1].split("\n"):
             q("alter table sdp_{} detach partition id '{}'".format(i, p))
 
+    path_to_detached = path_to_data + "data/default/sdp_{}/detached/{}"
     for i in range(0, 4):
-        table_name = f"sdp_{i}"
-        data_path = instance.query(
-            f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
-        ).strip()
-        path_to_detached = data_path + "detached/{}"
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("attaching_0_6_6_0")]
+            ["mkdir", path_to_detached.format(i, "attaching_0_6_6_0")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("deleting_0_7_7_0")]
+            ["mkdir", path_to_detached.format(i, "deleting_0_7_7_0")]
         )
-        instance.exec_in_container(["mkdir", path_to_detached.format("any_other_name")])
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("prefix_1_2_2_0_0")]
+            ["mkdir", path_to_detached.format(i, "any_other_name")]
+        )
+        instance.exec_in_container(
+            ["mkdir", path_to_detached.format(i, "prefix_1_2_2_0_0")]
         )
 
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("ignored_202107_714380_714380_0")]
+            ["mkdir", path_to_detached.format(i, "ignored_202107_714380_714380_0")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("broken_202107_714380_714380_123")]
+            ["mkdir", path_to_detached.format(i, "broken_202107_714380_714380_123")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("clone_all_714380_714380_42")]
+            ["mkdir", path_to_detached.format(i, "clone_all_714380_714380_42")]
         )
         instance.exec_in_container(
-            ["mkdir", path_to_detached.format("clone_all_714380_714380_42_123")]
+            ["mkdir", path_to_detached.format(i, "clone_all_714380_714380_42_123")]
         )
         instance.exec_in_container(
             [
                 "mkdir",
                 path_to_detached.format(
+                    i,
                     "broken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123",
                 ),
             ]
@@ -523,10 +508,6 @@ def test_detached_part_dir_exists(started_cluster):
         "create table detached_part_dir_exists (n int) engine=MergeTree order by n "
         "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
     )
-    data_path = q(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
-    ).strip()
-     
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
@@ -546,11 +527,12 @@ def test_detached_part_dir_exists(started_cluster):
         )
         == "all_1_1_0\nall_2_2_0\n"
     )
+
     instance.exec_in_container(
         [
             "bash",
             "-c",
-            f"mkdir {data_path}detached/all_2_2_0",
+            "mkdir /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0",
         ],
         privileged=True,
     )
@@ -558,7 +540,7 @@ def test_detached_part_dir_exists(started_cluster):
         [
             "bash",
             "-c",
-            f"touch {data_path}detached/all_2_2_0/file",
+            "touch /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0/file",
         ],
         privileged=True,
     )
@@ -580,9 +562,7 @@ def test_make_clone_in_detached(started_cluster):
         "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
 
-    path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='clone_in_detached'"
-    ).strip()
+    path = path_to_data + "data/default/clone_in_detached/"
 
     # broken part already detached
     q("insert into clone_in_detached values (42, '¯-_(ツ)_-¯')")

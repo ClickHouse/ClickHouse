@@ -392,7 +392,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
 
     // should match the structure of sample_block (after materialization)
     convertToFullIfConst(chunk);
-    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfSparse(chunk);
 
     current_chunk = std::move(chunk);
     cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), current_chunk.getNumRows(), desc);
@@ -428,14 +428,11 @@ String FullMergeJoinCursor::dump() const
         fmt::join(row_dump, ", "));
 }
 
-/// clang-tidy-21 false positive, loses track during the brace-initialization of the std::array.
-/// error: Potential leak of memory pointed to by field '__value_' [clang-analyzer-cplusplus.NewDeleteLeaks,-warnings-as-errors]
-/// NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinKind kind_,
     JoinStrictness strictness_,
     const TableJoin::JoinOnClause & on_clause_,
-    SharedHeaders & input_headers,
+    const Blocks & input_headers,
     size_t max_block_size_)
     : kind(kind_)
     , strictness(strictness_)
@@ -461,15 +458,14 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
     cursors = {
-        createCursor(*input_headers[0], on_clause_.key_names_left, strictness),
-        createCursor(*input_headers[1], on_clause_.key_names_right, strictness),
+        createCursor(input_headers[0], on_clause_.key_names_left, strictness),
+        createCursor(input_headers[1], on_clause_.key_names_right, strictness),
     };
 }
-/// NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinPtr join_ptr,
-    SharedHeaders & input_headers,
+    const Blocks & input_headers,
     size_t max_block_size_)
     : MergeJoinAlgorithm(
         join_ptr->getTableJoin().kind(),
@@ -480,14 +476,16 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
 {
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
-        size_t left_idx = input_headers[0]->getPositionByName(left_key);
-        size_t right_idx = input_headers[1]->getPositionByName(right_key);
+        size_t left_idx = input_headers[0].getPositionByName(left_key);
+        size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
 
-    const auto * smj_ptr = typeid_cast<const FullSortingMergeJoin *>(join_ptr.get());
-    if (smj_ptr)
-        null_direction_hint = smj_ptr->getNullDirection();
+    const auto *smjPtr = typeid_cast<const FullSortingMergeJoin *>(join_ptr.get());
+    if (smjPtr)
+    {
+        null_direction_hint = smjPtr->getNullDirection();
+    }
 
     if (strictness == JoinStrictness::Asof)
         setAsofInequality(join_ptr->getTableJoin().getAsofInequality());
@@ -1247,8 +1245,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
 MergeJoinTransform::MergeJoinTransform(
         JoinPtr table_join,
-        SharedHeaders & input_headers,
-        SharedHeader output_header,
+        const Blocks & input_headers,
+        const Block & output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(
@@ -1266,8 +1264,8 @@ MergeJoinTransform::MergeJoinTransform(
         JoinKind kind_,
         JoinStrictness strictness_,
         const TableJoin::JoinOnClause & on_clause_,
-        SharedHeaders & input_headers,
-        SharedHeader output_header,
+        const Blocks & input_headers,
+        const Block & output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(

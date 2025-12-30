@@ -5,14 +5,9 @@
 namespace DB
 {
 
-ReadNothingStep::ReadNothingStep(SharedHeader output_header_)
+ReadNothingStep::ReadNothingStep(Block output_header_)
     : ISourceStep(std::move(output_header_))
 {
-}
-
-QueryPlanStepPtr ReadNothingStep::clone() const
-{
-    return std::make_unique<ReadNothingStep>(getOutputHeader());
 }
 
 void ReadNothingStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

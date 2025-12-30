@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/Context.h>
 #include <base/EnumReflection.h>
-#include <Common/AsyncLoader.h>
 
 
 namespace DB
@@ -34,7 +33,7 @@ namespace
     {
         auto time_us = std::chrono::duration_cast<std::chrono::microseconds>(time_point.time_since_epoch()).count();
         DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
-        return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
+        return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
     }
 
     Field optionalTimeInMicroseconds(const TimePoint & time_point)
