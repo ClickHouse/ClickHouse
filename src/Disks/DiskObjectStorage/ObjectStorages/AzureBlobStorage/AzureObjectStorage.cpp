@@ -311,7 +311,19 @@ void AzureObjectStorage::removeObjectImpl(
         error_message = e.Message;
 
         if (!if_exists)
+        {
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    /* bucket */ connection_params.getContainer(),
+                    /* remote_path */ path,
+                    object.local_path,
+                    object.bytes_size,
+                    watch.elapsedMicroseconds(),
+                    error_code,
+                    error_message);
             throw;
+        }
 
         /// If object doesn't exist.
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)

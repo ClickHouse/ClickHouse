@@ -185,6 +185,16 @@ namespace
             {
                 error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(
+                        BlobStorageLogElement::EventType::MultiPartUploadComplete,
+                        /* bucket */ dest_container_for_logging,
+                        /* remote_path */ dest_blob,
+                        /* local_path */ {},
+                        /* data_size */ 0,
+                        watch.elapsedMicroseconds(),
+                        error_code,
+                        error_message);
                 throw;
             }
             auto elapsed = watch.elapsedMicroseconds();
@@ -338,6 +348,16 @@ namespace
             {
                 error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(
+                        BlobStorageLogElement::EventType::MultiPartUploadWrite,
+                        /* bucket */ dest_container_for_logging,
+                        /* remote_path */ dest_blob,
+                        /* local_path */ {},
+                        /* data_size */ size_to_stage,
+                        watch.elapsedMicroseconds(),
+                        error_code,
+                        error_message);
                 throw;
             }
             auto elapsed = watch.elapsedMicroseconds();

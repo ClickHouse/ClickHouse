@@ -207,6 +207,16 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             {
                 error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::Upload,
+                        /* bucket */ container_for_logging,
+                        /* remote_path */ blob_path,
+                        /* local_path */ {},
+                        /* data_size */ part_data.data_size,
+                        watch.elapsedMicroseconds(),
+                        error_code,
+                        error_message);
                 throw;
             }
             auto elapsed = watch.elapsedMicroseconds();
@@ -260,6 +270,16 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             {
                 error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::Upload,
+                        /* bucket */ container_for_logging,
+                        /* remote_path */ blob_path,
+                        /* local_path */ {},
+                        /* data_size */ 0,
+                        watch.elapsedMicroseconds(),
+                        error_code,
+                        error_message);
                 throw;
             }
             auto elapsed = watch.elapsedMicroseconds();
@@ -330,6 +350,16 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         {
             error_code = static_cast<Int32>(e.StatusCode);
             error_message = e.Message;
+            if (blob_log)
+                blob_log->addEvent(
+                    BlobStorageLogElement::EventType::MultiPartUploadComplete,
+                    /* bucket */ container_for_logging,
+                    /* remote_path */ blob_path,
+                    /* local_path */ {},
+                    /* data_size */ 0,
+                    watch.elapsedMicroseconds(),
+                    error_code,
+                    error_message);
             throw;
         }
         auto elapsed = watch.elapsedMicroseconds();
@@ -504,6 +534,16 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         {
             error_code = static_cast<Int32>(e.StatusCode);
             error_message = e.Message;
+            if (blob_log)
+                blob_log->addEvent(
+                    BlobStorageLogElement::EventType::MultiPartUploadWrite,
+                    /* bucket */ container_for_logging,
+                    /* remote_path */ blob_path,
+                    /* local_path */ {},
+                    /* data_size */ data_size,
+                    watch.elapsedMicroseconds(),
+                    error_code,
+                    error_message);
             throw;
         }
         auto elapsed = watch.elapsedMicroseconds();
