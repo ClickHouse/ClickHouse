@@ -1,9 +1,11 @@
-#include "Common/assert_cast.h"
-#include "Columns/ColumnNullable.h"
-#include "Columns/ColumnsDateTime.h"
-#include "Core/DecimalFunctions.h"
-#include "DataTypes/IDataType.h"
-#include "base/types.h"
+#include <Core/MySQL/MySQLUtils.h>
+#include <Common/assert_cast.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/IDataType.h>
+
+#include <cmath>
 
 namespace DB
 {
@@ -12,8 +14,7 @@ namespace MySQLProtocol
 namespace MySQLUtils
 {
 
-DecimalUtils::DecimalComponents<DateTime64>
-getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t row_num)
+DecimalUtils::DecimalComponents<DateTime64> getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t row_num)
 {
     const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(data_type.get());
 
@@ -35,7 +36,7 @@ getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t r
         if (scale > 6)
         {
             // MySQL Timestamp has max scale of 6
-            components.fractional /= static_cast<int>(pow(10, scale - 6));
+            components.fractional /= static_cast<int>(std::pow(10, scale - 6));
         }
         else
         {
@@ -46,19 +47,11 @@ getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t r
             // Scale 4 = 000100
             // Scale 5 = 000010
             // Scale 6 = 000001
-            components.fractional *= static_cast<int>(pow(10, 6 - scale));
+            components.fractional *= static_cast<int>(std::pow(10, 6 - scale));
         }
     }
 
     return components;
-};
-
-ColumnPtr getBaseColumn(const DB::Columns & columns, size_t i)
-{
-    ColumnPtr col = columns[i]->convertToFullIfNeeded();
-    if (col->isNullable())
-        return assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
-    return col;
 };
 }
 }

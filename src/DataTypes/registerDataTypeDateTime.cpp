@@ -5,6 +5,8 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 
 namespace DB
@@ -16,7 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-enum class ArgumentKind
+enum class ArgumentKind : uint8_t
 {
     Optional,
     Mandatory
@@ -49,13 +51,13 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
             if (argument && argument->value.getType() != field_type)
                 throw Exception(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
                     argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            else
-                throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
     }
 
-    return argument->value.get<NearestResultType>();
+    return argument->value.safeGet<NearestResultType>();
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -108,11 +110,61 @@ static DataTypePtr create64(const ASTPtr & arguments)
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
 {
-    factory.registerDataType("DateTime", create, DataTypeFactory::CaseInsensitive);
-    factory.registerDataType("DateTime32", create32, DataTypeFactory::CaseInsensitive);
-    factory.registerDataType("DateTime64", create64, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("DateTime", create, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("DateTime32", create32, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("DateTime64", create64, DataTypeFactory::Case::Insensitive);
 
-    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::Case::Insensitive);
+}
+
+static DataTypePtr createTime(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.empty())
+        return std::make_shared<DataTypeTime>();
+
+    const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "Time");
+    const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, scale ? 1 : 0, "timezone", "Time");
+
+    if (timezone && !timezone->empty())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Specifying timezone for Time type is not allowed");
+
+    if (!scale && !timezone)
+        throw Exception(getExceptionMessage(" has wrong type: ", 0, "scale", "Time", Field::Types::Which::UInt64),
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    /// If scale is defined, the data type is Time when scale = 0 otherwise the data type is Time64
+    if (scale && scale.value() != 0)
+        return std::make_shared<DataTypeTime64>(scale.value());
+
+    return std::make_shared<DataTypeTime>();
+}
+
+static DataTypePtr createTime64(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.empty())
+        return std::make_shared<DataTypeTime64>(DataTypeTime64::default_scale);
+
+    if (arguments->children.size() > 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Time64 data type can optionally have only one argument - scale");
+
+    const auto scale = getArgument<UInt64, ArgumentKind::Mandatory>(arguments, 0, "scale", "Time64");
+    const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, 1, "timezone", "Time64");
+
+    if (timezone && !timezone->empty())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Specifying timezone for Time64 type is not allowed");
+
+    return std::make_shared<DataTypeTime64>(scale);
+}
+
+void registerDataTypeTime(DataTypeFactory & factory)
+{
+    factory.registerDataType("Time", createTime, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("Time64", createTime64, DataTypeFactory::Case::Insensitive);
 }
 
 }

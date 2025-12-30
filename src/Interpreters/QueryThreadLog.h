@@ -2,10 +2,11 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ struct QueryThreadLogElement
     Int64 memory_usage{};
     Int64 peak_memory_usage{};
 
-    String thread_name;
+    ThreadName thread_name;
     UInt64 thread_id{};
     UInt64 master_thread_id{};
 
@@ -46,10 +47,9 @@ struct QueryThreadLogElement
 
     static std::string name() { return "QueryThreadLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

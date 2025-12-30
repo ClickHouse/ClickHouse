@@ -1,18 +1,19 @@
 #pragma once
 
 #include <memory>
-#include <vector>
 
-#include <Core/Names.h>
 #include <Core/Block.h>
-#include <Columns/IColumn.h>
+#include <Core/Block_fwd.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/Exception.h>
 
 namespace DB
 {
 
-struct ExtraBlock;
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
+}
 
 class TableJoin;
 class NotJoinedBlocks;
@@ -22,7 +23,7 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-enum class JoinPipelineType
+enum class JoinPipelineType : uint8_t
 {
     /*
      * Right stream processed first, then when join data structures are ready, the left stream is processed using it.
@@ -43,6 +44,28 @@ enum class JoinPipelineType
     YShaped,
 };
 
+class IJoinResult;
+using JoinResultPtr = std::unique_ptr<IJoinResult>;
+
+class IJoinResult
+{
+public:
+    virtual ~IJoinResult() = default;
+
+    struct JoinResultBlock
+    {
+        Block block;
+        /// Pointer to next block to process, if any.
+        /// Should be used once we got last result and is_last is true.
+        ScatteredBlock * next_block = nullptr;
+        bool is_last = true;
+    };
+
+    virtual JoinResultBlock next() = 0;
+
+    static JoinResultPtr createFromBlock(Block block);
+};
+
 class IJoin
 {
 public:
@@ -51,6 +74,27 @@ public:
     virtual std::string getName() const = 0;
 
     virtual const TableJoin & getTableJoin() const = 0;
+
+    /// Returns true if clone is supported
+    virtual bool isCloneSupported() const
+    {
+        return false;
+    }
+
+    /// Clone underlying JOIN algorithm using table join, left sample block, right sample block
+    virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader left_sample_block_,
+        SharedHeader right_sample_block_) const
+    {
+        (void)(table_join_);
+        (void)(left_sample_block_);
+        (void)(right_sample_block_);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
+    }
+
+    virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader left_sample_block_,
+        SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
@@ -66,7 +110,7 @@ public:
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
-    virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
+    virtual JoinResultPtr joinBlock(Block block) = 0;
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
@@ -93,9 +137,14 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
+    virtual bool rightTableCanBeReranged() const { return false; }
+    virtual void tryRerangeRightTableData() {}
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
+
+    /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
+    virtual void onBuildPhaseFinish() { }
 
 private:
     Block totals;
@@ -110,7 +159,7 @@ public:
         if (finished)
             return {};
 
-        if (Block res = nextImpl())
+        if (Block res = nextImpl(); !res.empty())
             return res;
 
         finished = true;

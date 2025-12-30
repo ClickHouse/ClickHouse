@@ -1,3 +1,3 @@
-metadata format version: 1\ndate column: \nsampling expression: \nindex granularity: 8192\nmode: 7\nsign column: sign\nprimary key: key1, key2\ndata format version: 1\npartition key: d\ngranularity bytes: 10485760\n
+metadata format version: 1\ndate column: \nsampling expression: \nindex granularity: 8192\nmode: 7\nsign column: sign\nprimary key: key1, key2\ndata format version: 1\npartition key: d\ngranularity bytes: 10485760\nmerge parameters format version: 2\nversion column: version\n
 1
 1

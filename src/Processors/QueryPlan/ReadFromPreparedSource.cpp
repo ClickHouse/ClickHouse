@@ -1,48 +1,47 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/IStorage.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
-ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_, ContextPtr context_, Context::QualifiedProjectionName qualified_projection_name_)
-    : SourceStepWithFilter(DataStream{.header = pipe_.getHeader()})
+namespace Setting
+{
+    extern const SettingsUInt64 query_plan_max_step_description_length;
+}
+
+ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
+    : ISourceStep(pipe_.getSharedHeader())
     , pipe(std::move(pipe_))
-    , context(std::move(context_))
-    , qualified_projection_name(std::move(qualified_projection_name_))
 {
 }
 
 void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context && context->hasQueryContext())
-        context->getQueryContext()->addQueryAccessInfo(qualified_projection_name);
-
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromStorageStep::applyFilters()
+ReadFromStorageStep::ReadFromStorageStep(
+    Pipe pipe_,
+    StoragePtr storage_,
+    ContextPtr context_,
+    const SelectQueryInfo & query_info_)
+    : ReadFromPreparedSource(std::move(pipe_))
+    , storage(std::move(storage_))
+    , context(std::move(context_))
+    , query_info(query_info_)
 {
-    if (!context)
-        return;
+    auto description = storage->getName();
+    setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 
-    std::shared_ptr<const KeyCondition> key_condition;
-    if (!context->getSettingsRef().allow_experimental_analyzer)
-    {
-        for (const auto & processor : pipe.getProcessors())
-            if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
-                source->setKeyCondition(query_info, context);
-    }
-    else
-    {
-        for (const auto & processor : pipe.getProcessors())
-            if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
-                source->setKeyCondition(filter_nodes.nodes, context);
-    }
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
 }
 
 }

@@ -15,7 +15,6 @@
 #include "Poco/Net/SecureSocketImpl.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Context.h"
-#include "Poco/Net/X509Certificate.h"
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/SecureStreamSocket.h"
 #include "Poco/Net/SecureStreamSocketImpl.h"
@@ -182,7 +181,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	}
 	SSL_set_bio(_pSSL, pBIO, pBIO);
 
-#if OPENSSL_VERSION_NUMBER >= 0x0908060L && !defined(OPENSSL_NO_TLSEXT)
+#if !defined(OPENSSL_NO_TLSEXT)
 	if (!_peerHostName.empty())
 	{
 		SSL_set_tlsext_host_name(_pSSL, _peerHostName.c_str());
@@ -199,7 +198,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 		if (performHandshake && _pSocket->getBlocking())
 		{
 			int ret;
-			Poco::Timespan remaining_time = getMaxTimeout();
+			Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
 			do
 			{
 				RemainingTimeCounter counter(remaining_time);
@@ -290,6 +289,8 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
+	_pSocket->throttleSend(length, _pSocket->getBlocking() && (flags & MSG_DONTWAIT) == 0);
+
 	int rc;
 	if (_needHandshake)
 	{
@@ -302,7 +303,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 			return rc;
 	}
 
-	Poco::Timespan remaining_time = getMaxTimeout();
+	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
 	do
 	{
 		RemainingTimeCounter counter(remaining_time);
@@ -311,9 +312,20 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
+		// At this stage we still can have last not yet received SSL message containing SSL error
+		// so make a read to force SSL to process possible SSL error
+		if (SSL_get_error(_pSSL, rc) == SSL_ERROR_SYSCALL && SocketImpl::lastError() == POCO_ECONNRESET)
+		{
+			char c = 0;
+			SSL_read(_pSSL, &c, 1);
+		}
+
 		rc = handleError(rc);
 		if (rc == 0) throw SSLConnectionUnexpectedlyClosedException();
 	}
+
+	_pSocket->useSendThrottlerBudget(rc);
+
 	return rc;
 }
 
@@ -328,6 +340,8 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	if ((flags & MSG_DONTWAIT) && (flags & MSG_PEEK))
 		return _pSocket->receiveBytes(buffer, length, flags);
 
+	_pSocket->throttleRecv(length, _pSocket->getBlocking() && (flags & MSG_DONTWAIT) == 0);
+
 	int rc;
 	if (_needHandshake)
 	{
@@ -338,7 +352,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 			return rc;
 	}
 
-	Poco::Timespan remaining_time = getMaxTimeout();
+	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
 	do
 	{
 		/// SSL record may consist of several TCP packets,
@@ -352,6 +366,9 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	{
 		return handleError(rc);
 	}
+
+	_pSocket->useRecvThrottlerBudget(rc);
+
 	return rc;
 }
 
@@ -372,7 +389,7 @@ int SecureSocketImpl::completeHandshake()
 	poco_check_ptr (_pSSL);
 
 	int rc;
-	Poco::Timespan remaining_time = getMaxTimeout();
+	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
 	do
 	{
 		RemainingTimeCounter counter(remaining_time);
@@ -416,15 +433,25 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 	Context::VerificationMode mode = _pContext->verificationMode();
 	if (mode == Context::VERIFY_NONE || !_pContext->extendedCertificateVerificationEnabled() ||
 	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
-	{
 		return X509_V_OK;
-	}
 
-	X509* pCert = SSL_get_peer_certificate(_pSSL);
+	X509* pCert = SSL_get1_peer_certificate(_pSSL);
 	if (pCert)
 	{
-		X509Certificate cert(pCert);
-		return cert.verify(hostName) ? X509_V_OK : X509_V_ERR_APPLICATION_VERIFICATION;
+        if (X509_check_host(pCert, hostName.c_str(), hostName.length(), 0, nullptr) == 1)
+        {
+            return X509_V_OK;
+        }
+        else
+        {
+            IPAddress ip;
+            if (IPAddress::tryParse(hostName, ip))
+            {
+                auto result = X509_check_ip_asc(pCert, hostName.c_str(), 0) == 1;
+                return result ? X509_V_OK : X509_V_ERR_APPLICATION_VERIFICATION;
+            }
+        }
+        return X509_V_ERR_APPLICATION_VERIFICATION;;
 	}
 	else return X509_V_OK;
 }
@@ -448,23 +475,34 @@ X509* SecureSocketImpl::peerCertificate() const
 {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (_pSSL)
-		return SSL_get_peer_certificate(_pSSL);
+		return SSL_get1_peer_certificate(_pSSL);
 	else
 		return 0;
 }
 
-Poco::Timespan SecureSocketImpl::getMaxTimeout()
+Poco::Timespan SecureSocketImpl::getMaxTimeoutOrLimit()
 {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	Poco::Timespan remaining_time = _pSocket->getReceiveTimeout();
 	Poco::Timespan send_timeout = _pSocket->getSendTimeout();
 	if (remaining_time < send_timeout)
 		remaining_time = send_timeout;
+	/// zero SO_SNDTIMEO/SO_RCVTIMEO works as no timeout, let's replicate this
+	///
+	/// NOTE: we cannot use INT64_MAX (std::numeric_limits<Poco::Timespan::TimeDiff>::max()),
+	/// since it will be later passed to poll() which accept int timeout, and
+	/// even though poll() accepts milliseconds and Timespan() accepts
+	/// microseconds, let's use smaller maximum value just to avoid some possible
+	/// issues, this should be enough anyway (it is ~24 days).
+	if (remaining_time == 0)
+		remaining_time = Poco::Timespan(std::numeric_limits<int>::max());
 	return remaining_time;
 }
 
 bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time)
 {
+	if (remaining_time == 0)
+		return false;
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	if (rc <= 0)
 	{
@@ -475,9 +513,7 @@ bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time)
 		case SSL_ERROR_WANT_READ:
 			if (_pSocket->getBlocking())
 			{
-				/// Level-triggered mode of epoll_wait is used, so if SSL_read don't read all available data from socket,
-				/// epoll_wait returns true without waiting for new data even if remaining_time == 0
-				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_READ) && remaining_time != 0)
+				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_READ))
 					return true;
 				else
 					throw Poco::TimeoutException();
@@ -486,13 +522,15 @@ bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time)
 		case SSL_ERROR_WANT_WRITE:
 			if (_pSocket->getBlocking())
 			{
-				/// The same as for SSL_ERROR_WANT_READ
-				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_WRITE) && remaining_time != 0)
+				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_WRITE))
 					return true;
 				else
 					throw Poco::TimeoutException();
 			}
 			break;
+		/// NOTE: POCO_EINTR is the same as SSL_ERROR_WANT_READ (at least in
+		/// OpenSSL), so this likely dead code, but let's leave it for
+		/// compatibility with other implementations
 		case SSL_ERROR_SYSCALL:
 			return socketError == POCO_EAGAIN || socketError == POCO_EINTR;
 		default:

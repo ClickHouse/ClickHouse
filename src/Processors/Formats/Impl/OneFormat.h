@@ -9,12 +9,12 @@ namespace DB
 class OneInputFormat final : public IInputFormat
 {
 public:
-    OneInputFormat(const Block & header, ReadBuffer & in_);
+    OneInputFormat(SharedHeader header, ReadBuffer & in_);
 
     String getName() const override { return "One"; }
 
 protected:
-    Chunk generate() override;
+    Chunk read() override;
 
 private:
     bool done = false;

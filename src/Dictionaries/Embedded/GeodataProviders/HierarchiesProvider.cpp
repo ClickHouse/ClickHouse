@@ -1,13 +1,16 @@
-#include "HierarchiesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
-#include "HierarchyFormatReader.h"
+#include <Dictionaries/Embedded/GeodataProviders/HierarchyFormatReader.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace DB
+{
 
 bool RegionsHierarchyDataSource::isModified() const
 {
@@ -17,7 +20,7 @@ bool RegionsHierarchyDataSource::isModified() const
 IRegionsHierarchyReaderPtr RegionsHierarchyDataSource::createReader()
 {
     updates_tracker.fixCurrentVersion();
-    auto file_reader = std::make_shared<DB::ReadBufferFromFile>(path);
+    auto file_reader = std::make_shared<ReadBufferFromFile>(path);
     return std::make_unique<RegionsHierarchyFormatReader>(std::move(file_reader));
 }
 
@@ -72,4 +75,6 @@ IRegionsHierarchyDataSourcePtr RegionsHierarchiesDataProvider::getHierarchySourc
     }
 
     throw Poco::Exception("Regions hierarchy '" + name + "' not found");
+}
+
 }

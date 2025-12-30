@@ -1,0 +1,160 @@
+json
+('k1',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=2))'])
+('k2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=2, max_dynamic_paths=2))','Array(Nullable(Int64))'])
+('k3',['Int64'])
+('k4',['Int64'])
+('k5',['Int64'])
+('k6',['Int64'])
+('k7',['Int64'])
+('k8',['Int64'])
+('k9',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=2))'])
+k1
+('k1_1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k1_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))','Array(Nullable(Int64))'])
+('k1_3',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+k2
+('k2_1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k2_2',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k2_3',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+k9
+('k9_1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k9_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))','Array(Nullable(Int64))'])
+('k9_3',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+subcolumns
+{
+	"json.k1.:`Array(JSON)`": [[{"k1_1":[{"k1_1_1":42}],"k1_2":[42],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[42]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[42]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[[42]]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[{"k1_2_1":42}],"k1_3":[{"k1_3_1":42}]}]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`": [[[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`.k1_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k1_2_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`.k1_2_1": [[[]], [[]], [[]], [[]], [[42]]],
+	"json.k2.:`Array(JSON)`": [[], [], [], [], [{"k2_1":[{"k2_1_1":42}],"k2_2":[{"k2_2_1":42}],"k2_3":[{"k2_3_1":42}]}]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`": [[], [], [], [], [[{"k2_1_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`.k2_1_1": [[], [], [], [], [[42]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`": [[], [], [], [], [[{"k2_2_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`.k2_2_1": [[], [], [], [], [[42]]],
+	"json.k9.:`Array(JSON)`": [[{"k9_1":[{"k9_1_1":42}],"k9_2":[42],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[42]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[42]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[[42]]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[{"k9_2_1":42}],"k9_3":[{"k9_3_1":42}]}]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`": [[[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`.k9_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k9_2_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`.k9_2_1": [[[]], [[]], [[]], [[]], [[42]]]
+}
+json
+('k1',['Array(JSON(max_dynamic_types=4, max_dynamic_paths=4))'])
+('k2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=4, max_dynamic_paths=4))','Array(Nullable(Int64))'])
+('k3',['Int64'])
+('k4',['Int64'])
+('k5',['Int64'])
+('k6',['Int64'])
+('k7',['Int64'])
+('k8',['Int64'])
+('k9',['Array(JSON(max_dynamic_types=4, max_dynamic_paths=4))'])
+k1
+('k1_1',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+('k1_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))','Array(Nullable(Int64))'])
+('k1_3',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+k2
+('k2_1',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+('k2_2',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+('k2_3',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+k9
+('k9_1',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+('k9_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))','Array(Nullable(Int64))'])
+('k9_3',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=1))'])
+subcolumns
+{
+	"json.k1.:`Array(JSON)`": [[{"k1_1":[{"k1_1_1":42}],"k1_2":[42],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[42]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[42]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[[42]]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[{"k1_2_1":42}],"k1_3":[{"k1_3_1":42}]}]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`": [[[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`.k1_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k1_2_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`.k1_2_1": [[[]], [[]], [[]], [[]], [[42]]],
+	"json.k2.:`Array(JSON)`": [[], [], [], [], [{"k2_1":[{"k2_1_1":42}],"k2_2":[{"k2_2_1":42}],"k2_3":[{"k2_3_1":42}]}]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`": [[], [], [], [], [[{"k2_1_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`.k2_1_1": [[], [], [], [], [[42]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`": [[], [], [], [], [[{"k2_2_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`.k2_2_1": [[], [], [], [], [[42]]],
+	"json.k9.:`Array(JSON)`": [[{"k9_1":[{"k9_1_1":42}],"k9_2":[42],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[42]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[42]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[[42]]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[{"k9_2_1":42}],"k9_3":[{"k9_3_1":42}]}]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`": [[[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`.k9_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k9_2_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`.k9_2_1": [[[]], [[]], [[]], [[]], [[42]]]
+}
+json
+('k1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=1))'])
+('k2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=1, max_dynamic_paths=1))','Array(Nullable(Int64))'])
+('k3',['Int64'])
+('k4',['Int64'])
+('k5',['Int64'])
+('k6',['Int64'])
+('k7',['Int64'])
+('k8',['Int64'])
+('k9',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=1))'])
+k1
+('k1_1',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+('k1_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))','Array(Nullable(Int64))'])
+('k1_3',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+k2
+('k2_1',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+('k2_2',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+('k2_3',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+k9
+('k9_1',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+('k9_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))','Array(Nullable(Int64))'])
+('k9_3',['Array(JSON(max_dynamic_types=0, max_dynamic_paths=0))'])
+subcolumns
+{
+	"json.k1.:`Array(JSON)`": [[{"k1_1":[{"k1_1_1":42}],"k1_2":[42],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[42]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[42]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[[42]]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[{"k1_2_1":42}],"k1_3":[{"k1_3_1":42}]}]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`": [[[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`.k1_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k1_2_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`.k1_2_1": [[[]], [[]], [[]], [[]], [[42]]],
+	"json.k2.:`Array(JSON)`": [[], [], [], [], [{"k2_1":[{"k2_1_1":42}],"k2_2":[{"k2_2_1":42}],"k2_3":[{"k2_3_1":42}]}]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`": [[], [], [], [], [[{"k2_1_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`.k2_1_1": [[], [], [], [], [[42]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`": [[], [], [], [], [[{"k2_2_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`.k2_2_1": [[], [], [], [], [[42]]],
+	"json.k9.:`Array(JSON)`": [[{"k9_1":[{"k9_1_1":42}],"k9_2":[42],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[42]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[42]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[[42]]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[{"k9_2_1":42}],"k9_3":[{"k9_3_1":42}]}]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`": [[[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`.k9_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k9_2_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`.k9_2_1": [[[]], [[]], [[]], [[]], [[42]]]
+}
+json
+('k1',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=2))'])
+('k2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=2, max_dynamic_paths=2))','Array(Nullable(Int64))'])
+('k3',['Int64'])
+('k4',['Int64'])
+('k5',['Int64'])
+('k6',['Int64'])
+('k7',['Int64'])
+('k8',['Int64'])
+('k9',['Array(JSON(max_dynamic_types=2, max_dynamic_paths=2))'])
+k1
+('k1_1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k1_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))','Array(Nullable(Int64))'])
+('k1_3',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+k2
+('k2_1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k2_2',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k2_3',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+k9
+('k9_1',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+('k9_2',['Array(Array(Array(Array(Nullable(Int64)))))','Array(Array(Array(Nullable(Int64))))','Array(Array(Nullable(Int64)))','Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))','Array(Nullable(Int64))'])
+('k9_3',['Array(JSON(max_dynamic_types=1, max_dynamic_paths=0))'])
+subcolumns
+{
+	"json.k1.:`Array(JSON)`": [[{"k1_1":[{"k1_1_1":42}],"k1_2":[42],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[42]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[42]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[[[[42]]]],"k1_3":[{"k1_3_1":42}]}], [{"k1_1":[{"k1_1_1":42}],"k1_2":[{"k1_2_1":42}],"k1_3":[{"k1_3_1":42}]}]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`": [[[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]], [[{"k1_1_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_1.:`Array(JSON)`.k1_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k1_2_1":42}]]],
+	"json.k1.:`Array(JSON)`.k1_2.:`Array(JSON)`.k1_2_1": [[[]], [[]], [[]], [[]], [[42]]],
+	"json.k2.:`Array(JSON)`": [[], [], [], [], [{"k2_1":[{"k2_1_1":42}],"k2_2":[{"k2_2_1":42}],"k2_3":[{"k2_3_1":42}]}]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`": [[], [], [], [], [[{"k2_1_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_1.:`Array(JSON)`.k2_1_1": [[], [], [], [], [[42]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`": [[], [], [], [], [[{"k2_2_1":42}]]],
+	"json.k2.:`Array(JSON)`.k2_2.:`Array(JSON)`.k2_2_1": [[], [], [], [], [[42]]],
+	"json.k9.:`Array(JSON)`": [[{"k9_1":[{"k9_1_1":42}],"k9_2":[42],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[42]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[42]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[[[[42]]]],"k9_3":[{"k9_3_1":42}]}], [{"k9_1":[{"k9_1_1":42}],"k9_2":[{"k9_2_1":42}],"k9_3":[{"k9_3_1":42}]}]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`": [[[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]], [[{"k9_1_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_1.:`Array(JSON)`.k9_1_1": [[[42]], [[42]], [[42]], [[42]], [[42]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`": [[[]], [[]], [[]], [[]], [[{"k9_2_1":42}]]],
+	"json.k9.:`Array(JSON)`.k9_2.:`Array(JSON)`.k9_2_1": [[[]], [[]], [[]], [[]], [[42]]]
+}

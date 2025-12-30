@@ -55,3 +55,11 @@ WHERE f2 = 'x'
 GROUP BY 1;
 
 DROP TABLE t;
+
+CREATE TABLE t (o Nullable(String), p Nullable(String)) ENGINE = ReplacingMergeTree ORDER BY (p, o) SETTINGS allow_nullable_key = 1, index_granularity = 2;
+
+INSERT INTO t SELECT number, NULL FROM numbers(10);
+
+SELECT count() FROM t FINAL;
+
+DROP TABLE t;

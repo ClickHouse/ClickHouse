@@ -16,7 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int AGGREGATE_FUNCTION_THROW;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -116,7 +116,7 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
         if (parameters.size() == 1)
             throw_probability = parameters[0].safeGet<Float64>();
         else if (parameters.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} cannot have more than one parameter", name);
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} cannot have more than one parameter", name);
 
         return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
     });

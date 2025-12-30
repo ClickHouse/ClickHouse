@@ -1,9 +1,10 @@
+import time
+from multiprocessing.dummy import Pool
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from multiprocessing.dummy import Pool
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
-import time
 
 cluster = ClickHouseCluster(__file__)
 
@@ -54,7 +55,7 @@ def test_merge_and_part_corruption(started_cluster):
     with Pool(1) as p:
 
         def optimize_with_delay(x):
-            node1.query("OPTIMIZE TABLE replicated_mt FINAL", timeout=30)
+            node1.query("OPTIMIZE TABLE replicated_mt FINAL", timeout=120)
 
         # corrupt part after merge already assigned, but not started
         res_opt = p.apply_async(optimize_with_delay, (1,))
@@ -70,7 +71,7 @@ def test_merge_and_part_corruption(started_cluster):
         node1.query(
             "ALTER TABLE replicated_mt UPDATE value = 7 WHERE 1",
             settings={"mutations_sync": 2},
-            timeout=30,
+            timeout=120,
         )
         assert node1.query("SELECT sum(value) FROM replicated_mt") == "2100000\n"
 

@@ -1,32 +1,54 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/NamesAndTypes.h>
+
+#include <map>
 
 
 namespace DB
 {
+
+class ColumnsDescription;
 
 namespace Nested
 {
     std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name);
 
     /// Splits name of compound identifier by first/last dot (depending on 'reverse' parameter).
+    /// If the name is not nested (no dot or dot at start/end),
+    /// returns {name, ""}.
     std::pair<std::string, std::string> splitName(const std::string & name, bool reverse = false);
     std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse = false);
+
+    /// Returns all possible pairs of column + subcolumn for specified name.
+    /// For example:
+    /// "a.b.c.d" -> ("a", "b.c.d"), ("a.b", "c.d"), ("a.b.c", "d")
+    std::vector<std::pair<std::string_view, std::string_view>> getAllColumnAndSubcolumnPairs(std::string_view name);
+
+    /// Given all existing columns, return specific pair of column and subcolumn from specified name.
+    /// For example:
+    /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: ("a.x", "y.z").
+    std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::string_view name, const NameSet & storage_columns);
+
+    /// Given all existing columns, return column name of the subcolumn with specified name.
+    /// For example:
+    /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: "a.x".
+    std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns);
 
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
 
     /// Flat a column of nested type into columns
     /// 1) For named tuples，t Tuple(x .., y ..., ...), replace it with t.x ..., t.y ... , ...
-    /// 2) For an Array with named Tuple element column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
+    /// 2) For an Nested column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
     Block flatten(const Block & block);
 
-    /// Same as flatten but only for Array with named Tuple element column.
-    Block flattenArrayOfTuples(const Block & block);
+    /// Same as flatten but only for Nested column.
+    Block flattenNested(const Block & block);
 
-    /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
+    /// Collect Array columns in a form of `column_name.element_name` to single Nested column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
@@ -40,6 +62,9 @@ namespace Nested
 
     /// Extract all column names that are nested for specifying table.
     Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name);
+
+    /// Returns true if @column_name is a subcolumn (of Array type) of any Nested column in @columns.
+    bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns);
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.
@@ -57,5 +82,11 @@ private:
     bool case_insentive;
     std::map<String, BlockPtr> nested_tables;
 };
+
+/// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements);
+
+/// Returns Array type with requested scalar type and number of dimensions.
+DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions);
 
 }

@@ -24,7 +24,7 @@ public:
         return "Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
 
 }

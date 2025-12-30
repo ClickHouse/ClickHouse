@@ -1,14 +1,25 @@
-#include "DateLUT.h"
+#include <Common/DateLUT.h>
+
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 #include <Poco/DigestStream.h>
 #include <Poco/Exception.h>
 #include <Poco/SHA1Engine.h>
-#include <Common/filesystemHelpers.h>
 
 #include <filesystem>
 #include <fstream>
-#include <Interpreters/Context.h>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
+}
 
 namespace
 {
@@ -140,6 +151,34 @@ std::string determineDefaultTimeZone()
 
 }
 
+const DateLUTImpl & DateLUT::instance()
+{
+    const auto & date_lut = getInstance();
+
+    std::optional<std::string> timezone_from_context;
+    if (DB::CurrentThread::isInitialized())
+    {
+        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+        if (query_context)
+            timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
+    }
+
+    if (!timezone_from_context.has_value())
+    {
+        /// On the server side, timezone is passed in query_context,
+        /// but on CH-client side we have no query context,
+        /// and each time we modify client's global context
+        const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
+        if (global_context)
+            timezone_from_context.emplace(global_context->getSettingsRef()[DB::Setting::session_timezone]);
+    }
+
+    if (timezone_from_context.has_value() && !timezone_from_context->empty())
+        return date_lut.getImplementation(*timezone_from_context);
+
+    return serverTimezoneInstance();
+}
+
 DateLUT::DateLUT()
 {
     /// Initialize the pointer to the default DateLUTImpl.
@@ -148,7 +187,7 @@ DateLUT::DateLUT()
 }
 
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
@@ -165,7 +204,40 @@ DateLUT & DateLUT::getInstance()
     return ret;
 }
 
-std::string DateLUT::extractTimezoneFromContext(DB::ContextPtr query_context)
+ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num)
 {
-    return query_context->getSettingsRef().session_timezone.value;
+    return date_lut.makeDayNum(year, month, day_of_month, default_error_day_num);
+}
+
+std::optional<ExtendedDayNum> tryToMakeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month)
+{
+    return date_lut.tryToMakeDayNum(year, month, day_of_month);
+}
+
+Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month)
+{
+    static_assert(std::same_as<Int64, DateLUTImpl::Time>);
+    return date_lut.makeDate(year, month, day_of_month);
+}
+
+Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second)
+{
+    static_assert(std::same_as<Int64, DateLUTImpl::Time>);
+    return date_lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+}
+
+std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second)
+{
+    static_assert(std::same_as<Int64, DateLUTImpl::Time>);
+    return date_lut.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
+}
+
+const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut)
+{
+    return date_lut.getTimeZone();
+}
+
+UInt32 getDayNumOffsetEpoch()
+{
+    return DateLUTImpl::getDayNumOffsetEpoch();
 }

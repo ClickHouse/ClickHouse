@@ -532,7 +532,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                     for (size_t i = 0; referrals[i]; ++i)
                     {
-                        LOG_WARNING(&Poco::Logger::get("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
+                        LOG_WARNING(getLogger("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
                     }
                 }
 

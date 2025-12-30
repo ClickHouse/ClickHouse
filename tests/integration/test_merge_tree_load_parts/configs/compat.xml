@@ -1,4 +1,9 @@
 <clickhouse>
     <replicated_merge_tree_paranoid_check_on_drop_range>0</replicated_merge_tree_paranoid_check_on_drop_range>
     <replicated_merge_tree_paranoid_check_on_startup>0</replicated_merge_tree_paranoid_check_on_startup>
+
+    <logger>
+        <!-- the test looks at the logs, do not make log level too low like test level -->
+        <level>trace</level>
+    </logger>
 </clickhouse>

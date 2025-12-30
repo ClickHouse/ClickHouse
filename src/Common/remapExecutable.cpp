@@ -1,10 +1,10 @@
-#include "remapExecutable.h"
+#include <Common/remapExecutable.h>
 
 #if defined(OS_LINUX) && defined(__amd64__) && defined(__SSE2__) && !defined(SANITIZER) && defined(NDEBUG)
 
-#include <sys/mman.h>
+#include <cstring>
 #include <unistd.h>
-#include <string.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 
 #include <emmintrin.h>
@@ -118,9 +118,9 @@ __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 {
     /// Allocate scratch area and copy the code there.
 
-    void * scratch = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void * scratch = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);  // NOLINT(clang-analyzer-security.MmapWriteExec)
     if (MAP_FAILED == scratch)
-        throwFromErrno(fmt::format("Cannot mmap {} bytes", size), ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot mmap {} bytes", size);
 
     memcpy(scratch, begin, size);
 

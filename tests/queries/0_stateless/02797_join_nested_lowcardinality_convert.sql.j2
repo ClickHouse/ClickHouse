@@ -1,0 +1,37 @@
+SET allow_suspicious_low_cardinality_types=1;
+
+DROP TABLE IF EXISTS test1__fuzz_36;
+DROP TABLE IF EXISTS test1__fuzz_38;
+DROP TABLE IF EXISTS test1__fuzz_41;
+
+CREATE TABLE test1__fuzz_36 (`pt` Array(Array(LowCardinality(Int256))), `exposure_uv` UInt32) ENGINE = Memory;
+CREATE TABLE test1__fuzz_38 (`pt` Array(Array(Int256)), `exposure_uv` UInt32) ENGINE = Memory;
+CREATE TABLE test1__fuzz_41 (`pt` Array(Array(Int8)), `exposure_uv` Decimal(76, 39)) ENGINE = Memory;
+
+insert into test1__fuzz_36 select * from generateRandom() limit 10;
+insert into test1__fuzz_38 select * from generateRandom() limit 10;
+insert into test1__fuzz_41 select * from generateRandom() limit 10;
+
+{% for join_algorithm in ['default','grace_hash','partial_merge','full_sorting_merge'] -%}
+
+SET join_algorithm = '{{ join_algorithm }}';
+
+SELECT *
+FROM (SELECT materialize([0] :: Array(LowCardinality(Int64))) as pt) AS m0
+LEFT JOIN (SELECT materialize([0] :: Array(Int64)) as pt) AS m2
+ON m0.pt = m2.pt
+;
+
+SELECT * FROM (
+    SELECT m0.pt, m0.exposure_uv AS exposure_uv, round(m2.exposure_uv, 10) FROM (SELECT pt, exposure_uv FROM test1__fuzz_36) AS m0
+    LEFT JOIN (SELECT pt, exposure_uv FROM test1__fuzz_38) AS m1 ON m0.pt = m1.pt LEFT JOIN (SELECT pt, exposure_uv FROM test1__fuzz_41) AS m2
+    ON m0.pt = m2.pt
+) AS c0
+ORDER BY exposure_uv ASC NULLS LAST
+FORMAT Null SETTINGS join_use_nulls = 1;
+
+{% endfor -%}
+
+DROP TABLE IF EXISTS test1__fuzz_36;
+DROP TABLE IF EXISTS test1__fuzz_38;
+DROP TABLE IF EXISTS test1__fuzz_41;

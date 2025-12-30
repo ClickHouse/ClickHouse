@@ -47,35 +47,11 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 {
     for (const auto & limits : storage_limits)
     {
-        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch, limits.local_limits.timeout_overflow_mode))
+        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.local_limits.timeout_overflow_mode))
             return false;
     }
 
-    size_t rows_approx = 0;
-    if ((rows_approx = total_rows_approx.exchange(0)) != 0)
-    {
-        Progress total_rows_progress = {0, 0, rows_approx};
-
-        if (progress_callback)
-            progress_callback(total_rows_progress);
-
-        if (process_list_elem)
-            process_list_elem->updateProgressIn(total_rows_progress);
-    }
-
-    size_t bytes = 0;
-    if ((bytes = total_bytes.exchange(0)) != 0)
-    {
-        Progress total_bytes_progress = {0, 0, 0, bytes};
-
-        if (progress_callback)
-            progress_callback(total_bytes_progress);
-
-        if (process_list_elem)
-            process_list_elem->updateProgressIn(total_bytes_progress);
-    }
-
-    Progress value {read_rows, read_bytes};
+    Progress value {read_rows, read_bytes, total_rows_approx.exchange(0), total_bytes.exchange(0)};
 
     if (progress_callback)
         progress_callback(value);
@@ -125,8 +101,6 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
         size_t total_rows = progress.total_rows_to_read;
 
         CurrentThread::updatePerformanceCountersIfNeeded();
-
-        std::lock_guard lock(limits_and_quotas_mutex);
 
         /// TODO: Should be done in PipelineExecutor.
         for (const auto & limits : storage_limits)

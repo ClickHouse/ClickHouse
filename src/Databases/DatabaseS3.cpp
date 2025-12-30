@@ -2,8 +2,12 @@
 
 #if USE_AWS_S3
 
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
+#include <Common/Logger.h>
+#include <Common/RemoteHostFilter.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <IO/S3/URI.h>
@@ -24,6 +28,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "url",
@@ -48,7 +57,7 @@ DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, Conte
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , config(config_)
-    , log(&Poco::Logger::get("DatabaseS3(" + name_ + ")"))
+    , log(getLogger("DatabaseS3(" + name_ + ")"))
 {
 }
 
@@ -90,7 +99,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.find(name) != loaded_tables.end())
+    if (loaded_tables.contains(name))
         return true;
 
     return checkUrl(getFullUrl(name), context_, false);
@@ -130,7 +139,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name);
+    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
     if (table_storage)
         addTable(name, table_storage);
 
@@ -177,7 +186,7 @@ bool DatabaseS3::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseS3::getCreateDatabaseQuery() const
+ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
@@ -189,13 +198,14 @@ ASTPtr DatabaseS3::getCreateDatabaseQuery() const
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(database_name), creation_args);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;
@@ -255,7 +265,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
 
         if (engine_args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message.c_str());
+            throw Exception::createRuntime(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message.c_str());
 
         if (engine_args.empty())
             return result;
@@ -269,7 +279,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             if (boost::iequals(second_arg, "NOSIGN"))
                 result.no_sign_request = true;
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
+                throw Exception::createRuntime(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
         }
 
         // url, access_key_id, secret_access_key
@@ -279,7 +289,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             auto secret_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 
             if (key_id.empty() || secret_key.empty() || boost::iequals(key_id, "NOSIGN"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
+                throw Exception::createRuntime(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
 
             result.access_key_id = key_id;
             result.secret_access_key = secret_key;
@@ -302,11 +312,29 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseS3::getTablesForBackup(const 
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-}
+void registerDatabaseS3(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
 
+        DatabaseS3::Configuration config;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            ASTs & engine_args = engine->arguments->children;
+            config = DatabaseS3::parseArguments(engine_args, args.context);
+        }
+
+        return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
+    };
+    factory.registerDatabase("S3", create_fn, {.supports_arguments = true});
+}
+}
 #endif

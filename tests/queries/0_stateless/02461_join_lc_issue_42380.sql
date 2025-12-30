@@ -9,4 +9,5 @@ CREATE TABLE t2__fuzz_47 (id LowCardinality(Int16)) ENGINE = MergeTree() ORDER B
 INSERT INTO t1__fuzz_13 VALUES (1);
 INSERT INTO t2__fuzz_47 VALUES (1);
 
-SELECT * FROM t1__fuzz_13 FULL OUTER JOIN t2__fuzz_47 ON 1 = 2;
+SELECT * FROM t1__fuzz_13 FULL OUTER JOIN t2__fuzz_47 ON 1 = 2
+ORDER BY ALL;

@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
@@ -15,8 +14,10 @@ namespace DB
 {
 
 class Context;
+class ASTCreateQuery;
+class ASTStorage;
 struct StorageID;
-
+struct ConstraintsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -28,9 +29,14 @@ public:
 
     static StorageFactory & instance();
 
+    /// Helper function to validate if a specific storage supports a setting
+    /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
+    using HasBuiltinSettingFn = bool(std::string_view);
+
     struct Arguments
     {
         const String & engine_name;
+        /// Mutable to allow replacing constant expressions with literals, and other transformations.
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
@@ -42,9 +48,9 @@ public:
         ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        bool attach;
-        bool has_force_restore_data_flag;
+        LoadingStrictnessLevel mode;
         const String & comment;
+        bool is_restore_from_backup = false;
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
@@ -67,7 +73,9 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        AccessType source_access_type = AccessType::NONE;
+        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
+
+        HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -86,7 +94,8 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool has_force_restore_data_flag) const;
+        LoadingStrictnessLevel mode,
+        bool is_restore_from_backup = false) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
@@ -100,7 +109,8 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .source_access_type = AccessType::NONE,
+        .source_access_type = std::nullopt,
+        .has_builtin_setting_fn = nullptr,
     });
 
     const Storages & getAllStorages() const
@@ -126,16 +136,14 @@ public:
         return result;
     }
 
-    AccessType getSourceAccessType(const String & table_engine) const;
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
-    bool checkIfStorageSupportsSchemaInterface(const String & storage_name)
-    {
-        if (storages.contains(storage_name))
-            return storages[storage_name].features.supports_schema_inference;
-        return false;
-    }
+    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
 private:
     Storages storages;
 };
+
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
 
 }

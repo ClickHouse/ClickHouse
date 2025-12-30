@@ -5,13 +5,13 @@
 -- Tests the output of SHOW COLUMNS when called through the ClickHouse protocol.
 
 -- -----------------------------------------------------------------------------------
--- Please keep this test in-sync with 02775_show_columns_called_through_mysql.sql
+-- Please keep this test in-sync with 02775_show_columns_called_from_clickhouse.expect
 -- -----------------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS tab;
 
 SET allow_suspicious_low_cardinality_types=1;
-SET allow_experimental_object_type=1;
+SET enable_json_type=1;
 
 CREATE TABLE tab
 (

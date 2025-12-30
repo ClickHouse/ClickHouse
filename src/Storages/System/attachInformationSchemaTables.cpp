@@ -35,8 +35,9 @@ static constexpr std::string_view schemata = R"(
         `DEFAULT_CHARACTER_SET_SCHEMA` Nullable(String),
         `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
         `SQL_PATH` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         name                          AS catalog_name,
         name                          AS schema_name,
         'default'                     AS schema_owner,
@@ -63,6 +64,7 @@ static constexpr std::string_view tables = R"(
         `table_type` String,
         `table_rows` Nullable(UInt64),
         `data_length` Nullable(UInt64),
+        `index_length` Nullable(UInt64),
         `table_collation` Nullable(String),
         `table_comment` Nullable(String),
         `TABLE_CATALOG` String,
@@ -73,8 +75,9 @@ static constexpr std::string_view tables = R"(
         `DATA_LENGTH` Nullable(UInt64),
         `TABLE_COLLATION` Nullable(String),
         `TABLE_COMMENT` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database             AS table_catalog,
         database             AS table_schema,
         name                 AS table_name,
@@ -86,6 +89,9 @@ static constexpr std::string_view tables = R"(
                 )            AS table_type,
         total_rows AS table_rows,
         total_bytes AS data_length,
+        sum(p.primary_key_size + p.marks_bytes
+            + p.secondary_indices_compressed_bytes + p.secondary_indices_marks_bytes
+        ) AS index_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
         table_catalog        AS TABLE_CATALOG,
@@ -96,7 +102,17 @@ static constexpr std::string_view tables = R"(
         data_length          AS DATA_LENGTH,
         table_collation      AS TABLE_COLLATION,
         table_comment        AS TABLE_COMMENT
-    FROM system.tables
+    FROM system.tables t
+    LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table)
+    GROUP BY
+        t.database,
+        t.name,
+        t.is_temporary,
+        t.engine,
+        t.has_own_data,
+        t.total_rows,
+        t.total_bytes,
+        t.comment
 )";
 
 static constexpr std::string_view views = R"(
@@ -122,8 +138,9 @@ static constexpr std::string_view views = R"(
         `IS_TRIGGER_UPDATABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_DELETABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database AS table_catalog,
         database AS table_schema,
         name AS table_name,
@@ -203,8 +220,9 @@ static constexpr std::string_view columns = R"(
         `EXTRA` Nullable(String),
         `COLUMN_COMMENT` String,
         `COLUMN_TYPE` String
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database AS table_catalog,
         database AS table_schema,
         table AS table_name,
@@ -291,8 +309,9 @@ static constexpr std::string_view key_column_usage = R"(
          `REFERENCED_TABLE_SCHEMA` Nullable(String),
          `REFERENCED_TABLE_NAME` Nullable(String),
          `REFERENCED_COLUMN_NAME` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         'def'                         AS constraint_catalog,
         database                      AS constraint_schema,
         'PRIMARY'                     AS constraint_name,
@@ -346,8 +365,9 @@ static constexpr std::string_view referential_constraints = R"(
          `DELETE_RULE` String,
          `TABLE_NAME` String,
          `REFERENCED_TABLE_NAME` String
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         ''                        AS constraint_catalog,
         NULL                      AS constraint_name,
         ''                        AS constraint_schema,
@@ -412,8 +432,9 @@ static constexpr std::string_view statistics = R"(
         `INDEX_COMMENT` String,
         `IS_VISIBLE` String,
         `EXPRESSION` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         ''            AS table_catalog,
         ''            AS table_schema,
         ''            AS table_name,
@@ -453,6 +474,49 @@ static constexpr std::string_view statistics = R"(
     WHERE false; -- make sure this view is always empty
 )";
 
+/// MySQL-specific
+static constexpr std::string_view engines = R"(
+    ATTACH VIEW engines
+    (
+        engine String,
+        support String,
+        ENGINE String,
+        SUPPORT String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        name AS engine,
+        engine = getSetting('default_table_engine') ? 'DEFAULT' : 'YES' AS support,
+        engine AS ENGINE,
+        support AS SUPPORT
+    FROM system.table_engines
+)";
+
+static constexpr std::string_view character_sets = R"(
+    ATTACH VIEW character_sets
+    (
+        character_set_name String,
+        CHARACTER_SET_NAME String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        arrayJoin(['utf8', 'utf8mb4', 'ascii', 'binary']) AS character_set_name,
+        character_set_name AS CHARACTER_SET_NAME
+)";
+
+static constexpr std::string_view collations = R"(
+    ATTACH VIEW collations
+    (
+        collation_name String,
+        COLLATION_NAME String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        name AS collation_name,
+        collation_name AS COLLATION_NAME
+    FROM system.collations
+)";
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
 static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query)
@@ -471,7 +535,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ParserCreateQuery parser;
         ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(),
                                 "Attach query from embedded resource " + metadata_resource_name,
-                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.getTable());
@@ -479,13 +543,13 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create.setDatabase(database.getDatabaseName());
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create), context, true).second;
+                                             database.getTableDataPath(ast_create), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
         database.createTable(context, ast_create.getTable(), view, ast);
         ASTPtr ast_upper = ast_create.clone();
         auto & ast_create_upper = ast_upper->as<ASTCreateQuery &>();
         ast_create_upper.setTable(Poco::toUpper(view_name));
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create_upper), context, true).second;
+                                             database.getTableDataPath(ast_create_upper), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
 
         database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
 
@@ -505,6 +569,9 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "key_column_usage", key_column_usage);
     createInformationSchemaView(context, information_schema_database, "referential_constraints", referential_constraints);
     createInformationSchemaView(context, information_schema_database, "statistics", statistics);
+    createInformationSchemaView(context, information_schema_database, "engines", engines);
+    createInformationSchemaView(context, information_schema_database, "character_sets", character_sets);
+    createInformationSchemaView(context, information_schema_database, "collations", collations);
 }
 
 }

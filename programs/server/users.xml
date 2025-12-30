@@ -5,6 +5,7 @@
     <profiles>
         <!-- Default settings. -->
         <default>
+            <!-- <async_insert>1</async_insert> -->
         </default>
 
         <!-- Profile that allows only read queries. -->
@@ -85,7 +86,10 @@
             <quota>default</quota>
 
             <!-- User can create other users and grant rights to them. -->
-            <!-- <access_management>1</access_management> -->
+            <access_management>1</access_management>
+
+            <!-- User can manipulate named collections. -->
+            <named_collection_control>1</named_collection_control>
 
             <!-- User permissions can be granted here -->
             <!--

@@ -4,6 +4,7 @@
 #include <Access/GSSAcceptor.h>
 #include <Access/HTTPAuthClient.h>
 #include <Access/LDAPClient.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/defines.h>
 #include <base/extended_types.h>
 #include <base/types.h>
@@ -36,13 +37,13 @@ class ExternalAuthenticators
 {
 public:
     void reset();
-    void setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
+    void setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log);
 
     // The name and readiness of the credentials must be verified before calling these.
     bool checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
-    bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const;
+    bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
 

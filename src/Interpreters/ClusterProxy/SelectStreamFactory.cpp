@@ -5,14 +5,18 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Core/Settings.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Planner/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Client/IConnections.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -32,6 +36,15 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+    extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool serialize_query_plan;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
+}
 
 namespace ErrorCodes
 {
@@ -64,7 +77,7 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (!context->getSettingsRef().allow_experimental_analyzer)
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         if (table_function_ptr)
             select_query.addTableFunction(table_function_ptr);
@@ -97,12 +110,10 @@ ASTPtr rewriteSelectQuery(
 
 
 SelectStreamFactory::SelectStreamFactory(
-    const Block & header_,
-    const ColumnsDescriptionByShardNum & objects_by_shard_,
+    SharedHeader header_,
     const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_)
     : header(header_),
-    objects_by_shard(objects_by_shard_),
     storage_snapshot(storage_snapshot_),
     processed_stage(processed_stage_)
 {
@@ -117,28 +128,78 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
-    bool parallel_replicas_enabled)
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
-    auto it = objects_by_shard.find(shard_info.shard_num);
-    if (it != objects_by_shard.end())
-        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
+    createForShardImpl(
+        shard_info,
+        query_ast,
+        {},
+        main_table,
+        table_func_ptr,
+        std::move(context),
+        local_plans,
+        remote_shards,
+        shard_count,
+        parallel_replicas_enabled,
+        std::move(shard_filter_generator));
+}
 
-
+void SelectStreamFactory::createForShardImpl(
+    const Cluster::ShardInfo & shard_info,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
+    UInt32 shard_count,
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator) const
+{
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
+    // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
+    auto emplace_remote_stream = [&](bool lazy = false)
     {
+        SharedHeader shard_header;
+        PlannerContextPtr planner_context;
+        std::unique_ptr<QueryPlan> query_plan;
+
+        const auto & settings = context->getSettingsRef();
+
+        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
+        /// But distributed_group_by_no_merge requires Complete.
+        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        {
+            query_plan = createLocalPlan(
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+
+            shard_header = query_plan->getCurrentHeader();
+        }
+        else
+        {
+            if (settings[Setting::allow_experimental_analyzer])
+                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            else
+                shard_header = header;
+        }
+
         remote_shards.emplace_back(Shard{
             .query = query_ast,
+            .query_tree = query_tree,
+            .planner_context = planner_context,
+            .query_plan = std::move(query_plan),
             .main_table = main_table,
-            .header = header,
+            .header = shard_header,
             .shard_info = shard_info,
             .lazy = lazy,
-            .local_delay = local_delay,
+            .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
 
@@ -146,14 +207,14 @@ void SelectStreamFactory::createForShard(
 
     fiu_do_on(FailPoints::use_delayed_remote_source,
     {
-        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
+        emplace_remote_stream(/*lazy=*/true);
         return;
     });
 
     // prefer_localhost_replica is not effective in case of parallel replicas
     // (1) prefer_localhost_replica is about choosing one replica on a shard
     // (2) parallel replica coordinator has own logic to choose replicas to read from
-    if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
+    if (settings[Setting::prefer_localhost_replica] && shard_info.isLocal() && !parallel_replicas_enabled)
     {
         StoragePtr main_table_storage;
 
@@ -174,7 +235,7 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
+                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
                     main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
@@ -194,7 +255,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
 
         if (!max_allowed_delay)
         {
@@ -212,9 +273,9 @@ void SelectStreamFactory::createForShard(
 
         /// If we reached this point, local replica is stale.
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
+        LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
-        if (!settings.fallback_to_stale_replicas_for_distributed_queries)
+        if (!settings[Setting::fallback_to_stale_replicas_for_distributed_queries])
         {
             if (shard_info.hasRemoteConnections())
             {
@@ -222,9 +283,12 @@ void SelectStreamFactory::createForShard(
                 emplace_remote_stream();
                 return;
             }
-            else
-                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
-                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
+            throw Exception(
+                ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                "Local replica of shard {} is stale (delay: "
+                "{}s.), but no other replica configured",
+                shard_info.shard_num,
+                toString(local_delay));
         }
 
         if (!shard_info.hasRemoteConnections())
@@ -236,10 +300,36 @@ void SelectStreamFactory::createForShard(
 
         /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
         /// Do it lazily to avoid connecting in the main thread.
-        emplace_remote_stream(true /* lazy */, local_delay);
+        emplace_remote_stream(true /* lazy */);
     }
     else
         emplace_remote_stream();
+}
+
+void SelectStreamFactory::createForShard(
+    const Cluster::ShardInfo & shard_info,
+    const QueryTreeNodePtr & query_tree,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    ContextPtr context,
+    std::vector<QueryPlanPtr> & local_plans,
+    Shards & remote_shards,
+    UInt32 shard_count,
+    bool parallel_replicas_enabled,
+    AdditionalShardFilterGenerator shard_filter_generator)
+{
+    createForShardImpl(
+        shard_info,
+        queryNodeToDistributedSelectQuery(query_tree),
+        query_tree,
+        main_table,
+        table_func_ptr,
+        std::move(context),
+        local_plans,
+        remote_shards,
+        shard_count,
+        parallel_replicas_enabled,
+        std::move(shard_filter_generator));
 }
 
 

@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 server_opts=(
-    "--config-file=$CUR_DIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
+    "--config-file=$CUR_DIR/01737_clickhouse_server_wait_server_pool_long.config.xml"
     "--"
     # to avoid multiple listen sockets (complexity for port discovering)
     "--listen_host=127.1"
@@ -18,10 +18,12 @@ CLICKHOUSE_WATCHDOG_ENABLE=0 $CLICKHOUSE_SERVER_BINARY "${server_opts[@]}" >& cl
 server_pid=$!
 
 trap cleanup EXIT
+# Shellcheck wrongly process "trap" https://www.shellcheck.net/wiki/SC2317
+# shellcheck disable=SC2317
 function cleanup()
 {
-    kill -9 $server_pid
-    kill -9 $client_pid
+    kill -9 "$server_pid"
+    kill -9 "$client_pid"
 
     echo "Test failed. Server log:"
     cat clickhouse-server.log

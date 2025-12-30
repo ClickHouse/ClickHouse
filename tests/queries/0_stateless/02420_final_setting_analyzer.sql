@@ -1,5 +1,5 @@
 -- { echoOn }
-set allow_experimental_analyzer=1;
+set enable_analyzer=1;
 SYSTEM STOP MERGES tbl;
 
 -- simple test case
@@ -73,6 +73,12 @@ explain syntax select left_table.id,val_left, val_middle, val_right from left_ta
                                                                              inner join right_table on middle_table.id = right_table.id
                ORDER BY left_table.id, val_left, val_middle, val_right;
 
+
+explain syntax select left_table.id,val_left, val_middle, val_right from left_table
+                                                                             inner join middle_table on left_table.id = middle_table.id
+                                                                             inner join right_table on middle_table.id = right_table.id
+               ORDER BY left_table.id, val_left, val_middle, val_right SETTINGS enable_analyzer=0;
+
 -- extra: same with subquery
 select left_table.id,val_left, val_middle, val_right from left_table
                                                               inner join middle_table on left_table.id = middle_table.id
@@ -102,3 +108,6 @@ insert into table_to_merge_c values (3,'c');
 -- expected output:
 -- 1 c, 2 a, 2 b, 3 c
 SELECT * FROM merge_table ORDER BY id, val;
+
+select sum(number) from numbers(10) settings final=1;
+select sum(number) from remote('127.0.0.{1,2}', numbers(10)) settings final=1;

@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowSettingQuery.h>
 
 #include <Common/escapeString.h>
@@ -26,8 +27,20 @@ String InterpreterShowSettingQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowSettingQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+
+    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowSettingQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowSettingQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowSettingQuery", create_fn);
+}
 
 }

@@ -16,13 +16,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 
 
 struct CompactStringRef
@@ -147,7 +144,8 @@ struct CrapWow
         size_t len = x.size;
         size_t seed = 0;
 
-        const UInt64 m = 0x95b47aa3355ba1a1, n = 0x8a970be7488fda55;
+        const UInt64 m = 0x95b47aa3355ba1a1;
+        const UInt64 n = 0x8a970be7488fda55;
 
         UInt64 hash;
         // 3 = m, 4 = n

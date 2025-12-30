@@ -1,6 +1,7 @@
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -155,7 +156,7 @@ def test_recompression_multiple_ttls(started_cluster):
         node2.query(
             "SELECT recompression_ttl_info.expression FROM system.parts where name = 'all_1_1_4'"
         )
-        == "['plus(d, toIntervalSecond(10))','plus(d, toIntervalSecond(15))','plus(d, toIntervalSecond(5))']\n"
+        == "['d + toIntervalSecond(10)','d + toIntervalSecond(15)','d + toIntervalSecond(5)']\n"
     )
 
 

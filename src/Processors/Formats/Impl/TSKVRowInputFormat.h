@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -24,7 +23,7 @@ class ReadBuffer;
 class TSKVRowInputFormat final : public IRowInputFormat
 {
 public:
-    TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
+    TSKVRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TSKVRowInputFormat"; }
 
@@ -38,6 +37,7 @@ private:
 
     bool supportsCountRows() const override { return true; }
     size_t countRows(size_t max_block_size) override;
+    bool supportsCustomSerializations() const override { return true; }
 
     const FormatSettings format_settings;
 
@@ -45,7 +45,7 @@ private:
     String name_buf;
 
     /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
     NameMap name_map;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.

@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Access/MaskingPolicy.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -8,14 +9,14 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, WriteBuffer & ostr)
     {
         bool need_comma = false;
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ',';
-            settings.ostr << ' ' << backQuoteIfNeed(name);
+                ostr << ',';
+            ostr << ' ' << backQuoteIfNeed(name);
         }
     }
 }
@@ -34,31 +35,38 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
     if (row_policy_names)
         res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
+    if (masking_policy_name)
+        res->masking_policy_name = std::make_shared<MaskingPolicyName>(*masking_policy_name);
+
     return res;
 }
 
 
-void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
+    ostr
                   << "DROP " << AccessEntityTypeInfo::get(type).name
                   << (if_exists ? " IF EXISTS" : "")
-                  << (settings.hilite ? hilite_none : "");
+                 ;
 
     if (type == AccessEntityType::ROW_POLICY)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        ostr << " ";
+        row_policy_names->format(ostr, settings);
+    }
+    else if (type == AccessEntityType::MASKING_POLICY)
+    {
+        ostr << " " << masking_policy_name->toString();
     }
     else
-        formatNames(names, settings);
+        formatNames(names, ostr);
 
     if (!storage_name.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << " FROM " << (settings.hilite ? hilite_none : "")
+        ostr
+                      << " FROM "
                       << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 }
 
 
@@ -66,5 +74,8 @@ void ASTDropAccessEntityQuery::replaceEmptyDatabase(const String & current_datab
 {
     if (row_policy_names)
         row_policy_names->replaceEmptyDatabase(current_database);
+
+    if (masking_policy_name && masking_policy_name->database.empty())
+        masking_policy_name->database = current_database;
 }
 }

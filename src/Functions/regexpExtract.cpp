@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <base/StringRef.h>
 #include <Common/FunctionDocumentation.h>
 
 namespace DB
@@ -47,15 +46,20 @@ public:
                 arguments.size());
 
         FunctionArgumentDescriptors args{
-            {"haystack", &isString<IDataType>, nullptr, "String"},
-            {"pattern", &isString<IDataType>, isColumnConst, "const String"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
         };
 
         if (arguments.size() == 3)
-            args.emplace_back(FunctionArgumentDescriptor{"index", &isInteger<IDataType>, nullptr, "Integer"});
+            args.emplace_back(FunctionArgumentDescriptor{"index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"});
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -112,33 +116,32 @@ private:
         if (match_index < matches.size() && matches[match_index].offset != std::string::npos)
         {
             const auto & match = matches[match_index];
-            res_data.resize(res_offset + match.length + 1);
+            res_data.resize(res_offset + match.length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[data_offset + match.offset], match.length);
             res_offset += match.length;
         }
         else
-            res_data.resize(res_offset + 1);
-
-        res_data[res_offset] = 0;
-        ++res_offset;
+            res_data.resize(res_offset);
         res_offsets.push_back(res_offset);
     }
 
-    static void vectorConstant(
+    void vectorConstant(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         ssize_t index,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         if (index < 0 || index >= capture + 1)
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                "Index value {} is out of range, should be in [0, {})",
+                "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                 index,
+                pattern,
+                getName(),
                 capture + 1);
 
         OptimizedRegularExpression::MatchVec matches;
@@ -152,7 +155,7 @@ private:
         {
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset - 1,
+                cur_offset - prev_offset,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -161,13 +164,13 @@ private:
         }
     }
 
-    static void vectorVector(
+    void vectorVector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         const ColumnPtr & column_index,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         res_data.reserve(data.size() / 5);
         res_offsets.reserve(offsets.size());
@@ -187,13 +190,15 @@ private:
             if (index < 0 || index >= capture + 1)
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                    "Index value {} is out of range, should be in [0, {})",
+                    "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                     index,
+                    pattern,
+                    getName(),
                     capture + 1);
 
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset - 1,
+                cur_offset - prev_offset,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -202,12 +207,12 @@ private:
         }
     }
 
-    static void constantVector(
+    void constantVector(
         const std::string & str,
         const std::string & pattern,
         const ColumnPtr & column_index,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         size_t rows = column_index->size();
         res_data.reserve(str.size() / 5);
@@ -230,8 +235,10 @@ private:
             if (index < 0 || index >= capture + 1)
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                    "Index value {} is out of range, should be in [0, {})",
+                    "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                     index,
+                    pattern,
+                    getName(),
                     capture + 1);
 
             saveMatch(matches, index, padded_str, 0, res_data, res_offsets, res_offset);
@@ -243,11 +250,45 @@ private:
 
 REGISTER_FUNCTION(RegexpExtract)
 {
-    factory.registerFunction<FunctionRegexpExtract>(
-        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
+    FunctionDocumentation::Description description = R"(
+Extracts the first string in `haystack` that matches the regexp pattern and corresponds to the regex group index.
+    )";
+    FunctionDocumentation::Syntax syntax = "regexpExtract(haystack, pattern[, index])";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "String, in which regexp pattern will be matched.", {"String"}},
+        {"pattern", "String, regexp expression. `pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.", {"const String"}},
+        {"index", "Optional. An integer number greater or equal 0 with default 1. It represents which regex group to extract.", {"(U)Int*"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns a string match",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 0),
+    regexpExtract('100-200', '(\\d+)-(\\d+)');
+        )",
+        R"(
+┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
+│ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRegexpExtract>(documentation);
 
     /// For Spark compatibility.
-    factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);
 }
 
 }

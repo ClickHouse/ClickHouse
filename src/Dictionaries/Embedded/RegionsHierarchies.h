@@ -2,9 +2,11 @@
 
 #include <unordered_map>
 #include <Poco/Exception.h>
-#include "GeodataProviders/IHierarchiesProvider.h"
-#include "RegionsHierarchy.h"
+#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include <Dictionaries/Embedded/RegionsHierarchy.h>
 
+namespace DB
+{
 
 /** Contains several hierarchies of regions.
   * Used to support several different perspectives on the ownership of regions by countries.
@@ -37,3 +39,5 @@ public:
         return it->second;
     }
 };
+
+}

@@ -5,7 +5,6 @@
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/ISimpleTransform.h>
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -15,10 +14,6 @@ namespace DB
 
 struct DictionaryStructure;
 class SettingsChanges;
-
-class PullingPipelineExecutor;
-class PullingAsyncPipelineExecutor;
-class QueryPipeline;
 
 /// For simple key
 
@@ -44,28 +39,15 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextP
 class TransformWithAdditionalColumns final : public ISimpleTransform
 {
 public:
-    TransformWithAdditionalColumns(Block block_to_add_, const Block & header);
+    TransformWithAdditionalColumns(SharedHeader block_to_add_, SharedHeader header);
 
     void transform(Chunk & chunk) override;
 
     String getName() const override;
 
 private:
-    Block block_to_add;
+    SharedHeader block_to_add;
     size_t current_range_index = 0;
-};
-
-/// Wrapper for `Pulling(Async)PipelineExecutor` to dynamically dispatch calls to the right executor
-class DictionaryPipelineExecutor
-{
-public:
-    DictionaryPipelineExecutor(QueryPipeline & pipeline_, bool async);
-    bool pull(Block & block);
-
-    ~DictionaryPipelineExecutor();
-private:
-    std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
-    std::unique_ptr<PullingPipelineExecutor> executor;
 };
 
 }

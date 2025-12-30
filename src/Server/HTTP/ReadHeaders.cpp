@@ -77,7 +77,7 @@ void readHeaders(
         skipToNextLineOrEOF(in);
 
         Poco::trimRightInPlace(value);
-        headers.add(name, headers.decodeWord(value));
+        headers.add(name, Poco::Net::MessageHeader::decodeWord(value));
         ++fields;
     }
 }

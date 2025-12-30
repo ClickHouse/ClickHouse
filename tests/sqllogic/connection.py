@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import datetime
-import logging
-import pyodbc
-import sqlite3
-import traceback
 import enum
+import logging
 import random
+import sqlite3
 import string
 from contextlib import contextmanager
 
-from exceptions import ProgramError
+import pyodbc  # pylint:disable=import-error; for style check
 
+from exceptions import ProgramError
 
 logger = logging.getLogger("connection")
 logger.setLevel(logging.DEBUG)
@@ -22,9 +20,7 @@ class OdbcConnectingArgs:
         self._kwargs = kwargs
 
     def __str__(self):
-        conn_str = ";".join(
-            ["{}={}".format(x, y) for x, y in self._kwargs.items() if y]
-        )
+        conn_str = ";".join([f"{x}={y}" for x, y in self._kwargs.items() if y])
         return conn_str
 
     def update_database(self, database):
@@ -49,6 +45,7 @@ class OdbcConnectingArgs:
         for kv in conn_str.split(";"):
             if kv:
                 k, v = kv.split("=", 1)
+                # pylint:disable-next=protected-access
                 args._kwargs[k] = v
         return args
 
@@ -63,7 +60,10 @@ def default_clickhouse_odbc_conn_str():
         OdbcConnectingArgs.create_from_kw(
             dsn="ClickHouse DSN (ANSI)",
             Timeout="300",
-            Url="http://localhost:8123/query?default_format=ODBCDriver2&default_table_engine=MergeTree&union_default_mode=DISTINCT&group_by_use_nulls=1&join_use_nulls=1&allow_create_index_without_type=1&create_index_ignore_unique=1",
+            Url="http://localhost:8123/query?default_format=ODBCDriver2&"
+            "default_table_engine=MergeTree&union_default_mode=DISTINCT&"
+            "group_by_use_nulls=1&join_use_nulls=1&allow_create_index_without_type=1&"
+            "create_index_ignore_unique=1",
         )
     )
 
@@ -82,7 +82,7 @@ class KnownDBMS(str, enum.Enum):
     clickhouse = "ClickHouse"
 
 
-class ConnectionWrap(object):
+class ConnectionWrap:
     def __init__(self, connection=None, factory=None, factory_kwargs=None):
         self._factory = factory
         self._factory_kwargs = factory_kwargs
@@ -126,7 +126,7 @@ class ConnectionWrap(object):
                 f"SELECT name FROM system.tables WHERE database='{self.DATABASE_NAME}'"
             )
         elif self.DBMS_NAME == KnownDBMS.sqlite.value:
-            list_query = f"SELECT name FROM sqlite_master WHERE type='table'"
+            list_query = "SELECT name FROM sqlite_master WHERE type='table'"
         else:
             logger.warning(
                 "unable to drop all tables for unknown database: %s", self.DBMS_NAME
@@ -154,7 +154,7 @@ class ConnectionWrap(object):
             self._use_database(database)
             logger.info(
                 "currentDatabase : %s",
-                execute_request(f"SELECT currentDatabase()", self).get_result(),
+                execute_request("SELECT currentDatabase()", self).get_result(),
             )
 
     @contextmanager
@@ -174,7 +174,7 @@ class ConnectionWrap(object):
 
     def __exit__(self, *args):
         if hasattr(self._connection, "close"):
-            return self._connection.close()
+            self._connection.close()
 
 
 def setup_connection(engine, conn_str=None, make_debug_request=True):
@@ -248,7 +248,7 @@ class ExecResult:
 
     def as_ok(self, rows=None, description=None):
         if rows is None:
-            self._result = True
+            self._result = []
             return self
         self._result = rows
         self._description = description
@@ -263,7 +263,7 @@ class ExecResult:
     def assert_no_exception(self):
         if self.has_exception():
             raise ProgramError(
-                f"request doesn't have a result set, it has the exception",
+                "request doesn't have a result set, it has the exception",
                 parent=self._exception,
             )
 
@@ -277,10 +277,9 @@ def execute_request(request, connection):
             rows = cursor.fetchall()
             connection.commit()
             return ExecResult().as_ok(rows=rows, description=cursor.description)
-        else:
-            logging.debug("request doesn't have a description")
-            connection.commit()
-            return ExecResult().as_ok()
+        logging.debug("request doesn't have a description")
+        connection.commit()
+        return ExecResult().as_ok()
     except (pyodbc.Error, sqlite3.DatabaseError) as err:
         return ExecResult().as_exception(err)
     finally:

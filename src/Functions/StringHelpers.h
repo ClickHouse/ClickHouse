@@ -62,12 +62,13 @@ using Pos = const char *;
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+    static void vector(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
-        size_t size = offsets.size();
-        res_offsets.resize(size);
-        res_data.reserve(size * Extractor::getReserveLengthForElement());
+        res_offsets.resize(input_rows_count);
+        res_data.reserve(input_rows_count * Extractor::getReserveLengthForElement());
 
         size_t prev_offset = 0;
         size_t res_offset = 0;
@@ -76,15 +77,13 @@ struct ExtractSubstringImpl
         Pos start;
         size_t length;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            Extractor::execute(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
+            Extractor::execute(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset, start, length);
 
-            res_data.resize(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = 0;
-
+            res_offset += length;
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
         }
@@ -99,7 +98,7 @@ struct ExtractSubstringImpl
         res_data.assign(start, length);
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by this function");
     }
@@ -111,12 +110,13 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+    static void vector(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         res_data.reserve(data.size());
-        size_t size = offsets.size();
-        res_offsets.resize(size);
+        res_offsets.resize(input_rows_count);
 
         size_t prev_offset = 0;
         size_t res_offset = 0;
@@ -125,10 +125,10 @@ struct CutSubstringImpl
         Pos start;
         size_t length;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
-            Extractor::execute(current, offsets[i] - prev_offset - 1, start, length);
+            Extractor::execute(current, offsets[i] - prev_offset, start, length);
             size_t start_index = start - reinterpret_cast<const char *>(data.data());
 
             res_data.resize(res_data.size() + offsets[i] - prev_offset - length);
@@ -154,7 +154,7 @@ struct CutSubstringImpl
         res_data.append(start + length, data.data() + data.size());
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by this function");
     }

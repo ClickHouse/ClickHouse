@@ -1,15 +1,15 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
+
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    image="yandex/clickhouse-server",
-    tag="19.17.8.54",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_zookeeper=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 
@@ -28,16 +28,22 @@ def q(query):
 
 
 def check_convert_system_db_to_atomic():
-    q(
-        "CREATE TABLE t(date Date, id UInt32) ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id"
+    node.query(
+        "CREATE DATABASE default2 ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
     )
-    q("INSERT INTO t VALUES (today(), 1)")
-    q("INSERT INTO t SELECT number % 1000, number FROM system.numbers LIMIT 1000000")
+    q(
+        "CREATE TABLE default2.t(date Date, id UInt32) ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id"
+    )
+    q("INSERT INTO default2.t VALUES (today(), 1)")
+    q(
+        "INSERT INTO default2.t SELECT number % 1000, number FROM system.numbers LIMIT 1000000"
+    )
 
-    assert "1000001\n" == q("SELECT count() FROM t")
-    assert "499999500001\n" == q("SELECT sum(id) FROM t")
+    assert "1000001\n" == q("SELECT count() FROM default2.t")
+    assert "499999500001\n" == q("SELECT sum(id) FROM default2.t")
     assert "1970-01-01\t1000\t499500000\n1970-01-02\t1000\t499501000\n" == q(
-        "SELECT date, count(), sum(id) FROM t GROUP BY date ORDER BY date LIMIT 2"
+        "SELECT date, count(), sum(id) FROM default2.t GROUP BY date ORDER BY date LIMIT 2"
     )
     q("SYSTEM FLUSH LOGS")
 
@@ -49,7 +55,7 @@ def check_convert_system_db_to_atomic():
 
     node.restart_with_latest_version(fix_metadata=True)
 
-    assert "Ordinary" in node.query("SHOW CREATE DATABASE default")
+    assert "Ordinary" in node.query("SHOW CREATE DATABASE default2")
     assert "Atomic" in node.query("SHOW CREATE DATABASE system")
     assert "query_log" in node.query("SHOW TABLES FROM system")
     assert "part_log" in node.query("SHOW TABLES FROM system")
@@ -60,10 +66,11 @@ def check_convert_system_db_to_atomic():
     assert "1\n" == node.query("SELECT count() != 0 FROM system.query_log_0")
     assert "1\n" == node.query("SELECT count() != 0 FROM system.part_log_0")
     assert "1970-01-01\t1000\t499500000\n1970-01-02\t1000\t499501000\n" == node.query(
-        "SELECT date, count(), sum(id) FROM t GROUP BY date ORDER BY date LIMIT 2"
+        "SELECT date, count(), sum(id) FROM default2.t GROUP BY date ORDER BY date LIMIT 2"
     )
-    assert "INFORMATION_SCHEMA\ndefault\ninformation_schema\nsystem\n" == node.query(
-        "SELECT name FROM system.databases ORDER BY name"
+    assert (
+        "INFORMATION_SCHEMA\ndefault\ndefault2\ninformation_schema\nsystem\n"
+        == node.query("SELECT name FROM system.databases ORDER BY name")
     )
 
     errors_count = node.count_in_log("<Error>")
@@ -181,7 +188,7 @@ def check_convert_all_dbs_to_atomic():
 
     # 6 tables, MVs contain 2 rows (inner tables does not match regexp)
     assert "8\t{}\n".format(8 * len("atomic")) == node.query(
-        "SELECT count(), sum(n) FROM atomic.merge".format(db)
+        "SELECT count(), sum(n) FROM atomic.merge"
     )
 
     node.query("DETACH TABLE ordinary.detached PERMANENTLY")
@@ -213,7 +220,7 @@ def check_convert_all_dbs_to_atomic():
     node.restart_clickhouse()
 
     assert (
-        ".o r d i n a r y.\natomic\ndefault\nordinary\nother\nsystem\n"
+        ".o r d i n a r y.\natomic\ndefault\ndefault2\nordinary\nother\nsystem\n"
         == node.query(
             "SELECT name FROM system.databases WHERE engine='Atomic' ORDER BY name"
         )

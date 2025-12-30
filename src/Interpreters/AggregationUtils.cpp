@@ -1,3 +1,5 @@
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Interpreters/AggregationUtils.h>
 
 namespace DB
@@ -59,7 +61,7 @@ OutputBlockColumns prepareOutputBlockColumns(
                 };
 
                 callback(*final_aggregate_columns[i]);
-                final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
+                final_aggregate_columns[i]->forEachMutableSubcolumnRecursively(callback);
             }
         }
     }

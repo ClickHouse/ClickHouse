@@ -1,11 +1,9 @@
 -- Tags: distributed
 
-SET optimize_move_functions_out_of_any = 1;
 SET optimize_injective_functions_inside_uniq = 1;
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 SET optimize_if_transform_strings_to_enum = 1;
 
-SELECT any(number + 1) FROM numbers(1);
 SELECT uniq(bitNot(number)) FROM numbers(1);
 SELECT sum(number + 1) FROM numbers(1);
 SELECT transform(number, [1, 2], ['google', 'censor.net'], 'other') FROM numbers(1);
@@ -20,7 +18,6 @@ CREATE TABLE dist AS local_table ENGINE = Distributed(test_cluster_two_shards_lo
 
 INSERT INTO local_table SELECT number FROM numbers(1);
 
-SELECT any(number + 1) FROM dist;
 SELECT uniq(bitNot(number)) FROM dist;
 SELECT sum(number + 1) FROM dist;
 SELECT transform(number, [1, 2], ['google', 'censor.net'], 'other') FROM dist;

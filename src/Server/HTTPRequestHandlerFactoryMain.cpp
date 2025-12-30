@@ -7,16 +7,16 @@ namespace DB
 {
 
 HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
-    : log(&Poco::Logger::get(name_)), name(name_)
+    : log(getLogger(name_)), name(name_)
 {
 }
 
 std::unique_ptr<HTTPRequestHandler> HTTPRequestHandlerFactoryMain::createRequestHandler(const HTTPServerRequest & request)
 {
-    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
+    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}, URI: {}",
         name, request.getMethod(), request.clientAddress().toString(), request.get("User-Agent", "(none)"),
         (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
-        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"));
+        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"), request.getURI());
 
     for (auto & handler_factory : child_factories)
     {

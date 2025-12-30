@@ -1,5 +1,7 @@
 #include <cstring>
 
+#include <Common/TargetSpecific.h>
+#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
@@ -9,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <bit>
-
 
 namespace DB
 {
@@ -27,7 +28,7 @@ public:
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
     /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
-    enum class Variant
+    enum class Variant : uint8_t
     {
         Byte,
         Bit
@@ -52,6 +53,10 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
+    String getDescription() const override
+    {
+        return "Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.";
+    }
 
 private:
     std::optional<TypeIndex> type_idx;
@@ -91,6 +96,9 @@ enum class MagicNumber : uint8_t
     Decimal32   = 19,
     Decimal64   = 20,
     IPv4        = 21,
+    Date32      = 22,
+    Time        = 23,
+    Time64      = 24,
 };
 
 MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
@@ -109,6 +117,9 @@ MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
         case TypeIndex::Int32:      return MagicNumber::Int32;
         case TypeIndex::Int64:      return MagicNumber::Int64;
         case TypeIndex::Date:       return MagicNumber::Date;
+        case TypeIndex::Date32:     return MagicNumber::Date32;
+        case TypeIndex::Time:       return MagicNumber::Time;
+        case TypeIndex::Time64:     return MagicNumber::Time64;
         case TypeIndex::DateTime:   return MagicNumber::DateTime;
         case TypeIndex::DateTime64: return MagicNumber::DateTime64;
         case TypeIndex::Enum8:      return MagicNumber::Enum8;
@@ -137,8 +148,11 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Int32:        return TypeIndex::Int32;
         case MagicNumber::Int64:        return TypeIndex::Int64;
         case MagicNumber::Date:         return TypeIndex::Date;
+        case MagicNumber::Date32:       return TypeIndex::Date32;
         case MagicNumber::DateTime:     return TypeIndex::DateTime;
         case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
+        case MagicNumber::Time:         return TypeIndex::Time;
+        case MagicNumber::Time64:       return TypeIndex::Time64;
         case MagicNumber::Enum8:        return TypeIndex::Enum8;
         case MagicNumber::Enum16:       return TypeIndex::Enum16;
         case MagicNumber::Decimal32:    return TypeIndex::Decimal32;
@@ -164,10 +178,13 @@ TypeIndex baseType(TypeIndex type_idx)
         case TypeIndex::Int16:
             return TypeIndex::Int16;
         case TypeIndex::Int32:
+        case TypeIndex::Time:
         case TypeIndex::Decimal32:
+        case TypeIndex::Date32:
             return TypeIndex::Int32;
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
+        case TypeIndex::Time64:
         case TypeIndex::DateTime64:
             return TypeIndex::Int64;
         case TypeIndex::UInt8:
@@ -205,9 +222,12 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::UInt16:
         case TypeIndex::Enum16:
         case TypeIndex::Date:
+        case TypeIndex::Date32:
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::IPv4:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
         case TypeIndex::Decimal32:
@@ -377,9 +397,10 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
     }
 }
 
-/// UInt64[N] transposed matrix -> UIntX[64]
-template <typename T, bool full = false>
-void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
+MULTITARGET_FUNCTION_AVX512BW_AVX2(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T, bool full>
+void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
 {
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
@@ -403,6 +424,28 @@ void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 
     clear(buf);
     for (UInt32 col = 0; col < tail; ++col)
         reverseTransposeBytes(matrix, col, buf[col]);
+})
+)
+
+/// UInt64[N] transposed matrix -> UIntX[64]
+template <typename T, bool full = false>
+ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        reverseTransposeImplAVX512BW<T, full>(src, buf, num_bits, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX2))
+    {
+        reverseTransposeImplAVX2<T, full>(src, buf, num_bits, tail);
+        return;
+    }
+#endif
+    {
+        reverseTransposeImpl<T, full>(src, buf, num_bits, tail);
+    }
 }
 
 template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>
@@ -446,11 +489,9 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     {
         if (min + max >= 0)
             return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
-        else
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+        return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
-    else
-        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+    return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 
@@ -482,15 +523,20 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
-    if (bytes_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not multiplier of {}",
-                        bytes_size, sizeof(T));
+    UInt8 bytes_to_skip = bytes_size % sizeof(T);
+    bytes_size -= bytes_to_skip;
+    memcpy(dst, src, bytes_to_skip);
+    src += bytes_to_skip;
+    dst += bytes_to_skip;
+
+    if (bytes_size == 0)
+        return bytes_to_skip;
 
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
-
-    T min, max;
+    T min;
+    T max;
     findMinMax<T>(src, bytes_size, min, max);
     MinMaxType min64 = min; // NOLINT
     MinMaxType max64 = max; // NOLINT
@@ -504,7 +550,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     UInt32 num_bits = getValuableBitsNumber(min64, max64);
     if (!num_bits)
-        return header_size;
+        return header_size + bytes_to_skip;
 
     T buf[matrix_size];
     UInt32 src_shift = sizeof(T) * matrix_size;
@@ -526,7 +572,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
         dst_bytes += dst_shift;
     }
 
-    return header_size + dst_bytes;
+    return header_size + dst_bytes + bytes_to_skip;
 }
 
 template <typename T, bool full>
@@ -537,14 +583,22 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
-    if (bytes_size < header_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size ({}) is less than the size of T64 header",
-                        bytes_size);
 
-    if (uncompressed_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, unexpected uncompressed size ({})"
+    UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
+    memcpy(dst, src, bytes_to_skip);
+
+    uncompressed_size -= bytes_to_skip;
+    bytes_size -= bytes_to_skip;
+    src += bytes_to_skip;
+    dst += bytes_to_skip;
+
+    if (uncompressed_size % sizeof(T) != 0)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
                         " isn't a multiple of the data type size ({})",
                         uncompressed_size, sizeof(T));
+
+    if (uncompressed_size == 0)
+        return;
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
@@ -571,7 +625,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 dst_shift = sizeof(T) * matrix_size;
 
     if (!bytes_size || bytes_size % src_shift)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size ({}) is not a multiplier of {}",
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is not a multiplier of {}",
                         bytes_size, src_shift);
 
     UInt32 num_full = bytes_size / src_shift;
@@ -643,7 +697,6 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
     UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | (static_cast<UInt8>(variant) << 7);
     memcpy(dst, &cookie, 1);
     dst += 1;
-
     switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
@@ -666,13 +719,13 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64");
+    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec");
 }
 
 void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
 {
     if (!src_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 
     UInt8 cookie = unalignedLoad<UInt8>(src);
     src += 1;
@@ -684,26 +737,34 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int16:
-            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int32:
-            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int64:
-            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt8:
-            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt16:
-            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt32:
-            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt64:
-            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         default:
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 }
 
 uint8_t CompressionCodecT64::getMethodByte() const
@@ -723,7 +784,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }

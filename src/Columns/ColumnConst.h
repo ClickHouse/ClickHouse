@@ -1,29 +1,22 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Common/Exception.h>
 #include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWHelper<IColumn, ColumnConst>
+class ColumnConst final : public COWHelper<IColumnHelper<ColumnConst>, ColumnConst>
 {
 private:
-    friend class COWHelper<IColumn, ColumnConst>;
+    friend class COWHelper<IColumnHelper<ColumnConst>, ColumnConst>;
 
     WrappedPtr data;
     size_t s;
@@ -32,6 +25,8 @@ private:
     ColumnConst(const ColumnConst & src) = default;
 
 public:
+    bool isConst() const override { return true; }
+
     ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
@@ -76,7 +71,12 @@ public:
         data->get(0, res);
     }
 
-    StringRef getDataAt(size_t) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    {
+        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+    }
+
+    std::string_view getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -121,7 +121,11 @@ public:
         return data->isNullAt(0);
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+#else
+    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }
@@ -131,15 +135,34 @@ public:
         ++s;
     }
 
+    bool tryInsert(const Field & field) override
+    {
+        auto tmp = data->cloneEmpty();
+        if (!tmp->tryInsert(field))
+            return false;
+        ++s;
+        return true;
+    }
+
     void insertData(const char *, size_t) override
     {
         ++s;
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
+#else
+    void doInsertFrom(const IColumn &, size_t) override
+#endif
     {
         ++s;
     }
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+#else
+    void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+#endif
 
     void insertDefault() override
     {
@@ -151,22 +174,27 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
+    std::string_view
+    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoArena(0, arena, begin);
+        return data->serializeValueIntoArena(0, arena, begin, settings);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override
+    char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
     {
-        const auto * res = data->deserializeAndInsertFromArena(pos);
+        return data->serializeValueIntoMemory(0, memory, settings);
+    }
+
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    {
+        data->deserializeAndInsertFromArena(in, settings);
         data->popBack(1);
         ++s;
-        return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
+    void skipSerializedInArena(ReadBuffer & in) const override
     {
-        return data->skipSerializedInArena(pos);
+        data->skipSerializedInArena(in);
     }
 
     void updateHashWithValue(size_t, SipHash & hash) const override
@@ -174,7 +202,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -182,6 +210,7 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -207,7 +236,11 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
+#endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
@@ -218,27 +251,35 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
-    }
+    void gather(ColumnGathererStream &) override;
 
     void getExtremes(Field & min, Field & max) const override
     {
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*data);
         data->forEachSubcolumnRecursively(callback);
+    }
+
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    {
+        callback(data);
+    }
+
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*data);
+        data->forEachMutableSubcolumnRecursively(callback);
     }
 
     bool structureEquals(const IColumn & rhs) const override
@@ -263,7 +304,7 @@ public:
         if (!data->isDefaultAt(0))
         {
             size_t to = limit && from + limit < size() ? from + limit : size();
-            indices.reserve(indices.size() + to - from);
+            indices.reserve_exact(indices.size() + to - from);
             for (size_t i = from; i < to; ++i)
                 indices.push_back(i);
         }
@@ -290,6 +331,13 @@ public:
     T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
+
+    bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index);
+ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr  &column);
+
 
 }

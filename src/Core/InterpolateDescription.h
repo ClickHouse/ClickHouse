@@ -2,26 +2,23 @@
 
 #include <unordered_map>
 #include <memory>
-#include <cstddef>
 #include <string>
-#include <Core/Field.h>
-#include <Core/SettingsEnums.h>
-#include <Common/IntervalKind.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
-#include <Functions/FunctionsMiscellaneous.h>
-#include <Interpreters/Aliases.h>
+#include <Core/NamesAndTypes.h>
+#include <Parsers/IAST_fwd.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
 {
 
+using Aliases = std::unordered_map<String, ASTPtr>;
+
 /// Interpolate description
 struct InterpolateDescription
 {
-    explicit InterpolateDescription(ActionsDAGPtr actions, const Aliases & aliases);
+    explicit InterpolateDescription(ActionsDAG actions, const Aliases & aliases);
 
-    ActionsDAGPtr actions;
+    ActionsDAG actions;
 
     std::unordered_map<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}
     std::unordered_set<std::string> result_columns_set; /// result block columns

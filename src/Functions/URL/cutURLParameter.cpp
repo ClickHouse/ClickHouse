@@ -44,7 +44,12 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
@@ -71,23 +76,21 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vector(col->getChars(), col->getOffsets(), col_needle, col_needle_const_array, vec_res, offsets_res);
+            vector(col->getChars(), col->getOffsets(), col_needle, col_needle_const_array, vec_res, offsets_res, input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
     static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset)
     {
         pattern += '=';
-        const char * param_str = pattern.c_str();
+        const char * param_str = pattern.data();
         size_t param_len = pattern.size();
 
         const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);
-        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset - 2]);
+        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset]);
         const char * begin_pos = url_begin;
         const char * end_pos = begin_pos;
 
@@ -97,11 +100,12 @@ public:
             if (query_string_begin + 1 >= url_end)
                 break;
 
-            const char * pos = static_cast<const char *>(memmem(query_string_begin + 1, url_end - query_string_begin - 1, param_str, param_len));
+            const char * pos = static_cast<const char *>(memmem(query_string_begin + 1, url_end - (query_string_begin + 1), param_str, param_len));
             if (pos == nullptr)
                 break;
 
-            if (pos[-1] != '?' && pos[-1] != '#' && pos[-1] != '&')
+            char prev_char = pos[-1];
+            if (prev_char != '?' && prev_char != '#' && prev_char != '&')
             {
                 pos = nullptr;
                 break;
@@ -111,26 +115,26 @@ public:
             end_pos = begin_pos + param_len;
 
             /// Skip the value.
-            while (*end_pos && *end_pos != '&' && *end_pos != '#')
-                ++end_pos;
+            end_pos = find_first_symbols<'&', '#'>(end_pos, url_end);
 
             /// Capture '&' before or after the parameter.
-            if (*end_pos == '&')
+            if (end_pos < url_end && *end_pos == '&')
                 ++end_pos;
-            else if (begin_pos[-1] == '&')
+            else if (prev_char == '&')
                 --begin_pos;
         } while (false);
 
         size_t cut_length = end_pos - begin_pos;
         cur_offset -= cut_length;
-        data.erase(data.begin() + prev_offset + (begin_pos - url_begin), data.begin() + prev_offset+  (end_pos - url_begin));
+        data.erase(data.begin() + prev_offset + (begin_pos - url_begin), data.begin() + prev_offset + (end_pos - url_begin));
     }
 
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const ColumnConst * col_needle,
         const ColumnArray * col_needle_const_array,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         res_data.reserve(data.size());
         res_offsets.resize(offsets.size());
@@ -141,7 +145,7 @@ public:
         size_t res_offset = 0;
         size_t cur_res_offset;
 
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             cur_offset = offsets[i];
             cur_len = cur_offset - prev_offset;
@@ -155,7 +159,7 @@ public:
                 for (size_t j = 0; j < num_needles; ++j)
                 {
                     auto field = col_needle_const_array->getData()[j];
-                    cutURL(res_data, field.get<String>(), res_offset, cur_res_offset);
+                    cutURL(res_data, field.safeGet<String>(), res_offset, cur_res_offset);
                 }
             }
             else
@@ -171,7 +175,37 @@ public:
 
 REGISTER_FUNCTION(CutURLParameter)
 {
-    factory.registerFunction<FunctionCutURLParameter>();
+    /// cutURLParameter documentation
+    FunctionDocumentation::Description description_cutURLParameter = R"(
+Removes the `name` parameter from a URL, if present.
+This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
+    )";
+    FunctionDocumentation::Syntax syntax_cutURLParameter = "cutURLParameter(url, name)";
+    FunctionDocumentation::Arguments arguments_cutURLParameter = {
+        {"url", "URL.", {"String"}},
+        {"name", "Name of URL parameter.", {"String", "Array(String)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cutURLParameter = {"URL with `name` URL parameter removed.", {"String"}};
+    FunctionDocumentation::Examples examples_cutURLParameter = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') AS url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
+        )",
+        R"(
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cutURLParameter = {1, 1};
+    FunctionDocumentation::Category category_cutURLParameter = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_cutURLParameter = {description_cutURLParameter, syntax_cutURLParameter, arguments_cutURLParameter, {}, returned_value_cutURLParameter, examples_cutURLParameter, introduced_in_cutURLParameter, category_cutURLParameter};
+
+    factory.registerFunction<FunctionCutURLParameter>(documentation_cutURLParameter);
 }
 
 }

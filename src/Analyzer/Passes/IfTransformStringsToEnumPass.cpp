@@ -4,6 +4,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -14,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+}
 
 namespace
 {
@@ -37,24 +43,7 @@ DataTypePtr getEnumType(const std::set<std::string> & string_values)
 {
     if (string_values.size() >= 255)
         return getDataEnumType<DataTypeEnum16>(string_values);
-    else
-        return getDataEnumType<DataTypeEnum8>(string_values);
-}
-
-QueryTreeNodePtr createCastFunction(QueryTreeNodePtr from, DataTypePtr result_type, ContextPtr context)
-{
-    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
-    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
-
-    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
-    QueryTreeNodes arguments{ std::move(from), std::move(enum_literal_node) };
-
-    auto function_node = std::make_shared<FunctionNode>("_CAST");
-    function_node->getArguments().getNodes() = std::move(arguments);
-
-    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
-
-    return function_node;
+    return getDataEnumType<DataTypeEnum8>(string_values);
 }
 
 /// if(arg1, arg2, arg3) will be transformed to if(arg1, _CAST(arg2, Enum...), _CAST(arg3, Enum...))
@@ -115,7 +104,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_transform_strings_to_enum)
+        if (!getSettings()[Setting::optimize_if_transform_strings_to_enum])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -148,8 +137,8 @@ public:
                 return;
 
             std::set<std::string> string_values;
-            string_values.insert(first_literal->getValue().get<std::string>());
-            string_values.insert(second_literal->getValue().get<std::string>());
+            string_values.insert(first_literal->getValue().safeGet<std::string>());
+            string_values.insert(second_literal->getValue().safeGet<std::string>());
 
             changeIfArguments(*function_if_node, string_values, context);
             wrapIntoToString(*function_node, std::move(modified_if_node), context);
@@ -177,7 +166,7 @@ public:
             if (!isArray(literal_to->getResultType()) || !isString(literal_default->getResultType()))
                 return;
 
-            auto array_to = literal_to->getValue().get<Array>();
+            auto array_to = literal_to->getValue().safeGet<Array>();
 
             if (array_to.empty())
                 return;
@@ -192,9 +181,9 @@ public:
             std::set<std::string> string_values;
 
             for (const auto & value : array_to)
-                string_values.insert(value.get<std::string>());
+                string_values.insert(value.safeGet<std::string>());
 
-            string_values.insert(literal_default->getValue().get<std::string>());
+            string_values.insert(literal_default->getValue().safeGet<std::string>());
 
             changeTransformArguments(*function_modified_transform_node, string_values, context);
             wrapIntoToString(*function_node, std::move(modified_transform_node), context);
@@ -205,7 +194,7 @@ public:
 
 }
 
-void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr context)
+void IfTransformStringsToEnumPass::run(QueryTreeNodePtr & query, ContextPtr context)
 {
     ConvertStringsToEnumVisitor visitor(std::move(context));
     visitor.visit(query);

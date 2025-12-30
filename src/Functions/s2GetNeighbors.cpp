@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include "s2_fwd.h"
+#include <Functions/s2_fwd.h>
 
 namespace DB
 {
@@ -94,7 +94,7 @@ public:
             S2CellId cell_id(id);
 
             if (!cell_id.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell (id {}) is not valid in function {}", id, getName());
 
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);

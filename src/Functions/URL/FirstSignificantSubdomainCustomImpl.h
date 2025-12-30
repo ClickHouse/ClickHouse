@@ -25,7 +25,7 @@ struct FirstSignificantSubdomainCustomLookup
     {
     }
 
-    TLDType operator()(StringRef host) const
+    TLDType operator()(std::string_view host) const
     {
         return tld_list.lookup(host);
     }
@@ -64,29 +64,28 @@ public:
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*arguments[0].column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*arguments[0].column))
         {
             auto col_res = ColumnString::create();
-            vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
     static void vector(FirstSignificantSubdomainCustomLookup & tld_lookup,
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
-        size_t size = offsets.size();
-        res_offsets.resize(size);
-        res_data.reserve(size * Extractor::getReserveLengthForElement());
+        res_offsets.resize(input_rows_count);
+        res_data.reserve(input_rows_count * Extractor::getReserveLengthForElement());
 
         size_t prev_offset = 0;
         size_t res_offset = 0;
@@ -95,15 +94,13 @@ public:
         Pos start;
         size_t length;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            Extractor::execute(tld_lookup, reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
+            Extractor::execute(tld_lookup, reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset, start, length);
 
-            res_data.resize(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = 0;
-
+            res_offset += length;
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
         }

@@ -3,8 +3,9 @@ import re
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -16,6 +17,7 @@ node = cluster.add_instance(
         "configs/users.d/any_join_distinct_right_table_keys.xml",
     ],
     with_zookeeper=True,
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -60,7 +62,7 @@ def started_cluster():
                 CREATE TABLE mydb.filtered_table2 (a UInt8, b UInt8, c UInt8, d UInt8) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table2 values (0, 0, 0, 0), (1, 2, 3, 4), (4, 3, 2, 1), (0, 0, 6, 0);
 
-                CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+                CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, bb ALIAS b + 1, c UInt16 ALIAS a + bb - 1) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
 
                 CREATE TABLE mydb.`.filtered_table4` (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
@@ -113,6 +115,7 @@ def test_smoke():
 
     assert node.query("SELECT a FROM mydb.filtered_table3") == TSV([[0], [1]])
     assert node.query("SELECT b FROM mydb.filtered_table3") == TSV([[1], [0]])
+    assert node.query("SELECT bb FROM mydb.filtered_table3") == TSV([[2], [1]])
     assert node.query("SELECT c FROM mydb.filtered_table3") == TSV([[1], [1]])
     assert node.query("SELECT a + b FROM mydb.filtered_table3") == TSV([[1], [1]])
     assert node.query("SELECT a FROM mydb.filtered_table3 WHERE c = 1") == TSV(
@@ -803,9 +806,9 @@ def test_tags_with_db_and_table_names():
     assert node.query("SHOW CREATE POLICIES default") == TSV(
         [
             "CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
+            "CREATE ROW POLICY default ON mydb.`table` FOR SELECT USING a = 0 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
-            "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default",
         ]
     )
 
@@ -817,7 +820,7 @@ def test_miscellaneous_engines():
     assert node.query("SHOW ROW POLICIES ON mydb.other_table") == "pC\n"
 
     # ReplicatedMergeTree
-    node.query("DROP TABLE IF EXISTS mydb.other_table")
+    node.query("DROP TABLE IF EXISTS mydb.other_table SYNC")
     node.query(
         "CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE ReplicatedMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1') ORDER BY a"
     )
@@ -825,7 +828,7 @@ def test_miscellaneous_engines():
     assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 0], [1, 1]])
 
     # CollapsingMergeTree
-    node.query("DROP TABLE mydb.other_table")
+    node.query("DROP TABLE mydb.other_table SYNC")
     node.query(
         "CREATE TABLE mydb.other_table (a UInt8, b Int8) ENGINE CollapsingMergeTree(b) ORDER BY a"
     )
@@ -833,7 +836,7 @@ def test_miscellaneous_engines():
     assert node.query("SELECT * FROM mydb.other_table") == TSV([[1, 1], [1, 1]])
 
     # ReplicatedCollapsingMergeTree
-    node.query("DROP TABLE mydb.other_table")
+    node.query("DROP TABLE mydb.other_table SYNC")
     node.query(
         "CREATE TABLE mydb.other_table (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-01/filtered_table1', 'replica1', b) ORDER BY a"
     )
@@ -843,7 +846,7 @@ def test_miscellaneous_engines():
     node.query("DROP ROW POLICY pC ON mydb.other_table")
 
     # DistributedMergeTree
-    node.query("DROP TABLE IF EXISTS mydb.other_table")
+    node.query("DROP TABLE IF EXISTS mydb.other_table SYNC")
     node.query(
         "CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)"
     )
@@ -854,8 +857,11 @@ def test_miscellaneous_engines():
         "SELECT sum(a), b FROM mydb.other_table GROUP BY b ORDER BY b", user="another"
     ) == TSV([[2, 0], [2, 1]])
 
+    node.query("DROP TABLE IF EXISTS mydb.other_table SYNC")
 
 def test_policy_on_distributed_table_via_role():
+    node.restart_clickhouse()
+
     node.query("DROP TABLE IF EXISTS local_tbl")
     node.query("DROP TABLE IF EXISTS dist_tbl")
 
@@ -863,7 +869,7 @@ def test_policy_on_distributed_table_via_role():
         "CREATE TABLE local_tbl engine=MergeTree ORDER BY tuple() as select * FROM numbers(10)"
     )
     node.query(
-        "CREATE TABLE dist_tbl ENGINE=Distributed( 'test_cluster_two_shards_localhost', default, local_tbl) AS local_tbl"
+        "CREATE TABLE dist_tbl ENGINE=Distributed( 'test_cluster_two_shards_same_node', default, local_tbl) AS local_tbl"
     )
 
     node.query("CREATE ROLE OR REPLACE 'role1'")

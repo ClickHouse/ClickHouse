@@ -1,4 +1,4 @@
-#include "filesystemHelpers.h"
+#include <Common/filesystemHelpers.h>
 
 #if defined(OS_LINUX)
 #    include <mntent.h>
@@ -42,14 +42,23 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-struct statvfs getStatVFS(const String & path)
+struct statvfs getStatVFS(String path)
 {
     struct statvfs fs;
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
             continue;
-        throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+
+        /// Sometimes we create directories lazily, so we can request free space in a directory that yet to be created.
+        auto fs_path = std::filesystem::path(path);
+        if (errno == ENOENT && fs_path.has_parent_path())
+        {
+            path = fs_path.parent_path();
+            continue;
+        }
+
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
     }
     return fs;
 }
@@ -64,11 +73,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(folder_path);
-    return std::make_unique<PocoTemporaryFile>(folder_path);
+    return std::make_unique<Poco::TemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -79,7 +88,7 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #if defined(OS_LINUX)
     struct stat sb;
     if (lstat(path.c_str(), &sb))
-        throwFromErrnoWithPath("Cannot lstat " + path, path, ErrorCodes::CANNOT_STAT);
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot lstat {}", path);
     WriteBufferFromOwnString ss;
     ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
     return ss.str();
@@ -164,7 +173,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     {
         struct stat st;
         if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
-            throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
+            DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, p.string(), "Cannot stat {}", p.string());
         return st.st_dev;
     };
 
@@ -209,23 +218,40 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
-    String absolute_path = std::filesystem::weakly_canonical(path);
-    String absolute_prefix_path = std::filesystem::weakly_canonical(prefix_path);
-    return absolute_path.starts_with(absolute_prefix_path);
+    auto rel = fs::relative(path, prefix_path);
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
-bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
     /// Differs from pathStartsWith in how `path` is normalized before comparison.
     /// Make `path` absolute if it was relative and put it into normalized form: remove
     /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
     /// not be a path of a symlink itself.
 
-    String absolute_path = std::filesystem::absolute(path);
-    absolute_path = fs::path(absolute_path).lexically_normal(); /// Normalize path.
-    String absolute_prefix_path = std::filesystem::absolute(prefix_path);
-    absolute_prefix_path = fs::path(absolute_prefix_path).lexically_normal(); /// Normalize path.
-    return absolute_path.starts_with(absolute_prefix_path);
+    auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
+
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 bool pathStartsWith(const String & path, const String & prefix_path)
@@ -250,10 +276,8 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     int res = fstat(fd, &buf);
     if (-1 == res)
     {
-        throwFromErrnoWithPath(
-            "Cannot execute fstat" + (file_name.empty() ? "" : " file: " + file_name),
-            file_name,
-            ErrorCodes::CANNOT_FSTAT);
+        DB::ErrnoException::throwFromPath(
+            DB::ErrorCodes::CANNOT_FSTAT, file_name, "Cannot execute fstat{}", file_name.empty() ? "" : " file: " + file_name);
     }
     return buf.st_size;
 }
@@ -263,10 +287,7 @@ Int64 getINodeNumberFromPath(const String & path)
     struct stat file_stat;
     if (stat(path.data(), &file_stat))
     {
-        throwFromErrnoWithPath(
-            "Cannot execute stat for file " + path,
-            path,
-            ErrorCodes::CANNOT_STAT);
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot execute stat for file {}", path);
     }
     return file_stat.st_ino;
 }
@@ -302,7 +323,7 @@ bool createFile(const std::string & path)
         close(n);
         return true;
     }
-    DB::throwFromErrnoWithPath("Cannot create file: " + path, path, DB::ErrorCodes::CANNOT_CREATE_FILE);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_CREATE_FILE, path, "Cannot create file: {}", path);
 }
 
 bool exists(const std::string & path)
@@ -317,7 +338,7 @@ bool canRead(const std::string & path)
         return true;
     if (errno == EACCES)
         return false;
-    DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check read access to file: {}", path);
 }
 
 bool canWrite(const std::string & path)
@@ -327,7 +348,7 @@ bool canWrite(const std::string & path)
         return true;
     if (errno == EACCES)
         return false;
-    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check write access to file: {}", path);
 }
 
 bool canExecute(const std::string & path)
@@ -337,7 +358,7 @@ bool canExecute(const std::string & path)
         return true;
     if (errno == EACCES)
         return false;
-    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check execute access to file: {}", path);
 }
 
 time_t getModificationTime(const std::string & path)
@@ -369,7 +390,7 @@ void setModificationTime(const std::string & path, time_t time)
     tb.actime  = time;
     tb.modtime = time;
     if (utime(path.c_str(), &tb) != 0)
-        DB::throwFromErrnoWithPath("Cannot set modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot set modification time to file: {}", path);
 }
 
 bool isSymlink(const fs::path & path)

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
@@ -34,8 +35,8 @@ std::optional<size_t> getColumnIndexForJSONObjectEachRowObjectName(const Block &
     return index;
 }
 
-JSONObjectEachRowInputFormat::JSONObjectEachRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(header_, format_settings_))
+JSONObjectEachRowInputFormat::JSONObjectEachRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
+    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(*header_, format_settings_))
 {
 }
 
@@ -46,7 +47,7 @@ void JSONObjectEachRowInputFormat::readPrefix()
 
 void JSONObjectEachRowInputFormat::readRowStart(MutableColumns & columns)
 {
-    auto object_name = JSONUtils::readFieldName(*in);
+    auto object_name = JSONUtils::readFieldName(*in, format_settings.json);
     if (field_index_for_object_name)
     {
         columns[*field_index_for_object_name]->insertData(object_name.data(), object_name.size());
@@ -57,7 +58,7 @@ void JSONObjectEachRowInputFormat::readRowStart(MutableColumns & columns)
 
 void JSONObjectEachRowInputFormat::skipRowStart()
 {
-    JSONUtils::readFieldName(*in);
+    JSONUtils::readFieldName(*in, format_settings.json);
 }
 
 bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
@@ -90,7 +91,7 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
     else
         JSONUtils::skipComma(in);
 
-    JSONUtils::readFieldName(in);
+    JSONUtils::readFieldName(in, format_settings.json);
     return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
 }
 
@@ -120,7 +121,7 @@ void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
     {
-        return std::make_shared<JSONObjectEachRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONObjectEachRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSONObjectEachRow");

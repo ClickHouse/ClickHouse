@@ -1,5 +1,6 @@
-#include "ExternalDictionaryLibraryBridgeHelper.h"
+#include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 
+#include <Core/Block.h>
 #include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -8,6 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
@@ -43,7 +45,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::getPingURI() const
 {
     auto uri = createBaseURI();
     uri.setPath(PING_HANDLER);
-    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("dictionary_id", fieldToString(dictionary_id));
     return uri;
 }
 
@@ -60,7 +62,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::createRequestURI(const String &
 {
     auto uri = getMainURI();
     uri.addQueryParameter("version", std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION));
-    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("dictionary_id", fieldToString(dictionary_id));
     uri.addQueryParameter("method", method);
     return uri;
 }
@@ -71,8 +73,12 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
-        readString(result, buf);
+        auto buf = BuilderRWBufferFromHTTP(getPingURI())
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withTimeouts(http_timeouts)
+                       .create(credentials);
+
+        readString(result, *buf);
     }
     catch (...)
     {
@@ -100,7 +106,7 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
 
     LOG_TRACE(log, "dictionary_id: {}, dictionary_id_exists on bridge side: {}, library confirmed to be initialized on server side: {}",
-              toString(dictionary_id), toString(dictionary_id_exists), library_initialized);
+        fieldToString(dictionary_id), toString(dictionary_id_exists), library_initialized);
 
     if (dictionary_id_exists && !library_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -165,7 +171,7 @@ bool ExternalDictionaryLibraryBridgeHelper::cloneLibrary(const Field & other_dic
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LIB_CLONE_METHOD);
-    uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
+    uri.addQueryParameter("from_dictionary_id", fieldToString(other_dictionary_id));
     /// We also pass initialization settings in order to create a library handler
     /// in case from_dictionary_id does not exist in bridge side (possible in case of bridge crash).
     library_initialized = executeRequest(uri, getInitLibraryCallback());
@@ -247,30 +253,28 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadKeys(const Block & requ
 
 bool ExternalDictionaryLibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback) const
 {
-    ReadWriteBufferFromHTTP buf(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        std::move(out_stream_callback),
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .withOutCallback(std::move(out_stream_callback))
+                   .create(credentials);
 
     bool res;
-    readBoolText(res, buf);
+    readBoolText(res, *buf);
     return res;
 }
 
 
 QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
-    auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        std::move(out_stream_callback),
-        http_timeouts,
-        credentials,
-        0,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        getContext()->getReadSettings(),
-        HTTPHeaderEntries{});
+    auto read_buf_ptr = BuilderRWBufferFromHTTP(uri)
+                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                            .withSettings(getContext()->getReadSettings())
+                            .withTimeouts(http_timeouts)
+                            .withOutCallback(std::move(out_stream_callback))
+                            .create(credentials);
 
     auto source = FormatFactory::instance().getInput(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));

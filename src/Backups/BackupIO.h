@@ -5,11 +5,13 @@
 
 namespace DB
 {
+
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
+class ReadBufferFromFileBase;
 class WriteBuffer;
-enum class WriteMode;
+enum class WriteMode : uint8_t;
 struct WriteSettings;
 struct ReadSettings;
 
@@ -23,7 +25,7 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
 
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
@@ -46,7 +48,7 @@ public:
 
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
-    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents) = 0;
+    virtual bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) = 0;
 
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & file_name) = 0;
 
@@ -61,8 +63,14 @@ public:
     virtual void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                   bool copy_encrypted, UInt64 start_pos, UInt64 length) = 0;
 
+    virtual void copyFile(const String & destination, const String & source, size_t size) = 0;
+
+    /// Removes a file written to the backup, if it still exists.
     virtual void removeFile(const String & file_name) = 0;
     virtual void removeFiles(const Strings & file_names) = 0;
+
+    /// Removes the backup folder if it's empty or contains empty subfolders.
+    virtual void removeEmptyDirectories() = 0;
 
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;

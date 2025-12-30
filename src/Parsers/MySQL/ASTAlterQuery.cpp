@@ -33,7 +33,7 @@ bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & e
     ASTPtr table;
     ASTPtr command_list;
 
-    if (!ParserKeyword("ALTER TABLE").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::ALTER_TABLE).ignore(pos, expected))
         return false;
 
     if (!ParserCompoundIdentifier(true).parse(pos, table, expected))

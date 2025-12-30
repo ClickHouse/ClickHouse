@@ -52,6 +52,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column_string = arguments[0].column;
@@ -77,9 +82,9 @@ public:
             /// NOTE This implementation slightly differs from re2::RE2::QuoteMeta.
             /// It escapes zero byte as \0 instead of \x00
             ///  and it escapes only required characters.
-            /// This is Ok. Look at comments in re2.cc
+            /// This is Ok. Look at the comments in re2.cc
 
-            const char * src_end = src_begin + src_offsets[row_idx] - 1;
+            const char * src_end = src_begin + src_offsets[row_idx];
 
             while (true)
             {
@@ -89,16 +94,16 @@ public:
                 size_t old_dst_size = dst_data.size();
                 dst_data.resize(old_dst_size + bytes_to_copy);
                 memcpySmallAllowReadWriteOverflow15(dst_data.data() + old_dst_size, src_pos, bytes_to_copy);
-                src_pos = next_src_pos + 1;
 
                 if (next_src_pos == src_end)
                 {
-                    dst_data.emplace_back('\0');
+                    src_pos = src_end;
                     break;
                 }
 
                 dst_data.emplace_back('\\');
                 dst_data.emplace_back(*next_src_pos);
+                src_pos = next_src_pos + 1;
             }
 
             dst_offsets[row_idx] = dst_data.size();
@@ -112,7 +117,32 @@ public:
 
 REGISTER_FUNCTION(RegexpQuoteMeta)
 {
-    factory.registerFunction<FunctionRegexpQuoteMeta>();
+    FunctionDocumentation::Description description = R"(
+Adds a backslash before these characters with special meaning in regular expressions: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
+This implementation slightly differs from re2::RE2::QuoteMeta.
+It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
+    )";
+    FunctionDocumentation::Syntax syntax = "regexpQuoteMeta(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The input string containing characters to be escaped for regex.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with regex special characters escaped.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Escape regex special characters",
+        "SELECT regexpQuoteMeta('Hello. [World]? (Yes)*') AS res",
+        R"(
+┌─res───────────────────────────┐
+│ Hello\. \[World\]\? \(Yes\)\* │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRegexpQuoteMeta>(documentation);
 }
 
 }

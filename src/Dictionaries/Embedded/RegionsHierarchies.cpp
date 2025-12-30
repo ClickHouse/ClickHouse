@@ -1,12 +1,14 @@
-#include "RegionsHierarchies.h"
+#include <Dictionaries/Embedded/RegionsHierarchies.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Common/logger_useful.h>
 
+namespace DB
+{
 
 RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider)
 {
-    Poco::Logger * log = &Poco::Logger::get("RegionsHierarchies");
+    LoggerPtr log = getLogger("RegionsHierarchies");
 
     LOG_DEBUG(log, "Adding default regions hierarchy");
     data.emplace("", data_provider->getDefaultHierarchySource());
@@ -18,4 +20,6 @@ RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_p
     }
 
     reload();
+}
+
 }

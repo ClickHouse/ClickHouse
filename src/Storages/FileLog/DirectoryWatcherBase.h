@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/PipeFDs.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <atomic>
 #include <memory>
@@ -85,14 +87,10 @@ public:
 
     void watchFunc();
 
-protected:
-    void start();
-    void stop();
-
 private:
     FileLogDirectoryWatcher & owner;
 
-    using TaskThread = BackgroundSchedulePool::TaskHolder;
+    using TaskThread = BackgroundSchedulePoolTaskHolder;
     TaskThread watch_task;
 
     std::atomic<bool> stopped{false};
@@ -102,7 +100,11 @@ private:
     int event_mask;
     uint64_t milliseconds_to_wait;
 
-    int fd;
+    int inotify_fd;
+    PipeFDs event_pipe;
+
+    void start();
+    void stop();
 };
 
 }

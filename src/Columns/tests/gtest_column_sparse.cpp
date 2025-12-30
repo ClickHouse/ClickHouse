@@ -1,6 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <pcg_random.hpp>
 #include <gtest/gtest.h>
@@ -191,7 +192,7 @@ TEST(ColumnSparse, Permute)
         auto [sparse_src, full_src] = createColumns(n, k);
 
         IColumn::Permutation perm(n);
-        std::iota(perm.begin(), perm.end(), 0);
+        iota(perm.data(), perm.size(), size_t(0));
         std::shuffle(perm.begin(), perm.end(), rng);
 
         auto sparse_dst = sparse_src->permute(perm, limit);

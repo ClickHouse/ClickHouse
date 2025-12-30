@@ -1,7 +1,10 @@
 #pragma once
 
 #include <string>
-#include "Types.h"
+#include <Dictionaries/Embedded/GeodataProviders/Types.h>
+
+namespace DB
+{
 
 struct RegionEntry
 {
@@ -17,3 +20,5 @@ struct RegionNameEntry
     RegionID id;
     std::string name;
 };
+
+}

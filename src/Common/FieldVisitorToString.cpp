@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorToJSONElement.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -18,16 +19,49 @@ template <typename T>
 static inline String formatQuoted(T x)
 {
     WriteBufferFromOwnString wb;
-    writeQuoted(x, wb);
+
+    if constexpr (is_decimal_field<T>)
+    {
+        writeChar('\'', wb);
+        writeText(x.getValue(), x.getScale(), wb, {});
+        writeChar('\'', wb);
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        writeChar('\'', wb);
+        writeText(x, wb);
+        writeChar('\'', wb);
+    }
+    else
+    {
+        /// While `writeQuoted` sounds like it will always write the value in quotes,
+        /// in fact it means: write according to the rules of the quoted format, like VALUES,
+        /// where strings, dates, date-times, UUID are in quotes, and numbers are not.
+
+        /// That's why we take extra care to put Decimal and big integers inside quotes
+        /// when formatting literals in SQL language,
+        /// because it is different from the quoted formats like VALUES.
+
+        /// In fact, there are no Decimal and big integer literals in SQL,
+        /// but they can appear if we format the query from a modified AST.
+
+        /// We can fix this idiosyncrasy later.
+
+        writeQuoted(x, wb);
+    }
     return wb.str();
 }
 
 template <typename T>
-static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
+static inline String formatQuoted(const Decimal<T> & x, UInt32 scale)
 {
-    writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf, {});
-    writeChar('\'', buf);
+    WriteBufferFromOwnString wb;
+
+    writeChar('\'', wb);
+    writeText(x, scale, wb, {});
+    writeChar('\'', wb);
+
+    return wb.str();
 }
 
 /** In contrast to writeFloatText (and writeQuoted),
@@ -60,6 +94,10 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const Decimal32 & x, UInt32 scale) const { return formatQuoted(x, scale); }
+String FieldVisitorToString::operator() (const Decimal64 & x, UInt32 scale) const { return formatQuoted(x, scale); }
+String FieldVisitorToString::operator() (const Decimal128 & x, UInt32 scale) const { return formatQuoted(x, scale); }
+String FieldVisitorToString::operator() (const Decimal256 & x, UInt32 scale) const { return formatQuoted(x, scale); }
 String FieldVisitorToString::operator() (const Int128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
@@ -131,27 +169,33 @@ String FieldVisitorToString::operator() (const Map & x) const
 
 String FieldVisitorToString::operator() (const Object & x) const
 {
+    /// We don't support Object literals in a form of {"a" : ...}.
+    /// So we write Object as a String containing valid JSON.
+    return formatQuoted(convertObjectToString(x));
+}
+
+String convertObjectToString(const Object & object)
+{
     WriteBufferFromOwnString wb;
 
     wb << '{';
-    for (auto it = x.begin(); it != x.end(); ++it)
+    for (auto it = object.begin(); it != object.end(); ++it)
     {
-        if (it != x.begin())
+        if (it != object.begin())
             wb << ", ";
 
         writeDoubleQuoted(it->first, wb);
-        wb << ": " << applyVisitor(*this, it->second);
+        wb << ": " << applyVisitor(FieldVisitorToJSONElement(), it->second);
     }
     wb << '}';
 
     return wb.str();
-
 }
 
 String convertFieldToString(const Field & field)
 {
     if (field.getType() == Field::Types::Which::String)
-        return field.get<String>();
+        return field.safeGet<String>();
     return applyVisitor(FieldVisitorToString(), field);
 }
 

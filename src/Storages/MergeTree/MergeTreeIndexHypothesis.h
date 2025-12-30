@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <memory>
 
 namespace DB
 {
@@ -23,6 +22,8 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return is_empty; }
+
+    size_t memoryUsageBytes() const override { return sizeof(*this); }
 
     ~MergeTreeIndexGranuleHypothesis() override = default;
 
@@ -67,15 +68,13 @@ public:
     bool isMergeable() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     size_t max_rows = 0;
 };

@@ -1,66 +1,17 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node18_14 = cluster.add_instance(
-    "node18_14",
-    image="yandex/clickhouse-server",
-    tag="18.14.19",
+node_oldest = cluster.add_instance(
+    "node_oldest",
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
 )
-node19_1 = cluster.add_instance(
-    "node19_1",
-    image="yandex/clickhouse-server",
-    tag="19.1.16",
-    with_installed_binary=True,
-    main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
-)
-node19_4 = cluster.add_instance(
-    "node19_4",
-    image="yandex/clickhouse-server",
-    tag="19.4.5.35",
-    with_installed_binary=True,
-    main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
-)
-node19_8 = cluster.add_instance(
-    "node19_8",
-    image="yandex/clickhouse-server",
-    tag="19.8.3.8",
-    with_installed_binary=True,
-    main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
-)
-node19_11 = cluster.add_instance(
-    "node19_11",
-    image="yandex/clickhouse-server",
-    tag="19.11.13.74",
-    with_installed_binary=True,
-    main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
-)
-node19_13 = cluster.add_instance(
-    "node19_13",
-    image="yandex/clickhouse-server",
-    tag="19.13.7.57",
-    with_installed_binary=True,
-    main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
-)
-node19_16 = cluster.add_instance(
-    "node19_16",
-    image="yandex/clickhouse-server",
-    tag="19.16.2.2",
-    with_installed_binary=True,
-    main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
-)
-old_nodes = [node18_14, node19_1, node19_4, node19_8, node19_11, node19_13, node19_16]
+old_nodes = [node_oldest]
 new_node = cluster.add_instance("node_new")
 
 
@@ -127,18 +78,17 @@ def test_server_is_older_than_client(setup_nodes):
 
 
 def test_distributed_query_initiator_is_older_than_shard(setup_nodes):
-    distributed_query_initiator_old_nodes = [node18_14, node19_13, node19_16]
     shard = new_node
-    for i, initiator in enumerate(distributed_query_initiator_old_nodes):
+    for i, initiator in enumerate(old_nodes):
         initiator.query("INSERT INTO dist_table VALUES (3, {})".format(i))
 
     assert_eq_with_retry(
         shard,
         "SELECT COUNT() FROM test_table WHERE id=3",
-        str(len(distributed_query_initiator_old_nodes)),
+        str(len(old_nodes)),
     )
     assert_eq_with_retry(
         initiator,
         "SELECT COUNT() FROM dist_table WHERE id=3",
-        str(len(distributed_query_initiator_old_nodes)),
+        str(len(old_nodes)),
     )

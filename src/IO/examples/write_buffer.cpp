@@ -12,10 +12,10 @@ int main(int, char **)
 {
     try
     {
-        DB::Int64 a = -123456;
-        DB::Float64 b = 123.456;
-        DB::String c = "вася pe\ttya";
-        DB::String d = "'xyz\\";
+        Int64 a = -123456;
+        Float64 b = 123.456;
+        String c = "вася pe\ttya";
+        String d = "'xyz\\";
 
         std::stringstream s;    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         s.exceptions(std::ios::failbit);

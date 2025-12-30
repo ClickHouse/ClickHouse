@@ -8,10 +8,8 @@
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <Compression/CompressedReadBuffer.h>
-#include <base/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -77,7 +75,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 }
 
 template <typename Map>
-void insert(Map & map, StringRef & k)
+void insert(Map & map, std::string_view & k)
 {
     bool inserted;
     typename Map::LookupResult it;

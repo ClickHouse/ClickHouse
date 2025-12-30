@@ -8,7 +8,7 @@
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  * Also, key in hash table must be of a type, such as that zero bytes are compared equals to zero key.
   *
   * Please keep in sync with PackedHashMap.h
   */
@@ -46,6 +46,8 @@ struct PairNoInit
         , second(std::forward<SecondValue>(second_))
     {
     }
+
+    auto operator<=>(const PairNoInit &) const = default;
 };
 
 template <typename First, typename Second>
@@ -126,10 +128,6 @@ struct HashMapCell
         DB::readDoubleQuoted(value.second, rb);
     }
 
-    static bool constexpr need_to_notify_cell_during_move = false;
-
-    static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
-
     template <size_t I>
     auto & get() & {
         if constexpr (I == 0) return value.first;
@@ -207,7 +205,7 @@ public:
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         DB::PrefetchingHelper prefetching;
-        size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
+        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
 
         size_t i = 0;
         auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
@@ -216,10 +214,10 @@ public:
         {
             if constexpr (prefetch)
             {
-                if (i == prefetching.iterationsToMeasure())
+                if (i == DB::PrefetchingHelper::iterationsToMeasure())
                 {
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
                 }
 
                 if (prefetch_it != end)
@@ -258,8 +256,19 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
+        // to small table we can iterate without prefetching
+        if (CouldPrefetchKey<Cell> && this->size() > DB::PrefetchingHelper::iterationsToMeasure() * 2)
+        {
+            auto it = this->template begin<true>();
+            auto end = this->template end<true>();
+            for (; it != end; ++it)
+                func(it->getKey(), it->getMapped());
+        }
+        else
+        {
+            for (auto & it : *this)
+                func(it.getKey(), it.getMapped());
+        }
     }
 
     /// Call func(Mapped &) for each hash map element.
@@ -267,7 +276,17 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-            func(v.getMapped());
+        {
+            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            else
+            {
+                func(v.getMapped());
+            }
+        }
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
@@ -291,9 +310,34 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new (&it->getMapped()) typename Cell::Mapped();
+            new (reinterpret_cast<void*>(&it->getMapped())) typename Cell::Mapped();
 
         return it->getMapped();
+    }
+
+    /// Only inserts the value if key isn't already present
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
+    }
+
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted, hash);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
     }
 
     const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const

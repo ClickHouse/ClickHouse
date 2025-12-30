@@ -10,6 +10,5 @@ FROM
         number,
         square_number
     FROM numbers_indexed
-    WHERE number = 999
 ) AS squares
 WHERE number = 999

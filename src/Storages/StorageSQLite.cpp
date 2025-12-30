@@ -1,7 +1,8 @@
-#include "StorageSQLite.h"
+#include <Storages/StorageSQLite.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -11,6 +12,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
@@ -18,6 +20,20 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
+
+namespace
+{
+
+using namespace DB;
+
+ContextPtr makeSQLiteWriteContext(ContextPtr context)
+{
+    auto write_context = Context::createCopy(context);
+    write_context->setSetting("output_format_values_escape_quote_with_quote", Field(true));
+    return write_context;
+}
+
+}
 
 
 namespace DB
@@ -36,13 +52,15 @@ StorageSQLite::StorageSQLite(
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageSQLite (" + table_id_.getFullTableName() + ")"))
+    , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -56,6 +74,7 @@ StorageSQLite::StorageSQLite(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+    storage_metadata.setComment(comment);
 }
 
 
@@ -116,7 +135,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
         const String & remote_table_name_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
@@ -126,7 +145,7 @@ public:
 
     String getName() const override { return "SQLiteSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         WriteBufferFromOwnString sqlbuf;
@@ -144,7 +163,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.write_context);
         writer->write(block);
 
         sqlbuf << ";";
@@ -193,14 +212,14 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
         const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
-                                     table_name, args.columns, args.constraints, args.getContext());
+                                     table_name, args.columns, args.constraints, args.comment, args.getContext());
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::SQLITE,
+        .source_access_type = AccessTypeObjects::Source::SQLITE,
     });
 }
 

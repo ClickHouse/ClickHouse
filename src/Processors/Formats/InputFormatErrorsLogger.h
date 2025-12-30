@@ -1,11 +1,18 @@
 #pragma once
 
 #include <IO/WriteBufferFromFile.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+
+#include <Core/Block.h>
+
+#include <mutex>
 
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class InputFormatErrorsLogger
 {
@@ -18,12 +25,13 @@ public:
         String raw_data;
     };
 
-    InputFormatErrorsLogger(const ContextPtr & context);
+    explicit InputFormatErrorsLogger(const ContextPtr & context);
 
     virtual ~InputFormatErrorsLogger();
 
     virtual void logError(ErrorEntry entry);
     void logErrorImpl(ErrorEntry entry);
+    void writeErrors();
 
 private:
     Block header;
@@ -34,6 +42,9 @@ private:
 
     String database;
     String table;
+
+    MutableColumns errors_columns;
+    size_t max_block_size;
 };
 
 using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
@@ -41,7 +52,7 @@ using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
 class ParallelInputFormatErrorsLogger : public InputFormatErrorsLogger
 {
 public:
-    ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
+    explicit ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
 
     ~ParallelInputFormatErrorsLogger() override;
 

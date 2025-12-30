@@ -31,7 +31,7 @@ public:
     virtual String getDescription() = 0;
 
     /// Run pass over query tree
-    virtual void run(QueryTreeNodePtr query_tree_node, ContextPtr context) = 0;
+    virtual void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) = 0;
 
 };
 

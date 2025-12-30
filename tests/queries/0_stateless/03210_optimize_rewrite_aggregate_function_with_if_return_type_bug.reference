@@ -1,0 +1,9 @@
+03
+AggregateFunction(count, Nullable(UInt64))
+function_name: _CAST, function_type: ordinary, result_type: AggregateFunction(count, Nullable(UInt64))
+function_name: countStateIf, function_type: aggregate, result_type: AggregateFunction(count, UInt64)
+constant_value: \'AggregateFunction(count, Nullable(UInt64))\', constant_value_type: String
+AggregateFunction(uniq, Nullable(UInt64))
+010003000000007518F0A8E7830665
+function_name: uniqState, function_type: aggregate, result_type: AggregateFunction(uniq, Nullable(UInt64))
+----

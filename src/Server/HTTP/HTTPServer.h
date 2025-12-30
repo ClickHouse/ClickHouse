@@ -20,7 +20,10 @@ public:
         HTTPRequestHandlerFactoryPtr factory,
         Poco::ThreadPool & thread_pool,
         Poco::Net::ServerSocket & socket,
-        Poco::Net::HTTPServerParams::Ptr params);
+        Poco::Net::HTTPServerParams::Ptr params,
+        const TCPServerConnectionFilter::Ptr & filter = nullptr,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     ~HTTPServer() override;
 

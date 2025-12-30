@@ -10,12 +10,12 @@ namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public IStorageSystemOneBlock<StorageSystemGraphite>
+class StorageSystemGraphite final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemGraphite"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
     struct Config
     {
@@ -30,7 +30,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

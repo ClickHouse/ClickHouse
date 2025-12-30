@@ -1,7 +1,0 @@
-position: 1
-label: 'Введение'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Введение

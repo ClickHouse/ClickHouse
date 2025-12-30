@@ -1,0 +1,4 @@
+lc: dictionary<values=string, indices=int64, ordered=0> not null
+lc: dictionary<values=string, indices=int32, ordered=0> not null
+lc: dictionary<values=string, indices=uint64, ordered=0> not null
+lc: dictionary<values=string, indices=uint32, ordered=0> not null

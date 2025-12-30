@@ -1,0 +1,5 @@
+# Used to pre-pull images with docker compose
+services:
+  clickhouse1:
+    image: clickhouse/integration-test
+    stop_grace_period: 5s

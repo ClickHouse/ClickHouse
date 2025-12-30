@@ -1,16 +1,24 @@
 ---
-slug: /en/engines/table-engines/integrations/sqlite
+description: 'The engine allows to import and export data to SQLite and supports queries
+  to SQLite tables directly from ClickHouse.'
+sidebar_label: 'SQLite'
 sidebar_position: 185
-sidebar_label: SQLite
+slug: /engines/table-engines/integrations/sqlite
+title: 'SQLite table engine'
+doc_type: 'reference'
 ---
 
-# SQLite
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# SQLite table engine
+
+<CloudNotSupportedBadge/>
 
 The engine allows to import and export data to SQLite and supports queries to SQLite tables directly from ClickHouse.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
-``` sql
+```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
     (
         name1 [type1],
@@ -23,7 +31,7 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 - `db_path` — Path to SQLite file with a database.
 - `table` — Name of a table in the SQLite database.
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 Shows a query creating the SQLite table:
 
@@ -31,7 +39,7 @@ Shows a query creating the SQLite table:
 SHOW CREATE TABLE sqlite_db.table2;
 ```
 
-``` text
+```text
 CREATE TABLE SQLite.table2
 (
     `col1` Nullable(Int32),
@@ -42,7 +50,7 @@ ENGINE = SQLite('sqlite.db','table2');
 
 Returns the data from the table:
 
-``` sql
+```sql
 SELECT * FROM sqlite_db.table2 ORDER BY col1;
 ```
 

@@ -11,9 +11,10 @@ int readAndPrint(DB::ReadBuffer & in)
 {
     try
     {
-        DB::Int64 a;
-        DB::Float64 b;
-        DB::String c, d;
+        Int64 a;
+        Float64 b;
+        String c;
+        String d;
 
         DB::readIntText(a, in);
         in.ignore();

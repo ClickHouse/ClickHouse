@@ -1,20 +1,15 @@
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/DateTimeTransforms.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <base/int8_to_string.h>
 
 #include <Common/DateLUT.h>
-#include <Common/typeid_cast.h>
 
 #include <array>
 #include <cmath>
@@ -23,7 +18,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -44,7 +40,6 @@ struct DateTraits32
 template <typename Traits>
 class FunctionFromDaysSinceYearZero : public IFunction
 {
-
 public:
     static constexpr auto name = Traits::name;
     using RawReturnType = typename Traits::ReturnDataType::FieldType;
@@ -58,11 +53,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"days", &isNativeUInt<IDataType>, nullptr, "UInt*"}
-        };
+        FunctionArgumentDescriptors args{{"days", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}};
 
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
@@ -84,7 +77,8 @@ public:
             return false;
         };
 
-        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{});
+        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{})
+                                || try_type(Int8{}) || try_type(Int16{}) || try_type(Int32{}) || try_type(Int64{});
 
         if (!success)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
@@ -99,13 +93,14 @@ public:
         auto & dst_data = result_column.getData();
         dst_data.resize(rows_count);
 
-        using equivalent_integer = typename std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
-
         for (size_t i = 0; i < rows_count; ++i)
         {
-            auto raw_value = src_data[i];
-            auto value = static_cast<equivalent_integer>(raw_value);
-            dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
+            auto value = src_data[i];
+            if (value < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected a non-negative integer, got: {}", std::to_string(value));
+            /// prevent potential signed integer overflows (aka. undefined behavior) with Date32 results
+            auto value_uint64 = static_cast<UInt64>(value); /// NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+            dst_data[i] = static_cast<RawReturnType>(value_uint64 - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
 };
@@ -115,23 +110,68 @@ public:
 
 REGISTER_FUNCTION(FromDaysSinceYearZero)
 {
-    factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits>>(FunctionDocumentation{
-        .description = R"(
-Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
-The calculation is the same as in MySQL's FROM_DAYS() function.
-)",
-        .examples{{"typical", "SELECT fromDaysSinceYearZero(713569)", "2023-09-08"}},
-        .categories{"Dates and Times"}});
+    FunctionDocumentation::Description description_fromDaysSinceYearZero = R"(
+For a given number of days elapsed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero), returns the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar).
 
-    factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(FunctionDocumentation{
-        .description = R"(
-Given the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601 return a corresponding date.
-The calculation is the same as in MySQL's FROM_DAYS() function.
-)",
-        .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
-        .categories{"Dates and Times"}});
+The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [Date](../data-types/date.md) type.
+    )";
+    FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero = R"(
+fromDaysSinceYearZero(days)
+    )";
+    FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero =
+    {
+        {"days", "The number of days passed since year zero.", {"UInt32"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero = {"Returns the date corresponding to the number of days passed since year zero.", {"Date"}};
+    FunctionDocumentation::Examples examples_fromDaysSinceYearZero =
+    {
+        {"Convert days since year zero to dates", R"(
+SELECT
+fromDaysSinceYearZero(739136) AS date1,
+fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
+        )",
+        R"(
+┌──────date1─┬──────date2─┐
+│ 2023-09-08 │ 2023-09-08 │
+└────────────┴────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero = {23, 11};
+    FunctionDocumentation::Category category_fromDaysSinceYearZero = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_fromDaysSinceYearZero = {description_fromDaysSinceYearZero, syntax_fromDaysSinceYearZero, arguments_fromDaysSinceYearZero, {}, returned_value_fromDaysSinceYearZero, examples_fromDaysSinceYearZero, introduced_in_fromDaysSinceYearZero, category_fromDaysSinceYearZero};
+    factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits>>(documentation_fromDaysSinceYearZero);
 
-    factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description_fromDaysSinceYearZero32 = R"(
+For a given number of days elapsed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero), returns the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar).
+The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [`Date32`](../data-types/date32.md) type.
+    )";
+    FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero32 = R"(
+fromDaysSinceYearZero32(days)
+    )";
+    FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero32 =
+    {
+        {"days", "The number of days passed since year zero.", {"UInt32"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero32 = {"Returns the date corresponding to the number of days passed since year zero.", {"Date32"}};
+    FunctionDocumentation::Examples examples_fromDaysSinceYearZero32 =
+    {
+        {"Convert days since year zero to dates", R"(
+SELECT
+fromDaysSinceYearZero32(739136) AS date1,
+fromDaysSinceYearZero32(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
+        )",
+        R"(
+┌──────date1─┬──────date2─┐
+│ 2023-09-08 │ 2023-09-08 │
+└────────────┴────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_fromDaysSinceYearZero32 = {23, 11};
+    FunctionDocumentation::Category category_fromDaysSinceYearZero32 = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_fromDaysSinceYearZero32 = {description_fromDaysSinceYearZero32, syntax_fromDaysSinceYearZero32, arguments_fromDaysSinceYearZero32, {}, returned_value_fromDaysSinceYearZero32, examples_fromDaysSinceYearZero32, introduced_in_fromDaysSinceYearZero32, category_fromDaysSinceYearZero32};
+    factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(documentation_fromDaysSinceYearZero32);
+
+    factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);
 }
 
 }

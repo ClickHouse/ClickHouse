@@ -34,7 +34,7 @@ FrequencyHolder::FrequencyHolder()
 
 void FrequencyHolder::loadEncodingsFrequency()
 {
-    Poco::Logger * log = &Poco::Logger::get("EncodingsFrequency");
+    LoggerPtr log = getLogger("EncodingsFrequency");
 
     LOG_TRACE(log, "Loading embedded charset frequencies");
 
@@ -47,7 +47,7 @@ void FrequencyHolder::loadEncodingsFrequency()
     Float64 frequency;
     String charset_name;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -92,7 +92,7 @@ void FrequencyHolder::loadEncodingsFrequency()
 
 void FrequencyHolder::loadEmotionalDict()
 {
-    Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
+    LoggerPtr log = getLogger("EmotionalDict");
     LOG_TRACE(log, "Loading embedded emotional dictionary");
 
     std::string_view resource(reinterpret_cast<const char *>(gresource_tonality_ru_zstData), gresource_tonality_ru_zstSize);
@@ -104,7 +104,7 @@ void FrequencyHolder::loadEmotionalDict()
     Float64 tonality;
     size_t count = 0;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -121,7 +121,7 @@ void FrequencyHolder::loadEmotionalDict()
         buf_line.ignore();
         readFloatText(tonality, buf_line);
 
-        StringRef ref{string_pool.insert(word.data(), word.size()), word.size()};
+        std::string_view ref{string_pool.insert(word.data(), word.size()), word.size()};
         emotional_dict[ref] = tonality;
         ++count;
     }
@@ -130,7 +130,7 @@ void FrequencyHolder::loadEmotionalDict()
 
 void FrequencyHolder::loadProgrammingFrequency()
 {
-    Poco::Logger * log = &Poco::Logger::get("ProgrammingFrequency");
+    LoggerPtr log = getLogger("ProgrammingFrequency");
 
     LOG_TRACE(log, "Loading embedded programming languages frequencies loading");
 
@@ -143,7 +143,7 @@ void FrequencyHolder::loadProgrammingFrequency()
     Float64 frequency;
     String programming_language;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -173,7 +173,7 @@ void FrequencyHolder::loadProgrammingFrequency()
             buf_line.ignore();
             readFloatText(frequency, buf_line);
 
-            StringRef ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
+            std::string_view ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
             programming_freq.back().map[ref] = frequency;
         }
     }

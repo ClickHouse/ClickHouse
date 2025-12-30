@@ -32,6 +32,7 @@ clickhouse:
     field2: "2"
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
     auto system_tables_file = std::make_unique<File>(path / "config.d/system_tables.yaml");
@@ -49,6 +50,7 @@ clickhouse:
         level: debug
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
 
@@ -96,6 +98,7 @@ clickhouse:
         level: debug
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
     auto system_tables_file = std::make_unique<File>(path / "config.d/system_tables.yaml");
@@ -115,6 +118,7 @@ clickhouse:
         level: debug
 )YAML";
         writeString(data, out);
+        out.finalize();
     }
 
 

@@ -1,8 +1,11 @@
 #pragma once
 
 #include <Common/ICachePolicy.h>
+#include <Common/CurrentMetrics.h>
+#include <base/UUID.h>
 
 #include <limits>
+#include <map>
 #include <unordered_map>
 
 namespace DB
@@ -11,38 +14,38 @@ namespace DB
 class PerUserTTLCachePolicyUserQuota : public ICachePolicyUserQuota
 {
 public:
-    void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries) override
+    void setQuotaForUser(const UUID & user_id, size_t max_size_in_bytes, size_t max_entries) override
     {
-        quotas[user_name] = {max_size_in_bytes, max_entries};
+        quotas[user_id] = {max_size_in_bytes, max_entries};
     }
 
-    void increaseActual(const String & user_name, size_t entry_size_in_bytes) override
+    void increaseActual(const UUID & user_id, size_t entry_size_in_bytes) override
     {
-        auto & actual_for_user = actual[user_name];
+        auto & actual_for_user = actual[user_id];
         actual_for_user.size_in_bytes += entry_size_in_bytes;
         actual_for_user.num_items += 1;
     }
 
-    void decreaseActual(const String & user_name, size_t entry_size_in_bytes) override
+    void decreaseActual(const UUID & user_id, size_t entry_size_in_bytes) override
     {
-        chassert(actual.contains(user_name));
+        chassert(actual.contains(user_id));
 
-        chassert(actual[user_name].size_in_bytes >= entry_size_in_bytes);
-        actual[user_name].size_in_bytes -= entry_size_in_bytes;
+        chassert(actual[user_id].size_in_bytes >= entry_size_in_bytes);
+        actual[user_id].size_in_bytes -= entry_size_in_bytes;
 
-        chassert(actual[user_name].num_items >= 1);
-        actual[user_name].num_items -= 1;
+        chassert(actual[user_id].num_items >= 1);
+        actual[user_id].num_items -= 1;
     }
 
-    bool approveWrite(const String & user_name, size_t entry_size_in_bytes) const override
+    bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
     {
-        auto it_actual = actual.find(user_name);
-        Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// assume zero actual resource consumption is user isn't found
+        auto it_actual = actual.find(user_id);
+        Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// if no user is found, the default is no resource consumption
         if (it_actual != actual.end())
             actual_for_user = it_actual->second;
 
-        auto it_quota = quotas.find(user_name);
-        Resources quota_for_user{.size_in_bytes = std::numeric_limits<size_t>::max(), .num_items = std::numeric_limits<size_t>::max()}; /// assume no threshold if no quota is found
+        auto it_quota = quotas.find(user_id);
+        Resources quota_for_user{.size_in_bytes = std::numeric_limits<size_t>::max(), .num_items = std::numeric_limits<size_t>::max()}; /// if no user is found, the default is no threshold
         if (it_quota != quotas.end())
             quota_for_user = it_quota->second;
 
@@ -53,14 +56,19 @@ public:
             quota_for_user.num_items = std::numeric_limits<UInt64>::max();
 
         /// Check size quota
-        if (actual_for_user.size_in_bytes + entry_size_in_bytes >= quota_for_user.size_in_bytes)
+        if (actual_for_user.size_in_bytes + entry_size_in_bytes > quota_for_user.size_in_bytes)
             return false;
 
         /// Check items quota
-        if (quota_for_user.num_items + 1 >= quota_for_user.num_items)
+        if (actual_for_user.num_items + 1 > quota_for_user.num_items)
             return false;
 
         return true;
+    }
+
+    void clear() override
+    {
+        actual.clear();
     }
 
     struct Resources
@@ -69,10 +77,10 @@ public:
         size_t num_items = 0;
     };
 
-    /// user name --> cache size quota (in bytes) / number of items quota
-    std::map<String, Resources> quotas;
-    /// user name --> actual cache usage (in bytes) / number of items
-    std::map<String, Resources> actual;
+    /// user id --> cache size quota (in bytes) / number of items quota
+    std::map<UUID, Resources> quotas;
+    /// user id --> actual cache usage (in bytes) / number of items
+    std::map<UUID, Resources> actual;
 };
 
 
@@ -85,14 +93,22 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnRemoveEntryFunction;
 
-    explicit TTLCachePolicy(CachePolicyUserQuotaPtr quotas_)
+    explicit TTLCachePolicy(CurrentMetrics::Metric size_in_bytes_metric_, CurrentMetrics::Metric count_metric_, CachePolicyUserQuotaPtr quotas_)
         : Base(std::move(quotas_))
         , max_size_in_bytes(0)
         , max_count(0)
+        , size_in_bytes_metric(size_in_bytes_metric_)
+        , count_metric(count_metric_)
     {
     }
+
+    ~TTLCachePolicy() override
+    {
+        clearImpl();
+    }
+
 
     size_t sizeInBytes() const override
     {
@@ -123,7 +139,7 @@ public:
 
     void clear() override
     {
-        cache.clear();
+        clearImpl();
     }
 
     void remove(const Key & key) override
@@ -132,9 +148,36 @@ public:
         if (it == cache.end())
             return;
         size_t sz = weight_function(*it->second);
-        Base::user_quotas->decreaseActual(it->first.user_name, sz);
+        if (it->first.user_id.has_value())
+            Base::user_quotas->decreaseActual(*it->first.user_id, sz);
         cache.erase(it);
         size_in_bytes -= sz;
+
+        CurrentMetrics::sub(size_in_bytes_metric, sz);
+        CurrentMetrics::sub(count_metric);
+    }
+
+    void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
+    {
+        const size_t old_size_in_bytes = size_in_bytes;
+        const size_t old_size = cache.size();
+
+        for (auto it = cache.begin(); it != cache.end();)
+        {
+            if (predicate(it->first, it->second))
+            {
+                size_t sz = weight_function(*it->second);
+                if (it->first.user_id.has_value())
+                    Base::user_quotas->decreaseActual(*it->first.user_id, sz);
+                it = cache.erase(it);
+                size_in_bytes -= sz;
+            }
+            else
+                ++it;
+        }
+
+        CurrentMetrics::sub(size_in_bytes_metric, old_size_in_bytes - size_in_bytes);
+        CurrentMetrics::sub(count_metric, old_size - cache.size());
     }
 
     MappedPtr get(const Key & key) override
@@ -143,6 +186,11 @@ public:
         if (it == cache.end())
             return {};
         return it->second;
+    }
+
+    bool contains(const Key & key) const override
+    {
+        return cache.count(key) != 0;
     }
 
     std::optional<KeyMapped> getWithKey(const Key & key) override
@@ -158,6 +206,8 @@ public:
     {
         chassert(mapped.get());
 
+        const size_t old_size_in_bytes = size_in_bytes;
+        const size_t old_size = cache.size();
         const size_t entry_size_in_bytes = weight_function(*mapped);
 
         /// Checks against per-cache limits
@@ -169,22 +219,27 @@ public:
         /// Checks against per-user limits
         auto sufficient_space_in_cache_for_user = [&]()
         {
-            return Base::user_quotas->approveWrite(key.user_name, entry_size_in_bytes);
+            if (key.user_id.has_value())
+                return Base::user_quotas->approveWrite(*key.user_id, entry_size_in_bytes);
+            return true;
         };
 
         if (!sufficient_space_in_cache() || !sufficient_space_in_cache_for_user())
         {
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
+            {
                 if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
-                    Base::user_quotas->decreaseActual(it->first.user_name, sz);
+                    if (it->first.user_id.has_value())
+                        Base::user_quotas->decreaseActual(*it->first.user_id, sz);
                     it = cache.erase(it);
                     size_in_bytes -= sz;
                 }
                 else
                     ++it;
+            }
         }
 
         if (sufficient_space_in_cache() && sufficient_space_in_cache_for_user())
@@ -193,20 +248,26 @@ public:
             if (auto it = cache.find(key); it != cache.end())
             {
                 size_t sz = weight_function(*it->second);
-                Base::user_quotas->decreaseActual(it->first.user_name, sz);
+                if (it->first.user_id.has_value())
+                    Base::user_quotas->decreaseActual(*it->first.user_id, sz);
                 cache.erase(it); // stupid bug: (*) doesn't replace existing entries (likely due to custom hash function), need to erase explicitly
                 size_in_bytes -= sz;
             }
 
             cache[key] = std::move(mapped); // (*)
             size_in_bytes += entry_size_in_bytes;
-            Base::user_quotas->increaseActual(key.user_name, entry_size_in_bytes);
+            if (key.user_id.has_value())
+                Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
+
+        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - old_size);
     }
 
     std::vector<KeyMapped> dump() const override
     {
         std::vector<KeyMapped> res;
+        res.reserve(cache.size());
         for (const auto & [key, mapped] : cache)
             res.push_back({key, mapped});
         return res;
@@ -224,9 +285,24 @@ private:
     size_t max_size_in_bytes;
     size_t max_count;
 
+    CurrentMetrics::Metric size_in_bytes_metric;
+    CurrentMetrics::Metric count_metric;
+
     WeightFunction weight_function;
     IsStaleFunction is_stale_function;
-    /// TODO support OnWeightLossFunction callback
+    /// TODO support OnRemoveEntryFunction callback
+
+    void clearImpl()
+    {
+        CurrentMetrics::sub(size_in_bytes_metric, size_in_bytes);
+        CurrentMetrics::sub(count_metric, cache.size());
+
+        cache.clear();
+        Base::user_quotas->clear();
+
+        size_in_bytes = 0;
+    }
+
 };
 
 }

@@ -1,0 +1,7 @@
+<clickhouse>
+    <zookeeper>
+        <enable_fault_injections_during_startup>1</enable_fault_injections_during_startup>
+        <send_fault_probability>0.005</send_fault_probability>
+        <recv_fault_probability>0.005</recv_fault_probability>
+    </zookeeper>
+</clickhouse>

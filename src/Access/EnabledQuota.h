@@ -52,11 +52,11 @@ public:
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
 
+    void reset(QuotaType quota_type) const;
+
     /// Returns the information about quota consumption.
     std::optional<QuotaUsage> getUsage() const;
 
-    /// Returns an instance of EnabledQuota which is never exceeded.
-    static std::shared_ptr<const EnabledQuota> getUnlimitedQuota();
 
 private:
     friend class QuotaCache;
@@ -96,6 +96,7 @@ private:
 
     const Params params;
     boost::atomic_shared_ptr<const Intervals> intervals; /// atomically changed by QuotaUsageManager
+    std::atomic<bool> empty = false; /// Use a separate flag to avoid loading intervals, which is way more expensive than an atomic bool
 };
 
 }

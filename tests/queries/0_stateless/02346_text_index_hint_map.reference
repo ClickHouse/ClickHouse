@@ -1,0 +1,39 @@
+SELECT count() FROM tab WHERE has(mapKeys(m), 'k18')
+36663
+Filter column: __text_index_idx_mk_has_0c0040b6161ceb1d92b4b734c3e49d61 (removed)
+Name: idx_mk
+SELECT count() FROM tab WHERE has(m, 'k18')
+36663
+Filter column: __text_index_idx_mk_has_0c0040b6161ceb1d92b4b734c3e49d61 (removed)
+Name: idx_mk
+SELECT count() FROM tab WHERE mapContainsKey(m, 'k18')
+36663
+Filter column: __text_index_idx_mk_mapContainsKey_93e0ae3393c50112dba76c2f8e7b0085 (removed)
+Name: idx_mk
+SELECT count() FROM tab WHERE mapContainsValue(m, 'v18')
+36663
+Filter column: __text_index_idx_mv_mapContainsValue_7a21ae1c0c7797455d0b2d4018cdafab (removed)
+Name: idx_mv
+SELECT count() FROM tab WHERE m['k18'] = 'v18'
+36663
+Name: idx_mk
+Name: idx_mv
+Prewhere filter column: and(__text_index_idx_mk_mapContainsKey_06c8259c51f53148f99a166759c9a9d6, __text_index_idx_mv_equals_ac116df33fd80709dc97e5792457d7d3, equals(arrayElement(__table1.m, \'k18\'_String), \'v18\'_String)) (removed)
+SELECT count() FROM tab WHERE m['k18'] LIKE '%v18%'
+36663
+Name: idx_mk
+Prewhere filter column: and(__text_index_idx_mk_mapContainsKey_06c8259c51f53148f99a166759c9a9d6, like(arrayElement(__table1.m, \'k18\'_String), \'%v18%\'_String)) (removed)
+SELECT count() FROM tab WHERE notEmpty(m['k18'])
+36663
+Name: idx_mk
+Prewhere filter column: and(__text_index_idx_mk_mapContainsKey_06c8259c51f53148f99a166759c9a9d6, notEmpty(arrayElement(__table1.m, \'k18\'_String))) (removed)
+SELECT count() FROM tab WHERE empty(m['k18'])
+63337
+Filter column: empty(arrayElement(__table1.m, \'k18\'_String)) (removed)
+SELECT count() FROM tab WHERE toUInt64OrZero(extract(m['k18'], '[0-9]+')) = 18
+36663
+Name: idx_mk
+Prewhere filter column: and(__text_index_idx_mk_mapContainsKey_06c8259c51f53148f99a166759c9a9d6, equals(toUInt64OrZero(extract(arrayElement(__table1.m, \'k18\'_String), \'[0-9]+\'_String)), 18_UInt8)) (removed)
+SELECT count() FROM tab WHERE toUInt64OrZero(extract(m['k18'], '[0-9]+')) = 0
+63337
+Filter column: equals(toUInt64OrZero(extract(arrayElement(__table1.m, \'k18\'_String), \'[0-9]+\'_String)), 0_UInt8) (removed)

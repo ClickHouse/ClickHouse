@@ -6,8 +6,7 @@
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
 #include <Common/ActionBlocker.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <thread>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 #include <map>
 #include <unordered_map>
@@ -27,11 +26,11 @@ class ReplicatedMergeTreeCleanupThread
 public:
     explicit ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    void start() { task->activateAndSchedule(); }
+    void start();
 
-    void wakeup() { task->schedule(); }
+    void wakeup();
 
-    void stop() { task->deactivate(); }
+    void stop();
 
     void wakeupEarlierIfNeeded();
 
@@ -40,8 +39,8 @@ public:
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
-    BackgroundSchedulePool::TaskHolder task;
+    LoggerPtr log;
+    BackgroundSchedulePoolTaskHolder task;
     pcg64 rng{randomSeed()};
 
     UInt64 sleep_ms;

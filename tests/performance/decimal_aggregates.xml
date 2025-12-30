@@ -4,8 +4,13 @@
     </settings>
 
     <create_query>CREATE TABLE t (x UInt64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
-    <!-- use less threads to save memory -->
-    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(500000000) SETTINGS max_threads = 8</fill_query>
+    <!-- use less threads and several queries to save memory -->
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(100000000) SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(100000000, 100000000) SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(200000000, 100000000) SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(300000000, 100000000) SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(400000000, 100000000) SETTINGS max_threads = 2</fill_query>
+
     <drop_query>DROP TABLE IF EXISTS t</drop_query>
 
     <query>SELECT min(d32), max(d32), argMin(x, d32), argMax(x, d32) FROM t</query>

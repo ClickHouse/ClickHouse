@@ -1,6 +1,8 @@
 import contextlib
 import os
-import urllib.request, urllib.parse, urllib.error
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from helpers.cluster import ClickHouseCluster
 
@@ -15,9 +17,10 @@ class SimpleCluster:
         cluster.start()
 
     def add_instance(self, name, config_dir):
-        script_path = os.path.dirname(os.path.realpath(__file__))
         return self.cluster.add_instance(
-            name, main_configs=[os.path.join(script_path, config_dir, "config.xml")]
+            name,
+            main_configs=[os.path.join(config_dir, "config.xml")],
+            user_configs=["users.d/users.yaml"],
         )
 
 
@@ -88,6 +91,34 @@ def test_dynamic_query_handler():
             "application/whatever; charset=cp1337"
             == res_custom_ct.headers["content-type"]
         )
+        assert "it works" == res_custom_ct.headers["X-Test-Http-Response-Headers-Works"]
+        assert (
+            "also works"
+            == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
+
+        assert (
+            cluster.instance.http_request(
+                "test_dynamic_handler_auth_with_password?query=select+currentUser()"
+            )
+            .content.strip()
+            .decode()
+            == "with_password"
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_dynamic_handler_auth_with_password_fail?query=select+currentUser()"
+            ).status_code
+            == 403
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_dynamic_handler_auth_without_password?query=select+currentUser()"
+            )
+            .content.strip()
+            .decode()
+            == "without_password"
+        )
 
 
 def test_predefined_query_handler():
@@ -146,6 +177,10 @@ def test_predefined_query_handler():
         )
         assert b"max_final_threads\t1\nmax_threads\t1\n" == res2.content
         assert "application/generic+one" == res2.headers["content-type"]
+        assert "it works" == res2.headers["X-Test-Http-Response-Headers-Works"]
+        assert (
+            "also works" == res2.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
 
         cluster.instance.query(
             "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
@@ -165,6 +200,27 @@ def test_predefined_query_handler():
             headers={"XXX": "xxx"},
         )
         assert b"max_threads\t1\n" == res1.content
+
+        assert (
+            cluster.instance.http_request("test_predefined_handler_auth_with_password")
+            .content.strip()
+            .decode()
+            == "with_password"
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_predefined_handler_auth_with_password_fail"
+            ).status_code
+            == 403
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_predefined_handler_auth_without_password"
+            )
+            .content.strip()
+            .decode()
+            == "without_password"
+        )
 
 
 def test_fixed_static_handler():
@@ -211,6 +267,18 @@ def test_fixed_static_handler():
             == cluster.instance.http_request(
                 "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
             ).content
+        )
+        assert (
+            "it works"
+            == cluster.instance.http_request(
+                "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
+            ).headers["X-Test-Http-Response-Headers-Works"]
+        )
+        assert (
+            "also works"
+            == cluster.instance.http_request(
+                "test_get_fixed_static_handler", method="GET", headers={"XXX": "xxx"}
+            ).headers["X-Test-Http-Response-Headers-Even-Multiple"]
         )
 
 
@@ -580,3 +648,64 @@ def test_replicas_status_handler():
                 "test_replicas_status", method="GET", headers={"XXX": "xxx"}
             ).content
         )
+
+
+def test_headers_in_response():
+    with contextlib.closing(
+            SimpleCluster(
+                ClickHouseCluster(__file__), "headers_in_response", "test_headers_in_response"
+            )
+    ) as cluster:
+        for endpoint in ("static", "ping", "replicas_status", "play", "dashboard", "binary", "merges", "metrics",
+                         "js/lz-string.js", "js/uplot.js", "?query=SELECT%201"):
+            response = cluster.instance.http_request(endpoint, method="GET")
+
+            assert "X-My-Answer" in response.headers
+            assert "X-My-Common-Header" in response.headers
+
+            assert response.headers["X-My-Common-Header"] == "Common header present"
+
+            if endpoint == "?query=SELECT%201":
+                assert response.headers["X-My-Answer"] == "Iam dynamic"
+            else:
+                assert response.headers["X-My-Answer"] == f"Iam {endpoint}"
+
+
+        # Handle predefined_query_handler separately because we need to pass headers there
+        response_predefined = cluster.instance.http_request(
+            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
+        assert response_predefined.headers["X-My-Answer"] == f"Iam predefined"
+        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
+
+
+def test_redirect_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "redirect_handler", "test_redirect_handler"
+        )
+    ) as cluster:
+        def get(uri, *args, **kwargs):
+            return cluster.instance.http_request(uri, method="GET", allow_redirects=False, *args, **kwargs)
+
+        req = get("")
+        assert req.status_code == 302
+        assert req.headers["Location"] == "/play"
+
+        req = get("/pla")
+        assert req.status_code == 302
+        assert req.headers["Location"] == "/play"
+
+        req = get("/foo/pla")
+        assert req.status_code == 404
+
+        # Host does not match - no redirect, and we do not add defaults so, it will be 404
+        req = get("/play")
+        assert req.status_code == 404
+
+        req = get("/dashboard")
+        assert req.status_code == 302
+        assert req.headers["Location"] == "/dashboard?from=http://:8123/dashboard"
+
+        # Query string is not empty - no redirect, and we do not add defaults so, it will be 404
+        req = get("/dashboard?foo=bar")
+        assert req.status_code == 404

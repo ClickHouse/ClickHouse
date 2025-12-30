@@ -4,7 +4,6 @@
 
 #if USE_NLP
 
-#include <base/StringRef.h>
 #include <Common/logger_useful.h>
 
 #include <string_view>
@@ -12,7 +11,7 @@
 
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -37,7 +36,7 @@ public:
     struct Language
     {
         String name;
-        HashMap<StringRef, Float64> map;
+        HashMap<std::string_view, Float64> map;
     };
 
     struct Encoding
@@ -47,8 +46,7 @@ public:
         HashMap<UInt16, Float64> map;
     };
 
-public:
-    using Map = HashMap<StringRef, Float64>;
+    using Map = HashMap<std::string_view, Float64>;
     using Container = std::vector<Language>;
 
     using EncodingMap = HashMap<UInt16, Float64>;

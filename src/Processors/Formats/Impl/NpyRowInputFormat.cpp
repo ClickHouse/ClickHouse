@@ -1,23 +1,22 @@
+#include <cmath>
 #include <string>
-#include <vector>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/assert_cast.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/NumpyDataTypes.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
+#include <Common/FloatUtils.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
-#include <Processors/Formats/IRowInputFormat.h>
-#include <boost/algorithm/string/split.hpp>
+#include <IO/ReadHelpers.h>
+
 #include <IO/ReadBufferFromString.h>
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 namespace DB
 {
@@ -54,6 +53,8 @@ DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & nump
             return std::make_shared<DataTypeUInt32>();
         case NumpyDataTypeIndex::UInt64:
             return std::make_shared<DataTypeUInt64>();
+        case NumpyDataTypeIndex::Float16:
+            return std::make_shared<DataTypeFloat32>();
         case NumpyDataTypeIndex::Float32:
             return std::make_shared<DataTypeFloat32>();
         case NumpyDataTypeIndex::Float64:
@@ -93,7 +94,7 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     NumpyDataType::Endianness endianness;
     if (type[0] == '<')
         endianness = NumpyDataType::Endianness::LITTLE;
-    else if (type[1] == '>')
+    else if (type[0] == '>')
         endianness = NumpyDataType::Endianness::BIG;
     else if (type[0] == '|')
         endianness = NumpyDataType::Endianness::NONE;
@@ -103,22 +104,21 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     /// Parse type
     if (type[1] == 'i')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), true);
-    else if (type[1] == 'b')
+    if (type[1] == 'b')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    else if (type[1] == 'u')
+    if (type[1] == 'u')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    else if (type[1] == 'f')
+    if (type[1] == 'f')
         return std::make_shared<NumpyDataTypeFloat>(endianness, parseTypeSize(type.substr(2)));
-    else if (type[1] == 'S')
+    if (type[1] == 'S')
         return std::make_shared<NumpyDataTypeString>(endianness, parseTypeSize(type.substr(2)));
-    else if (type[1] == 'U')
+    if (type[1] == 'U')
         return std::make_shared<NumpyDataTypeUnicode>(endianness, parseTypeSize(type.substr(2)));
-    else if (type[1] == 'c')
+    if (type[1] == 'c')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
-    else if (type[1] == 'O')
+    if (type[1] == 'O')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support object types");
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
 }
 
 std::vector<int> parseShape(String shape_string)
@@ -256,13 +256,24 @@ void NpyRowInputFormat::readPrefix()
     header = parseHeader(*in);
 }
 
-NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params params_)
+NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_))
 {
     auto types = getPort().getHeader().getDataTypes();
     if (types.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected number of columns for Npy input format, expected one column, got {} columns", types.size());
     nested_type = getNestedType(types[0]);
+}
+
+size_t NpyRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t count;
+    if (counted_rows + max_block_size <= size_t(header.shape[0]))
+        count = max_block_size;
+    else
+        count = header.shape[0] - counted_rows;
+    counted_rows += count;
+    return count;
 }
 
 template <typename ColumnValue, typename DataValue>
@@ -273,7 +284,18 @@ void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyD
         readBinaryBigEndian(value, *in);
     else
         readBinaryLittleEndian(value, *in);
-    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(value));
+    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue((static_cast<ColumnValue>(value)));
+}
+
+template <typename ColumnValue>
+void NpyRowInputFormat::readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness)
+{
+    uint16_t value;
+    if (endianness == NumpyDataType::Endianness::BIG)
+        readBinaryBigEndian(value, *in);
+    else
+        readBinaryLittleEndian(value, *in);
+    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(convertFloat16ToFloat32(value)));
 }
 
 template <typename T>
@@ -300,6 +322,7 @@ void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr &
 {
     switch (npy_type.getTypeIndex())
     {
+        case NumpyDataTypeIndex::Float16: readBinaryValueAndInsertFloat16<T>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::Float32: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::Float64: readBinaryValueAndInsert<T, Float64>(column->getPtr(), npy_type.getEndianness()); break;
         default:
@@ -384,6 +407,9 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
         elements_in_current_column *= header.shape[i];
     }
 
+    if (typeid_cast<ColumnArray *>(current_column))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected nesting level of column '{}', expected {}", column->getName(), header.shape.size() - 1);
+
     for (size_t i = 0; i != elements_in_current_column; ++i)
         readValue(current_column);
 
@@ -395,11 +421,16 @@ NpySchemaReader::NpySchemaReader(ReadBuffer & in_)
 
 NamesAndTypesList NpySchemaReader::readSchema()
 {
-    NumpyHeader header = parseHeader(in);
+    header = parseHeader(in);
     DataTypePtr nested_type = getDataTypeFromNumpyType(header.numpy_type);
     DataTypePtr result_type = createNestedArrayType(nested_type, header.shape.size());
 
     return {{"array", result_type}};
+}
+
+std::optional<size_t> NpySchemaReader::readNumberOrRows()
+{
+    return header.shape[0];
 }
 
 void registerInputFormatNpy(FormatFactory & factory)
@@ -410,7 +441,7 @@ void registerInputFormatNpy(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings &)
     {
-        return std::make_shared<NpyRowInputFormat>(buf, sample, std::move(params));
+        return std::make_shared<NpyRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params));
     });
 
     factory.markFormatSupportsSubsetOfColumns("Npy");

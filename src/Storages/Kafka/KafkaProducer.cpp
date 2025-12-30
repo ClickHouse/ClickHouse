@@ -1,8 +1,8 @@
-#include "KafkaProducer.h"
-#include "Core/Block.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
-
+#include <Storages/Kafka/KafkaProducer.h>
+#include <Core/Block.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -18,7 +18,7 @@ namespace DB
 
 KafkaProducer::KafkaProducer(
     ProducerPtr producer_, const std::string & topic_, std::chrono::milliseconds poll_timeout, std::atomic<bool> & shutdown_called_, const Block & header)
-    : IMessageProducer(&Poco::Logger::get("KafkaProducer"))
+    : IMessageProducer(getLogger("KafkaProducer"))
     , producer(producer_)
     , topic(topic_)
     , timeout(poll_timeout)
@@ -53,14 +53,14 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
     {
         const auto & key_column = assert_cast<const ColumnString &>(*columns[key_column_index.value()]);
         const auto key_data = key_column.getDataAt(last_row);
-        builder.key(cppkafka::Buffer(key_data.data, key_data.size));
+        builder.key(cppkafka::Buffer(key_data.data(), key_data.size()));
     }
 
     if (timestamp_column_index)
     {
         const auto & timestamp_column = assert_cast<const ColumnUInt32 &>(*columns[timestamp_column_index.value()]);
         const auto timestamp = std::chrono::seconds{timestamp_column.getElement(last_row)};
-        builder.timestamp(timestamp);
+        (void)builder.timestamp(timestamp);
     }
 
     while (!shutdown_called)
@@ -105,6 +105,11 @@ void KafkaProducer::finish()
         ProfileEvents::increment(ProfileEvents::KafkaProducerFlushes);
         break;
     }
+}
+
+void KafkaProducer::cancel() noexcept
+{
+    /* no op */
 }
 
 }

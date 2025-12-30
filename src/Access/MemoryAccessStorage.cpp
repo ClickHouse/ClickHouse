@@ -1,7 +1,5 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/RestoreSettings.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -54,7 +52,7 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return nullptr;
     }
@@ -63,14 +61,14 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     std::lock_guard lock{mutex};
-    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
 
 
-bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -86,9 +84,15 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && !replace_if_exists)
     {
         if (throw_if_exists)
-            throwNameCollisionCannotInsert(type, name);
+        {
+            throwNameCollisionCannotInsert(type, name, getStorageName());
+        }
         else
+        {
+            if (conflicting_id)
+                *conflicting_id = id_by_name;
             return false;
+        }
     }
 
     auto it_by_id = entries_by_id.find(id);
@@ -97,16 +101,22 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     {
         const auto & existing_entry = it_by_id->second;
         if (throw_if_exists)
-            throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
+        {
+            throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName(), getStorageName());
+        }
         else
+        {
+            if (conflicting_id)
+                *conflicting_id = id;
             return false;
+        }
     }
 
     /// Remove collisions if necessary.
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ true);
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ true, /* notify= */ notify); // NOLINT
     }
 
     if (id_collision)
@@ -124,11 +134,12 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
                     assert(inserted);
                 }
                 existing_entry.entity = new_entity;
-                changes_notifier.onEntityUpdated(id, new_entity);
+                if (notify)
+                    changes_notifier.onEntityUpdated(id, new_entity);
             }
             return true;
         }
-        removeNoLock(id, /* throw_if_not_exists= */ true);
+        removeNoLock(id, /* throw_if_not_exists= */ true, /* notify= */ notify); // NOLINT
     }
 
     /// Do insertion.
@@ -136,7 +147,8 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     entry.id = id;
     entry.entity = new_entity;
     entries_by_name[name] = &entry;
-    changes_notifier.onEntityAdded(id, new_entity);
+    if (notify)
+        changes_notifier.onEntityAdded(id, new_entity);
     return true;
 }
 
@@ -148,13 +160,13 @@ bool MemoryAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 }
 
 
-bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
+bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, bool notify)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -169,7 +181,8 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
     entries_by_name.erase(name);
     entries_by_id.erase(it);
 
-    changes_notifier.onEntityRemoved(removed_id, type);
+    if (notify)
+        changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 
@@ -181,20 +194,20 @@ bool MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_
 }
 
 
-bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
+bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool notify)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
 
     Entry & entry = it->second;
     auto old_entity = entry.entity;
-    auto new_entity = update_func(old_entity);
+    auto new_entity = update_func(old_entity, id);
 
     if (!new_entity->isTypeOf(old_entity->getType()))
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
@@ -209,13 +222,14 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(old_entity->getType())];
         auto it2 = entries_by_name.find(new_entity->getName());
         if (it2 != entries_by_name.end())
-            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName());
+            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName(), getStorageName());
 
         entries_by_name.erase(old_entity->getName());
         entries_by_name[new_entity->getName()] = &entry;
     }
 
-    changes_notifier.onEntityUpdated(id, new_entity);
+    if (notify)
+        changes_notifier.onEntityUpdated(id, new_entity);
     return true;
 }
 
@@ -238,7 +252,7 @@ void MemoryAccessStorage::removeAllExceptNoLock(const boost::container::flat_set
         const auto & id = it->first;
         ++it; /// We must go to the next element in the map `entries_by_id` here because otherwise removeNoLock() can invalidate our iterator.
         if (!ids_to_keep.contains(id))
-            removeNoLock(id, /* throw_if_not_exists */ true);
+            removeNoLock(id, /* throw_if_not_exists */ true); // NOLINT
     }
 }
 
@@ -255,6 +269,12 @@ void MemoryAccessStorage::setAll(const std::vector<AccessEntityPtr> & all_entiti
 
 void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
+    setAll(all_entities, /* notify= */ true);
+}
+
+
+void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify)
+{
     std::lock_guard lock{mutex};
 
     /// Remove conflicting entities from the specified list.
@@ -270,28 +290,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 
     /// Insert or update entities.
     for (const auto & [id, entity] : entities_without_conflicts)
-        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
-}
-
-
-void MemoryAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
-{
-    if (!isRestoreAllowed())
-        throwRestoreNotAllowed();
-
-    auto entities = restorer.getAccessEntitiesToRestore();
-    if (entities.empty())
-        return;
-
-    auto create_access = restorer.getRestoreSettings().create_access;
-    bool replace_if_exists = (create_access == RestoreAccessCreationMode::kReplace);
-    bool throw_if_exists = (create_access == RestoreAccessCreationMode::kCreate);
-
-    restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
-    {
-        for (const auto & [id, entity] : my_entities)
-            insert(id, entity, replace_if_exists, throw_if_exists);
-    });
+        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr, /* notify= */ notify);
 }
 
 }

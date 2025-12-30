@@ -235,7 +235,7 @@ std::unordered_map<String, KQLFunctionValue> KQLFunctionFactory::kql_functions
 
 std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_function)
 {
-    if (kql_functions.find(kql_function) == kql_functions.end())
+    if (!kql_functions.contains(kql_function))
         return nullptr;
 
     auto kql_function_id = kql_functions[kql_function];
@@ -359,7 +359,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
             return std::make_unique<ExtractAll>();
 
         case KQLFunctionValue::extract_json:
-            return std::make_unique<ExtractJson>();
+            return std::make_unique<ExtractJSON>();
 
         case KQLFunctionValue::has_any_index:
             return std::make_unique<HasAnyIndex>();
@@ -389,7 +389,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
             return std::make_unique<ParseCSV>();
 
         case KQLFunctionValue::parse_json:
-            return std::make_unique<ParseJson>();
+            return std::make_unique<ParseJSON>();
 
         case KQLFunctionValue::parse_url:
             return std::make_unique<ParseURL>();

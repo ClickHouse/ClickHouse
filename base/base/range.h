@@ -23,12 +23,10 @@ namespace internal
 
 /// For loop adaptor which is used to iterate through a half-closed interval [begin, end).
 /// The parameters `begin` and `end` can have any integral or enum types.
-template <typename BeginType,
-        typename EndType,
-        typename = std::enable_if_t<
-            (std::is_integral_v<BeginType> || std::is_enum_v<BeginType>) &&
-            (std::is_integral_v<EndType> || std::is_enum_v<EndType>) &&
-            (!std::is_enum_v<BeginType> || !std::is_enum_v<EndType> || std::is_same_v<BeginType, EndType>), void>>
+template <typename BeginType, typename EndType>
+requires((std::is_integral_v<BeginType> || std::is_enum_v<BeginType>) &&
+         (std::is_integral_v<EndType> || std::is_enum_v<EndType>) &&
+         (!std::is_enum_v<BeginType> || !std::is_enum_v<EndType> || std::is_same_v<BeginType, EndType>))
 inline auto range(BeginType begin, EndType end)
 {
     if constexpr (std::is_integral_v<BeginType> && std::is_integral_v<EndType>)
@@ -50,8 +48,8 @@ inline auto range(BeginType begin, EndType end)
 /// For loop adaptor which is used to iterate through a half-closed interval [0, end).
 /// The parameter `end` can have any integral or enum type.
 /// The same as range(0, end).
-template <typename Type,
-        typename = std::enable_if_t<std::is_integral_v<Type> || std::is_enum_v<Type>, void>>
+template <typename Type>
+requires(std::is_integral_v<Type> || std::is_enum_v<Type>)
 inline auto range(Type end)
 {
     if constexpr (std::is_integral_v<Type>)

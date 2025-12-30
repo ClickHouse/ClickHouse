@@ -82,8 +82,10 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
                                                    aggregate_function_name, params_row, "function " + getName(), getContext());
 
+        auto action = NullsAction::EMPTY; /// It is already embedded in the function name itself
         AggregateFunctionProperties properties;
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
+        aggregate_function
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
     }
 
     return aggregate_function->getResultType();
@@ -141,10 +143,19 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         that->addBatch(0, input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }
 
-    for (size_t i = 0; i < input_rows_count; ++i)
+    if (agg_func.isState())
+    {
         /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
         /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+        for (size_t i = 0; i < input_rows_count; ++i)
+            agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+    }
+    else
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+    }
+
     return result_holder;
 }
 
@@ -152,7 +163,50 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
 REGISTER_FUNCTION(InitializeAggregation)
 {
-    factory.registerFunction<FunctionInitializeAggregation>();
+    FunctionDocumentation::Description description_initializeAggregation = R"(
+Calculates the result of an aggregate function based on a single value.
+This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#-state).
+You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) or use initialized aggregates as default values.
+    )";
+    FunctionDocumentation::Syntax syntax_initializeAggregation = "initializeAggregation(aggregate_function, arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments_initializeAggregation = {
+        {"aggregate_function", "Name of the aggregation function to initialize.", {"String"}},
+        {"arg1[, arg2, ...]", "Arguments of the aggregate function.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_initializeAggregation = {"Returns the result of aggregation for every row passed to the function. The return type is the same as the return type of the function that `initializeAggregation` takes as a first argument.", {"Any"}};
+    FunctionDocumentation::Examples examples_initializeAggregation = {
+    {
+        "Basic usage with uniqState",
+        R"(
+SELECT uniqMerge(state) FROM (SELECT initializeAggregation('uniqState', number % 3) AS state FROM numbers(10000));
+        )",
+        R"(
+┌─uniqMerge(state)─┐
+│                3 │
+└──────────────────┘
+        )"
+    },
+    {
+        "Usage with sumState and finalizeAggregation",
+        R"(
+SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggregation('sumState', number % 3) AS state FROM numbers(5));
+        )",
+        R"(
+┌─finalizeAggregation(state)─┬─toTypeName(state)─────────────┐
+│                          0 │ AggregateFunction(sum, UInt8) │
+│                          1 │ AggregateFunction(sum, UInt8) │
+│                          2 │ AggregateFunction(sum, UInt8) │
+│                          0 │ AggregateFunction(sum, UInt8) │
+│                          1 │ AggregateFunction(sum, UInt8) │
+└────────────────────────────┴───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_initializeAggregation = {20, 6};
+    FunctionDocumentation::Category category_initializeAggregation = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_initializeAggregation = {description_initializeAggregation, syntax_initializeAggregation, arguments_initializeAggregation, {}, returned_value_initializeAggregation, examples_initializeAggregation, introduced_in_initializeAggregation, category_initializeAggregation};
+
+    factory.registerFunction<FunctionInitializeAggregation>(documentation_initializeAggregation);
 }
 
 }

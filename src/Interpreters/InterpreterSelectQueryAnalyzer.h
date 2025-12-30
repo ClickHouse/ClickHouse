@@ -3,12 +3,13 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
-#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+
+class QueryPlan;
 
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
@@ -16,7 +17,8 @@ public:
     /// Initialize interpreter with query AST
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        const Names & column_names = {});
 
     /** Initialize interpreter with query AST and storage.
       * After query tree is built left most table expression is replaced with table node that
@@ -25,9 +27,12 @@ public:
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
         const StoragePtr & storage_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        const Names & column_names = {});
 
-    /// Initialize interpreter with query tree
+    /** Initialize interpreter with query tree.
+      * No query tree passes are applied.
+      */
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);
@@ -37,13 +42,18 @@ public:
         return context;
     }
 
-    Block getSampleBlock();
+    SharedHeader getSampleBlock();
+    std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext();
 
-    static Block getSampleBlock(const ASTPtr & query,
+    static SharedHeader getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
         const SelectQueryOptions & select_query_options = {});
 
-    static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
+    static SharedHeader getSampleBlock(const QueryTreeNodePtr & query_tree,
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options = {});
+
+    static std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 
@@ -77,6 +87,10 @@ private:
     SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
     Planner planner;
+
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
+
+void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
 
 }

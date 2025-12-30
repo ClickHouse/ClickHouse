@@ -1,3 +1,9 @@
+#if !defined(SANITIZER)
+
+/// This test is slow due to exhaustive checking of time zones.
+/// Better to replace with randomization.
+/// Also, recommended to replace with a functional test for better maintainability.
+
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -10,9 +16,7 @@
 
 
 /// For the expansion of gtest macros.
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wused-but-marked-unused"
-#endif
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 // All timezones present at build time and embedded into ClickHouse binary.
 extern const char * auto_time_zones[];
@@ -548,3 +552,5 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
 //            {0, 0 + 11 * 3600 * 24 + 12, 11},
         }))
 );
+
+#endif

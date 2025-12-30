@@ -1,5 +1,0 @@
-# Relatively quick syntax check (20 minutes on 16-core server)
-
-mkdir build && cd build
-cmake -D CMAKE_BUILD_TYPE=Debug ..
-time jq --raw-output '.[] | .command' compile_commands.json | grep -P -- ' -o [^ ]+\.o' | grep -v -P -- '-c .+/contrib/' | grep -vP '\.(s|asm)$' | sed -r -e 's/ -o [^ ]+\.o/ -fsyntax-only/' | sort -R | xargs -I{} -P$(nproc) sh -c '{}'

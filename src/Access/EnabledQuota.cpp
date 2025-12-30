@@ -105,6 +105,16 @@ struct EnabledQuota::Impl
         std::uniform_int_distribution<Int64> distribution{0, count - 1};
         return std::chrono::system_clock::duration(distribution(thread_local_rng));
     }
+
+    static void resetQuotaValue(const Intervals & intervals, QuotaType quota_type, QuotaValue value, std::chrono::system_clock::time_point current_time)
+    {
+        const auto quota_type_i = static_cast<size_t>(quota_type);
+        for (const auto & interval : intervals.intervals)
+        {
+            interval.used[quota_type_i] = value;
+            interval.getEndOfInterval(current_time);
+        }
+    }
 };
 
 
@@ -237,6 +247,8 @@ void EnabledQuota::used(QuotaType quota_type, QuotaValue value, bool check_excee
 
 void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, bool check_exceeded) const
 {
+    if (empty)
+        return;
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
     Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
@@ -245,6 +257,8 @@ void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, bool ch
 
 void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, bool check_exceeded) const
 {
+    if (empty)
+        return;
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
     Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
@@ -254,6 +268,8 @@ void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const s
 
 void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, const std::pair<QuotaType, QuotaValue> & usage3, bool check_exceeded) const
 {
+    if (empty)
+        return;
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
     Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
@@ -264,6 +280,8 @@ void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const s
 
 void EnabledQuota::used(const std::vector<std::pair<QuotaType, QuotaValue>> & usages, bool check_exceeded) const
 {
+    if (empty)
+        return;
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
     for (const auto & usage : usages)
@@ -273,6 +291,8 @@ void EnabledQuota::used(const std::vector<std::pair<QuotaType, QuotaValue>> & us
 
 void EnabledQuota::checkExceeded() const
 {
+    if (empty)
+        return;
     auto loaded = intervals.load();
     Impl::checkExceeded(getUserName(), *loaded, std::chrono::system_clock::now());
 }
@@ -280,27 +300,22 @@ void EnabledQuota::checkExceeded() const
 
 void EnabledQuota::checkExceeded(QuotaType quota_type) const
 {
+    if (empty)
+        return;
     auto loaded = intervals.load();
     Impl::checkExceeded(getUserName(), *loaded, quota_type, std::chrono::system_clock::now());
 }
 
+
+void EnabledQuota::reset(QuotaType quota_type) const
+{
+    const auto loaded = intervals.load();
+    Impl::resetQuotaValue(*loaded, quota_type, 0, std::chrono::system_clock::now());
+}
 
 std::optional<QuotaUsage> EnabledQuota::getUsage() const
 {
     auto loaded = intervals.load();
     return loaded->getUsage(std::chrono::system_clock::now());
 }
-
-
-std::shared_ptr<const EnabledQuota> EnabledQuota::getUnlimitedQuota()
-{
-    static const std::shared_ptr<const EnabledQuota> res = []
-    {
-        auto unlimited_quota = std::shared_ptr<EnabledQuota>(new EnabledQuota);
-        unlimited_quota->intervals = boost::make_shared<Intervals>();
-        return unlimited_quota;
-    }();
-    return res;
-}
-
 }

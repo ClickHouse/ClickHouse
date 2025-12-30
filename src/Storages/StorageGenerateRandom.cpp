@@ -3,6 +3,7 @@
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
@@ -26,11 +27,14 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
-#include <Common/SipHash.h>
-#include <Common/randomSeed.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <base/unaligned.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/SipHash.h>
+#include <Common/intExp10.h>
+#include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -39,6 +43,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 preferred_block_size_bytes;
+}
 
 namespace ErrorCodes
 {
@@ -52,6 +60,12 @@ namespace ErrorCodes
 namespace
 {
 
+struct GenerateRandomState
+{
+    std::atomic<UInt64> add_total_rows = 0;
+};
+using GenerateRandomStatePtr = std::shared_ptr<GenerateRandomState>;
+
 void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_of_type, pcg64 & rng, [[maybe_unused]] bool flip_bytes = false)
 {
     size_t size = limit * size_of_type;
@@ -60,25 +74,25 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
     {
         /// The loop can be further optimized.
         UInt64 number = rng();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLittleEndian<UInt64>(data, number);
-#else
-        unalignedStore<UInt64>(data, number);
-#endif
+        if constexpr (std::endian::native == std::endian::big)
+            unalignedStoreLittleEndian<UInt64>(data, number);
+        else
+            unalignedStore<UInt64>(data, number);
         data += sizeof(UInt64); /// We assume that data has at least 7-byte padding (see PaddedPODArray)
     }
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    if (flip_bytes)
+    if constexpr (std::endian::native == std::endian::big)
     {
-        data = end - size;
-        while (data < end)
+        if (flip_bytes)
         {
-            char * rev_end = data + size_of_type;
-            std::reverse(data, rev_end);
-            data += size_of_type;
+            data = end - size;
+            while (data < end)
+            {
+                char * rev_end = data + size_of_type;
+                std::reverse(data, rev_end);
+                data += size_of_type;
+            }
         }
     }
-#endif
 }
 
 
@@ -96,7 +110,7 @@ size_t estimateValueSize(
     {
         case TypeIndex::String:
         {
-            return max_string_length + sizeof(size_t) + 1;
+            return max_string_length + sizeof(UInt64);
         }
 
         /// The logic in this function should reflect the logic of fillColumnWithRandomData.
@@ -141,9 +155,10 @@ size_t estimateValueSize(
     }
 }
 
+}
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type,
+    DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
@@ -168,7 +183,7 @@ ColumnPtr fillColumnWithRandomData(
             {
                 size_t length = rng() % (max_string_length + 1);    /// Slow
 
-                IColumn::Offset next_offset = offset + length + 1;
+                IColumn::Offset next_offset = offset + length;
                 data_to.resize(next_offset);
                 offsets_to[row_num] = next_offset;
 
@@ -191,10 +206,7 @@ ColumnPtr fillColumnWithRandomData(
                     data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                     /// NOTE gcc failed to vectorize this code (aliasing of char?)
-                    /// TODO Implement SIMD optimizations from Danila Kutenin.
                 }
-
-                data_to[offset + length] = 0;
 
                 offset = next_offset;
             }
@@ -269,6 +281,9 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Tuple:
         {
             auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
+            if (elements.empty())
+                return ColumnTuple::create(limit);
+
             const size_t tuple_size = elements.size();
             Columns tuple_columns(tuple_size);
 
@@ -527,14 +542,30 @@ ColumnPtr fillColumnWithRandomData(
     }
 }
 
+namespace
+{
 
 class GenerateSource : public ISource
 {
 public:
-    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : ISource(Nested::flattenArrayOfTuples(prepareBlockToFill(block_header_)))
-        , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
-        , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
+    GenerateSource(
+        UInt64 block_size_,
+        UInt64 max_array_length_,
+        UInt64 max_string_length_,
+        UInt64 random_seed_,
+        Block block_header_,
+        ContextPtr context_,
+        GenerateRandomStatePtr state_)
+        : ISource(std::make_shared<const Block>(Nested::flattenNested(prepareBlockToFill(block_header_))))
+        , block_size(block_size_)
+        , max_array_length(max_array_length_)
+        , max_string_length(max_string_length_)
+        , block_to_fill(std::move(block_header_))
+        , rng(random_seed_)
+        , context(context_)
+        , shared_state(state_)
+    {
+    }
 
     String getName() const override { return "GenerateRandom"; }
 
@@ -547,8 +578,16 @@ protected:
         for (const auto & elem : block_to_fill)
             columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
-        columns = Nested::flattenArrayOfTuples(block_to_fill.cloneWithColumns(columns)).getColumns();
-        return {std::move(columns), block_size};
+        columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
+
+        UInt64 total_rows = shared_state->add_total_rows.fetch_and(0);
+        if (total_rows)
+            addTotalRowsApprox(total_rows);
+
+        auto chunk = Chunk{std::move(columns), block_size};
+        progress(chunk.getNumRows(), chunk.bytes());
+
+        return chunk;
     }
 
 private:
@@ -560,6 +599,7 @@ private:
     pcg64 rng;
 
     ContextPtr context;
+    GenerateRandomStatePtr shared_state;
 
     static Block & prepareBlockToFill(Block & block)
     {
@@ -621,16 +661,21 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            engine_args[0] = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+            random_seed = checkAndGetLiteralArgument<UInt64>(engine_args[0], "random_seed");
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+        {
+            engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+        }
 
         if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionAsLiteral(engine_args[2], args.getLocalContext());
             max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+        }
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
@@ -639,16 +684,13 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
-
-    Pipes pipes;
-    pipes.reserve(num_streams);
 
     const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
@@ -660,7 +702,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     /// Correction of block size for wide tables.
-    size_t preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes;
+    size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
         size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
@@ -668,7 +710,6 @@ Pipe StorageGenerateRandom::read(
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large estimated block size in GenerateRandom table: its estimation leads to 64bit overflow");
-        chassert(estimated_block_size_bytes != 0);
 
         if (estimated_block_size_bytes > preferred_block_size_bytes)
         {
@@ -678,11 +719,26 @@ Pipe StorageGenerateRandom::read(
         }
     }
 
+    UInt64 query_limit = query_info.trivial_limit;
+    if (query_limit && num_streams * max_block_size > query_limit)
+    {
+        /// We want to avoid spawning more streams than necessary
+        num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
+    }
+    Pipes pipes;
+    pipes.reserve(num_streams);
+
     /// Will create more seed values for each source from initial seed.
     pcg64 generate(random_seed);
 
+    auto shared_state = std::make_shared<GenerateRandomState>(query_info.trivial_limit);
+
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));
+    {
+        auto source = std::make_shared<GenerateSource>(
+            max_block_size, max_array_length, max_string_length, generate(), block_header, context, shared_state);
+        pipes.emplace_back(std::move(source));
+    }
 
     return Pipe::unitePipes(std::move(pipes));
 }

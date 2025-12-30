@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
 #include <Storages/FileLog/FileLogConsumer.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -28,9 +29,9 @@ public:
 
     bool noRecords() { return !consumer || consumer->noRecords(); }
 
-    void onFinish();
+    void close();
 
-    virtual ~FileLogSource() override;
+    ~FileLogSource() override;
 
 protected:
     Chunk generate() override;

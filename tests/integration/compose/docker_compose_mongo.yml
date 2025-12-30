@@ -1,0 +1,31 @@
+services:
+    mongo1:
+        stop_grace_period: 5s
+        image: mongo:6.0
+        restart: always
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: root
+            MONGO_INITDB_ROOT_PASSWORD: ClickHouse_MongoDB_P@ssw0rd
+        ports:
+            - ${MONGO_EXTERNAL_PORT:-27017}:${MONGO_INTERNAL_PORT:-27017}
+        command: --profile=2 --verbose
+
+    mongo_no_cred:
+        stop_grace_period: 5s
+        image: mongo:6.0
+        restart: always
+        ports:
+            - ${MONGO_NO_CRED_EXTERNAL_PORT:-27017}:${MONGO_NO_CRED_INTERNAL_PORT:-27017}
+
+    mongo_secure:
+        stop_grace_period: 5s
+        image: mongo:6.0
+        restart: always
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: root
+            MONGO_INITDB_ROOT_PASSWORD: ClickHouse_MongoDB_P@ssw0rd
+        volumes:
+            - ${MONGO_SECURE_CONFIG_DIR:-}:/mongo/
+        ports:
+            - ${MONGO_SECURE_EXTERNAL_PORT:-27017}:${MONGO_SECURE_INTERNAL_PORT:-27017}
+        command: --config /mongo/mongo_secure.conf --profile=2 --verbose

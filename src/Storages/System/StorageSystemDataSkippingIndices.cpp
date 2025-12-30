@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -10,9 +11,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -20,19 +23,27 @@ namespace DB
 StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const StorageID & table_id_)
     : IStorage(table_id_)
 {
+    auto creation_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Explicit", static_cast<Int8>(0)},
+            {"Implicit", static_cast<Int8>(1)},
+        });
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
         {
-            { "database", std::make_shared<DataTypeString>() },
-            { "table", std::make_shared<DataTypeString>() },
-            { "name", std::make_shared<DataTypeString>() },
-            { "type", std::make_shared<DataTypeString>() },
-            { "type_full", std::make_shared<DataTypeString>() },
-            { "expr", std::make_shared<DataTypeString>() },
-            { "granularity", std::make_shared<DataTypeUInt64>() },
-            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "marks", std::make_shared<DataTypeUInt64>()}
+            { "database", std::make_shared<DataTypeString>(), "Database name."},
+            { "table", std::make_shared<DataTypeString>(), "Table name."},
+            { "name", std::make_shared<DataTypeString>(), "Index name."},
+            { "type", std::make_shared<DataTypeString>(), "Index type."},
+            { "type_full", std::make_shared<DataTypeString>(), "Index type expression from create statement."},
+            { "expr", std::make_shared<DataTypeString>(), "Expression for the index calculation."},
+            { "creation", creation_datatype, "Whether the index was created implicitly (via add_minmax_index_for_numeric_columns or similar)"},
+            { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
+            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
+            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -42,7 +53,7 @@ class DataSkippingIndicesSource : public ISource
 public:
     DataSkippingIndicesSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
@@ -75,7 +86,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx).toString();
+                database_name = databases->getDataAt(database_idx);
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (database)
@@ -128,8 +139,10 @@ protected:
                     // 'type_full' column
                     if (column_mask[src_index++])
                     {
-                        if (auto * expression = index.definition_ast->as<ASTIndexDeclaration>(); expression && expression->type)
-                            res_columns[res_index++]->insert(queryToString(*expression->type));
+                        auto * expression = index.definition_ast->as<ASTIndexDeclaration>();
+                        auto index_type = expression ? expression->getType() : nullptr;
+                        if (index_type)
+                            res_columns[res_index++]->insert(index_type->formatForLogging());
                         else
                             res_columns[res_index++]->insertDefault();
                     }
@@ -137,10 +150,15 @@ protected:
                     if (column_mask[src_index++])
                     {
                         if (auto expression = index.expression_list_ast)
-                            res_columns[res_index++]->insert(queryToString(expression));
+                            res_columns[res_index++]->insert(expression->formatForLogging());
                         else
                             res_columns[res_index++]->insertDefault();
                     }
+
+                    /// 'creation' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(index.is_implicitly_created);
+
                     // 'granularity' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
@@ -152,11 +170,10 @@ protected:
                         res_columns[res_index++]->insert(secondary_index_size.data_compressed);
 
                     // 'uncompressed bytes' column
-
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
 
-                    /// 'marks' column
+                    /// 'marks_bytes' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.marks);
                 }
@@ -176,7 +193,61 @@ private:
     DatabaseTablesIteratorPtr tables_it;
 };
 
-Pipe StorageSystemDataSkippingIndices::read(
+class ReadFromSystemDataSkippingIndices : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromSystemDataSkippingIndices"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    ReadFromSystemDataSkippingIndices(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
+        std::shared_ptr<StorageSystemDataSkippingIndices> storage_,
+        std::vector<UInt8> columns_mask_,
+        size_t max_block_size_)
+        : SourceStepWithFilter(
+            std::make_shared<const Block>(std::move(sample_block)),
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
+        , storage(std::move(storage_))
+        , columns_mask(std::move(columns_mask_))
+        , max_block_size(max_block_size_)
+    {
+    }
+
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+
+private:
+    std::shared_ptr<StorageSystemDataSkippingIndices> storage;
+    std::vector<UInt8> columns_mask;
+    const size_t max_block_size;
+    ExpressionActionsPtr virtual_columns_filter;
+};
+
+void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
+    if (filter_actions_dag)
+    {
+        Block block_to_filter
+        {
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+        };
+
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        if (dag)
+            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+    }
+}
+
+void StorageSystemDataSkippingIndices::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -190,12 +261,25 @@ Pipe StorageSystemDataSkippingIndices::read(
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
+    auto this_ptr = std::static_pointer_cast<StorageSystemDataSkippingIndices>(shared_from_this());
+
+    auto reading = std::make_unique<ReadFromSystemDataSkippingIndices>(
+        column_names, query_info, storage_snapshot,
+        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), max_block_size);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue;
+        if (database->isExternal())
             continue;
 
         /// Lazy database can contain only very primitive tables,
@@ -207,11 +291,12 @@ Pipe StorageSystemDataSkippingIndices::read(
 
     /// Condition on "database" in a query acts like an index.
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    if (virtual_columns_filter)
+        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, block);
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
-    return Pipe(std::make_shared<DataSkippingIndicesSource>(
-        std::move(columns_mask), std::move(header), max_block_size, std::move(filtered_databases), context));
+    pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
 }
 
 }

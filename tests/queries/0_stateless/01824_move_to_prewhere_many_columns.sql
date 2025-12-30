@@ -2,6 +2,7 @@
 
 SET optimize_move_to_prewhere = 1;
 SET convert_query_to_cnf = 0;
+SET move_all_conditions_to_prewhere = 0;
 
 DROP TABLE IF EXISTS t_move_to_prewhere;
 
@@ -17,7 +18,7 @@ WHERE table = 't_move_to_prewhere' AND database = currentDatabase()
 ORDER BY partition;
 
 SELECT count() FROM t_move_to_prewhere WHERE a AND b AND c AND NOT ignore(fat_string);
-EXPLAIN SYNTAX SELECT count() FROM t_move_to_prewhere WHERE a AND b AND c AND NOT ignore(fat_string);
+SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_move_to_prewhere WHERE a AND b AND c AND NOT ignore(fat_string)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter%';
 
 DROP TABLE IF EXISTS t_move_to_prewhere;
 
@@ -38,5 +39,6 @@ ORDER BY partition;
 
 SELECT count() FROM t_move_to_prewhere WHERE a AND b AND c AND NOT ignore(fat_string);
 EXPLAIN SYNTAX SELECT count() FROM t_move_to_prewhere WHERE a AND b AND c AND NOT ignore(fat_string);
+SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count() FROM t_move_to_prewhere WHERE a AND b AND c AND NOT ignore(fat_string)) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter%';
 
 DROP TABLE IF EXISTS t_move_to_prewhere;

@@ -1,133 +1,391 @@
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+
+#if USE_EMBEDDED_COMPILER
+#    include "DataTypes/Native.h"
+#endif
 
 
 namespace DB
 {
 
-REGISTER_FUNCTION(Conversion)
+namespace ErrorCodes
 {
-    factory.registerFunction<FunctionToUInt8>();
-    factory.registerFunction<FunctionToUInt16>();
-    factory.registerFunction<FunctionToUInt32>();
-    factory.registerFunction<FunctionToUInt64>();
-    factory.registerFunction<FunctionToUInt128>();
-    factory.registerFunction<FunctionToUInt256>();
-    factory.registerFunction<FunctionToInt8>();
-    factory.registerFunction<FunctionToInt16>();
-    factory.registerFunction<FunctionToInt32>();
-    factory.registerFunction<FunctionToInt64>();
-    factory.registerFunction<FunctionToInt128>();
-    factory.registerFunction<FunctionToInt256>();
-    factory.registerFunction<FunctionToFloat32>();
-    factory.registerFunction<FunctionToFloat64>();
-
-    factory.registerFunction<FunctionToDecimal32>();
-    factory.registerFunction<FunctionToDecimal64>();
-    factory.registerFunction<FunctionToDecimal128>();
-    factory.registerFunction<FunctionToDecimal256>();
-
-    factory.registerFunction<FunctionToDate>();
-
-    /// MySQL compatibility alias. Cannot be registered as alias,
-    /// because we don't want it to be normalized to toDate in queries,
-    /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction<FunctionToDate>("DATE", {}, FunctionFactory::CaseInsensitive);
-
-    factory.registerFunction<FunctionToDate32>();
-    factory.registerFunction<FunctionToDateTime>();
-    factory.registerFunction<FunctionToDateTime32>();
-    factory.registerFunction<FunctionToDateTime64>();
-    factory.registerFunction<FunctionToUUID>();
-    factory.registerFunction<FunctionToIPv4>();
-    factory.registerFunction<FunctionToIPv6>();
-    factory.registerFunction<FunctionToString>();
-
-    factory.registerFunction<FunctionToUnixTimestamp>();
-
-    factory.registerFunction<FunctionToUInt8OrZero>();
-    factory.registerFunction<FunctionToUInt16OrZero>();
-    factory.registerFunction<FunctionToUInt32OrZero>();
-    factory.registerFunction<FunctionToUInt64OrZero>();
-    factory.registerFunction<FunctionToUInt128OrZero>();
-    factory.registerFunction<FunctionToUInt256OrZero>();
-    factory.registerFunction<FunctionToInt8OrZero>();
-    factory.registerFunction<FunctionToInt16OrZero>();
-    factory.registerFunction<FunctionToInt32OrZero>();
-    factory.registerFunction<FunctionToInt64OrZero>();
-    factory.registerFunction<FunctionToInt128OrZero>();
-    factory.registerFunction<FunctionToInt256OrZero>();
-    factory.registerFunction<FunctionToFloat32OrZero>();
-    factory.registerFunction<FunctionToFloat64OrZero>();
-    factory.registerFunction<FunctionToDateOrZero>();
-    factory.registerFunction<FunctionToDate32OrZero>();
-    factory.registerFunction<FunctionToDateTimeOrZero>();
-    factory.registerFunction<FunctionToDateTime64OrZero>();
-
-    factory.registerFunction<FunctionToDecimal32OrZero>();
-    factory.registerFunction<FunctionToDecimal64OrZero>();
-    factory.registerFunction<FunctionToDecimal128OrZero>();
-    factory.registerFunction<FunctionToDecimal256OrZero>();
-
-    factory.registerFunction<FunctionToUUIDOrZero>();
-    factory.registerFunction<FunctionToIPv4OrZero>();
-    factory.registerFunction<FunctionToIPv6OrZero>();
-
-    factory.registerFunction<FunctionToUInt8OrNull>();
-    factory.registerFunction<FunctionToUInt16OrNull>();
-    factory.registerFunction<FunctionToUInt32OrNull>();
-    factory.registerFunction<FunctionToUInt64OrNull>();
-    factory.registerFunction<FunctionToUInt128OrNull>();
-    factory.registerFunction<FunctionToUInt256OrNull>();
-    factory.registerFunction<FunctionToInt8OrNull>();
-    factory.registerFunction<FunctionToInt16OrNull>();
-    factory.registerFunction<FunctionToInt32OrNull>();
-    factory.registerFunction<FunctionToInt64OrNull>();
-    factory.registerFunction<FunctionToInt128OrNull>();
-    factory.registerFunction<FunctionToInt256OrNull>();
-    factory.registerFunction<FunctionToFloat32OrNull>();
-    factory.registerFunction<FunctionToFloat64OrNull>();
-    factory.registerFunction<FunctionToDateOrNull>();
-    factory.registerFunction<FunctionToDate32OrNull>();
-    factory.registerFunction<FunctionToDateTimeOrNull>();
-    factory.registerFunction<FunctionToDateTime64OrNull>();
-
-    factory.registerFunction<FunctionToDecimal32OrNull>();
-    factory.registerFunction<FunctionToDecimal64OrNull>();
-    factory.registerFunction<FunctionToDecimal128OrNull>();
-    factory.registerFunction<FunctionToDecimal256OrNull>();
-
-    factory.registerFunction<FunctionToUUIDOrNull>();
-    factory.registerFunction<FunctionToIPv4OrNull>();
-    factory.registerFunction<FunctionToIPv6OrNull>();
-
-    factory.registerFunction<FunctionParseDateTimeBestEffort>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrZero>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrNull>();
-    factory.registerFunction<FunctionParseDateTime32BestEffort>();
-    factory.registerFunction<FunctionParseDateTime32BestEffortOrZero>();
-    factory.registerFunction<FunctionParseDateTime32BestEffortOrNull>();
-    factory.registerFunction<FunctionParseDateTime64BestEffort>();
-    factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
-    factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
-    factory.registerFunction<FunctionParseDateTime64BestEffortUS>();
-    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrZero>();
-    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrNull>();
-
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMillisecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalHour, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalDay, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalWeek, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMonth, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalQuarter, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalYear, PositiveMonotonicity>>();
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
+
+namespace detail
+{
+
+UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
+{
+    const auto * arg_type = named_column.type.get();
+    bool ok = checkAndGetDataType<DataTypeUInt64>(arg_type)
+        || checkAndGetDataType<DataTypeUInt32>(arg_type)
+        || checkAndGetDataType<DataTypeUInt16>(arg_type)
+        || checkAndGetDataType<DataTypeUInt8>(arg_type);
+    if (!ok)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of toDecimal() scale {}", named_column.type->getName());
+
+    Field field;
+    named_column.column->get(0, field);
+    return static_cast<UInt32>(field.safeGet<UInt32>());
+}
+
+ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+{
+    ColumnUInt8::MutablePtr null_map = nullptr;
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col.get()))
+    {
+        null_map = ColumnUInt8::create();
+        null_map->insertRangeFrom(col_nullable->getNullMapColumn(), 0, col_nullable->size());
+    }
+    return null_map;
+}
+
+}
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+{
+    DataTypes data_types(arguments.size());
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+
+    detail::FunctionCast::MonotonicityForRange monotonicity;
+
+    if (isEnum(arguments.front().type)
+        && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(return_type.get(), [&](auto & type)
+        {
+            monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            return true;
+        }))
+    {
+    }
+    else if (castTypeToEither<
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+        DataTypeFloat32, DataTypeFloat64,
+        DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64, DataTypeTime, DataTypeTime64,
+        DataTypeString>(recursiveRemoveLowCardinality(return_type).get(), [&](auto & type)
+        {
+            monotonicity = detail::FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            return true;
+        }))
+    {
+    }
+
+    return std::make_unique<detail::FunctionCast>(
+        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
+}
+
+
+#if USE_EMBEDDED_COMPILER
+
+namespace detail
+{
+
+bool castType(const IDataType * type, auto && f)
+{
+    using Types = TypeList<
+        DataTypeUInt8,
+        DataTypeUInt16,
+        DataTypeUInt32,
+        DataTypeUInt64,
+        DataTypeUInt128,
+        DataTypeUInt256,
+        DataTypeInt8,
+        DataTypeInt16,
+        DataTypeInt32,
+        DataTypeInt64,
+        DataTypeInt128,
+        DataTypeInt256,
+        DataTypeFloat32,
+        DataTypeFloat64,
+        DataTypeDecimal32,
+        DataTypeDecimal64,
+        DataTypeDecimal128,
+        DataTypeDecimal256,
+        DataTypeDate,
+        DataTypeDateTime,
+        DataTypeFixedString,
+        DataTypeString,
+        DataTypeInterval>;
+    return castTypeToEither(Types{}, type, std::forward<decltype(f)>(f));
+}
+
+template <typename F>
+bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
+{
+    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
+}
+
+bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type)
+{
+    if (types.empty())
+        return false;
+
+    if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
+        return false;
+
+    return castBothTypes(
+        types[0].get(),
+        result_type.get(),
+        [](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+
+            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+            {
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    return true;
+                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    return true;
+                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    return true;
+            }
+            return false;
+        });
+}
+
+llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type)
+{
+    llvm::Value * result = nullptr;
+    castBothTypes(
+        arguments[0].type.get(),
+        result_type.get(),
+        [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+            {
+                using LeftFieldType = typename LeftDataType::FieldType;
+                using RightFieldType = typename RightDataType::FieldType;
+
+                if (isBool(right.getPtr()))
+                {
+                    result = nativeBoolCast(builder, arguments[0]);
+                    return true;
+                }
+
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                {
+                    result = nativeCast(builder, arguments[0], right.getPtr());
+                    return true;
+                }
+                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                {
+                    auto scale = right.getScale();
+                    auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
+                    if constexpr (std::is_floating_point_v<LeftFieldType>)
+                    {
+                        /// left type is float and right type is decimal
+                        auto * from_type = arguments[0].value->getType();
+                        auto * from_value = arguments[0].value;
+                        result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
+                        result = nativeCast(builder, left.getPtr(), result, right.getPtr());
+                    }
+                    else
+                    {
+                        /// left type is integer and right type is decimal
+                        auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
+                        auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multiplier));
+                        result = builder.CreateMul(from_value, multiplier_value);
+                    }
+                    return true;
+                }
+                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                {
+                    auto scale = left.getScale();
+                    auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
+                    if constexpr (std::is_floating_point_v<RightFieldType>)
+                    {
+                        DataTypePtr double_type = std::make_shared<DataTypeFloat64>();
+                        auto * from_value = nativeCast(builder, arguments[0], double_type);
+                        auto * d = llvm::ConstantFP::get(builder.getDoubleTy(), static_cast<double>(divider));
+                        result = nativeCast(builder, double_type, builder.CreateFDiv(from_value, d), right.getPtr());
+                    }
+                    else
+                    {
+                        llvm::Value * d = nullptr;
+                        auto * from_type = arguments[0].value->getType();
+                        if constexpr (std::is_integral_v<NativeType<LeftFieldType>>)
+                            d = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(divider), true);
+                        else
+                        {
+                            llvm::APInt v(from_type->getIntegerBitWidth(), divider.items);
+                            d = llvm::ConstantInt::get(from_type, v);
+                        }
+
+                        auto * from_value = arguments[0].value;
+                        auto * whole_part = builder.CreateSDiv(from_value, d);
+                        result = nativeCast(builder, left.getPtr(), whole_part, right.getPtr());
+                    }
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
+    return result;
+}
+
+
+bool FunctionCast::isCompilable() const
+{
+    if (getName() != "CAST" || argument_types.size() != 2)
+        return false;
+
+    const auto & input_type = argument_types[0];
+    const auto & result_type = getResultType();
+    auto denull_input_type = removeNullable(input_type);
+    auto denull_result_type = removeNullable(result_type);
+    if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
+        return false;
+
+    return castBothTypes(denull_input_type.get(), denull_result_type.get(), [](const auto & left, const auto & right)
+    {
+        using LeftDataType = std::decay_t<decltype(left)>;
+        using RightDataType = std::decay_t<decltype(right)>;
+        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+        {
+            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                return true;
+            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                return true;
+            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                return true;
+        }
+        return false;
+    });
+}
+
+llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const
+{
+    const auto & input_type = arguments[0].type;
+    const auto & result_type = getResultType();
+
+    llvm::Value * result_value = nullptr;
+    llvm::Value * input_value = arguments[0].value;
+    llvm::Value * input_isnull = nullptr;
+    if (input_type->isNullable())
+    {
+        input_isnull = builder.CreateExtractValue(input_value, {1});
+        input_value = builder.CreateExtractValue(input_value, {0});
+    }
+
+    auto denull_input_type = removeNullable(input_type);
+    auto denull_result_type = removeNullable(result_type);
+
+    castBothTypes(
+        denull_input_type.get(),
+        denull_result_type.get(),
+        [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+
+            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+            {
+                using LeftFieldType = typename LeftDataType::FieldType;
+                using RightFieldType = typename RightDataType::FieldType;
+
+                if (isBool(right.getPtr()))
+                {
+                    result_value = nativeBoolCast(builder, left.getPtr(), input_value);
+                    return true;
+                }
+
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                {
+                    result_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
+                    return true;
+                }
+                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                {
+                    auto scale = right.getScale();
+                    auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
+                    if constexpr (std::is_floating_point_v<LeftFieldType>)
+                    {
+                        /// left type is float and right type is decimal
+                        auto * from_type = toNativeType(builder, left);
+                        result_value = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
+                        result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
+                    }
+                    else
+                    {
+                        /// left type is integer and right type is decimal
+                        auto * from_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
+                        auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multiplier));
+                        result_value = builder.CreateMul(from_value, multiplier_value);
+                    }
+                    return true;
+                }
+                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                {
+                    auto scale = left.getScale();
+                    auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
+                    if constexpr (std::is_floating_point_v<RightFieldType>)
+                    {
+                        DataTypePtr double_type = std::make_shared<DataTypeFloat64>();
+                        auto * from_value = nativeCast(builder, left.getPtr(), input_value, double_type);
+                        auto * d = llvm::ConstantFP::get(builder.getDoubleTy(), static_cast<double>(divider));
+                        result_value = nativeCast(builder, double_type, builder.CreateFDiv(from_value, d), right.getPtr());
+                    }
+                    else
+                    {
+                        llvm::Value * d = nullptr;
+                        auto * from_type = toNativeType(builder, left.getPtr());
+                        if constexpr (std::is_integral_v<NativeType<LeftFieldType>>)
+                            d = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(divider), true);
+                        else
+                        {
+                            llvm::APInt v(from_type->getIntegerBitWidth(), divider.items);
+                            d = llvm::ConstantInt::get(from_type, v);
+                        }
+
+                        auto * from_value = input_value;
+                        auto * whole_part = builder.CreateSDiv(from_value, d);
+                        result_value = nativeCast(builder, left.getPtr(), whole_part, right.getPtr());
+                    }
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        if (!result_value)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot compile CAST function for types {} -> {}",
+                input_type->getName(),
+                result_type->getName());
+
+        if (result_type->isNullable())
+        {
+            llvm::Value * result_isnull = input_isnull ? input_isnull : llvm::ConstantInt::get(builder.getInt1Ty(), 0);
+            auto * nullable_structure_type = toNativeType(builder, result_type);
+            llvm::Value * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
+            nullable_structure_value = builder.CreateInsertValue(nullable_structure_value, result_value, {0});
+            return builder.CreateInsertValue(nullable_structure_value, result_isnull, {1});
+        }
+        else
+        {
+            return result_value;
+        }
+}
+
+}
+#endif
 
 }

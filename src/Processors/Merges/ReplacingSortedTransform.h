@@ -3,6 +3,10 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event ReplacingSortedMilliseconds;
+}
 
 namespace DB
 {
@@ -12,15 +16,16 @@ class ReplacingSortedTransform final : public IMergingTransform<ReplacingSortedA
 {
 public:
     ReplacingSortedTransform(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         const String & is_deleted_column, const String & version_column,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
-        size_t * cleanedup_rows_count = nullptr)
+        bool enable_vertical_final = false)
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
@@ -30,14 +35,20 @@ public:
             version_column,
             max_block_size_rows,
             max_block_size_bytes,
+            max_dynamic_subcolumns_,
             out_row_sources_buf_,
             use_average_block_sizes,
             cleanup,
-            cleanedup_rows_count)
+            enable_vertical_final)
     {
     }
 
     String getName() const override { return "ReplacingSorted"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::ReplacingSortedMilliseconds, "Replaced sorted", getLogger("ReplacingSortedTransform"));
+    }
 };
 
 }

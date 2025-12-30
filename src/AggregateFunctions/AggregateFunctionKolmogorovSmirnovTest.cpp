@@ -12,17 +12,16 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 
+namespace DB
+{
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int BAD_ARGUMENTS;
 }
-
-namespace DB
-{
 
 struct Settings;
 
@@ -31,7 +30,7 @@ namespace
 
 struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 {
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,
@@ -169,7 +168,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val, old_val, s, w, z;
+                Float64 new_val;
+                Float64 old_val;
+                Float64 s;
+                Float64 w;
+                Float64 z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)
@@ -238,7 +241,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
-        const auto & param = params[0].get<String>();
+        const auto & param = params[0].safeGet<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -255,7 +258,7 @@ public:
         if (params[1].getType() != Field::Types::String)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a String", getName());
 
-        method = params[1].get<String>();
+        method = params[1].safeGet<String>();
         if (method != "auto" && method != "exact" && method != "asymp" && method != "asymptotic")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown method in aggregate function {}. "
                     "It must be one of: 'auto', 'exact', 'asymp' (or 'asymptotic')", getName());
@@ -293,32 +296,32 @@ public:
         Float64 value = columns[0]->getFloat64(row_num);
         UInt8 is_second = columns[1]->getUInt(row_num);
         if (is_second)
-            this->data(place).addY(value, arena);
+            data(place).addY(value, arena);
         else
-            this->data(place).addX(value, arena);
+            data(place).addX(value, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        data(place).merge(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (!this->data(place).size_x || !this->data(place).size_y)
+        if (!data(place).size_x || !data(place).size_y)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
-        auto [d_statistic, p_value] = this->data(place).getResult(alternative, method);
+        auto [d_statistic, p_value] = data(place).getResult(alternative, method);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
@@ -350,7 +353,77 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("kolmogorovSmirnovTest", createAggregateFunctionKolmogorovSmirnovTest, AggregateFunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = R"(
+Applies Kolmogorov-Smirnov's test to samples from two populations.
+
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
+Samples must belong to continuous, one-dimensional probability distributions.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+kolmogorovSmirnovTest([alternative, computation_method])(sample_data, sample_index)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"sample_data", "Sample data.", {"(U)Int*", "Float*", "Decimal"}},
+        {"sample_index", "Sample index.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"alternative", "Alternative hypothesis. (Optional, default: 'two-sided'.) Let `F(x) and G(x)` be the CDFs of the first and second distributions respectively. 'two-sided': The null hypothesis is that samples come from the same distribution, e.g. `F(x) = G(x)` for all x. And the alternative is that the distributions are not identical. 'greater': The null hypothesis is that values in the first sample are stochastically smaller than those in the second one, e.g. the CDF of first distribution lies above and hence to the left of that for the second one. Which in fact means that `F(x) >= G(x)` for all x. And the alternative in this case is that `F(x) < G(x)` for at least one x. 'less': The null hypothesis is that values in the first sample are stochastically greater than those in the second one, e.g. the CDF of first distribution lies below and hence to the right of that for the second one. Which in fact means that `F(x) <= G(x)` for all x. And the alternative in this case is that `F(x) > G(x)` for at least one x.", {"String"}},
+        {"computation_method", "The method used to compute p-value. (Optional, default: 'auto'.) 'exact': calculation is performed using precise probability distribution of the test statistics. Compute intensive and wasteful except for small samples. 'asymp' ('asymptotic'): calculation is performed using an approximation. For large sample sizes, the exact and asymptotic p-values are very similar. 'auto': the 'exact' method is used when a maximum number of samples is less than 10'000.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with two elements: a calculated statistic and a calculated p-value.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Same distribution test",
+        R"(
+SELECT kolmogorovSmirnovTest('less', 'exact')(value, num)
+FROM
+(
+    SELECT
+        randNormal(0, 10) AS value,
+        0 AS num
+    FROM numbers(10000)
+    UNION ALL
+    SELECT
+        randNormal(0, 10) AS value,
+        1 AS num
+    FROM numbers(10000)
+)
+        )",
+        R"(
+┌─kolmogorovSmirnovTest('less', 'exact')(value, num)─┐
+│ (0.009899999999999996,0.37528595205132287)         │
+└────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Different distributions test",
+        R"(
+SELECT kolmogorovSmirnovTest('two-sided', 'exact')(value, num)
+FROM
+(
+    SELECT
+        randStudentT(10) AS value,
+        0 AS num
+    FROM numbers(100)
+    UNION ALL
+    SELECT
+        randNormal(0, 10) AS value,
+        1 AS num
+    FROM numbers(100)
+)
+        )",
+        R"(
+┌─kolmogorovSmirnovTest('two-sided', 'exact')(value, num)─┐
+│ (0.4100000000000002,6.61735760482795e-8)                │
+└─────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("kolmogorovSmirnovTest", {createAggregateFunctionKolmogorovSmirnovTest, {}, documentation}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

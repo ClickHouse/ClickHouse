@@ -1,17 +1,9 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
-
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
-#include <Common/PODArray.h>
-
 #include <Core/Field.h>
-
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-
-#include <Functions/FunctionHelpers.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -25,6 +17,12 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
 using ConstArenas = std::vector<ConstArenaPtr>;
+
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+
+struct ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -51,13 +49,13 @@ using ConstArenas = std::vector<ConstArenaPtr>;
   *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
-class ColumnAggregateFunction final : public COWHelper<IColumn, ColumnAggregateFunction>
+class ColumnAggregateFunction final : public COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>
 {
 public:
     using Container = PaddedPODArray<AggregateDataPtr>;
 
 private:
-    friend class COWHelper<IColumn, ColumnAggregateFunction>;
+    friend class COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>;
 
     /// Arenas used by function states that are created elsewhere. We own these
     /// arenas in the sense of extending their lifetime, but do not modify them.
@@ -121,7 +119,7 @@ public:
     /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
     static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
-    std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
+    std::string getName() const override;
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
@@ -138,16 +136,25 @@ public:
 
     void get(size_t n, Field & res) const override;
 
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+
     bool isDefaultAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
     }
 
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & from, size_t n) override;
+#else
+    using IColumn::insertFrom;
+
+    void doInsertFrom(const IColumn & from, size_t n) override;
+#endif
+
 
     void insertFrom(ConstAggregateDataPtr place);
 
@@ -160,17 +167,20 @@ public:
 
     void insert(const Field & x) override;
 
+    bool tryInsert(const Field & x) override;
+
     void insertDefault() override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
+    std::string_view
+    serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * src_arena) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char *) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -182,11 +192,17 @@ public:
 
     void protect() override;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & from, size_t start, size_t length) override;
+#endif
 
     void popBack(size_t n) override;
 
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+
+    void filter(const Filter & filt) override;
 
     void expand(const Filter & mask, bool inverted) override;
 
@@ -199,11 +215,13 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         return 0;
     }

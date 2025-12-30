@@ -1,22 +1,33 @@
 import logging
-import helpers.s3_url_proxy_tests_util as proxy_util
+import os
 
 import pytest
+
+import helpers.s3_url_proxy_tests_util as proxy_util
 from helpers.cluster import ClickHouseCluster
-import os
 
 
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-
+        # Disable `with_remote_database_disk` as the test uses proxy, which might not work with the default configs of the remote database disk
         cluster.add_instance(
             "remote_proxy_node",
             main_configs=[
                 "configs/config.d/proxy_remote.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
+        )
+
+        cluster.add_instance(
+            "remote_proxy_node_no_proxy",
+            main_configs=[
+                "configs/config.d/proxy_remote_no_proxy.xml",
+            ],
+            with_minio=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -25,6 +36,16 @@ def cluster():
                 "configs/config.d/proxy_list.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
+        )
+
+        cluster.add_instance(
+            "proxy_list_node_no_proxy",
+            main_configs=[
+                "configs/config.d/proxy_list_no_proxy.xml",
+            ],
+            with_minio=True,
+            with_remote_database_disk=False,
         )
 
         cluster.add_instance(
@@ -34,6 +55,18 @@ def cluster():
                 "http_proxy": "http://proxy1",
             },
             instance_env_variables=True,
+            with_remote_database_disk=False,
+        )
+
+        cluster.add_instance(
+            "env_node_no_proxy",
+            with_minio=True,
+            env_variables={
+                "http_proxy": "http://proxy1",
+                "no_proxy": "not_important_host,,  minio1  ,",
+            },
+            instance_env_variables=True,
+            with_remote_database_disk=False,
         )
 
         logging.info("Starting cluster...")
@@ -48,12 +81,30 @@ def cluster():
         cluster.shutdown()
 
 
+def test_s3_with_http_proxy_list_no_proxy(cluster):
+    proxy_util.simple_test_assert_no_proxy(
+        cluster, ["proxy1", "proxy2"], "http", "proxy_list_node_no_proxy"
+    )
+
+
+def test_s3_with_http_remote_proxy_no_proxy(cluster):
+    proxy_util.simple_test_assert_no_proxy(
+        cluster, ["proxy1"], "http", "remote_proxy_node_no_proxy"
+    )
+
+
+def test_s3_with_http_env_no_proxy(cluster):
+    proxy_util.simple_test_assert_no_proxy(
+        cluster, ["proxy1"], "http", "env_node_no_proxy"
+    )
+
+
 def test_s3_with_http_proxy_list(cluster):
     proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "http", "proxy_list_node")
 
 
 def test_s3_with_http_remote_proxy(cluster):
-    proxy_util.simple_test(cluster, ["proxy1"], "http", "remote_proxy_node")
+    proxy_util.simple_test(cluster, ["proxy1", "proxy2"], "http", "remote_proxy_node")
 
 
 def test_s3_with_http_env_proxy(cluster):

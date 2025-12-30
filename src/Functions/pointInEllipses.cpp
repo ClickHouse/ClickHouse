@@ -89,10 +89,13 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto size = input_rows_count;
-
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
         std::vector<Ellipse> ellipses(ellipses_count);
@@ -141,29 +144,31 @@ private:
 
                 auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
-                dst_data.resize(size);
+                dst_data.resize(input_rows_count);
 
                 size_t start_index = 0;
-                for (const auto row : collections::range(0, size))
-                {
+                for (size_t row = 0; row < input_rows_count; ++row)
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses.data(), ellipses_count, start_index);
-                }
 
                 return dst;
         }
-        else if (const_cnt == 2)
+        if (const_cnt == 2)
         {
-            const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
-            const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
+            const auto * col_const_x = assert_cast<const ColumnConst *>(col_x);
+            const auto * col_const_y = assert_cast<const ColumnConst *>(col_y);
             size_t start_index = 0;
-            UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
-            return DataTypeUInt8().createColumnConst(size, res);
+            UInt8 res = isPointInEllipses(
+                col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
+            return DataTypeUInt8().createColumnConst(input_rows_count, res);
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {}, {} of arguments 1, 2 of function {}. "
-                "Both must be either const or vector", col_x->getName(), col_y->getName(), getName());
-        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal types {}, {} of arguments 1, 2 of function {}. "
+            "Both must be either const or vector",
+            col_x->getName(),
+            col_y->getName(),
+            getName());
     }
 
     static bool isPointInEllipses(Float64 x, Float64 y, const Ellipse * ellipses, size_t ellipses_count, size_t & start_index)
@@ -194,7 +199,35 @@ private:
 
 REGISTER_FUNCTION(PointInEllipses)
 {
-    factory.registerFunction<FunctionPointInEllipses>();
+    FunctionDocumentation::Description description = R"(
+Checks whether the point belongs to at least one of the ellipses.
+Coordinates are geometric in the Cartesian coordinate system.
+    )";
+    FunctionDocumentation::Syntax syntax = "pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x, y", "Coordinates of a point on the plane.", {"Float64"}},
+        {"xᵢ, yᵢ", "Coordinates of the center of the i-th ellipsis.", {"Float64"}},
+        {"aᵢ, bᵢ", "Axes of the i-th ellipsis in units of x, y coordinates.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the point is inside at least one of the ellipses, `0` otherwise",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            "SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)",
+            R"(
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionPointInEllipses>(documentation);
 }
 
 }

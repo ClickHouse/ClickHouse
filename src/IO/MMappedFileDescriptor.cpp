@@ -3,8 +3,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <fmt/format.h>
-
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <base/getPageSize.h>
@@ -28,7 +26,7 @@ static size_t getFileSize(int fd)
 {
     struct stat stat_res {};
     if (0 != fstat(fd, &stat_res))
-        throwFromErrno("MMappedFileDescriptor: Cannot fstat.", ErrorCodes::CANNOT_STAT);
+        throw ErrnoException(ErrorCodes::CANNOT_STAT, "MMappedFileDescriptor: Cannot fstat");
 
     off_t file_size = stat_res.st_size;
 
@@ -63,8 +61,7 @@ void MMappedFileDescriptor::set(int fd_, size_t offset_, size_t length_)
 
     void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
     if (MAP_FAILED == buf)
-        throwFromErrno(fmt::format("MMappedFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
-            ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "MMappedFileDescriptor: Cannot mmap {}", ReadableSize(length));
 
     data = static_cast<char *>(buf);
 
@@ -76,7 +73,7 @@ void MMappedFileDescriptor::set(int fd_, size_t offset_)
 {
     size_t file_size = getFileSize(fd_);
 
-    if (offset > static_cast<size_t>(file_size))
+    if (offset > file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MMappedFileDescriptor: requested offset is greater than file size");
 
     set(fd_, offset_, file_size - offset);
@@ -88,8 +85,7 @@ void MMappedFileDescriptor::finish()
         return;
 
     if (0 != munmap(data, length))
-        throwFromErrno(fmt::format("MMappedFileDescriptor: Cannot munmap {}.", ReadableSize(length)),
-            ErrorCodes::CANNOT_MUNMAP);
+        throw ErrnoException(ErrorCodes::CANNOT_MUNMAP, "MMappedFileDescriptor: Cannot munmap {}", ReadableSize(length));
 
     length = 0;
 
@@ -103,5 +99,3 @@ MMappedFileDescriptor::~MMappedFileDescriptor()
 }
 
 }
-
-

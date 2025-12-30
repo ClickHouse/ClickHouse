@@ -5,6 +5,7 @@
         <default>
             <s3_check_objects_after_upload>1</s3_check_objects_after_upload>
             <enable_s3_requests_logging>1</enable_s3_requests_logging>
+            <s3_connect_timeout_ms>10000</s3_connect_timeout_ms>
         </default>
     </profiles>
     <users>
@@ -19,4 +20,11 @@
     </users>
 
     <quotas><default></default></quotas>
+
+    <!-- increase for concurrency test -->
+    <background_schedule_pool_size>512</background_schedule_pool_size>
+    <background_pool_size>16</background_pool_size>
+    <max_thread_pool_size>10000</max_thread_pool_size>
+    <thread_pool_queue_size>10000</thread_pool_queue_size>
+
 </clickhouse>

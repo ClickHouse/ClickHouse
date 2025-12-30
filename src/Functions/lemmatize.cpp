@@ -3,6 +3,7 @@
 #if USE_NLP
 
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -12,6 +13,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nlp_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -35,11 +41,13 @@ struct LemmatizeImpl
         res_offsets.assign(offsets);
 
         UInt64 data_size = 0;
+        String buffer;
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
-            /// lemmatize() uses the fact the fact that each string ends with '\0'
-            auto result = lemmatizer->lemmatize(reinterpret_cast<const char *>(data.data() + offsets[i - 1]));
-            size_t new_size = strlen(result.get()) + 1;
+            /// `lemmatize` requires terminating zero
+            buffer.assign(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
+            auto result = lemmatizer->lemmatize(buffer.c_str());
+            size_t new_size = strlen(result.get());
 
             if (data_size + new_size > res_data.size())
                 res_data.resize(data_size + new_size);
@@ -60,7 +68,7 @@ public:
     static constexpr auto name = "lemmatize";
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Natural language processing function '{}' is experimental. "
                             "Set `allow_experimental_nlp_functions` setting to enable it", name);
@@ -124,7 +132,24 @@ public:
 
 REGISTER_FUNCTION(Lemmatize)
 {
-    factory.registerFunction<FunctionLemmatize>();
+    FunctionDocumentation::Description description = R"(
+Performs lemmatization on a given word.
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models). For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/sql-reference/dictionaries#local-file).
+)";
+    FunctionDocumentation::Syntax syntax = "lemmatize(lang, word)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lang", "Language which rules will be applied.", {"String"}},
+        {"word", "Lowercase word that needs to be lemmatized.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the lemmatized form of the word", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"English lemmatization", "SELECT lemmatize('en', 'wolves')", "wolf"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLemmatize>(documentation);
 }
 
 }

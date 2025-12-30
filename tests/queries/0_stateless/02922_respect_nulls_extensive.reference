@@ -1,0 +1,99 @@
+-- { echoOn }
+
+-- The function name is case insensitive, with or without respect nulls and using any of the aliases
+Select number, first_value (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, First_value (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, FIRST_VALUE (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, FIRST_VALUE (number) over (order by number) from numbers(1);
+0	0
+Select number, first_value_respect_nulls (number) over (order by number) from numbers(1);
+0	0
+Select number, any (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, any_value (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, last_value (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, Last_value (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, LAST_VALUE (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+Select number, LAST_VALUE (number) over (order by number) from numbers(1);
+0	0
+Select number, last_value_respect_nulls (number) over (order by number) from numbers(1);
+0	0
+Select number, anyLast (number) RESPECT NULLS over (order by number) from numbers(1);
+0	0
+-- IGNORE NULLS should be accepted too
+Select number, FIRST_VALUE (number) IGNORE NULLS over (order by number) from numbers(1);
+0	0
+Select number, LAST_VALUE (number) IGNORE NULLS over (order by number) from numbers(1);
+0	0
+-- When applying IGNORE NULLs to first_value_respect_nulls we go back to the original function (any)
+Select first_value_respect_nulls (number) IGNORE NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+2
+Select FIRST_VALUE_respect_nulls (number) IGNORE NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+2
+Select last_value_respect_nulls (number) IGNORE NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+9
+Select LAST_VALUE_respect_nulls (number) IGNORE NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+9
+-- IGNORE/RESPECT NULLS should work with combinators because we can do it
+SELECT first_valueIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+6
+SELECT last_valueIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+9
+SELECT first_valueIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+\N
+SELECT last_valueIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+\N
+SELECT toTypeName(first_valueIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+AggregateFunction(any_respect_nullsIf, Nullable(UInt64), UInt8)
+SELECT toTypeName(last_valueIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+AggregateFunction(anyLast_respect_nullsIf, Nullable(UInt64), UInt8)
+SELECT FIRST_VALUEIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+6
+SELECT LAST_VALUEIf (number, NOT isNull(number) AND (assumeNotNull(number) > 5)) RESPECT NULLS from (SELECT if(number < 2, NULL, number) as number FROM numbers(10));
+9
+SELECT anyIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+\N
+SELECT anyLastIf (number, isNull(number)) RESPECT NULLS from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+\N
+SELECT toTypeName(FIRST_VALUEIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+AggregateFunction(any_respect_nullsIf, Nullable(UInt64), UInt8)
+SELECT toTypeName(LAST_VALUEIfState(number, isNull(number)) RESPECT NULLS) from (SELECT if(number > 8, NULL, number) as number FROM numbers(10));
+AggregateFunction(anyLast_respect_nullsIf, Nullable(UInt64), UInt8)
+-- Unsupported functions should throw in the server
+SELECT number, sum (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }
+SELECT number, avgIf (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }
+-- Same for double RESPECT NULLS
+SELECT number, first_value_respect_nulls (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }
+SELECT number, last_value_respect_nulls (number) RESPECT NULLS over (order by number) from numbers(1); -- { serverError NOT_IMPLEMENTED }
+-- Aggregate_functions_null_for_empty should work the same way
+SELECT toTypeName(any(number) RESPECT NULLS) from numbers(1);
+UInt64
+SELECT toTypeName(anyOrNull(number) RESPECT NULLS) from numbers(1);
+Nullable(UInt64)
+SELECT any(number) RESPECT NULLS from numbers(0);
+0
+SELECT anyOrNull(number) RESPECT NULLS from numbers(0);
+\N
+SELECT any(number) RESPECT NULLS from (Select NULL::Nullable(UInt8) as number FROM numbers(10));
+\N
+SELECT anyOrNull(number) RESPECT NULLS from (Select NULL::Nullable(UInt8) as number FROM numbers(10));
+\N
+SELECT any(number) RESPECT NULLS from (Select if(number > 8, NULL, number) as number FROM numbers(10));
+0
+SELECT anyOrNull(number) RESPECT NULLS from (Select if(number > 8, NULL, number) as number FROM numbers(10));
+0
+SELECT any(number) RESPECT NULLS from (Select if(number < 8, NULL, number) as number FROM numbers(10));
+\N
+SELECT anyOrNull(number) RESPECT NULLS from (Select if(number < 8, NULL, number) as number FROM numbers(10));
+\N
+SELECT toTypeName(any(number) RESPECT NULLS) from numbers(1) SETTINGS aggregate_functions_null_for_empty = 1;
+Nullable(UInt64)
+SELECT any(number) RESPECT NULLS from numbers(0) SETTINGS aggregate_functions_null_for_empty = 1;
+\N

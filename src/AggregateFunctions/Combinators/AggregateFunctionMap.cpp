@@ -1,5 +1,6 @@
 #include <unordered_map>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -14,7 +15,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include "AggregateFunctionCombinatorFactory.h"
 
 
 namespace DB
@@ -163,7 +163,7 @@ public:
 
             if constexpr (std::is_same_v<KeyType, String>)
             {
-                StringRef key_ref;
+                std::string_view key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)
                     key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
                 else if (key_type->getTypeId() == TypeIndex::IPv6)
@@ -171,7 +171,7 @@ public:
                 else
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
-                key = key_ref.toView();
+                key = key_ref;
             }
             else
             {
@@ -341,6 +341,8 @@ class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 public:
     String getName() const override { return "Map"; }
 
+    bool transformsArgumentTypes() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
@@ -447,11 +449,11 @@ public:
             {
                 AggregateFunctionProperties out_properties;
                 auto & aggr_func_factory = AggregateFunctionFactory::instance();
-                return aggr_func_factory.get(nested_func_name + "MappedArrays", arguments, params, out_properties);
+                auto action = NullsAction::EMPTY;
+                return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
             }
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays",
-                                 nested_func_name);
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays", nested_func_name);
         }
     }
 };

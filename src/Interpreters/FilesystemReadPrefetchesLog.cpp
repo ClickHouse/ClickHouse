@@ -1,17 +1,22 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList FilesystemReadPrefetchesLogElement::getNamesAndTypes()
+ColumnsDescription FilesystemReadPrefetchesLogElement::getColumnsDescription()
 {
-    return {
+    return ColumnsDescription
+    {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"query_id", std::make_shared<DataTypeString>()},
@@ -33,18 +38,19 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_id);
     columns[i++]->insert(path);
     columns[i++]->insert(offset);
     columns[i++]->insert(size);
-    columns[i++]->insert(std::chrono::duration_cast<std::chrono::microseconds>(prefetch_submit_time.time_since_epoch()).count());
+    columns[i++]->insert(Decimal64(std::chrono::duration_cast<std::chrono::microseconds>(prefetch_submit_time.time_since_epoch()).count()));
     columns[i++]->insert(priority.value);
     if (execution_watch)
     {
-        columns[i++]->insert(execution_watch->getStart() / 1000);
-        columns[i++]->insert(execution_watch->getEnd() / 1000);
+        columns[i++]->insert(Decimal64(execution_watch->getStart() / 1000));
+        columns[i++]->insert(Decimal64(execution_watch->getEnd() / 1000));
         columns[i++]->insert(execution_watch->elapsedMicroseconds());
     }
     else

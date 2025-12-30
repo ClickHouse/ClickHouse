@@ -10,13 +10,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.table_name
 ```
 
 Result:
 
-``` text
+```text
 Some output. It shouldn't be too long.
 ```
 

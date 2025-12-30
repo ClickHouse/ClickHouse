@@ -1,10 +1,15 @@
-#include <variant>
+#include <Columns/ColumnBLOB.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
+
+#include <Processors/Transforms/SortChunksBySequenceNumber.h>
 
 namespace DB
 {
@@ -15,8 +20,9 @@ namespace ErrorCodes
 }
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
-    : ISource(executor->getHeader(), false)
-    , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
+    : ISource(executor->getSharedHeader(), false)
+    , add_aggregation_info(add_aggregation_info_)
+    , query_executor(std::move(executor))
     , async_read(async_read_)
     , async_query_sending(async_query_sending_)
 {
@@ -35,6 +41,24 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
             addTotalBytes(value.total_bytes_to_read);
         progress(value.read_rows, value.read_bytes);
     });
+
+    query_executor->setProfileInfoCallback(
+        [this](const ProfileInfo & info)
+        {
+            if (rows_before_limit)
+            {
+                if (info.hasAppliedLimit())
+                    rows_before_limit->add(info.getRowsBeforeLimit());
+                else
+                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+            }
+
+            if (rows_before_aggregation)
+            {
+                if (info.hasAppliedAggregation())
+                    rows_before_aggregation->add(info.getRowsBeforeAggregation());
+            }
+        });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -52,48 +76,92 @@ void RemoteSource::setStorageLimits(const std::shared_ptr<const StorageLimitsLis
 ISource::Status RemoteSource::prepare()
 {
     /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
-    if (was_query_canceled)
+    if (isCancelled())
     {
         getPort().finish();
         return Status::Finished;
     }
 
+#if defined(OS_LINUX)
+    if (async_query_sending && !was_query_sent && fd < 0)
+    {
+        startup_event_fd.write();
+        return Status::Async;
+    }
+#endif
+
     if (is_async_state)
         return Status::Async;
+
+    if (query_executor->isFinished())
+    {
+        getPort().finish();
+        return Status::Finished;
+    }
 
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        query_executor->finish();
         is_async_state = false;
-        return status;
+        need_drain = true;
+        return Status::Ready;
     }
 
     return status;
 }
 
+int RemoteSource::schedule()
+{
+#if defined(OS_LINUX)
+    return (fd < 0 ? startup_event_fd.fd : fd);
+#else
+    return fd;
+#endif
+}
+
+void RemoteSource::work()
+{
+    /// Connection drain is a heavy operation that may take a long time.
+    /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
+    /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
+    if (need_drain)
+    {
+        query_executor->finish();
+        return;
+    }
+
+    if (preprocessed_packet)
+    {
+        preprocessed_packet = false;
+        return;
+    }
+
+    ISource::work();
+}
+
+void RemoteSource::onAsyncJobReady()
+{
+    chassert(async_read || async_query_sending);
+
+    if (!was_query_sent)
+        return;
+
+    chassert(!preprocessed_packet);
+    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
+    if (preprocessed_packet)
+        is_async_state = false;
+}
+
 std::optional<Chunk> RemoteSource::tryGenerate()
 {
     /// onCancel() will do the cancel if the query was sent.
-    if (was_query_canceled)
+    if (isCancelled())
         return {};
 
     if (!was_query_sent)
     {
-        /// Get rows_before_limit result for remote query from ProfileInfo packet.
-        query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
-        {
-            if (rows_before_limit)
-            {
-                if (info.hasAppliedLimit())
-                    rows_before_limit->add(info.getRowsBeforeLimit());
-                else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-            }
-        });
-
         if (async_query_sending)
         {
             int fd_ = query_executor->sendQueryAsync();
@@ -143,11 +211,10 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     else
         block = query_executor->readBlock();
 
-    if (!block)
+    if (block.empty())
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-
         query_executor->finish();
         return {};
     }
@@ -161,30 +228,34 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
-        chunk.setChunkInfo(std::move(info));
+        info->out_of_order_buckets = block.info.out_of_order_buckets;
+        chunk.getChunkInfos().add(std::move(info));
     }
 
     return chunk;
 }
 
-void RemoteSource::onCancel()
+void RemoteSource::onCancel() noexcept
 {
-    was_query_canceled = true;
-    query_executor->cancel();
+    try
+    {
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
+    }
 }
 
 void RemoteSource::onUpdatePorts()
 {
     if (getPort().isFinished())
-    {
-        was_query_canceled = true;
         query_executor->finish();
-    }
 }
 
 
 RemoteTotalsSource::RemoteTotalsSource(RemoteQueryExecutorPtr executor)
-    : ISource(executor->getHeader())
+    : ISource(executor->getSharedHeader())
     , query_executor(std::move(executor))
 {
 }
@@ -193,7 +264,7 @@ RemoteTotalsSource::~RemoteTotalsSource() = default;
 
 Chunk RemoteTotalsSource::generate()
 {
-    if (auto block = query_executor->getTotals())
+    if (auto block = query_executor->getTotals(); !block.empty())
     {
         UInt64 num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
@@ -204,7 +275,7 @@ Chunk RemoteTotalsSource::generate()
 
 
 RemoteExtremesSource::RemoteExtremesSource(RemoteQueryExecutorPtr executor)
-    : ISource(executor->getHeader())
+    : ISource(executor->getSharedHeader())
     , query_executor(std::move(executor))
 {
 }
@@ -213,7 +284,7 @@ RemoteExtremesSource::~RemoteExtremesSource() = default;
 
 Chunk RemoteExtremesSource::generate()
 {
-    if (auto block = query_executor->getExtremes())
+    if (auto block = query_executor->getExtremes(); !block.empty())
     {
         UInt64 num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
@@ -222,18 +293,41 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
+void UnmarshallBlocksTransform::transform(Chunk & chunk)
+{
+    const auto rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+    {
+        if (const auto * col = typeid_cast<const ColumnBLOB *>(column.get()))
+            column = col->convertFrom();
+    }
+    chunk.setColumns(std::move(columns), rows);
+}
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending)
+    bool add_aggregation_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read,
+    bool async_query_sending,
+    size_t parallel_marshalling_threads)
 {
+    chassert(parallel_marshalling_threads);
+
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
+    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AddSequenceNumber>(header); });
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
 
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
+
+    pipe.resize(parallel_marshalling_threads);
+    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;
 }

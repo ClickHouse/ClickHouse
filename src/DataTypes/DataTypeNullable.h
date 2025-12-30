@@ -17,8 +17,10 @@ public:
     std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
+    void updateHashImpl(SipHash & hash) const override;
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     Field getDefault() const override;
 
@@ -41,8 +43,17 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
+    ColumnPtr createColumnConst(size_t size, const Field & field) const override;
+    bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
+    std::unique_ptr<SubstreamData>
+    getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
+    bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
+
+    void forEachChild(const ChildCallback & callback) const override;
+
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -54,5 +65,10 @@ DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
+DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
+/// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
+DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
+
+bool canContainNull(const IDataType & type);
 
 }

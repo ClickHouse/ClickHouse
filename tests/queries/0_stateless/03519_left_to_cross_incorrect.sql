@@ -1,0 +1,22 @@
+SET enable_analyzer = 1;
+
+DROP TABLE IF EXISTS t0;
+DROP TABLE IF EXISTS t1;
+
+CREATE TABLE t0 (
+    c0 Int32 DEFAULT 0,
+    c1 Int32
+) ENGINE = MergeTree() ORDER BY c0;
+
+CREATE TABLE t1 (
+    c0 Int32
+) ENGINE = MergeTree() ORDER BY c0;
+
+INSERT INTO t1 (c0) VALUES (0);
+
+SELECT *
+FROM t1
+LEFT JOIN t0 ON 1=1;
+
+DROP TABLE t0;
+DROP TABLE t1;

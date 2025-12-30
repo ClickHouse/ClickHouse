@@ -11,7 +11,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -60,7 +61,8 @@ namespace
         {"microseconds", 1e-6},
         {"microsecond", 1e-6},
         {"microsec", 1e-6},
-        {"μs", 1e-6},
+        {"μs", 1e-6}, // U+03BC = Greek letter mu
+        {"µs", 1e-6}, // U+00B5 = micro symbol
         {"us", 1e-6},
 
         {"nanoseconds", 1e-9},
@@ -117,14 +119,14 @@ namespace
         {
             if (arguments.empty())
                 throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
                     arguments.size());
 
             if (arguments.size() > 1)
                 throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
                     arguments.size());
@@ -134,6 +136,11 @@ namespace
             if (!isString(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
 
+            return std::make_shared<DataTypeFloat64>();
+        }
+
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
             return std::make_shared<DataTypeFloat64>();
         }
 
@@ -161,7 +168,7 @@ namespace
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid expression for function {}, don't find valid characters, str: \"{}\".",
+                        "Invalid argument of function {}, no valid characters, str: \"{}\".",
                         getName(),
                         String(str));
                 }
@@ -169,7 +176,7 @@ namespace
                 /// last pos character must be character and not be separator or number after ignoring '.' and ' '
                 if (!isalpha(str[last_pos]))
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, str: \"{}\".", getName(), String(str));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, str: \"{}\".", getName(), String(str));
                 }
 
                 /// scan spaces at the beginning
@@ -183,7 +190,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find number failed, str: \"{}\".",
+                            "Invalid argument of function {}, number not found, str: \"{}\".",
                             getName(),
                             String(str));
                     }
@@ -196,7 +203,7 @@ namespace
                         {
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid expression for function {}, find number after '.' failed, str: \"{}\".",
+                                "Invalid argument of function {}, number not found after '.', str: \"{}\".",
                                 getName(),
                                 String(str));
                         }
@@ -210,7 +217,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, convert string to float64 failed: \"{}\".",
+                            "Invalid argument of function {}, can't convert String to Float64: \"{}\".",
                             getName(),
                             String(base_str));
                     }
@@ -224,7 +231,7 @@ namespace
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid expression for function {}, find unit failed, str: \"{}\".",
+                            "Invalid argument of function {}, time unit not found, str: \"{}\".",
                             getName(),
                             String(str));
                     }
@@ -235,7 +242,7 @@ namespace
                     if (iter == time_unit_to_float.end()) /// not find unit
                     {
                         throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS, "Invalid expression for function {}, parse unit failed: \"{}\".", getName(), unit);
+                            ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, can't parse the unit: \"{}\".", getName(), unit);
                     }
                     result += base * iter->second;
 
@@ -306,7 +313,59 @@ namespace
 
 REGISTER_FUNCTION(ParseTimeDelta)
 {
-    factory.registerFunction<FunctionParseTimeDelta>();
+    FunctionDocumentation::Description description = R"(
+Parse a sequence of numbers followed by something resembling a time unit.
+
+The time delta string uses these time unit specifications:
+- `years`, `year`, `yr`, `y`
+- `months`, `month`, `mo`
+- `weeks`, `week`, `w`
+- `days`, `day`, `d`
+- `hours`, `hour`, `hr`, `h`
+- `minutes`, `minute`, `min`, `m`
+- `seconds`, `second`, `sec`, `s`
+- `milliseconds`, `millisecond`, `millisec`, `ms`
+- `microseconds`, `microsecond`, `microsec`, `μs`, `µs`, `us`
+- `nanoseconds`, `nanosecond`, `nanosec`, `ns`
+
+Multiple time units can be combined with separators (space, `;`, `-`, `+`, `,`, `:`).
+
+The length of years and months are approximations: year is 365 days, month is 30.5 days.
+    )";
+    FunctionDocumentation::Syntax syntax = "parseTimeDelta(timestr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"timestr", "A sequence of numbers followed by something resembling a time unit.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"The number of seconds.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT parseTimeDelta('11s+22min')
+            )",
+            R"(
+┌─parseTimeDelta('11s+22min')─┐
+│                        1331 │
+└─────────────────────────────┘
+            )"
+        },
+        {
+            "Complex time units",
+            R"(
+SELECT parseTimeDelta('1yr2mo')
+            )",
+            R"(
+┌─parseTimeDelta('1yr2mo')─┐
+│                 36806400 │
+└──────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionParseTimeDelta>(documentation);
 }
 
 }

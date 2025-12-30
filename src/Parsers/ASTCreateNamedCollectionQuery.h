@@ -20,13 +20,18 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateNamedCollectionQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
     std::string getCollectionName() const;
+
+    bool hasSecretParts() const override { return true; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
+
+using ASTCreateNamedCollectionQueryPtr = std::shared_ptr<ASTCreateNamedCollectionQuery>;
 
 }

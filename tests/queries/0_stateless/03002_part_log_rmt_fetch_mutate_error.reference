@@ -1,0 +1,12 @@
+before
+rmt_master	NewPart	0	1
+rmt_master	MutatePart	0	1
+rmt_master	MutatePartStart	0	1
+rmt_slave	DownloadPart	0	1
+rmt_slave	MutatePart	1	0
+after
+rmt_master	NewPart	0	1
+rmt_master	MutatePart	0	1
+rmt_master	MutatePartStart	0	1
+rmt_slave	DownloadPart	0	2
+rmt_slave	MutatePart	1	0

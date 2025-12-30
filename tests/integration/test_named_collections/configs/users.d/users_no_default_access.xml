@@ -4,6 +4,7 @@
             <password></password>
             <profile>default</profile>
             <quota>default</quota>
+            <named_collection_control>0</named_collection_control>
         </default>
     </users>
 </clickhouse>

@@ -1,14 +1,15 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/Event.h>
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 
 
 namespace Poco { class Logger; }
@@ -51,6 +52,8 @@ public:
         time_t time = 0;  /// The number of seconds from the insertion of the first row into the block.
         size_t rows = 0;  /// The number of rows in the block.
         size_t bytes = 0; /// The number of (uncompressed) bytes in the block.
+
+        std::string toString() const;
     };
 
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -83,10 +86,13 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+    bool isRemote() const override;
 
     bool supportsParallelInsert() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
@@ -106,17 +112,14 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override;
     bool supportsFinal() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
     std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
@@ -152,6 +155,7 @@ private:
 
     /// There are `num_shards` of independent buffers.
     const size_t num_shards;
+    std::unique_ptr<ThreadPool> flush_pool;
     std::vector<Buffer> buffers;
 
     const Thresholds min_thresholds;
@@ -169,7 +173,7 @@ private:
     Writes lifetime_writes;
     Writes total_writes;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void flushAllBuffers(bool check_thresholds = true);
     bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);
@@ -180,12 +184,14 @@ private:
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void backgroundFlush();
-    void reschedule();
+    void reschedule(size_t min_delay);
 
     StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
+
+    static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;
 };
 
 }

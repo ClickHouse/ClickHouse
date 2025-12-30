@@ -3,7 +3,6 @@
 #include <base/scope_guard.h>
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>
@@ -188,7 +187,7 @@ private:
         if (auto * table_function_node = parent->as<TableFunctionNode>())
         {
             if (child != table_function_node->getArgumentsNode())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctioNode is expected to have only one child node");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionNode is expected to have only one child node");
 
             const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
 
@@ -203,8 +202,7 @@ private:
             }
             return;
         }
-        else
-            visit(child);
+        visit(child);
     }
 
     void visitChildren(VisitQueryTreeNodeType & expression)
