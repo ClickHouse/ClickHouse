@@ -2,6 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Common/typeid_cast.h>
 
@@ -124,6 +125,24 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             database = table;
             if (!name_p.parse(pos, table, expected))
                 return false;
+
+            /// db.namespace.table for DataLakeCatalog databases
+            String table_name;
+            tryGetIdentifierNameInto(table, table_name);
+
+            while (s_dot.ignore(pos, expected))
+            {
+                ASTPtr next_part;
+                if (!name_p.parse(pos, next_part, expected))
+                    return false;
+                String part_name;
+                tryGetIdentifierNameInto(next_part, part_name);
+                table_name += "." + part_name;
+            }
+
+            /// If we parsed additional parts, create a new identifier with the full name
+            if (table_name.find('.') != String::npos)
+                table = std::make_shared<ASTIdentifier>(table_name);
         }
     }
 

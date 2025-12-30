@@ -40,7 +40,13 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     auto query = std::make_shared<ASTUseQuery>();
-    query->set(query->database, std::make_shared<ASTIdentifier>(database_name));
+    /// If no dots were parsed, use the original identifier to preserve its structure
+    /// Creating a new ASTIdentifier with a name that has no dots can cause issues
+    /// with tryGetIdentifierNameInto
+    if (database_name.find('.') == String::npos)
+        query->set(query->database, database);
+    else
+        query->set(query->database, std::make_shared<ASTIdentifier>(database_name));
     node = query;
 
     return true;

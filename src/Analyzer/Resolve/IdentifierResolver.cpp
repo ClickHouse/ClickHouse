@@ -245,13 +245,15 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     std::string db_name = table_identifier[0];
     std::string tbl_name = table_identifier[1];
 
+    bool db_exists = DatabaseCatalog::instance().isDatabaseExist(db_name);
+
     /// First, try as database.table (standard interpretation)
     if (auto result = tryResolveTableWithNames(db_name, tbl_name, context))
         return result;
 
     /// For DataLakeCatalog databases, also try as table with dots in current database
     /// but only if the first part is NOT a known database (to avoid false ambiguity)
-    if (is_datalake && !DatabaseCatalog::instance().isDatabaseExist(db_name))
+    if (is_datalake && !db_exists)
     {
         std::string full_table_name = table_identifier.getFullName();
         if (auto result = tryResolveTableWithNames({}, full_table_name, context))
@@ -264,6 +266,13 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
                 return result;
         }
+    }
+
+    /// If the database doesn't exist, use resolveStorageID to throw UNKNOWN_DATABASE with hints
+    if (!db_exists)
+    {
+        StorageID storage_id(db_name, tbl_name);
+        context->resolveStorageID(storage_id); /// This will throw UNKNOWN_DATABASE with hints
     }
 
     return {};
