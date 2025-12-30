@@ -10,18 +10,8 @@ class SerializationNullable : public ISerialization
 private:
     SerializationPtr nested;
 
-    /// If true, use a default (shared) NullMap instead of serializing a separate one.
-    /// Used in Sparse columns where the null map is implicitly derived from sparse offsets.
-    bool use_default_null_map;
-
 public:
-    explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false)
-        : nested(nested_)
-        , use_default_null_map(use_default_null_map_)
-    {
-    }
-
-    const SerializationPtr & getNested() const { return nested; }
+    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -51,7 +41,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
             ColumnPtr & column,
-            size_t rows_offset,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
@@ -61,7 +50,6 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -89,7 +77,6 @@ public:
     bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const override;
 
     void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

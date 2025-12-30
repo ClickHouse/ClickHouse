@@ -1,4 +1,4 @@
-#include <Client/ConnectionParameters.h>
+#include "ConnectionParameters.h"
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
@@ -9,7 +9,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <base/scope_guard.h>
-#include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>
 
@@ -34,7 +33,7 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     if (config.getBool("no-secure", false))
         return false;
 
-    if (isCloudEndpoint(connection_host))
+    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com"))
         return true;
 
     if (connection_port && connection_port.value() == DBMS_DEFAULT_SECURE_PORT)
@@ -70,20 +69,13 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     , default_database(database)
 {
     security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    tls_sni_override = config.getString("tls-sni-override", "");
-
-    bind_host = config.getString("bind_host", "");
 
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
     if (config.has("jwt"))
     {
-#if USE_JWT_CPP && USE_SSL
         jwt = config.getString("jwt");
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is disabled, because ClickHouse is built without JWT or SSL support");
-#endif
     }
     else if (config.has("ssh-key-file"))
     {

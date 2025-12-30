@@ -90,7 +90,7 @@ def drop_table(cluster):
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 7  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt, columns_substreams.txt
+FILES_PER_PART_BASE = 6  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
 FILES_PER_PART_WIDE = (
     FILES_PER_PART_BASE + 1 + 1 + 3 * 2
 )  # Primary index, MinMax, Mark and data file for column(s)
@@ -123,7 +123,7 @@ def test_write_failover(
         ) ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY dt
-        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}, write_marks_for_substreams_in_compact_parts=1
+        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}
         """.format(
             min_bytes_for_wide_part
         )
@@ -160,7 +160,7 @@ def test_write_failover(
             # Disable request failing.
             fail_request(cluster, 0)
 
-            assert node.query("CHECK TABLE s3_failover_test SETTINGS check_query_single_value_result = 1") == "1\n"
+            assert node.query("CHECK TABLE s3_failover_test") == "1\n"
             assert (
                 success_count > 1
                 or node.query("SELECT * FROM s3_failover_test FORMAT Values") == data
@@ -220,7 +220,7 @@ def test_move_failover(cluster):
         node.query(
             """
         SELECT count(*) FROM system.part_log
-        WHERE event_type='MovePart' AND table_uuid=(select uuid from system.tables where name='s3_failover_test' and database=currentDatabase()) AND database=currentDatabase()
+        WHERE event_type='MovePart' AND table='s3_failover_test'
         """
         )
         == "2\n"
@@ -230,7 +230,7 @@ def test_move_failover(cluster):
     exception = node.query(
         """
         SELECT exception FROM system.part_log
-        WHERE event_type='MovePart' AND table_uuid=(select uuid from system.tables where name='s3_failover_test' and database=currentDatabase()) AND notEmpty(exception) AND database=currentDatabase()
+        WHERE event_type='MovePart' AND table='s3_failover_test' AND notEmpty(exception)
         ORDER BY event_time
         LIMIT 1
         """
@@ -238,13 +238,11 @@ def test_move_failover(cluster):
     assert exception.find("Expected Error") != -1, exception
 
     # Ensure data is not corrupted.
-    assert node.query("CHECK TABLE s3_failover_test SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node.query("CHECK TABLE s3_failover_test") == "1\n"
     assert (
         node.query("SELECT id,data FROM s3_failover_test FORMAT Values")
         == "(0,'data'),(1,'data')"
     )
-
-    node.query("DROP TABLE s3_failover_test")
 
 
 # Check that throttled request retries and does not cause an error on disk with default `retry_attempts` (>0)
@@ -275,8 +273,6 @@ def test_throttle_retry(cluster):
         == "42\n"
     )
 
-    node.query("DROP TABLE s3_throttle_retry_test")
-
 
 # Check that loading of parts is retried.
 def test_retry_loading_parts(cluster):
@@ -302,4 +298,3 @@ def test_retry_loading_parts(cluster):
         "Failed to load data part all_1_1_0 at try 0 with retryable error"
     )
     assert node.query("SELECT * FROM s3_retry_loading_parts") == "42\n"
-    node.query("DROP TABLE s3_retry_loading_parts")

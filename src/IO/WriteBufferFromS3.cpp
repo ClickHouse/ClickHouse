@@ -2,8 +2,8 @@
 
 #if USE_AWS_S3
 
-#include <IO/StdIStreamFromMemory.h>
-#include <IO/WriteBufferFromS3.h>
+#include "StdIStreamFromMemory.h"
+#include "WriteBufferFromS3.h"
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
@@ -39,6 +39,9 @@ namespace ProfileEvents
     extern const Event DiskS3AbortMultipartUpload;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3PutObject;
+
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -319,6 +322,9 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 void WriteBufferFromS3::hidePartialData()
 {
+    if (write_settings.remote_throttler)
+            write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+
     chassert(memory.size() >= hidden_size + offset());
 
     hidden_size += offset();
@@ -381,7 +387,7 @@ void WriteBufferFromS3::allocateBuffer()
         return;
     }
 
-    memory = Memory<>(buffer_allocation_policy->getBufferSize());
+    memory = Memory(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -427,13 +433,12 @@ void WriteBufferFromS3::createMultipartUpload()
 
     Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
-    auto elapsed = watch.elapsedMicroseconds();
+    watch.stop();
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
     if (blob_log)
-        blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate, bucket, key, {}, 0, elapsed,
-                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+        blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate, bucket, key, {}, 0,
+                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     if (!outcome.IsSuccess())
     {
@@ -476,14 +481,13 @@ void WriteBufferFromS3::abortMultipartUpload()
 
     Stopwatch watch;
     auto outcome = client_ptr->AbortMultipartUpload(req);
-    auto elapsed = watch.elapsedMicroseconds();
+    watch.stop();
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
     if (blob_log)
-        blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort, bucket, key, {}, 0, elapsed,
-                           outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                           outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+        blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort, bucket, key, {}, 0,
+                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     if (!outcome.IsSuccess())
     {
@@ -578,21 +582,19 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         auto & request = std::get<0>(*worker_data);
 
-        CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
-        CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
+        CurrentThread::IOScope io_scope(write_settings.io_scheduling);
 
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
-        auto elapsed = watch.elapsedMicroseconds();
+        watch.stop();
 
-        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
         if (blob_log)
         {
             blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                /* bucket = */ bucket, /* remote_path = */ key, /* local_path = */ {}, /* data_size */ data_size, elapsed,
-                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+                /* bucket = */ bucket, /* remote_path = */ key, /* local_path = */ {}, /* data_size */ data_size,
+                outcome.IsSuccess() ? nullptr : &outcome.GetError());
         }
 
         if (!outcome.IsSuccess())
@@ -633,12 +635,6 @@ void WriteBufferFromS3::completeMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
 
-    if (!write_settings.object_storage_write_if_none_match.empty())
-        req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
-
-    if (!write_settings.object_storage_write_if_match.empty())
-        req.SetIfMatch(write_settings.object_storage_write_if_match);
-
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
@@ -660,14 +656,13 @@ void WriteBufferFromS3::completeMultipartUpload()
 
         Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
-        auto elapsed = watch.elapsedMicroseconds();
+        watch.stop();
 
-        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
         if (blob_log)
-            blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete, bucket, key, {}, 0, elapsed,
-                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+            blob_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete, bucket, key, {}, 0,
+                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
         if (outcome.IsSuccess())
         {
@@ -713,12 +708,6 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
-    if (!write_settings.object_storage_write_if_none_match.empty())
-        req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
-
-    if (!write_settings.object_storage_write_if_match.empty())
-        req.SetIfMatch(write_settings.object_storage_write_if_match);
-
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
@@ -748,18 +737,16 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-            CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
-            CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
+            CurrentThread::IOScope io_scope(write_settings.io_scheduling);
 
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
-            auto elapsed = watch.elapsedMicroseconds();
+            watch.stop();
 
-            ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
             if (blob_log)
-                blob_log->addEvent(BlobStorageLogElement::EventType::Upload, bucket, key, {}, request.GetContentLength(), elapsed,
-                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
-                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+                blob_log->addEvent(BlobStorageLogElement::EventType::Upload, bucket, key, {}, request.GetContentLength(),
+                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
             if (outcome.IsSuccess())
             {

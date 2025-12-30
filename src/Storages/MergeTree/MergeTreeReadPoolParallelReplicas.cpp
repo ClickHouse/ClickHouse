@@ -37,7 +37,7 @@ size_t chooseSegmentSize(
     /// it would be a huge waste of cache space.
     constexpr std::array<size_t, 3> borders{128, 1024, 16384};
 
-    LOG_TRACE(
+    LOG_DEBUG(
         log,
         "mark_segment_size={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
         mark_segment_size,
@@ -62,7 +62,7 @@ size_t chooseSegmentSize(
     {
         if (mark_segment_size >= border)
         {
-            LOG_TRACE(log, "Chosen segment size: {}", border);
+            LOG_DEBUG(log, "Chosen segment size: {}", border);
             return border;
         }
     }
@@ -72,13 +72,8 @@ size_t chooseSegmentSize(
 
 size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::MergeTreeReadTaskInfoPtr> & per_part_infos)
 {
-    /// For each part the value of `min_marks_per_task` is capped by `sum_marks / (threads * total_query_nodes) / 2` (see calculateMinMarksPerTask()),
-    /// unless `merge_tree_min_read_task_size` or `min_*_for_concurrent_read` settings are set too high. So, we can safely take the maximum of all parts.
-    /// On the flip side, it is not safe to take the minimum, because e.g. for compact parts we don't know individual column sizes, so we use whole part size as approximation,
-    /// and as the result we might end up with a very small `min_marks_per_task` that will cause too many requests to the coordinator.
-    const auto max_across_parts = std::ranges::max(
-        per_part_infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
-    min_marks_per_task = std::max(min_marks_per_task, max_across_parts->min_marks_per_task);
+    for (const auto & info : per_part_infos)
+        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
 
     if (min_marks_per_task == 0)
         throw DB::Exception(
@@ -111,9 +106,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
-    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -125,9 +118,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
-        index_read_tasks_,
         storage_snapshot_,
-        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -156,51 +147,21 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (no_more_tasks_available)
         return nullptr;
 
-    /// The following unfortunate scenario is possible:
-    /// 1. Thread T1 found no `buffered_ranges` left to read and initiated a read request to the coordinator.
-    /// 2. Thread T2 called `getTask` too and now waits for the mutex.
-    /// 3. The coordinator handled the request from T1 and sent a response.
-    ///    In this response it indicated that there are no more tasks left to read (`finish = true`).
-    /// 4. While receiving the response we got an exception (e.g. network timeout).
-    /// 5. Exception is propagated from `sendReadRequest` up the stack, but once T1 leaves `getTask`, T2 is able to grab the mutex.
-    ///    T2 also finds no `buffered_ranges` and repeat the request to the coordinator.
-    ///    Coordinator throws logical error: "Got request from replica N after ranges assignment has been completed for the replica."
-    ///    To prevent this we set `failed_to_get_task` flag once we catch an exception from `sendReadRequest`.
-    if (failed_to_get_task)
-        return nullptr;
-
     if (buffered_ranges.empty())
     {
-        std::optional<ParallelReadResponse> response;
-        try
-        {
-            response = extension.sendReadRequest(
-                coordination_mode,
-                min_marks_per_task * pool_settings.threads,
-                /// For Default coordination mode we don't need to pass part names.
-                RangesInDataPartsDescription{});
-        }
-        catch (...)
-        {
-            failed_to_get_task = true;
-            throw;
-        }
+        auto result = extension.sendReadRequest(
+            coordination_mode,
+            min_marks_per_task * pool_settings.threads,
+            /// For Default coordination mode we don't need to pass part names.
+            RangesInDataPartsDescription{});
 
-        if (response)
+        if (!result || result->finish)
         {
-            LOG_DEBUG(log, "Got response: {}", response->describe());
-            if (response->description.empty() || response->finish)
-                no_more_tasks_available = true;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Got no response");
             no_more_tasks_available = true;
-        }
-        if (no_more_tasks_available)
             return nullptr;
+        }
 
-        buffered_ranges = std::move(response->description);
+        buffered_ranges = std::move(result->description);
     }
 
     if (buffered_ranges.empty())
@@ -209,16 +170,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     auto & current_task = buffered_ranges.front();
 
     auto part_it
-        = std::ranges::find_if(
-            per_part_infos,
-            [&current_task](const auto & part)
-            {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
-
-                chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
-            });
+        = std::ranges::find_if(per_part_infos, [&current_task](const auto & part) { return part->data_part->info == current_task.info; });
     if (part_it == per_part_infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
     const size_t part_idx = std::distance(per_part_infos.begin(), part_it);

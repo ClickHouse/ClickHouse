@@ -53,9 +53,7 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
-    `is_shared_catalog_cluster` UInt8,
     `is_active` Nullable(UInt8),
-    `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
     `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
@@ -92,9 +90,7 @@ CREATE TABLE system.columns
     `numeric_precision_radix` Nullable(UInt64),
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
-    `serialization_hint` Nullable(String),
-    `statistics` String,
-    `column` String ALIAS name
+    `serialization_hint` Nullable(String)
 )
 ENGINE = SystemColumns
 COMMENT 'Lists all columns from all tables of the current server.'
@@ -120,7 +116,6 @@ CREATE TABLE system.data_skipping_indices
     `type` String,
     `type_full` String,
     `expr` String,
-    `creation` Enum8('Explicit' = 0, 'Implicit' = 1),
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
@@ -145,7 +140,6 @@ CREATE TABLE system.databases
     `uuid` UUID,
     `engine_full` String,
     `comment` String,
-    `is_external` UInt8,
     `database` String ALIAS name
 )
 ENGINE = SystemDatabases
@@ -191,7 +185,6 @@ CREATE TABLE system.dictionaries
     `lifetime_max` UInt64,
     `loading_start_time` DateTime,
     `last_successful_update_time` DateTime,
-    `error_count` UInt64,
     `loading_duration` Float32,
     `last_exception` String,
     `comment` String
@@ -270,10 +263,8 @@ CREATE TABLE system.errors
     `value` UInt64,
     `last_error_time` DateTime,
     `last_error_message` String,
-    `last_error_format_string` String,
     `last_error_trace` Array(UInt64),
-    `remote` UInt8,
-    `query_id` String
+    `remote` UInt8
 )
 ENGINE = SystemErrors
 COMMENT 'Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.'
@@ -293,14 +284,7 @@ CREATE TABLE system.formats
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
     `supports_parallel_formatting` UInt8,
-    `is_tty_friendly` UInt8,
-    `content_type` String,
-    `supports_random_access` UInt8,
-    `has_schema_inference` UInt8,
-    `has_external_schema` UInt8,
-    `prefers_large_blocks` UInt8,
-    `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `is_tty_friendly` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -315,10 +299,8 @@ CREATE TABLE system.functions
     `description` String,
     `syntax` String,
     `arguments` String,
-    `parameters` String,
     `returned_value` String,
     `examples` String,
-    `introduced_in` String,
     `categories` String
 )
 ENGINE = SystemFunctions
@@ -363,7 +345,6 @@ CREATE TABLE system.merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -431,7 +412,6 @@ CREATE TABLE system.mutations
     `create_time` DateTime,
     `block_numbers.partition_id` Array(String),
     `block_numbers.number` Array(Int64),
-    `parts_in_progress_names` Array(String),
     `parts_to_do_names` Array(String),
     `parts_to_do` Int64,
     `is_done` UInt8,
@@ -603,10 +583,6 @@ CREATE TABLE system.parts_columns
     `column_modification_time` Nullable(DateTime),
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
-    `statistics` Array(String),
-    `estimates.min` Nullable(Float64),
-    `estimates.max` Nullable(Float64),
-    `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -662,11 +638,9 @@ CREATE TABLE system.processes
     `normalized_query_hash` UInt64,
     `query_kind` String,
     `thread_ids` Array(UInt64),
-    `peak_threads_usage` UInt64,
-    `ProfileEvents` Map(LowCardinality(String), UInt64),
-    `Settings` Map(LowCardinality(String), LowCardinality(String)),
+    `ProfileEvents` Map(String, UInt64),
+    `Settings` Map(String, String),
     `current_database` String,
-    `is_internal` UInt8,
     `ProfileEvents.Names` Array(String) ALIAS mapKeys(ProfileEvents),
     `ProfileEvents.Values` Array(UInt64) ALIAS mapValues(ProfileEvents),
     `Settings.Names` Array(String) ALIAS mapKeys(Settings),
@@ -899,7 +873,6 @@ CREATE TABLE system.replicas
 (
     `database` String,
     `table` String,
-    `uuid` UUID,
     `engine` String,
     `is_leader` UInt8,
     `can_become_leader` UInt8,
@@ -934,7 +907,7 @@ CREATE TABLE system.replicas
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8),
-    `readonly_duration` Nullable(UInt64) ALIAS if(isNull(readonly_start_time), NULL, now() - readonly_start_time)
+    `readonly_duration` Nullable(UInt64) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
 )
 ENGINE = SystemReplicas
 COMMENT 'Contains information and status of all table replicas on current server. Each replica is represented by a single row.'
@@ -968,7 +941,6 @@ CREATE TABLE system.replicated_merge_tree_settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
@@ -1045,7 +1017,6 @@ CREATE TABLE system.settings
     `description` String,
     `min` Nullable(String),
     `max` Nullable(String),
-    `disallowed_values` Array(String),
     `readonly` UInt8,
     `type` String,
     `default` String,
@@ -1144,9 +1115,6 @@ CREATE TABLE system.tables
     `create_table_query` String,
     `engine_full` String,
     `as_select` String,
-    `parameterized_view_parameters` Array(Tuple(
-        name String,
-        type String)),
     `partition_key` String,
     `sorting_key` String,
     `primary_key` String,
@@ -1159,9 +1127,7 @@ CREATE TABLE system.tables
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),
     `active_on_fly_data_mutations` UInt64,
-    `active_on_fly_alter_mutations` UInt64,
     `active_on_fly_metadata_mutations` UInt64,
-    `columns_descriptions_cache_size` UInt64,
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
     `comment` String,
@@ -1170,7 +1136,6 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
-    `definer` String,
     `table` String ALIAS name
 )
 ENGINE = SystemTables
@@ -1195,7 +1160,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11, 'no_authentication' = 12)),
+    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10)),
     `auth_params` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),

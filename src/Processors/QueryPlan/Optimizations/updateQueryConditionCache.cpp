@@ -32,43 +32,22 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (!read_from_merge_tree)
         return;
 
-    /// ORDER BY ... LIMIT N can drop granules, don't update qcc for the WHERE filter
-    if (read_from_merge_tree->isSelectedForTopKFilterOptimization())
-        return;
-
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto & filter_actions_dag = query_info.filter_actions_dag;
     if (!filter_actions_dag || query_info.isFinal())
         return;
 
     const auto & outputs = filter_actions_dag->getOutputs();
-
-    /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks
-    /// the implementation a lot while not losing much usefulness.
-    if (outputs.size() != 1)
-        return;
-
-    /// Issues #81506 and #84508.
     for (const auto * output : outputs)
-    {
         if (!VirtualColumnUtils::isDeterministic(output))
             return;
-    }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
-
-            String condition;
-            if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)
-            {
-                Names outputs_names = filter_actions_dag->getNames();
-                condition = outputs_names[0];
-            }
-
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            size_t condition_hash = filter_actions_dag->getOutputs().front()->getHash();
+            filter_step->setQueryConditionHash(condition_hash);
             return;
         }
     }

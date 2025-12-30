@@ -5,7 +5,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -90,12 +89,6 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
         {
             res.emplace_back(AccessType::DROP_QUOTA);
             res.emplace_back(AccessType::CREATE_QUOTA);
-            return res;
-        }
-        case AccessEntityType::MASKING_POLICY:
-        {
-            res.emplace_back(AccessType::DROP_MASKING_POLICY);
-            res.emplace_back(AccessType::CREATE_MASKING_POLICY);
             return res;
         }
         case AccessEntityType::MAX:

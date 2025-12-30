@@ -61,7 +61,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
@@ -121,18 +120,11 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
         collectSets(expression, *planner_context);
 
-        ColumnNodePtrWithHashSet empty_correlated_columns_set;
-        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-            expression,
-            /*input_columns=*/{},
-            planner_context,
-            empty_correlated_columns_set);
-        correlated_subtrees.assertEmpty("in constant expression without query context");
+        auto actions = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
 
         if (actions.getOutputs().size() != 1)
         {
-            // Expression can return more than one column using untuple()
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Constant expression returns more than 1 column: {}", ast->formatForLogging());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", ast->formatForLogging());
         }
 
         const auto & output = actions.getOutputs()[0];
@@ -576,12 +568,11 @@ namespace
         if (!col_set || !col_set->getData())
             return {};
 
-        SetPtr set = nullptr;
-        if (auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get()))
-            set = set_from_tuple->buildOrderedSetInplace(context);
-        else
-            set = col_set->getData().get()->get();
+        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
+        if (!set_from_tuple)
+            return {};
 
+        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
         if (!set || !set->hasExplicitSetElements())
             return {};
 
@@ -741,7 +732,7 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1);
+        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1, /* throw_on_error= */ false);
         for (const auto & column : columns)
             if (!column.column)
                 return {};

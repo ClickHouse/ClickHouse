@@ -18,7 +18,6 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -26,7 +25,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
@@ -40,11 +38,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-    extern const SettingsBool use_variant_as_common_type;
-}
-
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
     : IQueryTreeNode(children_size)
     , context(std::move(context_))
@@ -56,7 +49,6 @@ UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
     children[queries_child_index] = std::make_shared<ListNode>();
-    children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
 bool UnionNode::isResolved() const
@@ -116,9 +108,7 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
         for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
             projection_column_types[projection_index] = projections[projection_index][column_index].type;
 
-        auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
-            ? getLeastSupertypeOrVariant(projection_column_types)
-            : getLeastSupertype(projection_column_types);
+        auto result_type = getLeastSupertype(projection_column_types);
         result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
     }
 
@@ -169,17 +159,6 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
-void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
-{
-    auto & correlated_columns = getCorrelatedColumns().getNodes();
-    for (const auto & column : correlated_columns)
-    {
-        if (column->isEqual(*correlated_column))
-            return;
-    }
-    correlated_columns.push_back(correlated_column);
-}
-
 void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "UNION id: " << format_state.getNodeId(this);
@@ -203,12 +182,6 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", cte_name: " << cte_name;
 
     buffer << ", union_mode: " << toString(union_mode);
-
-    if (isCorrelated())
-    {
-        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
-        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);

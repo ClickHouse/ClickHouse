@@ -1,7 +1,6 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_aggregate_functions .)
 add_headers_and_sources(clickhouse_aggregate_functions Combinators)
-add_headers_and_sources(clickhouse_aggregate_functions TimeSeries)
 
 extract_into_parent_list(clickhouse_aggregate_functions_sources dbms_sources
     AggregateFunctionFactory.cpp # AggregateFunctionFactory::instance() Used many times
