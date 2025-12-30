@@ -1,12 +1,12 @@
-#include <cassert>
-#include <memory>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
@@ -15,18 +15,15 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/KeyHolderHelpers.h>
-
 #include <Core/Field.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
+#include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
+
+#include <memory>
 
 
 namespace DB
@@ -51,7 +48,7 @@ struct AggregateFunctionGroupArrayIntersectData
 };
 
 
-/// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
+/// Puts all values to the hash set. Returns an array of unique values present in all inputs. Implemented for numeric types.
 template <typename T>
 class AggregateFunctionGroupArrayIntersect
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>, AggregateFunctionGroupArrayIntersect<T>>
@@ -69,7 +66,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>,
           AggregateFunctionGroupArrayIntersect<T>>({argument_type}, parameters_, result_type_) {}
 
-    String getName() const override { return "GroupArrayIntersect"; }
+    String getName() const override { return "groupArrayIntersect"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -87,16 +84,16 @@ public:
         if (version == 1)
         {
             for (size_t i = 0; i < arr_size; ++i)
-                set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
+                set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
         }
         else if (!set.empty())
         {
             typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
             {
-                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].get<T>()));
+                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
                 if (set_value != nullptr)
-                    new_set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
+                    new_set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
             }
             set = std::move(new_set);
         }
@@ -150,8 +147,18 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        readVarUInt(this->data(place).version, buf);
-        this->data(place).value.read(buf);
+        auto & set = this->data(place).value;
+        auto & version = this->data(place).version;
+        size_t size;
+        readVarUInt(version, buf);
+        readVarUInt(size, buf);
+        set.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            T key;
+            readIntBinary(key, buf);
+            set.insert(key);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -176,7 +183,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<StringRef>;
+    using Set = HashSet<std::string_view>;
 
     Set value;
     UInt64 version = 0;
@@ -186,11 +193,11 @@ struct AggregateFunctionGroupArrayIntersectGenericData
  *  For such columns GroupArrayIntersect() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
-class AggregateFunctionGroupArrayIntersectGeneric
+class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    const DataTypePtr & input_data_type;
+    const DataTypePtr input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
@@ -203,7 +210,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, result_type_)
         , input_data_type(result_type_) {}
 
-    String getName() const override { return "GroupArrayIntersect"; }
+    String getName() const override { return "groupArrayIntersect"; }
 
     bool allocatesMemoryInArena() const override { return true; }
 
@@ -229,8 +236,9 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    assert(serialized.data != nullptr);
+                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
+                    chassert(!serialized.empty());
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -249,8 +257,9 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    assert(serialized.data != nullptr);
+                    auto settings = IColumn::SerializationSettings::createForAggregationState();
+                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
+                    chassert(!serialized.empty());
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -292,7 +301,7 @@ public:
                 }
                 return new_map;
             };
-            auto new_map = rhs_value.size() < set.size() ? create_new_map(rhs_value, set) : create_new_map(set, rhs_value);
+            auto new_map = create_new_map(set, rhs_value);
             set = std::move(new_map);
         }
     }
@@ -316,11 +325,9 @@ public:
         readVarUInt(version, buf);
         readVarUInt(size, buf);
         set.reserve(size);
-        UInt64 elem_version;
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);
-            readVarUInt(elem_version, buf);
             set.insert(key);
         }
     }
@@ -337,10 +344,7 @@ public:
 
         for (auto & elem : set)
         {
-            if constexpr (is_plain_column)
-                data_to.insertData(elem.getValue().data, elem.getValue().size);
-            else
-                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
+            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
         }
     }
 };
@@ -349,7 +353,7 @@ namespace
 {
 
 /// Substitute return type for Date and DateTime
-class AggregateFunctionGroupArrayIntersectDate : public AggregateFunctionGroupArrayIntersect<DataTypeDate::FieldType>
+class AggregateFunctionGroupArrayIntersectDate final : public AggregateFunctionGroupArrayIntersect<DataTypeDate::FieldType>
 {
 public:
     explicit AggregateFunctionGroupArrayIntersectDate(const DataTypePtr & argument_type, const Array & parameters_)
@@ -357,7 +361,7 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
 };
 
-class AggregateFunctionGroupArrayIntersectDateTime : public AggregateFunctionGroupArrayIntersect<DataTypeDateTime::FieldType>
+class AggregateFunctionGroupArrayIntersectDateTime final : public AggregateFunctionGroupArrayIntersect<DataTypeDateTime::FieldType>
 {
 public:
     explicit AggregateFunctionGroupArrayIntersectDateTime(const DataTypePtr & argument_type, const Array & parameters_)
@@ -365,7 +369,7 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
-class AggregateFunctionGroupArrayIntersectDate32 : public AggregateFunctionGroupArrayIntersect<DataTypeDate32::FieldType>
+class AggregateFunctionGroupArrayIntersectDate32 final : public AggregateFunctionGroupArrayIntersect<DataTypeDate32::FieldType>
 {
 public:
     explicit AggregateFunctionGroupArrayIntersectDate32(const DataTypePtr & argument_type, const Array & parameters_)
@@ -377,23 +381,22 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, con
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupArrayIntersectDate(argument_type, parameters);
-    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
-    else if (which.idx == TypeIndex::Date32) return new AggregateFunctionGroupArrayIntersectDate32(argument_type, parameters);
-    else if (which.idx == TypeIndex::DateTime64)
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionGroupArrayIntersectDateTime(argument_type, parameters);
+    if (which.idx == TypeIndex::Date32)
+        return new AggregateFunctionGroupArrayIntersectDate32(argument_type, parameters);
+    if (which.idx == TypeIndex::DateTime64)
     {
         const auto * datetime64_type = dynamic_cast<const DataTypeDateTime64 *>(argument_type.get());
         const auto return_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(datetime64_type->getScale()));
 
         return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters, return_type);
     }
-    else
-    {
-        /// Check that we can use plain version of AggregateFunctionGroupArrayIntersectGeneric
-        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters);
-        else
-            return new AggregateFunctionGroupArrayIntersectGeneric<false>(argument_type, parameters);
-    }
+
+    /// Check that we can use plain version of AggregateFunctionGroupArrayIntersectGeneric
+    if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        return new AggregateFunctionGroupArrayIntersectGeneric<true>(argument_type, parameters);
+    return new AggregateFunctionGroupArrayIntersectGeneric<false>(argument_type, parameters);
 }
 
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayIntersectImpl(const std::string & name, const DataTypePtr & argument_type, const Array & parameters)
@@ -431,9 +434,46 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Return an intersection of given arrays (Return all items of arrays, that are in all given arrays).
+    )";
+    FunctionDocumentation::Syntax syntax = "groupArrayIntersect(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Argument (column name or expression).", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array that contains elements that are in all arrays.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+-- Create table with Memory engine
+CREATE TABLE numbers (
+    a Array(Int32)
+) ENGINE = Memory;
+
+-- Insert sample data
+INSERT INTO numbers VALUES
+    ([1,2,4]),
+    ([1,5,2,8,-1,0]),
+    ([1,5,7,5,8,2]);
+
+SELECT groupArrayIntersect(a) AS intersection FROM numbers;
+            )",
+            R"(
+┌─intersection──────┐
+│ [1, 2]            │
+└───────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties });
+    factory.registerFunction("groupArrayIntersect", {createAggregateFunctionGroupArrayIntersect, properties, documentation});
 }
 
 }

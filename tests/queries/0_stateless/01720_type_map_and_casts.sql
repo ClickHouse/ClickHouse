@@ -1,5 +1,3 @@
-SET allow_experimental_map_type = 1;
-
 DROP TABLE IF EXISTS table_map_with_key_integer;
 
 CREATE TABLE table_map_with_key_integer (d DATE, m Map(Int8, Int8))
@@ -57,7 +55,7 @@ SELECT
     m[toUUID('00001192-0000-4000-8000-000000000001')]
 FROM table_map_with_key_integer;
 
-SELECT m[257], m[1] FROM table_map_with_key_integer; -- { serverError 43 }
+SELECT m[257], m[1] FROM table_map_with_key_integer; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS table_map_with_key_integer;
 
@@ -85,4 +83,4 @@ DROP TABLE IF EXISTS table_map_with_key_integer;
 CREATE TABLE table_map_with_key_integer (m Map(Array(UInt32), String)) ENGINE = MergeTree() ORDER BY tuple();
 DROP TABLE IF EXISTS table_map_with_key_integer;
 
-CREATE TABLE table_map_with_key_integer (m Map(Nullable(String), String)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36}
+CREATE TABLE table_map_with_key_integer (m Map(Nullable(String), String)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS}

@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 NUM_REPLICAS=10
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS r$i SYNC;
         CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
     "
@@ -20,7 +20,7 @@ function thread {
     for x in {0..99}; do
         # sometimes we can try to commit obsolete part if fetches will be quite fast,
         # so supress warning messages like "Tried to commit obsolete part ... covered by ..."
-        $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x % $NUM_REPLICAS = $1 ? $x - 1 : $x" 2>/dev/null  # Replace some records as duplicates so they will be written by other replicas
+        $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x % $NUM_REPLICAS = $1 ? $x - 1 : $x ORDER BY ALL" 2>/dev/null  # Replace some records as duplicates so they will be written by other replicas
     done
 }
 
@@ -31,7 +31,7 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         SYSTEM SYNC REPLICA r$i;
         SELECT count(), min(x), max(x), sum(x) FROM r$i;"
 done

@@ -1,4 +1,4 @@
-#include "CacheDictionary.h"
+#include <Dictionaries/CacheDictionary.h>
 
 #include <memory>
 #include <base/chrono_io.h>
@@ -130,12 +130,10 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
         IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
     }
-    else
-    {
-        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-        const Columns & columns= Columns({default_values_column});
-        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-    }
+
+    const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+    const Columns & columns = Columns({default_values_column});
+    return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -209,18 +207,12 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
 
         if (source_returns_fetched_columns_in_order_of_keys)
             return request.filterRequestedColumns(fetched_columns_from_storage);
-        else
-        {
-            /// Reorder result from storage to requested keys indexes
-            MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
-                keys,
-                request,
-                fetched_columns_from_storage,
-                key_index_to_state_from_storage,
-                default_mask);
 
-            return request.filterRequestedColumns(aggregated_columns);
-        }
+        /// Reorder result from storage to requested keys indexes
+        MutableColumns aggregated_columns
+            = aggregateColumnsInOrderOfKeys(keys, request, fetched_columns_from_storage, key_index_to_state_from_storage, default_mask);
+
+        return request.filterRequestedColumns(aggregated_columns);
     }
 
     size_t keys_to_update_size = not_found_keys_size + expired_keys_size;
@@ -237,29 +229,21 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
 
         if (source_returns_fetched_columns_in_order_of_keys)
             return request.filterRequestedColumns(fetched_columns_from_storage);
-        else
-        {
-            /// Reorder result from storage to requested keys indexes
-            MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
-                keys,
-                request,
-                fetched_columns_from_storage,
-                key_index_to_state_from_storage,
-                default_mask);
 
-            return request.filterRequestedColumns(aggregated_columns);
-        }
-    }
-    else
-    {
-        /// Start sync update
-        update_queue.tryPushToUpdateQueueOrThrow(update_unit);
-        update_queue.waitForCurrentUpdateFinish(update_unit);
+        /// Reorder result from storage to requested keys indexes
+        MutableColumns aggregated_columns
+            = aggregateColumnsInOrderOfKeys(keys, request, fetched_columns_from_storage, key_index_to_state_from_storage, default_mask);
 
-        requested_keys_to_fetched_columns_during_update_index =
-            std::move(update_unit->requested_keys_to_fetched_columns_during_update_index);
-        fetched_columns_during_update = std::move(update_unit->fetched_columns_during_update);
+        return request.filterRequestedColumns(aggregated_columns);
     }
+
+    /// Start sync update
+    update_queue.tryPushToUpdateQueueOrThrow(update_unit);
+    update_queue.waitForCurrentUpdateFinish(update_unit);
+
+    requested_keys_to_fetched_columns_during_update_index = std::move(update_unit->requested_keys_to_fetched_columns_during_update_index);
+    fetched_columns_during_update = std::move(update_unit->fetched_columns_during_update);
+
 
     MutableColumns aggregated_columns = aggregateColumns(
         keys,
@@ -395,8 +379,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -413,8 +396,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
-    else
-        return nullptr;
+    return nullptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -450,7 +432,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
             if (default_mask)
             {
                 if (state.isDefault())
+                {
                     (*default_mask)[key_index] = 1;
+                    aggregated_column->insertDefault();
+                }
                 else
                 {
                     (*default_mask)[key_index] = 0;
@@ -508,7 +493,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
                 if (default_mask)
                 {
                     if (key_state_from_storage.isDefault())
+                    {
                         (*default_mask)[key_index] = 1;
+                        aggregated_column->insertDefault();
+                    }
                     else
                     {
                         (*default_mask)[key_index] = 0;
@@ -536,7 +524,10 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
             }
 
             if (default_mask)
+            {
+                aggregated_column->insertDefault(); /// Any default is ok
                 (*default_mask)[key_index] = 1;
+            }
             else
             {
                 /// Insert default value
@@ -644,54 +635,58 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
-            QueryPipeline pipeline;
-
+            BlockIO io;
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
+                io = current_source_ptr->loadIds(requested_keys_vector);
             else
-                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
+                io = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-            Block block;
-            while (executor.pull(block))
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
+            io.executeWithCallbacks([&]()
             {
-                Columns key_columns;
-                key_columns.reserve(skip_keys_size_offset);
-
-                convertToFullIfSparse(block);
-                auto block_columns = block.getColumns();
-
-                /// Split into keys columns and attribute columns
-                for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                Block block;
+                while (executor.pull(block))
                 {
-                    key_columns.emplace_back(*block_columns.begin());
-                    block_columns.erase(block_columns.begin());
+                    Columns key_columns;
+                    key_columns.reserve(skip_keys_size_offset);
+
+                    removeSpecialColumnRepresentations(block);
+                    auto block_columns = block.getColumns();
+
+                    /// Split into keys columns and attribute columns
+                    for (size_t i = 0; i < skip_keys_size_offset; ++i)
+                    {
+                        key_columns.emplace_back(*block_columns.begin());
+                        block_columns.erase(block_columns.begin());
+                    }
+
+                    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
+                    auto keys_extracted_from_block = keys_extractor.extractAllKeys();
+
+                    for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
+                    {
+                        auto & column_to_update = fetched_columns_during_update[index_of_attribute];
+                        auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
+                        column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
+                    }
+
+                    for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
+                    {
+                        auto fetched_key_from_source = keys_extracted_from_block[i];
+
+                        not_found_keys.erase(fetched_key_from_source);
+                        update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
+                        found_keys_in_source.emplace_back(fetched_key_from_source);
+                    }
                 }
-
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
-                auto keys_extracted_from_block = keys_extractor.extractAllKeys();
-
-                for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
-                {
-                    auto & column_to_update = fetched_columns_during_update[index_of_attribute];
-                    auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
-                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
-                }
-
-                for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
-                {
-                    auto fetched_key_from_source = keys_extracted_from_block[i];
-
-                    not_found_keys.erase(fetched_key_from_source);
-                    update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_in_source.size();
-                    found_keys_in_source.emplace_back(fetched_key_from_source);
-                }
-            }
+            });
 
             PaddedPODArray<KeyType> not_found_keys_in_source;
             not_found_keys_in_source.reserve(not_found_keys.size());

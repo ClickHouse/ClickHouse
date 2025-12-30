@@ -1,0 +1,324 @@
+Memory
+Increase max_dynamic_paths to 5
+{"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k7":"2020-01-01","k9":91}
+{"k1":2,"k2":"2020-01-02","k4":"Hello","k6":false,"k9":92}
+{"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k7":73}
+{"k1":4,"k2":"2020-01-04","k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k3
+k4
+k5
+k7
+k9
+Shared data paths:
+k6
+k8
+\N	1	2020-01-01	31	[1,2,3]	str1	\N	2020-01-01	\N	91
+\N	2	2020-01-02	\N	Hello	\N	false	\N	\N	92
+\N	3	2020-01-03	32	\N	42	\N	73	\N	\N
+\N	4	2020-01-04	\N	false	str1	true	\N	84.84	94
+Decrease max_dynamic_paths to 3, max_dynamic_types to 1
+{"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k7":"2020-01-01","k9":91}
+{"k1":2,"k2":"2020-01-02","k4":"Hello","k6":false,"k9":92}
+{"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k7":73}
+{"k1":4,"k2":"2020-01-04","k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k3
+k4
+k5
+Shared data paths:
+k6
+k7
+k8
+k9
+\N	1	2020-01-01	31	[1,2,3]	str1	\N	2020-01-01	\N	91
+\N	2	2020-01-02	\N	Hello	\N	false	\N	\N	92
+\N	3	2020-01-03	32	\N	42	\N	73	\N	\N
+\N	4	2020-01-04	\N	false	str1	true	\N	84.84	94
+Change typed paths
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k1
+k4
+k5
+Shared data paths:
+k7
+k8
+k9
+0	1	2020-01-01	31	[1,2,3]	str1	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	42	false	73	\N	\N
+0	4	2020-01-04	0	false	str1	true	\N	84.84	94
+Add new skip rules
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k6":true,"k9":94}
+Dynamic paths:
+k1
+k4
+k7
+Shared data paths:
+k9
+0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	\N	false	73	\N	\N
+0	4	2020-01-04	0	false	\N	true	\N	\N	94
+Decrease max_dynamic_paths and max_dynamic_types to 0
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k6":true,"k9":94}
+Dynamic paths:
+Shared data paths:
+k1
+k4
+k7
+k9
+0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	\N	false	73	\N	\N
+0	4	2020-01-04	0	false	\N	true	\N	\N	94
+max_dynamic_paths=3
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=2
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=1
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=0
+All paths:
+k1
+k2
+k3
+k4
+MergeTree order by tuple() settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000
+Increase max_dynamic_paths to 5
+{"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k7":"2020-01-01","k9":91}
+{"k1":2,"k2":"2020-01-02","k4":"Hello","k6":false,"k9":92}
+{"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k7":73}
+{"k1":4,"k2":"2020-01-04","k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k3
+k4
+k5
+k7
+k9
+Shared data paths:
+k6
+k8
+\N	1	2020-01-01	31	[1,2,3]	str1	\N	2020-01-01	\N	91
+\N	2	2020-01-02	\N	Hello	\N	false	\N	\N	92
+\N	3	2020-01-03	32	\N	42	\N	73	\N	\N
+\N	4	2020-01-04	\N	false	str1	true	\N	84.84	94
+Decrease max_dynamic_paths to 3, max_dynamic_types to 1
+{"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k7":"2020-01-01","k9":91}
+{"k1":2,"k2":"2020-01-02","k4":"Hello","k6":false,"k9":92}
+{"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k7":73}
+{"k1":4,"k2":"2020-01-04","k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k3
+k4
+k5
+Shared data paths:
+k6
+k7
+k8
+k9
+\N	1	2020-01-01	31	[1,2,3]	str1	\N	2020-01-01	\N	91
+\N	2	2020-01-02	\N	Hello	\N	false	\N	\N	92
+\N	3	2020-01-03	32	\N	42	\N	73	\N	\N
+\N	4	2020-01-04	\N	false	str1	true	\N	84.84	94
+Change typed paths
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k1
+k4
+k5
+Shared data paths:
+k7
+k8
+k9
+0	1	2020-01-01	31	[1,2,3]	str1	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	42	false	73	\N	\N
+0	4	2020-01-04	0	false	str1	true	\N	84.84	94
+Add new skip rules
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k6":true,"k9":94}
+Dynamic paths:
+k1
+k4
+k7
+Shared data paths:
+k9
+0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	\N	false	73	\N	\N
+0	4	2020-01-04	0	false	\N	true	\N	\N	94
+Decrease max_dynamic_paths and max_dynamic_types to 0
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k6":true,"k9":94}
+Dynamic paths:
+Shared data paths:
+k1
+k4
+k7
+k9
+0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	\N	false	73	\N	\N
+0	4	2020-01-04	0	false	\N	true	\N	\N	94
+max_dynamic_paths=3
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=2
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=1
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=0
+All paths:
+k1
+k2
+k3
+k4
+MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1
+Increase max_dynamic_paths to 5
+{"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k7":"2020-01-01","k9":91}
+{"k1":2,"k2":"2020-01-02","k4":"Hello","k6":false,"k9":92}
+{"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k7":73}
+{"k1":4,"k2":"2020-01-04","k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k3
+k4
+k5
+k7
+k9
+Shared data paths:
+k6
+k8
+\N	1	2020-01-01	31	[1,2,3]	str1	\N	2020-01-01	\N	91
+\N	2	2020-01-02	\N	Hello	\N	false	\N	\N	92
+\N	3	2020-01-03	32	\N	42	\N	73	\N	\N
+\N	4	2020-01-04	\N	false	str1	true	\N	84.84	94
+Decrease max_dynamic_paths to 3, max_dynamic_types to 1
+{"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k7":"2020-01-01","k9":91}
+{"k1":2,"k2":"2020-01-02","k4":"Hello","k6":false,"k9":92}
+{"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k7":73}
+{"k1":4,"k2":"2020-01-04","k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k3
+k4
+k5
+Shared data paths:
+k6
+k7
+k8
+k9
+\N	1	2020-01-01	31	[1,2,3]	str1	\N	2020-01-01	\N	91
+\N	2	2020-01-02	\N	Hello	\N	false	\N	\N	92
+\N	3	2020-01-03	32	\N	42	\N	73	\N	\N
+\N	4	2020-01-04	\N	false	str1	true	\N	84.84	94
+Change typed paths
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k5":"str1","k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k5":42,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k5":"str1","k6":true,"k8":84.84,"k9":94}
+Dynamic paths:
+k1
+k4
+k5
+Shared data paths:
+k7
+k8
+k9
+0	1	2020-01-01	31	[1,2,3]	str1	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	42	false	73	\N	\N
+0	4	2020-01-04	0	false	str1	true	\N	84.84	94
+Add new skip rules
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k6":true,"k9":94}
+Dynamic paths:
+k1
+k4
+k7
+Shared data paths:
+k9
+0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	\N	false	73	\N	\N
+0	4	2020-01-04	0	false	\N	true	\N	\N	94
+Decrease max_dynamic_paths and max_dynamic_types to 0
+{"k0":0,"k1":1,"k2":"2020-01-01","k3":31,"k4":[1,2,3],"k6":false,"k7":"2020-01-01","k9":91}
+{"k0":0,"k1":2,"k2":"2020-01-02","k3":0,"k4":"Hello","k6":false,"k9":92}
+{"k0":0,"k1":3,"k2":"2020-01-03","k3":32,"k6":false,"k7":73}
+{"k0":0,"k1":4,"k2":"2020-01-04","k3":0,"k4":false,"k6":true,"k9":94}
+Dynamic paths:
+Shared data paths:
+k1
+k4
+k7
+k9
+0	1	2020-01-01	31	[1,2,3]	\N	false	2020-01-01	\N	91
+0	2	2020-01-02	0	Hello	\N	false	\N	\N	92
+0	3	2020-01-03	32	\N	\N	false	73	\N	\N
+0	4	2020-01-04	0	false	\N	true	\N	\N	94
+max_dynamic_paths=3
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=2
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=1
+All paths:
+k1
+k2
+k3
+k4
+max_dynamic_paths=0
+All paths:
+k1
+k2
+k3
+k4

@@ -1,4 +1,4 @@
-clickhouse-client --allow_experimental_analyzer=1 --query_kind secondary_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+clickhouse-client --enable_analyzer=1 --query_kind secondary_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
 Expression ((Project names + Projection))
 Header: dummy String
   Aggregating
@@ -7,7 +7,7 @@ Header: dummy String
     Header: toString(__table1.dummy) String
       ReadFromStorage (SystemOne)
       Header: dummy UInt8
-clickhouse-local --allow_experimental_analyzer=1 --query_kind secondary_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+clickhouse-local --enable_analyzer=1 --query_kind secondary_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
 Expression ((Project names + Projection))
 Header: dummy String
   Aggregating
@@ -16,7 +16,7 @@ Header: dummy String
     Header: toString(__table1.dummy) String
       ReadFromStorage (SystemOne)
       Header: dummy UInt8
-clickhouse-client --allow_experimental_analyzer=1 --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+clickhouse-client --enable_analyzer=1 --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
 Expression ((Project names + Projection))
 Header: dummy String
   Aggregating
@@ -25,7 +25,7 @@ Header: dummy String
     Header: __table1.dummy UInt8
       ReadFromStorage (SystemOne)
       Header: dummy UInt8
-clickhouse-local --allow_experimental_analyzer=1 --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
+clickhouse-local --enable_analyzer=1 --query_kind initial_query -q explain plan header=1 select toString(dummy) as dummy from system.one group by dummy
 Expression ((Project names + Projection))
 Header: dummy String
   Aggregating

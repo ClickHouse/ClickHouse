@@ -1,13 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <string>
-
 #include "config.h"
 
 #if USE_AWS_S3
 
+#include <optional>
+#include <string>
 #include <Poco/URI.h>
+
 
 namespace DB::S3
 {
@@ -23,26 +23,27 @@ namespace DB::S3
 struct URI
 {
     Poco::URI uri;
-    // Custom endpoint if URI scheme is not S3.
+    // Custom endpoint if URI scheme, if not S3.
     std::string endpoint;
     std::string bucket;
     std::string key;
     std::string version_id;
     std::string storage_name;
+    /// Path (or path pattern) in archive if uri is an archive.
     std::optional<std::string> archive_pattern;
     std::string uri_str;
 
     bool is_virtual_hosted_style;
 
     URI() = default;
-    explicit URI(const std::string & uri_);
+    explicit URI(
+        const std::string & uri_,
+        bool allow_archive_path_syntax = false,
+        bool keep_presigned_query_parameters = true);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
-
-private:
-    bool containsArchive(const std::string & source);
-    std::pair<std::string, std::string> getPathToArchiveAndArchivePattern(const std::string & source);
+    static void validateKey(const std::string & key, const Poco::URI & uri);
 };
 
 }

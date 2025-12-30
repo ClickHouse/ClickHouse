@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
+# pylint: disable=unused-argument
+# pylint: disable=broad-exception-raised
 
 import logging
 import os
 
 import pytest  # pylint:disable=import-error; for style check
-from helpers.cluster import run_and_check
-from helpers.network import _NetworkManager
+
+from helpers.cluster import is_port_free, run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
 #
 #   [1]: https://github.com/pytest-dev/pytest/issues/5502
 logging.raiseExceptions = False
+PORTS_PER_WORKER = 50
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -19,8 +22,8 @@ def pdb_history(request):
     Fixture loads and saves pdb history to file, so it can be preserved between runs
     """
     if request.config.getoption("--pdb"):
-        import readline  # pylint:disable=import-outside-toplevel
         import pdb  # pylint:disable=import-outside-toplevel
+        import readline  # pylint:disable=import-outside-toplevel
 
         def save_history():
             readline.write_history_file(".pdb_history")
@@ -44,7 +47,6 @@ def pdb_history(request):
 @pytest.fixture(autouse=True, scope="session")
 def tune_local_port_range():
     # Lots of services uses non privileged ports:
-    # - hdfs -- 50020/50070/...
     # - minio
     #
     # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.
@@ -60,9 +62,6 @@ def tune_local_port_range():
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
     try:
-        if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
-            logging.debug("Cleaning all iptables rules")
-            _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) != 1:
@@ -86,8 +85,6 @@ def cleanup_environment():
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
-                r = run_and_check(["docker-compose", "ps", "--services", "--all"])
-                logging.debug("Docker ps before start:%s", r.stdout)
         else:
             logging.debug("No running containers")
 
@@ -113,3 +110,8 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     os.environ["INTEGRATION_TESTS_RUN_ID"] = config.option.run_id
+
+
+if hasattr(pytest, "xdist_plugin"):
+    def pytest_xdist_setupnodes(config, specs):
+        pass

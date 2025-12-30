@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include "IDictionary.h"
-#include "registerDictionaries.h"
-#include <Parsers/ASTCreateQuery.h>
+#include <Dictionaries/IDictionary.h>
 
 
 namespace Poco

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -26,7 +27,11 @@ public:
     size_t byteSize() const override { return 0; }
     size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+#endif
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
     }
@@ -35,11 +40,12 @@ public:
 
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return {};
     }
@@ -49,35 +55,46 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
     }
 
-    void updateWeakHash32(WeakHash32 & /*hash*/) const override
+    WeakHash32 getWeakHash32() const override
     {
+        return WeakHash32(s);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override
     {
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
+#else
+    void doInsertFrom(const IColumn &, size_t) override
+#endif
     {
         ++s;
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#else
+    void doInsertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
+#endif
     {
         s += length;
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override;
+
+    void filter(const Filter & filt) override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
@@ -95,7 +112,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;

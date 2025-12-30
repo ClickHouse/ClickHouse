@@ -1,13 +1,17 @@
 ---
-slug: /en/sql-reference/table-functions/input
+description: 'Table function that allows effectively converting and inserting data
+  sent to the server with a given structure to a table with another structure.'
+sidebar_label: 'input'
 sidebar_position: 95
-sidebar_label: input
+slug: /sql-reference/table-functions/input
+title: 'input'
+doc_type: 'reference'
 ---
 
-# input
+# input Table Function
 
-`input(structure)` - table function that allows effectively convert and insert data sent to the
-server with given structure to the table with another structure.
+`input(structure)` - table function that allows effectively converting and inserting data sent to the
+server with a given structure to a table with another structure.
 
 `structure` - structure of data sent to the server in following format `'column1_name column1_type, column2_name column2_type, ...'`.
 For example, `'id UInt32, name String'`.
@@ -15,14 +19,14 @@ For example, `'id UInt32, name String'`.
 This function can be used only in `INSERT SELECT` query and only once but otherwise behaves like ordinary table function
 (for example, it can be used in subquery, etc.).
 
-Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](../../interfaces/formats.md#formats)
+Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](/sql-reference/formats)
 that must be specified in the end of query (unlike ordinary `INSERT SELECT`).
 
 The main feature of this function is that when server receives data from client it simultaneously converts it
 according to the list of expressions in the `SELECT` clause and inserts into the target table. Temporary table
 with all transferred data is not created.
 
-**Examples**
+## Examples {#examples}
 
 - Let the `test` table has the following structure `(a String, b String)`
     and data in `data.csv` has a different structure `(col1 String, col2 Date, col3 Int32)`. Query for insert
@@ -30,7 +34,7 @@ with all transferred data is not created.
 
 <!-- -->
 
-``` bash
+```bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
@@ -38,7 +42,7 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 
 <!-- -->
 
-``` bash
+```bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```

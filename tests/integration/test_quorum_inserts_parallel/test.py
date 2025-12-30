@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
 
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 

@@ -262,7 +262,7 @@ void echoRequest(String data, HTTPSession & session)
 TEST_F(ConnectionPoolTest, CanConnect)
 {
     auto pool = getPool();
-    auto connection = pool->getConnection(timeouts);
+    auto connection = pool->getConnection(timeouts, nullptr);
 
     ASSERT_TRUE(connection->connected());
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[pool->getMetrics().created]);
@@ -274,7 +274,7 @@ TEST_F(ConnectionPoolTest, CanConnect)
     ASSERT_EQ(1, getServer().currentConnections());
     ASSERT_EQ(1, getServer().totalConnections());
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -286,14 +286,14 @@ TEST_F(ConnectionPoolTest, CanConnect)
 TEST_F(ConnectionPoolTest, CanRequest)
 {
     auto pool = getPool();
-    auto connection = pool->getConnection(timeouts);
+    auto connection = pool->getConnection(timeouts, nullptr);
 
     echoRequest("Hello", *connection);
 
     ASSERT_EQ(1, getServer().totalConnections());
     ASSERT_EQ(1, getServer().currentConnections());
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -316,7 +316,7 @@ TEST_F(ConnectionPoolTest, CanPreserve)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
     }
 
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
@@ -337,11 +337,11 @@ TEST_F(ConnectionPoolTest, CanReuse)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
     }
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
 
         ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
         ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
@@ -359,7 +359,7 @@ TEST_F(ConnectionPoolTest, CanReuse)
         ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
         ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
 
-        connection->reset();
+        (*connection).reset();
     }
 
     ASSERT_EQ(0, CurrentMetrics::get(pool->getMetrics().active_count));
@@ -382,13 +382,13 @@ TEST_F(ConnectionPoolTest, CanReuse10)
 
     for (int i = 0; i < 10; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
     }
 
     {
-        auto connection = pool->getConnection(timeouts);
-        connection->reset(); // reset just not to wait its expiration here
+        auto connection = pool->getConnection(timeouts, nullptr);
+        (*connection).reset(); // reset just not to wait its expiration here
     }
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
@@ -417,7 +417,7 @@ TEST_F(ConnectionPoolTest, CanReuse5)
     connections.reserve(5);
     for (int i = 0; i < 5; ++i)
     {
-        connections.push_back(pool->getConnection(timeouts));
+        connections.push_back(pool->getConnection(timeouts, nullptr));
     }
     connections.clear();
 
@@ -436,7 +436,7 @@ TEST_F(ConnectionPoolTest, CanReuse5)
 
     for (int i = 0; i < 5; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
     }
 
@@ -454,8 +454,8 @@ TEST_F(ConnectionPoolTest, CanReuse5)
 
     {
         // just to trigger pool->wipeExpired();
-        auto connection = pool->getConnection(timeouts);
-        connection->reset();
+        auto connection = pool->getConnection(timeouts, nullptr);
+        (*connection).reset();
     }
 
     ASSERT_EQ(6, DB::CurrentThread::getProfileEvents()[metrics.created]);
@@ -478,7 +478,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndCreate)
     const size_t count = 3;
     for (int i = 0; i < count; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         in_use.push_back(connection);
     }
 
@@ -523,7 +523,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
     const size_t count = 3;
     for (int i = 0; i < count; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         /// make some request in order to show to the server the keep alive headers
         echoRequest("Hello", *connection);
         in_use.push_back(std::move(connection));
@@ -532,7 +532,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     for (int i = 0; i < count; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         in_use.push_back(std::move(connection));
     }
 
@@ -546,7 +546,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     echoRequest("Hello", *connection);
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -571,7 +571,7 @@ TEST_F(ConnectionPoolTest, ReceiveTimeout)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         ASSERT_ANY_THROW(
             echoRequest("Hello", *connection);
         );
@@ -588,7 +588,7 @@ TEST_F(ConnectionPoolTest, ReceiveTimeout)
 
     {
         timeouts.withReceiveTimeout(3);
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         ASSERT_NO_THROW(
             echoRequest("Hello", *connection);
         );
@@ -606,7 +606,7 @@ TEST_F(ConnectionPoolTest, ReceiveTimeout)
     {
         /// timeouts have effect for reused session
         timeouts.withReceiveTimeout(1);
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         ASSERT_ANY_THROW(
             echoRequest("Hello", *connection);
         );
@@ -630,6 +630,7 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
 
     Poco::Net::HTTPBasicCredentials empty_creds;
     auto buf_from_http = DB::BuilderRWBufferFromHTTP(uri)
+                             .withBypassProxy(true)
                              .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
                              .withOutCallback(
                                  [&] (std::ostream & in)
@@ -661,7 +662,7 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 }
 
-TEST_F(ConnectionPoolTest, HardLimit)
+TEST_F(ConnectionPoolTest, StoreLimit)
 {
     DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};
     DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits);
@@ -670,7 +671,7 @@ TEST_F(ConnectionPoolTest, HardLimit)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
     }
 
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
@@ -683,13 +684,36 @@ TEST_F(ConnectionPoolTest, HardLimit)
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
 
+TEST_F(ConnectionPoolTest, HardLimit)
+{
+    DB::HTTPConnectionPools::Limits limits {0, 0, 1, 1};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection1 = pool->getConnection(timeouts, nullptr);
+        ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr));
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
 TEST_F(ConnectionPoolTest, NoReceiveCall)
 {
     auto pool = getPool();
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
 
         {
             auto data = String("Hello");
@@ -721,7 +745,7 @@ TEST_F(ConnectionPoolTest, ReconnectedWhenConnectionIsHoldTooLong)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
 
         echoRequest("Hello", *connection);
 
@@ -760,14 +784,14 @@ TEST_F(ConnectionPoolTest, ReconnectedWhenConnectionIsNearlyExpired)
 
     {
         {
-            auto connection = pool->getConnection(timeouts);
+            auto connection = pool->getConnection(timeouts, nullptr);
             echoRequest("Hello", *connection);
         }
 
         sleepForMilliseconds(900);
 
         {
-            auto connection = pool->getConnection(timeouts);
+            auto connection = pool->getConnection(timeouts, nullptr);
             echoRequest("Hello", *connection);
         }
     }
@@ -791,7 +815,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteKeepAlive)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, timeouts.http_keep_alive_timeout.totalSeconds());
         ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
@@ -799,7 +823,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteKeepAlive)
 
     {
         setOverWriteKeepAlive(1, 10);
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, timeouts.http_keep_alive_timeout.totalSeconds());
         ASSERT_EQ(1, connection->getKeepAliveTimeout().totalSeconds());
@@ -808,7 +832,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteKeepAlive)
     {
         // server do not overwrite it in the following requests but client has to remember last agreed value
         setOverWriteKeepAlive(0, 0);
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, timeouts.http_keep_alive_timeout.totalSeconds());
         ASSERT_EQ(1, connection->getKeepAliveTimeout().totalSeconds());
@@ -836,7 +860,7 @@ TEST_F(ConnectionPoolTest, MaxRequests)
 
     for (int i = 1; i <= max_requests - 1; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
         ASSERT_EQ(max_requests, connection->getKeepAliveMaxRequests());
@@ -853,7 +877,7 @@ TEST_F(ConnectionPoolTest, MaxRequests)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
         ASSERT_EQ(max_requests, connection->getKeepAliveMaxRequests());
@@ -880,7 +904,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
     auto metrics = pool->getMetrics();
 
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
         ASSERT_EQ(1000, connection->getKeepAliveMaxRequests());
@@ -892,7 +916,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
 
     for (int i = 2; i <= 10*max_requests; ++i)
     {
-        auto connection = pool->getConnection(timeouts);
+        auto connection = pool->getConnection(timeouts, nullptr);
         echoRequest("Hello", *connection);
         ASSERT_EQ(5, connection->getKeepAliveTimeout().totalSeconds());
         ASSERT_EQ(max_requests, connection->getKeepAliveMaxRequests());

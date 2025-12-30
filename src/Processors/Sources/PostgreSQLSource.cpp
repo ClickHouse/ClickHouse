@@ -1,5 +1,5 @@
-#include "PostgreSQLSource.h"
-#include "Common/Exception.h"
+#include <Processors/Sources/PostgreSQLSource.h>
+#include <Common/Exception.h>
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -32,14 +32,14 @@ template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
-    const Block & sample_block,
+    SharedHeader sample_block,
     UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
-    , query_str(query_str_)
+    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
+    , query_str(query_str_)
 {
-    init(sample_block);
+    init(*sample_block);
 }
 
 
@@ -47,16 +47,16 @@ template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
-    const Block & sample_block,
+    SharedHeader sample_block,
     UInt64 max_block_size_,
     bool auto_commit_)
-    : ISource(sample_block.cloneEmpty())
-    , query_str(query_str_)
-    , tx(std::move(tx_))
+    : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
+    , query_str(query_str_)
+    , tx(std::move(tx_))
 {
-    init(sample_block);
+    init(*sample_block);
 }
 
 template<typename T>
@@ -105,7 +105,15 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 
     auto status = ISource::prepare();
     if (status == Status::Finished)
-        onFinish();
+    {
+        if (stream)
+            stream->close();
+
+        if (tx && auto_commit)
+            tx->commit();
+
+        is_completed = true;
+    }
 
     return status;
 }
@@ -120,7 +128,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (true)
+    while (!isCancelled())
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
@@ -173,31 +181,33 @@ Chunk PostgreSQLSource<T>::generate()
 
 
 template<typename T>
-void PostgreSQLSource<T>::onFinish()
-{
-    if (stream)
-        stream->close();
-
-    if (tx && auto_commit)
-        tx->commit();
-
-    is_completed = true;
-}
-
-template<typename T>
 PostgreSQLSource<T>::~PostgreSQLSource()
 {
     if (!is_completed)
     {
         try
         {
-            stream.reset();
-            tx.reset();
+            if (stream)
+            {
+                /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
+                  * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
+                  * copy query is not cancelled, we wait until it finishes.
+                  */
+                tx->conn().cancel_query();
+
+                /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
+                  * exception is added into transaction pending error and we can potentially ignore exception message.
+                  */
+                stream->close();
+            }
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+
+        stream.reset();
+        tx.reset();
 
         if (connection_holder)
             connection_holder->setBroken();

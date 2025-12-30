@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -8,11 +8,10 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
-#include <IO/ParallelReadBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/WithFileName.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
@@ -28,16 +27,17 @@ private:
     String bucket;
     String key;
     String version_id;
-    const S3Settings::RequestSettings request_settings;
+    const S3::S3RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
     /// from separate thread other than the one which uses the buffer for s3 reading.
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
+    std::string stop_reason;
+    std::string release_reason;
 
-    std::optional<Aws::S3::Model::GetObjectResult> read_result;
-    std::unique_ptr<ReadBuffer> impl;
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
@@ -47,7 +47,7 @@ public:
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::S3RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
@@ -63,7 +63,7 @@ public:
 
     off_t getPosition() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
@@ -78,15 +78,25 @@ public:
 
     bool supportsReadAt() override { return true; }
 
+    /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
+    /// This method returns metadata from the last request. If there were no requests, it will throw exception.
+    ObjectMetadata getObjectMetadataFromTheLastRequest() const;
+
+    size_t getReadUntilPosition() const { return read_until_position; }
+
+    std::string getStopReason() const { return stop_reason; }
+
+    size_t getObjectSizeFromS3() const;
+
 private:
-    std::unique_ptr<ReadBuffer> initialize(size_t attempt);
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
 
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.
-    bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
+    bool processException(size_t read_offset, size_t attempt) const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-async-insert
 # Tag no-replicated-database: Fails due to additional replicas or shards
+# Tag no-async-insert: Quorum settings incompatible with async inserts
 
 
 set -e
@@ -61,7 +62,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA parallel_q2"
 # quorum satisfied even for merged part
 wait
 
-$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS part_log"
 $CLICKHOUSE_CLIENT --query="SELECT name FROM system.parts WHERE table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and active=1 ORDER BY name"
 $CLICKHOUSE_CLIENT --query="SELECT event_type FROM system.part_log WHERE table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and part_name='all_0_1_1'"
 $CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM parallel_q2"

@@ -2,11 +2,14 @@
 import fileinput
 import json
 import logging
+import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
+
+from env_helper import GITHUB_REPOSITORY
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
@@ -40,6 +43,7 @@ class ClickHouseHelper:
         query: str,
         file: Path,
         additional_options: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
     ) -> None:
         params = {
             "query": query,
@@ -52,7 +56,7 @@ class ClickHouseHelper:
 
         with open(file, "rb") as data_fd:
             ClickHouseHelper._insert_post(
-                url, params=params, data=data_fd, headers=auth
+                url, params=params, data=data_fd, headers=auth, **kwargs
             )
 
     @staticmethod
@@ -195,6 +199,10 @@ def get_instance_id():
     return _query_imds("latest/meta-data/instance-id")
 
 
+def get_instance_lifecycle():
+    return _query_imds("latest/meta-data/instance-life-cycle")
+
+
 def prepare_tests_results_for_clickhouse(
     pr_info: PRInfo,
     test_results: TestResults,
@@ -204,17 +212,13 @@ def prepare_tests_results_for_clickhouse(
     report_url: str,
     check_name: str,
 ) -> List[dict]:
-    pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
-    base_ref = "master"
-    head_ref = "master"
-    base_repo = pr_info.repo_full_name
-    head_repo = pr_info.repo_full_name
+    base_ref = pr_info.base_ref
+    base_repo = pr_info.base_name
+    head_ref = pr_info.head_ref
+    head_repo = pr_info.head_name
+    pull_request_url = f"https://github.com/{GITHUB_REPOSITORY}/commits/{head_ref}"
     if pr_info.number != 0:
         pull_request_url = pr_info.pr_html_url
-        base_ref = pr_info.base_ref
-        base_repo = pr_info.base_name
-        head_ref = pr_info.head_ref
-        head_repo = pr_info.head_name
 
     common_properties = {
         "pull_request_number": pr_info.number,
@@ -231,7 +235,7 @@ def prepare_tests_results_for_clickhouse(
         "head_ref": head_ref,
         "head_repo": head_repo,
         "task_url": pr_info.task_url,
-        "instance_type": get_instance_type(),
+        "instance_type": ",".join([get_instance_type(), get_instance_lifecycle()]),
         "instance_id": get_instance_id(),
     }
 
@@ -292,11 +296,17 @@ class CiLogsCredentials:
     def get_docker_arguments(
         self, pr_info: PRInfo, check_start_time: str, check_name: str
     ) -> str:
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+        if run_by_hash_total > 1:
+            run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+            check_name = f"{check_name} [{run_by_hash_num + 1}/{run_by_hash_total}]"
+
         self.create_ci_logs_credentials()
         if not self.config_path.exists():
             logging.info("Do not use external logs pushing")
             return ""
         extra_columns = (
+            f"toLowCardinality('{pr_info.base_name}') AS repo, "
             f"CAST({pr_info.number} AS UInt32) AS pull_request_number, '{pr_info.sha}' AS commit_sha, "
             f"toDateTime('{check_start_time}', 'UTC') AS check_start_time, toLowCardinality('{check_name}') AS check_name, "
             f"toLowCardinality('{get_instance_type()}') AS instance_type, '{get_instance_id()}' AS instance_id"

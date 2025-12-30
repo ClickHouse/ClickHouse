@@ -7,8 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+
 
 namespace DB
 {
@@ -21,7 +21,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ParserToken close_p(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list_p;
 
-    ParserDataType data_type_p;
+    ParserExpressionWithOptionalArguments type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -50,7 +50,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         }
         else
         {
-            auto tuple_func = makeASTFunction("tuple");
+            auto tuple_func = makeASTOperator("tuple");
             tuple_func->arguments = std::make_shared<ASTExpressionList>();
 
             for (const auto & order_by_elem : order_list->children)
@@ -68,7 +68,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     if (s_type.ignore(pos, expected))
     {
-        if (!data_type_p.parse(pos, type, expected))
+        if (!type_p.parse(pos, type, expected))
             return false;
     }
 
@@ -81,21 +81,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     /// name is set below in ParserCreateIndexQuery
     auto index = std::make_shared<ASTIndexDeclaration>(expr, type, "");
     index->part_of_create_index_query = true;
-
-    if (granularity)
-    {
-        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    }
-    else
-    {
-        auto index_type = index->getType();
-        if (index_type && index_type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type && index_type->name == "usearch")
-            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
-        else
-            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-    }
+    index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
     return true;
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/Context_fwd.h>
@@ -16,7 +15,6 @@ struct ASTTablesInSelectQueryElement;
 class TableJoin;
 struct Settings;
 struct SelectQueryOptions;
-using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
@@ -35,9 +33,6 @@ struct TreeRewriterResult
     NamesAndTypesList required_source_columns;
     /// Same as above but also record alias columns which are expanded. This is for RBAC access check.
     Names required_source_columns_before_expanding_alias_columns;
-
-    /// Set of columns that object columns are not extended. This is for distinguishing JSON and Tuple type.
-    NamesAndTypesList source_columns_ordinary;
 
     NameSet missed_subcolumns;
 

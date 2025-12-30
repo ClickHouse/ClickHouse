@@ -1,12 +1,20 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Parsers/NullsAction.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
 {
@@ -119,6 +127,79 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
         args_array->add(name);
 
     map.add("Arguments", std::move(args_array));
+}
+
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
+{
+    writeVarUInt(aggregates.size(), out);
+    for (const auto & aggregate : aggregates)
+    {
+        writeStringBinary(aggregate.column_name, out);
+
+        UInt64 num_args = aggregate.argument_names.size();
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+
+        if (argument_types.size() != num_args)
+        {
+            WriteBufferFromOwnString buf;
+            aggregate.explain(buf, 0);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid number of for aggregate function. Expected {}, got {}. Description:\n{}",
+                argument_types.size(), num_args, buf.str());
+        }
+
+        writeVarUInt(num_args, out);
+        for (size_t i = 0; i < num_args; ++i)
+        {
+            writeStringBinary(aggregate.argument_names[i], out);
+            encodeDataType(argument_types[i], out);
+        }
+
+        writeStringBinary(aggregate.function->getName(), out);
+
+        writeVarUInt(aggregate.parameters.size(), out);
+        for (const auto & param : aggregate.parameters)
+            writeFieldBinary(param, out);
+    }
+}
+
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
+{
+    UInt64 num_aggregates;
+    readVarUInt(num_aggregates, in);
+    aggregates.resize(num_aggregates);
+    for (auto & aggregate : aggregates)
+    {
+        readStringBinary(aggregate.column_name, in);
+
+        UInt64 num_args;
+        readVarUInt(num_args, in);
+        aggregate.argument_names.resize(num_args);
+
+        DataTypes argument_types;
+        argument_types.reserve(num_args);
+
+        for (auto & arg_name : aggregate.argument_names)
+        {
+            readStringBinary(arg_name, in);
+            argument_types.emplace_back(decodeDataType(in));
+        }
+
+        String function_name;
+        readStringBinary(function_name, in);
+
+        UInt64 num_params;
+        readVarUInt(num_params, in);
+        aggregate.parameters.resize(num_params);
+        for (auto & param : aggregate.parameters)
+            param = readFieldBinary(in);
+
+        auto action = NullsAction::EMPTY; /// As I understand, it should be resolved to function name.
+        AggregateFunctionProperties properties;
+        aggregate.function = AggregateFunctionFactory::instance().get(
+            function_name, action, argument_types, aggregate.parameters, properties);
+    }
+
 }
 
 }

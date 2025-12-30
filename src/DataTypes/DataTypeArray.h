@@ -47,15 +47,14 @@ public:
 
     Field getDefault() const override;
 
+    DataTypePtr getNormalizedType() const override { return std::make_shared<DataTypeArray>(nested->getNormalizedType()); }
     bool equals(const IDataType & rhs) const override;
-
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
-    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
 
     /// Array column doesn't have subcolumns by itself but allows to read subcolumns of nested column.
     /// If nested column has dynamic subcolumns, Array of this type should also be able to read these dynamic subcolumns.
@@ -66,6 +65,8 @@ public:
     {
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
+
+    void updateHashImpl(SipHash & hash) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 

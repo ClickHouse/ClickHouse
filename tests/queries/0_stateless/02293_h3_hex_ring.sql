@@ -1,9 +1,9 @@
 -- Tags: no-fasttest
 
 SELECT h3HexRing(581276613233082367, toUInt16(0));
-SELECT h3HexRing(579205132326352334, toUInt16(1)) as hexRing; -- { serverError 117 }
-SELECT h3HexRing(581276613233082367, -1); -- { serverError 43 }
-SELECT h3HexRing(581276613233082367, toUInt16(-1)); -- { serverError 12 }
+SELECT h3HexRing(579205132326352334, toUInt16(1)) as hexRing; -- { serverError INCORRECT_DATA }
+SELECT h3HexRing(581276613233082367, -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT h3HexRing(581276613233082367, toUInt16(-1)); -- { serverError PARAMETER_OUT_OF_BOUND }
 
 DROP TABLE IF EXISTS h3_indexes;
 

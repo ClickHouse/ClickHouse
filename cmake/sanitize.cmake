@@ -20,10 +20,11 @@ if (SANITIZE)
 
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
         # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins -fno-optimize-sibling-calls -fPIC -fpie")
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins -fPIC -fpie")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
+        # NOTE: See also libcxxabi cmake rules
     elseif (SANITIZE STREQUAL "thread")
         set (TSAN_FLAGS "-fsanitize=thread")
         set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/tsan_ignorelist.txt")
@@ -57,7 +58,8 @@ option(WITH_COVERAGE "Instrumentation for code coverage with default implementat
 
 if (WITH_COVERAGE)
     message (STATUS "Enabled instrumentation for code coverage")
-    set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
+    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 endif()
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)

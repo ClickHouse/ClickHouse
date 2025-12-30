@@ -23,6 +23,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForDynamic() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -45,7 +48,7 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "The second argument of function {} should be a constant string with the name of a subcolumn", name);
 
-        return column->getDataAt(0).toView();
+        return column->getDataAt(0);
     }
 };
 
@@ -60,7 +63,7 @@ Receives the expression or identifier and constant string with the name of subco
 Returns requested subcolumn extracted from the expression.
 )",
         .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
-        .categories{"OtherFunctions"}
+        .category = FunctionDocumentation::Category::Other
     });
 }
 

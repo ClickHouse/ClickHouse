@@ -1,4 +1,5 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-fasttest
+-- no-fasttest: Slow test
 -- no sanitizers: too slow sometimes
 
 DROP TABLE IF EXISTS 02581_trips;

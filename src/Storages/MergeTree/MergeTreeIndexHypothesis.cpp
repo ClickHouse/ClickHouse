@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexHypothesis.h>
 #include <Storages/MergeTree/MergeTreeIndexHypothesisMergedCondition.h>
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
@@ -9,6 +8,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -37,7 +37,7 @@ void MergeTreeIndexGranuleHypothesis::deserializeBinary(ReadBuffer & istr, Merge
     Field field_met;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt8>());
     size_type->getDefaultSerialization()->deserializeBinary(field_met, istr, {});
-    met = field_met.get<UInt8>();
+    met = field_met.safeGet<UInt8>();
     is_empty = false;
 }
 
@@ -73,13 +73,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexHypothesis::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleHypothesis>(index.name);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorHypothesis>(index.name, index.sample_block.getNames().front());
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const ActionsDAGPtr &, ContextPtr) const
+    const ActionsDAG::Node *, ContextPtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }
@@ -99,7 +99,7 @@ MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)
 void hypothesisIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.expression_list_ast->children.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hypothesis index needs exactly one expression");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Hypothesis index needs exactly one expression");
 }
 
 }

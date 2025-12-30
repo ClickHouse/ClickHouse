@@ -1,7 +1,8 @@
 #include <Storages/Freeze.h>
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Storages/PartitionCommands.h>
+#include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -69,7 +70,7 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     auto metadata_storage = data_disk->getMetadataStorage();
     auto file_path = getFileName(path);
 
-    if (!metadata_storage->exists(file_path))
+    if (!metadata_storage->existsFile(file_path))
         return false;
     auto metadata_str = metadata_storage->readFileToString(file_path);
     ReadBufferFromString buffer(metadata_str);
@@ -105,7 +106,7 @@ void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
 {
     auto metadata_storage = data_disk->getMetadataStorage();
     auto fname = getFileName(path);
-    if (metadata_storage->exists(fname))
+    if (metadata_storage->existsFile(fname))
     {
         auto tx = metadata_storage->createTransaction();
         tx->unlinkFile(fname);
@@ -137,23 +138,22 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                         config_key);
     }
 
-    auto disks_map = local_context->getDisksMap();
-    Disks disks;
-    for (auto & [name, disk]: disks_map)
-    {
-        disks.push_back(disk);
-    }
     auto backup_path = fs::path(backup_directory_prefix) / escapeForFileName(backup_name);
     auto store_paths = {backup_path / "store", backup_path / "data"};
 
     PartitionCommandsResultInfo result_info;
 
-    for (const auto & disk: disks)
+    auto disks_map = local_context->getDisksMap();
+    for (auto & [_, disk] : disks_map)
     {
-        for (const auto& store_path: store_paths)
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
+        for (const auto & store_path : store_paths)
         {
-            if (!disk->exists(store_path))
+            if (!disk->existsDirectory(store_path))
                 continue;
+
             for (auto prefix_it = disk->iterateDirectory(store_path); prefix_it->isValid(); prefix_it->next())
             {
                 auto prefix_directory = store_path / prefix_it->name();
@@ -163,9 +163,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                     auto current_result_info = unfreezePartitionsFromTableDirectory(
                         [](const String &) { return true; }, backup_name, {disk}, table_directory);
                     for (auto & command_result : current_result_info)
-                    {
                         command_result.command_type = "SYSTEM UNFREEZE";
-                    }
                     result_info.insert(
                         result_info.end(),
                         std::make_move_iterator(current_result_info.begin()),
@@ -173,7 +171,8 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                 }
             }
         }
-        if (disk->exists(backup_path))
+
+        if (disk->existsDirectory(backup_path))
         {
             /// After unfreezing we need to clear revision.txt file and empty directories
             disk->removeRecursive(backup_path);
@@ -188,7 +187,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     return result;
 }
 
-bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper)
+bool Unfreezer::removeFrozenPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper)
 {
     if (disk->supportZeroCopyReplication())
     {
@@ -211,7 +210,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
     for (const auto & disk : disks)
     {
-        if (!disk->exists(table_directory))
+        if (!disk->existsDirectory(table_directory))
             continue;
 
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())
@@ -229,7 +228,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
             const auto & path = it->path();
 
-            bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context, zookeeper);
+            bool keep_shared = removeFrozenPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{
                 .command_type = "UNFREEZE PART",

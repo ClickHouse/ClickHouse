@@ -64,6 +64,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -115,7 +120,32 @@ const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCarte
 
 REGISTER_FUNCTION(PolygonsEquals)
 {
-    factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>();
+    FunctionDocumentation::Description description = R"(
+Returns true if two polygons are equal.
+    )";
+    FunctionDocumentation::Syntax syntax = "polygonsEqualsCartesian(polygon1, polygon2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"polygon1", "The first Polygon.", {"Polygon"}},
+        {"polygon2", "The second Polygon.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if equal, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Equality check example",
+        R"(
+SELECT polygonsEqualsCartesian([[[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+        )",
+        R"(
+1
+    )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>(function_documentation);
 }
 
 }

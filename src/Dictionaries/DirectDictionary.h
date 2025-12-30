@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <variant>
 #include <vector>
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -13,11 +12,13 @@
 namespace DB
 {
 
+struct Settings;
+
 template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     DirectDictionary(
         const StorageID & dict_id_,
@@ -98,7 +99,7 @@ public:
     void applySettings(const Settings & settings);
 
 private:
-    Pipe getSourcePipe(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    BlockIO loadKeys(const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

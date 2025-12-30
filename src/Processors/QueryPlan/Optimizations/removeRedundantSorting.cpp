@@ -4,10 +4,13 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -15,6 +18,9 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
+
+
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -59,9 +65,13 @@ public:
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (2) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (3) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step)) /// (4) aggregation change order
+            || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FractionalOffsetStep *>(current_step) /// (3) FractionalOffset Steps on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<OffsetStep *>(current_step) /// (4) OFFSET on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
+            || typeid_cast<CustomMetricLogViewStep *>(current_step))
         {
             logStep("nodes_affect_order/push", current_node);
             nodes_affect_order.push_back(current_node);
@@ -98,7 +108,7 @@ private:
         }
 
         /// sorting removed, so need to update sorting traits for upstream steps
-        const DataStream * input_stream = &parent_node->children.front()->step->getOutputStream();
+        const SharedHeader * input_header = &parent_node->children.front()->step->getOutputHeader();
         chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
@@ -117,8 +127,8 @@ private:
                 break;
             }
 
-            trans->updateInputStream(*input_stream);
-            input_stream = &trans->getOutputStream();
+            trans->updateInputHeader(*input_header);
+            input_header = &trans->getOutputHeader();
 
             /// update sorting properties though stack until reach node which affects order (inclusive)
             if (node == nodes_affect_order.back())
@@ -147,6 +157,9 @@ private:
         /// if ORDER BY is with FILL WITH, it is non-removable
         if (typeid_cast<LimitStep *>(step_affect_order) || typeid_cast<LimitByStep *>(step_affect_order)
             || typeid_cast<FillingStep *>(step_affect_order))
+            return false;
+
+        if (typeid_cast<CustomMetricLogViewStep *>(step_affect_order))
             return false;
 
         /// (1) aggregation
@@ -179,7 +192,7 @@ private:
             return true;
         }
         /// (2) sorting
-        else if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
+        if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
         {
             if (next_sorting->getType() == SortingStep::Type::Full)
                 return true;
@@ -213,12 +226,12 @@ private:
             logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
-                if (expr->getExpression()->hasStatefulFunctions())
+                if (expr->getExpression().hasStatefulFunctions())
                     return false;
             }
             else if (const auto * filter = typeid_cast<const FilterStep *>(step); filter)
             {
-                if (filter->getExpression()->hasStatefulFunctions())
+                if (filter->getExpression().hasStatefulFunctions())
                     return false;
             }
             else

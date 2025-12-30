@@ -1,3 +1,4 @@
+SET allow_statistics_optimize = 0;
 SELECT * FROM (SELECT col1, col2 FROM (select '1' as col1, '2' as col2) GROUP by col1, col2) AS expr_qry WHERE col2 != '';
 SELECT * FROM (SELECT materialize('1') AS s1, materialize('2') AS s2 GROUP BY s1, s2) WHERE s2 = '2';
 SELECT * FROM (SELECT materialize([1]) AS s1, materialize('2') AS s2 GROUP BY s1, s2) WHERE s2 = '2';
@@ -57,13 +58,13 @@ EXPLAIN indexes=1 SELECT id, delete_time FROM t1
  CROSS JOIN (
     SELECT delete_time
     FROM t2
-) AS d WHERE create_time < delete_time AND id = 101 SETTINGS allow_experimental_analyzer=0;
+) AS d WHERE create_time < delete_time AND id = 101 SETTINGS enable_analyzer=0;
 
 EXPLAIN indexes=1 SELECT id, delete_time FROM t1
  CROSS JOIN (
     SELECT delete_time
     FROM t2
-) AS d WHERE create_time < delete_time AND id = 101 SETTINGS allow_experimental_analyzer=1;
+) AS d WHERE create_time < delete_time AND id = 101 SETTINGS enable_analyzer=1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

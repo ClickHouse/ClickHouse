@@ -4,6 +4,7 @@
 #include <Common/iota.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
@@ -11,10 +12,14 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include "PolygonDictionary.h"
+#include <Dictionaries/PolygonDictionary.h>
 
-#include <numeric>
-
+namespace CurrentMetrics
+{
+    extern const Metric PolygonDictionaryThreads;
+    extern const Metric PolygonDictionaryThreadsActive;
+    extern const Metric PolygonDictionaryThreadsScheduled;
+}
 
 namespace DB
 {
@@ -252,7 +257,8 @@ private:
         std::vector<std::unique_ptr<ICell<ReturnCell>>> children;
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
 
-        ThreadPoolCallbackRunnerLocal<void, GlobalThreadPool> runner(GlobalThreadPool::instance(), "PolygonDict");
+        ThreadPool pool(CurrentMetrics::PolygonDictionaryThreads, CurrentMetrics::PolygonDictionaryThreadsActive, CurrentMetrics::PolygonDictionaryThreadsScheduled, 128);
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
         for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
         {
             auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i, x = current_min_x, y = current_min_y]() mutable
@@ -263,7 +269,7 @@ private:
                 }
             };
             if (depth <= kMultiProcessingDepth)
-                runner(std::move(handle_row));
+                runner.enqueueAndKeepTrack(std::move(handle_row));
             else
                 handle_row();
         }

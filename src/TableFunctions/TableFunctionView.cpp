@@ -1,16 +1,23 @@
+#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionView.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -47,14 +54,14 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    Block sample_block;
+    SharedHeader sample_block;
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
     else
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
 
-    return ColumnsDescription(sample_block.getNamesAndTypesList());
+    return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionView::executeImpl(

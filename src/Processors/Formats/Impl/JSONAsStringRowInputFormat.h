@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
@@ -16,19 +15,13 @@ class ReadBuffer;
 class JSONAsRowInputFormat : public JSONEachRowRowInputFormat
 {
 public:
-    JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
-
-    void setReadBuffer(ReadBuffer & in_) override;
-    void resetReadBuffer() override;
+    JSONAsRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
 
 private:
-    JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings);
-
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
 protected:
     virtual void readJSONObject(IColumn & column) = 0;
-    std::unique_ptr<PeekableReadBuffer> buf;
 };
 
 /// Each JSON object is parsed as a whole to string.
@@ -36,11 +29,18 @@ protected:
 class JSONAsStringRowInputFormat final : public JSONAsRowInputFormat
 {
 public:
-    JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings);
+    JSONAsStringRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "JSONAsStringRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
+
 private:
+    JSONAsStringRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_);
+
     void readJSONObject(IColumn & column) override;
+
+    std::unique_ptr<PeekableReadBuffer> buf;
 };
 
 
@@ -49,7 +49,7 @@ private:
 class JSONAsObjectRowInputFormat final : public JSONAsRowInputFormat
 {
 public:
-    JSONAsObjectRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    JSONAsObjectRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "JSONAsObjectRowInputFormat"; }
 
 private:
@@ -69,12 +69,15 @@ public:
 class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
 {
 public:
-    explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
+    explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings_);
 
     NamesAndTypesList readSchema() override
     {
-        return {{"json", std::make_shared<DataTypeObject>("json", false)}};
+        return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
     }
+
+private:
+    FormatSettings settings;
 };
 
 }

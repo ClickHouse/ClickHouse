@@ -2,6 +2,9 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <IO/ReadBuffer.h>
+
+class SipHash;
 
 namespace DB
 {
@@ -32,7 +35,7 @@ public:
     const char * end = nullptr;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
-    ReadBuffer * tail = nullptr;
+    mutable ReadBufferPtr tail = nullptr;
 
     bool async_insert_flush = false;
 
@@ -71,7 +74,7 @@ public:
     QueryKind getQueryKind() const override { return async_insert_flush ? QueryKind::AsyncInsertFlush : QueryKind::Insert; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 

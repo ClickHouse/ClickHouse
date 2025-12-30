@@ -1,10 +1,11 @@
 #pragma once
 
 #include <string>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 class Stopwatch;
 
@@ -22,7 +23,10 @@ struct RowReadExtension
 /// Common parameters for generating blocks.
 struct RowInputFormatParams
 {
-    size_t max_block_size = 0;
+    size_t max_block_size_rows = 0;
+    size_t max_block_size_bytes = 0;
+    size_t min_block_size_rows = 0;
+    size_t min_block_size_bytes = 0;
 
     UInt64 allow_errors_num = 0;
     Float64 allow_errors_ratio = 0;
@@ -40,7 +44,7 @@ class IRowInputFormat : public IInputFormat
 public:
     using Params = RowInputFormatParams;
 
-    IRowInputFormat(Block header, ReadBuffer & in_, Params params_);
+    IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_);
 
     Chunk read() override;
 
@@ -58,6 +62,7 @@ protected:
     /// `max_block_size` can be ignored.
     virtual size_t countRows(size_t max_block_size);
     virtual bool supportsCountRows() const { return false; }
+    virtual bool supportsCustomSerializations() const { return false; }
 
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
@@ -77,13 +82,14 @@ protected:
 
     void logError();
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getRowNum() const { return total_rows; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
     void setRowsReadBefore(size_t rows) override { total_rows = rows; }
+    void setSerializationHints(const SerializationInfoByName & hints) override;
 
     Serializations serializations;
 

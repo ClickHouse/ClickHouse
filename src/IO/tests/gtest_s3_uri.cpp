@@ -189,6 +189,14 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
+        S3::URI uri("https://bucketname.dots-are-allowed.s3-us-east-2.amazonaws.com/data");
+        ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
+        ASSERT_EQ("bucketname.dots-are-allowed", uri.bucket);
+        ASSERT_EQ("data", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
         S3::URI uri("https://s3-us-east-2.amazonaws.com/bucketname/data");
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
@@ -204,11 +212,73 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
+    {
+        S3::URI uri("https://bucket-test1.oss-cn-beijing-internal.aliyuncs.com/ab-test");
+        ASSERT_EQ("https://oss-cn-beijing-internal.aliyuncs.com", uri.endpoint);
+        ASSERT_EQ("bucket-test1", uri.bucket);
+        ASSERT_EQ("ab-test", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
+        S3::URI uri("https://bucket-test.cn-beijing-internal.oss-data-acc.aliyuncs.com/ab-test");
+        ASSERT_EQ("https://cn-beijing-internal.oss-data-acc.aliyuncs.com", uri.endpoint);
+        ASSERT_EQ("bucket-test", uri.bucket);
+        ASSERT_EQ("ab-test", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
 }
 
-TEST_P(S3UriTest, invalidPatterns)
+TEST(S3UriTest, GcsV2PresignedQueryNotFolded)
 {
-    ASSERT_ANY_THROW(S3::URI new_uri(GetParam()));
+    using namespace DB;
+    S3::URI uri("https://storage.googleapis.com/test-bucket/path/to/object.txt?GoogleAccessId=x&Expires=1&Signature=x");
+
+    ASSERT_EQ("https://storage.googleapis.com", uri.endpoint);
+    ASSERT_EQ("test-bucket", uri.bucket);
+    ASSERT_EQ("path/to/object.txt", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_FALSE(uri.is_virtual_hosted_style);
+}
+
+TEST(S3UriTest, GcsV4PresignedQueryNotFolded)
+{
+    using namespace DB;
+    S3::URI uri("https://storage.googleapis.com/test-bucket/obj.txt?X-Goog-Algorithm=x&X-Goog-Credential=x&X-Goog-Date=x&X-Goog-Expires=x&X-Goog-SignedHeaders=x&X-Goog-Signature=x");
+
+    ASSERT_EQ("https://storage.googleapis.com", uri.endpoint);
+    ASSERT_EQ("test-bucket", uri.bucket);
+    ASSERT_EQ("obj.txt", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_FALSE(uri.is_virtual_hosted_style);
+}
+
+TEST(S3UriTest, AwsV4PresignedQueryNotFolded)
+{
+    using namespace DB;
+    S3::URI uri("https://bucketname.s3.amazonaws.com/path/to/object.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=x%2F20250101%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250101T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=x");
+
+    ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
+    ASSERT_EQ("bucketname", uri.bucket);
+    ASSERT_EQ("path/to/object.txt", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_TRUE(uri.is_virtual_hosted_style);
+}
+
+TEST(S3UriTest, AwsV4PresignedQueryFoldedInCompatibilityMode)
+{
+    using namespace DB;
+    S3::URI uri(
+        "https://bucketname.s3.amazonaws.com/data?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=x&X-Amz-Date=20250101T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=x",
+        /*allow_archive_path_syntax*/ false,
+        /*keep_presigned_query_parameters*/ false);
+
+    ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
+    ASSERT_EQ("bucketname", uri.bucket);
+    ASSERT_EQ("data?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=x&X-Amz-Date=20250101T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=x", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_TRUE(uri.is_virtual_hosted_style);
 }
 
 TEST(S3UriTest, versionIdChecks)
@@ -223,19 +293,33 @@ TEST(S3UriTest, versionIdChecks)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    S3,
-    S3UriTest,
-    testing::Values(
-        "https:///",
-        "https://.s3.amazonaws.com/key",
-        "https://s3.amazonaws.com/key",
-        "https://jokserfn.s3amazonaws.com/key",
-        "https://s3.amazonaws.com//",
-        "https://amazonaws.com/",
-        "https://amazonaws.com//",
-        "https://amazonaws.com//key"));
+TEST(S3UriTest, WildcardQuestionMarksCustomEndpoint)
+{
+    // Custom endpoint (like MinIO) with bucket in the first path segment and
+    // wildcard '??' in the path. We ensure the bucket and key are parsed correctly
+    // and that '?' from the path is preserved in the key (folded from query),
+    // while query is cleared and versionId remains empty.
+    using namespace DB;
+    S3::URI uri("http://minio1:9001/root/data/wildcard_test_??.tsv.gz");
 
+    ASSERT_EQ("http://minio1:9001", uri.endpoint);
+    ASSERT_EQ("root", uri.bucket);
+    ASSERT_EQ("data/wildcard_test_??.tsv.gz", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_FALSE(uri.is_virtual_hosted_style);
 }
 
+TEST(S3UriTest, TrailingQuestionMarkWildcard)
+{
+    using namespace DB;
+    S3::URI uri("http://minio1:9001/root/data/wildcard_end_?");
+
+    ASSERT_EQ("http://minio1:9001", uri.endpoint);
+    ASSERT_EQ("root", uri.bucket);
+    ASSERT_EQ("data/wildcard_end_?", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_FALSE(uri.is_virtual_hosted_style);
+}
+
+}
 #endif

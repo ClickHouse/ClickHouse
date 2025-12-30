@@ -48,6 +48,8 @@ namespace ErrorCodes
         #define __NR_renameat2 276
     #elif defined(__loongarch64)
         #define __NR_renameat2 276
+    #elif defined(__e2k__)
+        #define __NR_renameat2 384
     #else
         #error "Unsupported architecture"
     #endif
@@ -57,11 +59,13 @@ namespace ErrorCodes
 namespace DB
 {
 
-static bool supportsAtomicRenameImpl()
+static std::optional<std::string> supportsAtomicRenameImpl()
 {
     VersionNumber renameat2_minimal_version(3, 15, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
-    return linux_version >= renameat2_minimal_version;
+    if (linux_version >= renameat2_minimal_version)
+        return std::nullopt;
+    return fmt::format("Linux kernel 3.15+ is required, got {}", linux_version.toString());
 }
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
@@ -97,10 +101,14 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, new_path, "Cannot rename {} to {}", old_path, new_path);
 }
 
-bool supportsAtomicRename()
+bool supportsAtomicRename(std::string * out_message)
 {
-    static bool supports = supportsAtomicRenameImpl();
-    return supports;
+    static auto error = supportsAtomicRenameImpl();
+    if (!error.has_value())
+        return true;
+    if (out_message)
+        *out_message = error.value();
+    return false;
 }
 
 }
@@ -152,16 +160,22 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
 }
 
 
-static bool supportsAtomicRenameImpl()
+static std::optional<std::string> supportsAtomicRenameImpl()
 {
     auto fun = dlsym(RTLD_DEFAULT, "renamex_np");
-    return fun != nullptr;
+    if (fun != nullptr)
+        return std::nullopt;
+    return "macOS 10.12 or later is required";
 }
 
-bool supportsAtomicRename()
+bool supportsAtomicRename(std::string * out_message)
 {
-    static bool supports = supportsAtomicRenameImpl();
-    return supports;
+    static auto error = supportsAtomicRenameImpl();
+    if (!error.has_value())
+        return true;
+    if (out_message)
+        *out_message = error.value();
+    return false;
 }
 
 }
@@ -179,8 +193,10 @@ static bool renameat2(const std::string &, const std::string &, int)
     return false;
 }
 
-bool supportsAtomicRename()
+bool supportsAtomicRename(std::string * out_message)
 {
+    if (out_message)
+        *out_message = "only Linux and macOS are supported";
     return false;
 }
 

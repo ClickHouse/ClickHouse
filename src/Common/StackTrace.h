@@ -1,9 +1,10 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
+#include <Common/FramePointers.h>
 
 #include <string>
-#include <vector>
 #include <array>
 #include <optional>
 #include <functional>
@@ -36,16 +37,11 @@ public:
         std::optional<UInt64> line;
     };
 
-    /* NOTE: It cannot be larger right now, since otherwise it
-     * will not fit into minimal PIPE_BUF (512) in TraceCollector.
-     */
-    static constexpr size_t capacity = 45;
-
-    using FramePointers = std::array<void *, capacity>;
-    using Frames = std::array<Frame, capacity>;
+    using Frames = std::array<Frame, FRAMEPOINTER_CAPACITY>;
 
     /// Tries to capture stack trace
-    StackTrace() { tryCapture(); }
+    /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace
+    NO_INLINE StackTrace();
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
@@ -54,12 +50,14 @@ public:
     /// Creates empty object for deferred initialization
     explicit StackTrace(NoCapture) {}
 
+    StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_ = 0);
+
     constexpr size_t getSize() const { return size; }
     constexpr size_t getOffset() const { return offset; }
     const FramePointers & getFramePointers() const { return frame_pointers; }
     std::string toString() const;
 
-    static std::string toString(void ** frame_pointers, size_t offset, size_t size);
+    static std::string toString(void * const * frame_pointers, size_t offset, size_t size);
     static void dropCache();
 
     /// @param fatal - if true, will process inline frames (slower)

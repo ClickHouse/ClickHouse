@@ -1,5 +1,5 @@
 -- Tags: zookeeper
-
+DROP TABLE IF EXISTS join_inner_table__fuzz_146_replicated SYNC;
 CREATE TABLE join_inner_table__fuzz_146_replicated
 (
     `id` UUID,
@@ -21,31 +21,24 @@ INSERT INTO join_inner_table__fuzz_146_replicated
 SELECT number
 FROM join_inner_table__fuzz_146_replicated
     SETTINGS
-    allow_experimental_analyzer = 1,
+    enable_analyzer = 1,
     max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    allow_experimental_parallel_reading_from_replicas = 1;
+    enable_parallel_replicas = 1;
 
-SYSTEM FLUSH LOGS;
--- There should be 2 different queries
--- The initial query
--- The query sent to each replica (which should appear 2 times as we are setting max_parallel_replicas to 2)
-SELECT
-        is_initial_query,
-        count() as c, query,
+SYSTEM FLUSH LOGS query_log;
+SELECT is_initial_query, ProfileEvents['ParallelReplicasQueryCount'] as c, query
 FROM system.query_log
-WHERE
-        event_date >= yesterday()
+WHERE event_date >= yesterday()
   AND type = 'QueryFinish'
-  AND initial_query_id =
+  AND query_id =
       (
           SELECT query_id
           FROM system.query_log
-          WHERE
-                  current_database = currentDatabase()
+          WHERE current_database = currentDatabase()
             AND event_date >= yesterday()
             AND type = 'QueryFinish'
             AND query LIKE '-- Simple query with analyzer and pure parallel replicas%'
-      )
-GROUP BY is_initial_query, query
-ORDER BY is_initial_query DESC, c, query;
+      );
+
+DROP TABLE join_inner_table__fuzz_146_replicated SYNC;

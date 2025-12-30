@@ -9,9 +9,10 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
-#include <Storages/StorageS3Settings.h>
+#include <IO/StdIStreamFromMemory.h>
+#include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
 
 #include <memory>
@@ -38,7 +39,7 @@ public:
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::S3RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
@@ -54,6 +55,8 @@ private:
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
+    void cancelImpl() noexcept override;
+
     String getVerboseLogDetails() const;
     String getShortLogDetails() const;
 
@@ -62,7 +65,6 @@ private:
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();
-    void allocateFirstBuffer();
     void setFakeBufferWhenPreFinalized();
 
     S3::UploadPartRequest getUploadRequest(size_t part_number, PartData & data);
@@ -71,20 +73,22 @@ private:
     void createMultipartUpload();
     void completeMultipartUpload();
     void abortMultipartUpload();
-    void tryToAbortMultipartUpload();
+    void tryToAbortMultipartUpload() noexcept;
 
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
+    /// Returns true if not a single byte was written to the buffer
+    bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
+
     const String bucket;
     const String key;
-    const S3Settings::RequestSettings request_settings;
-    const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
+    const S3::S3RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
-    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 

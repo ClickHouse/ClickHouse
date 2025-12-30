@@ -3,8 +3,9 @@ import re
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -1775,7 +1776,7 @@ def test_consumption_of_show_clusters():
 def test_consumption_of_show_processlist():
     instance.query("SHOW PROCESSLIST")
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N.*",
         instance.query("SHOW QUOTA"),
     )
 

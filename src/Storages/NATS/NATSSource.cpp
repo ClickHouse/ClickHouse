@@ -1,13 +1,19 @@
 #include <Storages/NATS/NATSSource.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/NATS/NATSConsumer.h>
-#include <IO/EmptyReadBuffer.h>
+#include <Storages/NATS/INATSConsumer.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+}
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
@@ -45,7 +51,7 @@ NATSSource::NATSSource(
     const Names & columns,
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(getSampleBlock(headers.first, headers.second))
+    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -55,16 +61,16 @@ NATSSource::NATSSource(
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
-    storage.incrementReader();
 }
 
 
 NATSSource::~NATSSource()
 {
-    storage.decrementReader();
-
     if (!consumer)
         return;
+
+    if (unsubscribe_on_destroy)
+        consumer->unsubscribe();
 
     storage.pushConsumer(consumer);
 }
@@ -86,9 +92,14 @@ Chunk NATSSource::generate()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
-        consumer->subscribe();
+
+        if (consumer && !consumer->isSubscribed())
+        {
+            consumer->subscribe();
+            unsubscribe_on_destroy = true;
+        }
     }
 
     if (!consumer || is_finished)
@@ -99,32 +110,33 @@ Chunk NATSSource::generate()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
     std::optional<String> exception_message;
     size_t total_rows = 0;
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         if (handle_error_mode == StreamingHandleErrorMode::STREAM)
         {
             exception_message = e.message();
-            for (const auto & column : result_columns)
+            for (size_t i = 0; i < result_columns.size(); ++i)
             {
-                // We could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+                // We could already push some rows to result_columns before exception, we need to fix it.
+                result_columns[i]->rollback(*checkpoints[i]);
 
                 // All data columns will get default value in case of error.
-                column->insertDefault();
+                result_columns[i]->insertDefault();
             }
 
             return 1;
         }
-        else
-        {
-            throw std::move(e);
-        }
+
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
@@ -148,8 +160,8 @@ Chunk NATSSource::generate()
                 if (exception_message)
                 {
                     const auto & current_message = consumer->getCurrentMessage();
-                    virtual_columns[1]->insertData(current_message.data(), current_message.size());
-                    virtual_columns[2]->insertData(exception_message->data(), exception_message->size());
+                    virtual_columns[1]->insertData(current_message);
+                    virtual_columns[2]->insertData(*exception_message);
 
                 }
                 else

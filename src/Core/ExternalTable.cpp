@@ -7,24 +7,30 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/WriteHelpers.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/ExternalTable.h>
-#include <Poco/Net/MessageHeader.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Common/logger_useful.h>
+#include <Poco/Net/MessageHeader.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 http_max_multipart_form_data_size;
+}
 
 namespace ErrorCodes
 {
@@ -48,7 +54,7 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").get<UInt64>());
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").safeGet<UInt64>());
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();
@@ -84,7 +90,15 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
         /// We use `formatWithPossiblyHidingSensitiveData` instead of `getColumnNameWithoutAlias` because `column->type` is an ASTFunction.
         /// `getColumnNameWithoutAlias` will return name of the function with `(arguments)` even if arguments is empty.
         if (column)
-            structure.emplace_back(column->name, column->type->formatWithPossiblyHidingSensitiveData(0, true, true));
+            structure.emplace_back(
+                column->name,
+                column->type->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
     }
@@ -101,12 +115,20 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
 
     for (size_t i = 0; i < type_list_raw->children.size(); ++i)
-        structure.emplace_back("_" + toString(i + 1), type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(0, true, true));
+        structure.emplace_back(
+            "_" + toString(i + 1),
+            type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
 
 void BaseExternalTable::initSampleBlock()
 {
-    if (sample_block)
+    if (!sample_block.empty())
         return;
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -132,24 +154,24 @@ void ExternalTable::initReadBuffer()
 
 ExternalTable::ExternalTable(const boost::program_options::variables_map & external_options)
 {
-    if (external_options.count("file"))
+    if (external_options.contains("file"))
         file = external_options["file"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--file field have not been provided for external table");
 
-    if (external_options.count("name"))
+    if (external_options.contains("name"))
         name = external_options["name"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--name field have not been provided for external table");
 
-    if (external_options.count("format"))
+    if (external_options.contains("format"))
         format = external_options["format"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--format field have not been provided for external table");
 
-    if (external_options.count("structure"))
+    if (external_options.contains("structure"))
         parseStructureFromStructureField(external_options["structure"].as<std::string>());
-    else if (external_options.count("types"))
+    else if (external_options.contains("types"))
         parseStructureFromTypesField(external_options["types"].as<std::string>());
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Neither --structure nor --types have not been provided for external table");
@@ -164,12 +186,14 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    if (settings.http_max_multipart_form_data_size)
+    if (settings[Setting::http_max_multipart_form_data_size])
         read_buffer = std::make_unique<LimitReadBuffer>(
-            stream, settings.http_max_multipart_form_data_size,
-            /* trow_exception */ true, /* exact_limit */ std::optional<size_t>(),
-            "the maximum size of multipart/form-data. "
-            "This limit can be tuned by 'http_max_multipart_form_data_size' setting");
+            stream,
+            LimitReadBuffer::Settings{
+                .read_no_more = settings[Setting::http_max_multipart_form_data_size],
+                .expect_eof = true,
+                .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
+            });
     else
         read_buffer = wrapReadBufferReference(stream);
 
@@ -193,11 +217,26 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     ExternalTableDataPtr data = getData(getContext());
 
-    /// Create table
-    NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
-    auto storage = temporary_table.getTable();
-    getContext()->addExternalTable(data->table_name, std::move(temporary_table));
+    auto temporary_id = StorageID::createEmpty();
+    temporary_id.table_name = data->table_name;
+
+    auto resolved = getContext()->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+
+    StoragePtr storage;
+    if (resolved)
+    {
+        LOG_TEST(getLogger("ExternalTablesHandler"), "Using existing table {} for external data", temporary_id.getNameForLogs());
+        storage = DatabaseCatalog::instance().getTable(resolved, getContext());
+    }
+    else
+    {
+        LOG_TEST(getLogger("ExternalTablesHandler"), "Creating temporary table {} for external data", temporary_id.getNameForLogs());
+        NamesAndTypesList columns = sample_block.getNamesAndTypesList();
+        auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
+        storage = temporary_table.getTable();
+        getContext()->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+    }
+
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
 
     /// Write data

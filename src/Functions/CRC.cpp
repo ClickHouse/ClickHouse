@@ -81,46 +81,43 @@ struct CRCFunctionWrapper
     static constexpr auto is_fixed_to_constant = true;
     using ReturnType = typename Impl::ReturnType;
 
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res, size_t input_rows_count)
     {
-        size_t size = offsets.size();
-
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = doCRC(data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = doCRC(data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & data, size_t n, ReturnType & res) { res = doCRC(data, 0, n); }
-
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res)
+    static void vectorFixedToConstant(const ColumnString::Chars & data, size_t n, ReturnType & res, size_t)
     {
-        size_t size = data.size() / n;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            res[i] = doCRC(data, i * n, n);
-        }
+        res = doCRC(data, 0, n);
     }
 
-    [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res, size_t input_rows_count)
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res[i] = doCRC(data, i * n, n);
+    }
+
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", std::string(Impl::name));
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", std::string(Impl::name));
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", std::string(Impl::name));
     }
 
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", std::string(Impl::name));
     }
@@ -150,9 +147,74 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 
 REGISTER_FUNCTION(CRC)
 {
-    factory.registerFunction<FunctionCRC32ZLib>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionCRC32IEEE>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionCRC64ECMA>({}, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description_crc32 = R"(
+Calculates the CRC32 checksum of a string using the CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+)";
+    FunctionDocumentation::Syntax syntax_crc32 = "CRC32(s)";
+    FunctionDocumentation::Arguments arguments_crc32 = {
+        {"s", "String to calculate CRC32 for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_crc32 = {"Returns the CRC32 checksum of the string.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_crc32 = {
+    {
+        "Usage example",
+        "SELECT CRC32('ClickHouse')",
+        R"(
+┌─CRC32('ClickHouse')─┐
+│          1538217360 │
+└─────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_crc32 = {description_crc32, syntax_crc32, arguments_crc32, {}, returned_value_crc32, examples_crc32, introduced_in, category};
+
+    FunctionDocumentation::Description description_crc32ieee = R"(
+Calculates the CRC32 checksum of a string using the CRC-32-IEEE 802.3 polynomial.
+)";
+    FunctionDocumentation::Syntax syntax_crc32ieee = "CRC32IEEE(s)";
+    FunctionDocumentation::Arguments arguments_crc32ieee = {
+        {"s", "String to calculate CRC32 for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_crc32ieee = {"Returns the CRC32 checksum of the string.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_crc32ieee = {
+    {
+        "Usage example",
+        "SELECT CRC32IEEE('ClickHouse');",
+        R"(
+┌─CRC32IEEE('ClickHouse')─┐
+│              3089448422 │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_crc32ieee = {description_crc32ieee, syntax_crc32ieee, arguments_crc32ieee, {}, returned_value_crc32ieee, examples_crc32ieee, introduced_in, category};
+
+    FunctionDocumentation::Description description_crc64 = R"(
+Calculates the CRC64 checksum of a string using the CRC-64-ECMA polynomial.
+)";
+    FunctionDocumentation::Syntax syntax_crc64 = "CRC64(s)";
+    FunctionDocumentation::Arguments arguments_crc64 = {
+        {"s", "String to calculate CRC64 for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_crc64 = {"Returns the CRC64 checksum of the string.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_crc64 = {
+    {
+        "Usage example",
+        "SELECT CRC64('ClickHouse');",
+        R"(
+┌──CRC64('ClickHouse')─┐
+│ 12126588151325169346 │
+└──────────────────────┘
+    )"
+    }
+    };
+    FunctionDocumentation documentation_crc64 = {description_crc64, syntax_crc64, arguments_crc64, {}, returned_value_crc64, examples_crc64, introduced_in, category};
+
+    factory.registerFunction<FunctionCRC32ZLib>(documentation_crc32, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCRC32IEEE>(documentation_crc32ieee, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCRC64ECMA>(documentation_crc64, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -3,10 +3,10 @@
 
 #include <Common/quoteString.h>
 #include <Common/escapeString.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -14,6 +14,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool mysql_map_fixed_string_to_text_in_show_columns;
+    extern const SettingsBool mysql_map_string_to_text_in_show_columns;
+}
 
 
 InterpreterShowColumnsQuery::InterpreterShowColumnsQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -31,8 +36,8 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool use_mysql_types = (client_interface == ClientInfo::Interface::MYSQL); // connection made through MySQL wire protocol
 
     const auto & settings = getContext()->getSettingsRef();
-    const bool remap_string_as_text = settings.mysql_map_string_to_text_in_show_columns;
-    const bool remap_fixed_string_as_text = settings.mysql_map_fixed_string_to_text_in_show_columns;
+    const bool remap_string_as_text = settings[Setting::mysql_map_string_to_text_in_show_columns];
+    const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
@@ -67,11 +72,12 @@ WITH map(
         'Map',         'JSON',
         'Tuple',       'JSON',
         'Object',      'JSON',
+        'JSON',        'JSON',
         'String',      '{}',
         'FixedString', '{}') AS native_to_mysql_mapping,
         )",
-        remap_string_as_text ? "TEXT" : "BLOB",
-        remap_fixed_string_as_text ? "TEXT" : "BLOB");
+            remap_string_as_text ? "TEXT" : "BLOB",
+            remap_fixed_string_as_text ? "TEXT" : "BLOB");
 
         rewritten_query += R"(
         splitByRegexp('\(|\)', type_) AS split,
@@ -121,7 +127,8 @@ SELECT
     '' AS privileges )";
     }
 
-    rewritten_query += fmt::format(R"(
+    rewritten_query += fmt::format(
+        R"(
 -- need to rename columns of the base table to avoid "CYCLIC_ALIASES" errors
 FROM (SELECT name AS name_,
              database AS database_,
@@ -135,7 +142,9 @@ FROM (SELECT name AS name_,
       FROM system.columns)
 WHERE
     database_ = '{}'
-    AND table_ = '{}' )", database, table);
+    AND table_ = '{}' )",
+        database,
+        table);
 
     if (!query.like.empty())
     {
@@ -146,15 +155,15 @@ WHERE
             rewritten_query += "ILIKE ";
         else
             rewritten_query += "LIKE ";
-        rewritten_query += fmt::format("'{}'", query.like);
+        rewritten_query += quoteString(query.like);
     }
     else if (query.where_expression)
-        rewritten_query += fmt::format(" AND ({})", query.where_expression);
+        rewritten_query += fmt::format(" AND ({})", query.where_expression->formatWithSecretsOneLine());
 
     rewritten_query += " ORDER BY field, type, null, key, default, extra";
 
     if (query.limit_length)
-        rewritten_query += fmt::format(" LIMIT {}", query.limit_length);
+        rewritten_query += fmt::format(" LIMIT {}", query.limit_length->formatWithSecretsOneLine());
 
     return rewritten_query;
 }
@@ -162,7 +171,11 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+
+    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)

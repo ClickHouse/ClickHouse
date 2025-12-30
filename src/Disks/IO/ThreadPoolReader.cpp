@@ -1,20 +1,20 @@
-#include "ThreadPoolReader.h"
-#include <Common/VersionNumber.h>
-#include <Common/assert_cast.h>
+#include <Disks/IO/ThreadPoolReader.h>
+#include <future>
+#include <fcntl.h>
+#include <unistd.h>
+#include <base/MemorySanitizer.h>
+#include <base/errnoToString.h>
+#include <Poco/Environment.h>
+#include <Poco/Event.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <Poco/Environment.h>
-#include <base/errnoToString.h>
-#include <Poco/Event.h>
-#include <future>
-#include <unistd.h>
-#include <fcntl.h>
+#include <Common/VersionNumber.h>
+#include <Common/assert_cast.h>
+#include <Common/setThreadName.h>
 
 #if defined(OS_LINUX)
 
@@ -38,6 +38,8 @@
         #define SYS_preadv2 286
     #elif defined(__loongarch64)
         #define SYS_preadv2 286
+    #elif defined(__e2k__)
+        #define SYS_preadv2 395
     #else
         #error "Unsupported architecture"
     #endif
@@ -111,9 +113,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// RWF_NOWAIT flag may return 0 even when not at end of file.
     /// It can't be distinguished from the real eof, so we have to
     /// disable pread with nowait.
-    static std::atomic<bool> has_pread_nowait_support = !hasBugInPreadV2();
+    static const bool has_pread_nowait_support = !hasBugInPreadV2();
 
-    if (has_pread_nowait_support.load(std::memory_order_relaxed))
+    /// RWF_NOWAIT is ignored for O_DIRECT (mostly, it may return EAGAIN if it cannot lock the inode in case of ext4, see [1])
+    ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=548feebec7e93e58b647dba70b3303dcb569c914
+    if (has_pread_nowait_support && !request.direct_io)
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -161,32 +165,29 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
                     /// No support for the syscall or the flag in the Linux kernel.
-                    has_pread_nowait_support.store(false, std::memory_order_relaxed);
+                    /// It shouldn't happen because we check the kernel version but let's
+                    /// fallback to the thread pool.
                     break;
                 }
-                else if (errno == EAGAIN)
+                if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-                else if (errno == EINTR)
+                if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
                     continue;
                 }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                    promise.set_exception(std::make_exception_ptr(
-                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
-                    return future;
-                }
+
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                promise.set_exception(
+                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                return future;
             }
-            else
-            {
-                bytes_read += res;
-                __msan_unpoison(request.buf, res);
-            }
+
+            bytes_read += res;
+            __msan_unpoison(request.buf, res);
         }
 
         if (bytes_read)
@@ -205,7 +206,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, "ThreadPoolRead");
+    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, ThreadName::READ_THREAD_POOL);
 
     return schedule([request, fd]() -> Result
     {

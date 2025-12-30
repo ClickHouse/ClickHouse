@@ -1,4 +1,4 @@
-#include "ExecutablePoolDictionarySource.h"
+#include <Dictionaries/ExecutablePoolDictionarySource.h>
 
 #include <filesystem>
 
@@ -7,6 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
+
+#include <Core/Settings.h>
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -21,12 +23,19 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds max_execution_time;
+
+    /// Cloud only
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
@@ -68,30 +77,34 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadAll()
+BlockIO ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
+BlockIO ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
 QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
@@ -126,7 +139,8 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
         command = std::move(script_path);
     }
 
-    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto header = std::make_shared<const Block>(block);
+    auto source = std::make_shared<SourceFromSingleChunk>(header);
     auto shell_input_pipe = Pipe(std::move(source));
 
     ShellCommandSourceConfiguration command_configuration;
@@ -145,7 +159,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
         command_configuration);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
 
     return QueryPipeline(std::move(pipe));
 }
@@ -178,7 +192,8 @@ std::string ExecutablePoolDictionarySource::toString() const
 
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -186,8 +201,11 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
+        if (global_context->getSettingsRef()[Setting::cloud_mode])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable pool` is disabled");
+
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable_pool` does not support attribute expressions");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable_pool` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
@@ -203,7 +221,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 
         size_t max_command_execution_time = config.getUInt64(settings_config_prefix + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(context->getSettingsRef().max_execution_time.totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(context->getSettingsRef()[Setting::max_execution_time].totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
 
@@ -232,7 +250,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .pool_size = config.getUInt64(settings_config_prefix + ".pool_size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,

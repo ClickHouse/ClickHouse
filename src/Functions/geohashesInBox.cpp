@@ -35,22 +35,25 @@ public:
 
     size_t getNumberOfArguments() const override { return 5; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateArgumentType(*this, arguments, 0, isFloat, "float");
-        validateArgumentType(*this, arguments, 1, isFloat, "float");
-        validateArgumentType(*this, arguments, 2, isFloat, "float");
-        validateArgumentType(*this, arguments, 3, isFloat, "float");
-        validateArgumentType(*this, arguments, 4, isUInt8, "integer");
+        FunctionArgumentDescriptors args{
+            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
+        };
+        validateFunctionArguments(*this, arguments, args);
 
-        if (!(arguments[0]->equals(*arguments[1]) &&
-              arguments[0]->equals(*arguments[2]) &&
-              arguments[0]->equals(*arguments[3])))
+        if (!(arguments[0].type->equals(*arguments[1].type) &&
+              arguments[0].type->equals(*arguments[2].type) &&
+              arguments[0].type->equals(*arguments[3].type)))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Illegal type of argument of {} all coordinate arguments must have the same type, "
-                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0]->getName(),
-                            arguments[1]->getName(), arguments[2]->getName(), arguments[3]->getName());
+                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0].type->getName(),
+                            arguments[1].type->getName(), arguments[2].type->getName(), arguments[3].type->getName());
         }
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -128,7 +131,7 @@ public:
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
-            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * (prepared_args.precision + 1));
+            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * prepared_args.precision);
             const auto starting_offset = res_strings_offsets.empty() ? 0 : res_strings_offsets.back();
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
@@ -136,7 +139,7 @@ public:
             geohashesInBox(prepared_args, out);
 
             for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
-                res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
+                res_strings_offsets.push_back(starting_offset + prepared_args.precision * i);
             res_offsets.push_back(res_offsets.back() + prepared_args.items_count);
         }
 
@@ -176,7 +179,42 @@ public:
 
 REGISTER_FUNCTION(GeohashesInBox)
 {
-    factory.registerFunction<FunctionGeohashesInBox>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, essentially a 2D grid flattened into an array.
+
+:::note
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+:::
+
+This function throws an exception if the size of the resulting array exceeds more than 10,000,000 items.
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)";
+    FunctionDocumentation::Arguments arguments = {
+        {"longitude_min", "Minimum longitude. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude_min", "Minimum latitude. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"longitude_max", "Maximum longitude. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude_max", "Maximum latitude. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"precision", "Geohash precision. Range: `[1, 12]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of precision-long strings of geohash-boxes covering the provided area, or an empty array if the minimum longitude and latitude values aren't less than the corresponding maximum values.",
+        {"Array(String)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            "SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos",
+            R"(
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeohashesInBox>(documentation);
 }
 
 }

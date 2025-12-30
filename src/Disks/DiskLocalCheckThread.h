@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace Poco
@@ -32,7 +32,7 @@ private:
     LoggerPtr log;
     std::atomic<bool> need_stop{false};
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
     size_t retry{};
 };
 

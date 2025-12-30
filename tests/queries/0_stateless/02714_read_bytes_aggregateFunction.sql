@@ -28,7 +28,7 @@ GROUP BY number;
 SELECT sum(id) FROM test FORMAT Null;
 SELECT argMaxMerge(amax) FROM test FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT 'UInt64',
        read_rows,

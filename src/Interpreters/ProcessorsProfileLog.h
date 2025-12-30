@@ -17,19 +17,23 @@ struct ProcessorProfileLogElement
     UInt64 id{};
     std::vector<UInt64> parent_ids;
 
-    UInt64 plan_step{};
+    UInt64 plan_step;
     UInt64 plan_group{};
+    String plan_step_name;
+    String plan_step_description;
 
     String initial_query_id;
     String query_id;
     String processor_name;
+    String processor_uniq_id;
+    String step_uniq_id;
 
     /// Milliseconds spend in IProcessor::work()
-    UInt32 elapsed_us{};
+    UInt64 elapsed_us{};
     /// IProcessor::NeedData
-    UInt32 input_wait_elapsed_us{};
+    UInt64 input_wait_elapsed_us{};
     /// IProcessor::PortFull
-    UInt32 output_wait_elapsed_us{};
+    UInt64 output_wait_elapsed_us{};
 
     size_t input_rows{};
     size_t input_bytes{};
@@ -47,5 +51,10 @@ class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
+
+std::vector<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+
+void logProcessorProfile(ContextPtr context, const Processors & processors);
+void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
 
 }

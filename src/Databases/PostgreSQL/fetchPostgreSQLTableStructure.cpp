@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <base/FnTraits.h>
@@ -42,7 +43,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+            postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
@@ -57,7 +58,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            quoteString(schema));
+            quoteStringPostgreSQL(schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
@@ -107,7 +108,8 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision, scale;
+        UInt32 precision;
+        UInt32 scale;
         if (type.ends_with(")"))
         {
             res = DataTypeFactory::instance().get(type);
@@ -196,7 +198,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             }
             else
             {
-                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string> row;
+                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string, std::string> row;
                 while (stream >> row)
                 {
                     const auto column_name = std::get<0>(row);
@@ -206,13 +208,14 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                         std::get<3>(row));
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
-                    auto attgenerated = std::get<6>(row);
+                    auto attgenerated = std::get<7>(row);
 
                     attributes.emplace(
                         column_name,
                         PostgreSQLTableStructure::PGAttribute{
                             .atttypid = parse<int>(std::get<4>(row)),
                             .atttypmod = parse<int>(std::get<5>(row)),
+                            .attnum = parse<int>(std::get<6>(row)),
                             .atthasdef = false,
                             .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0]),
                             .attr_def = {}
@@ -254,7 +257,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}",
+                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}. Make sure no empty array values in the first row.",
                     postgres_table,
                     postgres_column);
             }
@@ -291,15 +294,26 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        T & tx, const String & postgres_table, const String & postgres_schema, bool use_nulls, bool with_primary_key, bool with_replica_identity_index)
+        T & tx, const String & postgres_table, const String & postgres_schema, bool use_nulls, bool with_primary_key, bool with_replica_identity_index, const Strings & columns)
 {
     PostgreSQLTableStructure table;
 
-    auto where = fmt::format("relname = {}", quoteString(postgres_table));
+    auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
     where += postgres_schema.empty()
         ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
-        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
+        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
+
+    std::string columns_part;
+    if (!columns.empty())
+        columns_part = fmt::format(" AND attname IN ('{}')", boost::algorithm::join(columns, "','"));
+
+    /// Bypassing the error of the missing column `attgenerated` in the system table `pg_attribute` for PostgreSQL versions below 12.
+    /// This trick involves executing a special query to the DBMS in advance to obtain the correct line with comment /// if column has GENERATED.
+    /// The result of the query will be the name of the column `attgenerated` or an empty string declaration for PostgreSQL version 11 and below.
+    /// This change does not degrade the function's performance but restores support for older versions and fix ERROR: column "attgenerated" does not exist.
+    pqxx::result gen_result{tx.exec("select case when current_setting('server_version_num')::int < 120000 then '''''' else 'attgenerated' end as generated")};
+    std::string generated = gen_result[0][0].as<std::string>();
 
     std::string query = fmt::format(
            "SELECT attname AS name, " /// column name
@@ -308,11 +322,12 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "attndims AS dims, " /// array dimensions
            "atttypid as type_id, "
            "atttypmod as type_modifier, "
-           "attgenerated as generated " /// if column has GENERATED
+           "attnum as att_num, "
+           "{} as generated " /// if column has GENERATED
            "FROM pg_attribute "
-           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
            "AND NOT attisdropped AND attnum > 0 "
-           "ORDER BY attnum ASC", where);
+           "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
@@ -338,17 +353,29 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "WHERE adrelid = (SELECT oid FROM pg_class WHERE {});", where);
 
         pqxx::result result{tx.exec(attrdef_query)};
-        for (const auto row : result)
+        if (static_cast<uint64_t>(result.size()) > table.physical_columns->names.size())
         {
-            size_t adnum = row[0].as<int>();
-            if (!adnum || adnum > table.physical_columns->names.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Received {} attrdef, but currently fetched columns list has {} columns",
+                            result.size(), table.physical_columns->attributes.size());
+        }
+
+        for (const auto & column_attrs : table.physical_columns->attributes)
+        {
+            if (column_attrs.second.attgenerated != 's') /// e.g. not a generated column
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Received adnum {}, but currently fetched columns list has {} columns",
-                                adnum, table.physical_columns->attributes.size());
+                continue;
             }
-            const auto column_name = table.physical_columns->names[adnum - 1];
-            table.physical_columns->attributes.at(column_name).attr_def = row[1].as<std::string>();
+
+            for (const auto row : result)
+            {
+                int adnum = row[0].as<int>();
+                if (column_attrs.second.attnum == adnum)
+                {
+                    table.physical_columns->attributes.at(column_attrs.first).attr_def = row[1].as<std::string>();
+                    break;
+                }
+            }
         }
     }
 
@@ -387,8 +414,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
-            quoteString(postgres_table),
-            (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
+            quoteStringPostgreSQL(postgres_table),
+            (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
@@ -401,7 +428,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connection, const String & postgres_table, const String & postgres_schema, bool use_nulls)
 {
     pqxx::ReadTransaction tx(connection);
-    auto result = fetchPostgreSQLTableStructure(tx, postgres_table, postgres_schema, use_nulls, false, false);
+    auto result = fetchPostgreSQLTableStructure(tx, postgres_table, postgres_schema, use_nulls, false, false, {});
     tx.commit();
     return result;
 }
@@ -419,17 +446,17 @@ std::set<String> fetchPostgreSQLTablesList(pqxx::connection & connection, const 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         pqxx::ReadTransaction & tx, const String & postgres_table, const String & postgres_schema,
-        bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
+        bool use_nulls, bool with_primary_key, bool with_replica_identity_index, const Strings & columns);
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         pqxx::ReplicationTransaction & tx, const String & postgres_table, const String & postgres_schema,
-        bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
+        bool use_nulls, bool with_primary_key, bool with_replica_identity_index, const Strings & columns);
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         pqxx::nontransaction & tx, const String & postgres_table, const String & postrges_schema,
-        bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
+        bool use_nulls, bool with_primary_key, bool with_replica_identity_index, const Strings & columns);
 
 std::set<String> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 

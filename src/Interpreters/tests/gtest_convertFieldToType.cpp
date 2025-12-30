@@ -2,13 +2,12 @@
 #include <limits>
 #include <ostream>
 #include <Core/Field.h>
-#include <Core/iostream_debug_helpers.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <gtest/gtest.h>
-#include "base/Decimal.h"
-#include "base/types.h"
+#include <base/Decimal.h>
+#include <base/types.h>
 
 using namespace DB;
 
@@ -24,9 +23,7 @@ std::ostream & operator << (std::ostream & ostr, const ConvertFieldToTypeTestPar
 {
     return ostr << "{"
             << "\n\tfrom_type  : " << params.from_type
-            << "\n\tfrom_value : " << params.from_value
             << "\n\tto_type    : " << params.to_type
-            << "\n\texpected   : " << (params.expected_value ? *params.expected_value : Field())
             << "\n}";
 }
 
@@ -69,39 +66,39 @@ INSTANTIATE_TEST_SUITE_P(
             "Date",
             Field(0),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(0), 0)
+            DecimalField<DateTime64>(DateTime64(0), 0)
         },
         // Max value of Date
         {
             "Date",
             Field(std::numeric_limits<UInt16>::max()),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(std::numeric_limits<UInt16>::max() * Day), 0)
+            DecimalField<DateTime64>(DateTime64(std::numeric_limits<UInt16>::max() * Day), 0)
         },
         // check that scale is respected
         {
             "Date",
             Field(123),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(123 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(123 * Day), 0)
         },
         {
             "Date",
             Field(1),
             "DateTime64(1, 'UTC')",
-            DecimalField(DateTime64(Day * 10), 1)
+            DecimalField<DateTime64>(DateTime64(Day * 10), 1)
         },
         {
             "Date",
             Field(123),
             "DateTime64(3, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1000), 3)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1000), 3)
         },
         {
             "Date",
             Field(123),
             "DateTime64(6, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1'000'000), 6)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1'000'000), 6)
         },
     })
 );
@@ -115,42 +112,42 @@ INSTANTIATE_TEST_SUITE_P(
             "Date32",
             Field(-25'567),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(-25'567 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(-25'567 * Day), 0)
         },
         // max value of Date32: 31 Dec 2299 (see DATE_LUT_MAX_YEAR)
         {
             "Date32",
             Field(120'529),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(120'529 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(120'529 * Day), 0)
         },
         // check that scale is respected
         {
             "Date32",
             Field(123),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(123 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(123 * Day), 0)
         },
         {
             "Date32",
             Field(123),
             "DateTime64(1, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 10), 1)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 10), 1)
         },
         {
             "Date32",
             Field(123),
             "DateTime64(3, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1000), 3)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1000), 3)
         },
         {
             "Date32",
             Field(123),
             "DateTime64(6, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1'000'000), 6)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1'000'000), 6)
         }
     })
-    );
+);
 
 INSTANTIATE_TEST_SUITE_P(
     DateTimeToDateTime64,
@@ -160,25 +157,106 @@ INSTANTIATE_TEST_SUITE_P(
             "DateTime",
             Field(1),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(1), 0)
+            DecimalField<DateTime64>(DateTime64(1), 0)
         },
         {
             "DateTime",
             Field(1),
             "DateTime64(1, 'UTC')",
-            DecimalField(DateTime64(1'0), 1)
+            DecimalField<DateTime64>(DateTime64(1'0), 1)
         },
         {
             "DateTime",
             Field(123),
             "DateTime64(3, 'UTC')",
-            DecimalField(DateTime64(123'000), 3)
+            DecimalField<DateTime64>(DateTime64(123'000), 3)
         },
         {
             "DateTime",
             Field(123),
             "DateTime64(6, 'UTC')",
-            DecimalField(DateTime64(123'000'000), 6)
+            DecimalField<DateTime64>(DateTime64(123'000'000), 6)
+        },
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    StringToNumber,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "String",
+            Field("1"),
+            "Int8",
+            Field(1)
+        },
+        {
+            "String",
+            Field("256"),
+            "Int8",
+            Field()
+        },
+        {
+            "String",
+            Field("not a number"),
+            "Int8",
+            {}
+        },
+        {
+            "String",
+            Field("1.1"),
+            "Int8",
+            {} /// we can not convert '1.1' to Int8
+        },
+        {
+            "String",
+            Field("1.1"),
+            "Float64",
+            Field(1.1)
+        },
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    NumberToString,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "Int8",
+            Field(1),
+            "String",
+            Field("1")
+        },
+        {
+            "Int8",
+            Field(-1),
+            "String",
+            Field("-1")
+        },
+        {
+            "Float64",
+            Field(1.1),
+            "String",
+            Field("1.1")
+        },
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(
+    StringToDate,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "String",
+            Field("2024-07-12"),
+            "Date",
+            Field(static_cast<UInt16>(19916))
+        },
+        {
+            "String",
+            Field("not a date"),
+            "Date",
+            {}
         },
     })
 );

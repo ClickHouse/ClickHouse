@@ -1,4 +1,5 @@
--- Tags: long, replica
+-- Tags: long, replica, no-shared-merge-tree
+-- no-shared-merge-tree: not possible to stop replicated sends
 
 DROP TABLE IF EXISTS r1;
 DROP TABLE IF EXISTS r2;

@@ -6,6 +6,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
@@ -74,7 +75,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
             continue;
 
         auto previous_range = std::pair(std::begin(policy->filters), std::begin(policy->filters) + filter_type_i);
-        const auto * previous_it = std::find(previous_range.first, previous_range.second, filter);
+        const auto previous_it = std::find(previous_range.first, previous_range.second, filter);
         if (previous_it != previous_range.second)
         {
             /// The filter is already parsed before.

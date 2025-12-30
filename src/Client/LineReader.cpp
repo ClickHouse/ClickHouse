@@ -23,14 +23,6 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
-/// Check if multi-line query is inserted from the paste buffer.
-/// Allows delaying the start of query execution until the entirety of query is inserted.
-bool hasInputData()
-{
-    pollfd fd{STDIN_FILENO, POLLIN, 0};
-    return poll(&fd, 1, 0) == 1;
-}
-
 struct NoCaseCompare
 {
     bool operator()(const std::string & str1, const std::string & str2)
@@ -63,6 +55,17 @@ void addNewWords(Words & to, const Words & from, Compare comp)
 namespace DB
 {
 
+/// Check if multi-line query is inserted from the paste buffer.
+/// Allows delaying the start of query execution until the entirety of query is inserted.
+bool LineReader::hasInputData() const
+{
+    timeval timeout = {0, 0};
+    fd_set fds{};
+    FD_ZERO(&fds);
+    FD_SET(in_fd, &fds);
+    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
+}
+
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
 {
     std::string_view last_word;
@@ -76,18 +79,20 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
 
     std::pair<Words::const_iterator, Words::const_iterator> range;
 
-    std::lock_guard lock(mutex);
-
     Words to_search;
     bool no_case = false;
-    /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+
     {
-        to_search = words_no_case;
-        no_case = true;
+        std::lock_guard lock(mutex);
+        /// Only perform case sensitive completion when the prefix string contains any uppercase characters
+        if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+        {
+            to_search = words_no_case;
+            no_case = true;
+        }
+        else
+            to_search = words;
     }
-    else
-        to_search = words;
 
     if (custom_completions_callback)
     {
@@ -100,13 +105,13 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
     else
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
 
     return replxx::Replxx::completions_t(range.first, range.second);
@@ -131,11 +136,23 @@ void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelin
     }
 }
 
-LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
+LineReader::LineReader
+(
+    const String & history_file_path_,
+    bool multiline_,
+    Patterns extenders_,
+    Patterns delimiters_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    int in_fd_
+)
     : history_file_path(history_file_path_)
     , multiline(multiline_)
     , extenders(std::move(extenders_))
     , delimiters(std::move(delimiters_))
+    , input_stream(input_stream_)
+    , output_stream(output_stream_)
+    , in_fd(in_fd_)
 {
     /// FIXME: check extender != delimiter
 }
@@ -158,8 +175,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         {
             if (!line.empty() && !multiline && !hasInputData())
                 break;
-            else
-                continue;
+            continue;
         }
 
         const char * has_extender = nullptr;
@@ -198,7 +214,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             break;
     }
 
-    if (!line.empty() && line != prev_line)
+    if (!line.empty() && line != prev_line && !line.starts_with(" "))
     {
         addToHistory(line);
         prev_line = line;
@@ -212,9 +228,9 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
     input.clear();
 
     {
-        std::cout << prompt;
-        std::getline(std::cin, input);
-        if (!std::cin.good())
+        output_stream << prompt;
+        std::getline(input_stream, input);
+        if (!input_stream.good())
             return ABORT;
     }
 

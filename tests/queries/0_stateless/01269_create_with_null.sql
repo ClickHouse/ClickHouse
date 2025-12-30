@@ -24,14 +24,14 @@ CREATE TABLE data_null_error (
     a Nullable(INT) NULL,
     b INT NOT NULL,
     c Nullable(INT)
-) engine=Memory();  --{serverError 377}
+) engine=Memory();  --{serverError ILLEGAL_SYNTAX_FOR_DATA_TYPE}
 
 
 CREATE TABLE data_null_error (
     a INT NULL,
     b Nullable(INT) NOT NULL,
     c Nullable(INT)
-) engine=Memory();  --{serverError 377}
+) engine=Memory();  --{serverError ILLEGAL_SYNTAX_FOR_DATA_TYPE}
 
 SET data_type_default_nullable='true';
 
@@ -53,7 +53,7 @@ DETACH TABLE set_null;
 ATTACH TABLE set_null;
 SHOW CREATE TABLE set_null;
 
-CREATE TABLE cannot_be_nullable (n Int8, a Array(UInt8)) ENGINE=Memory; -- { serverError 43 }
+CREATE TABLE cannot_be_nullable (n Int8, a Array(UInt8)) ENGINE=Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 CREATE TABLE cannot_be_nullable (n Int8, a Array(UInt8) NOT NULL) ENGINE=Memory;
 SHOW CREATE TABLE cannot_be_nullable;
 DETACH TABLE cannot_be_nullable;

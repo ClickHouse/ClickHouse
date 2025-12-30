@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -80,8 +81,8 @@ def test_limit_size(started_cluster):
 
     node2.replace_in_config(
         "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
-        "false",
-        "true",
+        "throw",
+        "discard",
     )
 
     node2.restart_clickhouse()
@@ -91,8 +92,8 @@ def test_limit_size(started_cluster):
 
     node2.replace_in_config(
         "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
-        "true",
-        "false",
+        "discard",
+        "throw",
     )
 
     node2.restart_clickhouse()

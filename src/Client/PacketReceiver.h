@@ -2,8 +2,6 @@
 
 #if defined(OS_LINUX)
 
-#include <variant>
-
 #include <Client/IConnections.h>
 #include <Common/Fiber.h>
 #include <Common/Epoll.h>

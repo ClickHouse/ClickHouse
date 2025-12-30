@@ -1,8 +1,9 @@
-#include "DNSCacheUpdater.h"
+#include <Interpreters/DNSCacheUpdater.h>
 
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -14,7 +15,7 @@ DNSCacheUpdater::DNSCacheUpdater(ContextPtr context_, Int32 update_period_second
     , max_consecutive_failures(max_consecutive_failures_)
     , pool(getContext()->getSchedulePool())
 {
-    task_handle = pool.createTask("DNSCacheUpdater", [this]{ run(); });
+    task_handle = pool.createTask(StorageID::createEmpty(), "DNSCacheUpdater", [this]{ run(); });
 }
 
 void DNSCacheUpdater::run()

@@ -19,15 +19,19 @@ if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAK
     return()
 endif()
 
-set (LLVM_VERSION "15.0.0bundled")
+set (LLVM_VERSION "21.1.5bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
+if (ENABLE_XRAY)
+    set (LLVM_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}" "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
+endif ()
+
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
-# NOTE: You should not remove this line since otherwise it will use default 20,
-# and llvm cannot be compiled with bundled libcxx and 20 standard.
-set (CMAKE_CXX_STANDARD 14)
+
+# There are compilation errors with C++23.
+set (CMAKE_CXX_STANDARD 17)
 
 if (ARCH_AMD64)
     set (LLVM_TARGETS_TO_BUILD "X86" CACHE INTERNAL "")
@@ -41,6 +45,9 @@ elseif (ARCH_RISCV64)
     set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
 endif ()
 
+if (USE_MUSL)
+    set (CMAKE_DL_LIBS "")
+endif()
 
 if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER)
     # Only compiling blake3
@@ -92,6 +99,10 @@ else()
     elseif (ARCH_RISCV64)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen)
     endif ()
+
+    if (ENABLE_XRAY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMXRay)
+    endif ()
 endif()
 
 
@@ -139,6 +150,12 @@ if (CMAKE_CROSSCOMPILING)
     set (LLVM_HOST_TRIPLE "${CMAKE_C_COMPILER_TARGET}" CACHE INTERNAL "")
     message (STATUS "CROSS COMPILING SET LLVM HOST TRIPLE ${LLVM_HOST_TRIPLE}")
 endif()
+
+# llvm-project/llvm/cmake/config-ix.cmake does a weird thing: it defines _LARGEFILE64_SOURCE,
+# then checks if lseek64() function exists, then undefines _LARGEFILE64_SOURCE.
+# Then the actual code that uses this function *doesn't* define _LARGEFILE64_SOURCE, so lseek64()
+# may not exist and compilation fails. This happens with musl.
+add_compile_definitions("_LARGEFILE64_SOURCE")
 
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
 

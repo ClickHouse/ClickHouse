@@ -34,20 +34,20 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with old
 
 # Run query again. The 1st run must be a cache miss, the 2nd run a cache hit
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' order by event_time_microseconds"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' ORDER BY event_time_microseconds"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS admin"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
 ${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO admin WITH GRANT OPTION"
 
-# Check that the system view reports the cache as empty
+# system.query_cache reports the old entry. That is okay since the system table only shows the query string, not the query result.
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with new user', count(*) FROM system.query_cache"
 
 # Run same query as old user. Expect a cache miss.
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS"
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' order by event_time_microseconds"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query = 'SELECT 0 == $rnd SETTINGS use_query_cache = 1' ORDER BY event_time_microseconds"
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP USER admin"
@@ -91,16 +91,16 @@ ${CLICKHOUSE_CLIENT} --user "admin" --query "INSERT INTO user_data (ID, userID) 
 
 # Test...
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_1 test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_1; SELECT * FROM user_data" # should only return rows with userID = 1
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_1; SELECT * FROM user_data" # should only return rows with userID = 1
 
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_2 test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_2; SELECT * FROM user_data" # should only return rows with userID = 2
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_2; SELECT * FROM user_data" # should only return rows with userID = 2
 
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_1 with query cache test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_1; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 1
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_1; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 1
 
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT '-- policy_2 with query cache test'"
-${CLICKHOUSE_CLIENT} --user "admin" --multiquery "SET ROLE user_role_2; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 2 (not userID = 1!)
+${CLICKHOUSE_CLIENT} --user "admin" "SET ROLE user_role_2; SELECT * FROM user_data SETTINGS use_query_cache = 1" # should only return rows with userID = 2 (not userID = 1!)
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --user "admin" --query "DROP ROLE user_role_1"

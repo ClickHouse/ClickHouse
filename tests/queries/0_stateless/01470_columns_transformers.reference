@@ -16,42 +16,21 @@
 222	18	347
 111	11	173.5
 1970-04-11	1970-01-11	1970-11-21
-SELECT
-    sum(i),
-    sum(j),
-    sum(k)
+SELECT * APPLY sum()
 FROM columns_transformers
-SELECT
-    avg(i),
-    avg(j),
-    avg(k)
+SELECT columns_transformers.* APPLY avg()
 FROM columns_transformers
-SELECT
-    any(toDate(i)),
-    any(toDate(j)),
-    any(toDate(k))
+SELECT a.* APPLY toDate() APPLY any()
 FROM columns_transformers AS a
-SELECT
-    length(toString(j)),
-    length(toString(k))
+SELECT COLUMNS(\'[jk]\') APPLY toString() APPLY length()
 FROM columns_transformers
-SELECT
-    sum(j),
-    sum(k)
+SELECT * EXCEPT i APPLY sum()
 FROM columns_transformers
-SELECT
-    avg(i),
-    avg(k)
+SELECT columns_transformers.* EXCEPT j APPLY avg()
 FROM columns_transformers
-SELECT
-    any(toDate(i)),
-    any(toDate(j)),
-    any(toDate(k))
+SELECT a.* APPLY toDate() EXCEPT (i, j) APPLY any()
 FROM columns_transformers AS a
-SELECT
-    sum(i) + (1 * count(i)),
-    sum(j),
-    sum(k)
+SELECT * REPLACE (i + 1 AS i) APPLY sum()
 FROM columns_transformers
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
@@ -70,7 +49,7 @@ SelectWithUnionQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
       TableIdentifier columns_transformers
-SELECT sum(i) + (1 * count(i))
+SELECT sum(i + 1 AS m)
 FROM columns_transformers
 SelectWithUnionQuery (children 1)
  ExpressionList (children 1)
@@ -86,40 +65,23 @@ SelectWithUnionQuery (children 1)
     TablesInSelectQueryElement (children 1)
      TableExpression (children 1)
       TableIdentifier columns_transformers
-SELECT
-    avg(i) + 1,
-    avg(j) + 2,
-    avg(k)
+SELECT columns_transformers.* REPLACE (j + 2 AS j, i + 1 AS i) APPLY avg()
 FROM columns_transformers
-SELECT
-    any(toDate(i)),
-    any(toDate(j)),
-    any(toDate(k))
+SELECT a.* APPLY toDate() REPLACE (i + 1 AS i) APPLY any()
 FROM columns_transformers AS a
-SELECT
-    (i + 1) + 1 AS i,
-    j,
-    k
+SELECT * REPLACE (i + 1 AS i) REPLACE (i + 1 AS i)
 FROM columns_transformers
 220	18	347
-SELECT
-    sum(i),
-    sum(j),
-    sum(k)
+SELECT COLUMNS(i, j, k) APPLY sum()
 FROM columns_transformers
 100	10	100	10	324	10
 120	8	120	8	23	8
 SELECT
     i,
     j,
-    toFloat64(i),
-    toFloat64(j),
-    toFloat64(k),
-    j
+    COLUMNS(i, j, k) APPLY toFloat64(),
+    COLUMNS(i, j) EXCEPT i
 FROM columns_transformers
 [110]	[9]	[173.5]
-SELECT
-    quantiles(0.5)(i),
-    quantiles(0.5)(j),
-    quantiles(0.5)(k)
+SELECT COLUMNS(i, j, k) APPLY quantiles(0.5)
 FROM columns_transformers

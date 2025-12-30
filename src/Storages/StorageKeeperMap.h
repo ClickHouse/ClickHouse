@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -26,6 +26,7 @@ namespace ErrorCodes
 // KV store using (Zoo|CH)Keeper
 class StorageKeeperMap final : public IStorage, public IKeyValueEntity, WithContext
 {
+    friend class ReadFromKeeperMap;
 public:
     StorageKeeperMap(
         ContextPtr context_,
@@ -34,14 +35,16 @@ public:
         bool attach,
         std::string_view primary_key_,
         const std::string & root_path_,
-        UInt64 keys_limit_);
+        UInt64 keys_limit_,
+        bool override_metadata);
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
+        ContextPtr context_,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         size_t num_streams) override;
 
@@ -53,8 +56,9 @@ public:
     std::string getName() const override { return "KeeperMap"; }
     Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
-    Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const override;
+    Chunk getBySerializedKeys(
+        std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const;
 
     Block getSampleBlock(const Names &) const override;
 
@@ -77,10 +81,10 @@ public:
     UInt64 keysLimit() const;
 
     template <bool throw_on_error>
-    void checkTable() const
+    void checkTable(const ContextPtr & local_context) const
     {
-        auto is_table_valid = isTableValid();
-        if (!is_table_valid.has_value())
+        auto current_table_status = getTableStatus(local_context);
+        if (table_status == TableStatus::UNKNOWN)
         {
             static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
                                                           "once a connection is established and metadata is verified";
@@ -93,10 +97,10 @@ public:
             }
         }
 
-        if (!*is_table_valid)
+        if (current_table_status != TableStatus::VALID)
         {
             static constexpr auto error_msg
-                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
+                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DROP/DETACH table";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
@@ -107,17 +111,41 @@ public:
         }
     }
 
-private:
-    bool dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
+    static void dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger);
 
-    std::optional<bool> isTableValid() const;
+private:
+    bool dropTableData(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
+
+    static bool dropTableData(
+        zkutil::ZooKeeperPtr zookeeper,
+        const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock,
+        const String & zk_data_path_,
+        const String & zk_metadata_path_,
+        const String & zk_dropped_path_,
+        const String & zk_dropped_lock_version_path_,
+        const String & zk_root_path_,
+        LoggerPtr logger);
+
+    enum class TableStatus : uint8_t
+    {
+        UNKNOWN,
+        INVALID_METADATA,
+        INVALID_KEEPER_STRUCTURE,
+        VALID
+    };
+
+    TableStatus getTableStatus(const ContextPtr & context) const;
+
+    bool isMetadataStringEqual(
+        const std::string & zk_metadata_string,
+        const std::string & local_metadata_string,
+        bool throw_on_error) const;
 
     void restoreDataImpl(
         const BackupPtr & backup,
         const String & data_path_in_backup,
         std::shared_ptr<WithRetries> with_retries,
-        bool allow_non_empty_tables,
-        const DiskPtr & temporary_disk);
+        bool allow_non_empty_tables);
 
     std::string zk_root_path;
     std::string primary_key;
@@ -131,6 +159,8 @@ private:
 
     std::string zk_dropped_path;
     std::string zk_dropped_lock_path;
+    /// used for safe concurrent access to ephemeral dropped lock node
+    std::string zk_dropped_lock_version_path;
 
     std::string zookeeper_name;
 
@@ -142,7 +172,8 @@ private:
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
 
     mutable std::mutex init_mutex;
-    mutable std::optional<bool> table_is_valid;
+
+    mutable TableStatus table_status{TableStatus::UNKNOWN};
 
     LoggerPtr log;
 };

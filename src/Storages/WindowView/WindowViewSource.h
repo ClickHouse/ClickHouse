@@ -18,8 +18,8 @@ public:
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
         : ISource(
-            is_events_ ? Block(
-                {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
+            is_events_ ? std::make_shared<const Block>(Block(
+                {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")}))
                        : storage_->getOutputHeader())
         , storage(storage_)
         , is_events(is_events_)
@@ -32,7 +32,7 @@ public:
             header.insert(
                 ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark"));
         else
-            header = storage->getOutputHeader();
+            header = *storage->getOutputHeader();
     }
 
     String getName() const override { return "WindowViewSource"; }
@@ -51,7 +51,7 @@ protected:
         Block block;
         UInt32 watermark;
         std::tie(block, watermark) = generateImpl();
-        if (!block)
+        if (block.empty())
             return Chunk();
         if (is_events)
         {
@@ -59,10 +59,8 @@ protected:
                 {DataTypeDateTime(window_view_timezone).createColumnConst(block.rows(), watermark)->convertToFullColumnIfConst()},
                 block.rows());
         }
-        else
-        {
-            return Chunk(block.getColumns(), block.rows());
-        }
+
+        return Chunk(block.getColumns(), block.rows());
     }
 
     std::pair<Block, UInt32> generateImpl()
@@ -100,11 +98,9 @@ protected:
             blocks_with_watermark.pop_front();
             return res;
         }
-        else
-        {
-            last_heartbeat_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-            return {getHeader(), 0};
-        }
+
+        last_heartbeat_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+        return {getHeader(), 0};
     }
 
 private:

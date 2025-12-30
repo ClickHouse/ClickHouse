@@ -45,7 +45,7 @@ PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader());
     pipeline.complete(lazy_format);
 }
 
@@ -69,16 +69,9 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 static void threadFunction(
     PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    setThreadName("QueryPullPipeEx");
-
     try
     {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -147,13 +140,11 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
     block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (auto chunk_info = chunk.getChunkInfo())
+    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
-        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
-        {
-            block.info.bucket_num = agg_info->bucket_num;
-            block.info.is_overflows = agg_info->is_overflows;
-        }
+         block.info.bucket_num = agg_info->bucket_num;
+         block.info.is_overflows = agg_info->is_overflows;
+         block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
 
     return true;

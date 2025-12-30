@@ -1,7 +1,9 @@
 #pragma once
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/GetPriorityForLoadBalancing.h>
+#include <unordered_map>
 
 namespace Poco::Util
 {
@@ -32,11 +34,14 @@ struct ZooKeeperArgs
     String zookeeper_name = "zookeeper";
     String implementation = "zookeeper";
     Strings hosts;
+    Strings availability_zones;
     String auth_scheme;
     String identity;
     String chroot;
     String sessions_path = "/clickhouse/sessions";
+    String client_availability_zone;
     int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
+    UInt64 num_connection_retries = 2;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
     bool enable_fault_injections_during_startup = false;
@@ -47,9 +52,32 @@ struct ZooKeeperArgs
     UInt64 send_sleep_ms = 0;
     UInt64 recv_sleep_ms = 0;
     bool use_compression = false;
+    bool use_xid_64 = false;
+    bool prefer_local_availability_zone = false;
+    bool availability_zone_autodetect = false;
+    String password;
+
+    /// Linux nice value for the send and receive threads in ZooKeeper Client.
+    Int32 send_receive_os_threads_nice_value = 0;
+
+    struct PathAclInfo
+    {
+        Coordination::ACL acl;
+        bool apply_to_children = false;
+
+        bool operator==(const PathAclInfo &) const = default;
+    };
+    using PathAclMap = std::unordered_map<
+        std::string,
+        PathAclInfo,
+        DB::StringHashForHeterogeneousLookup,
+        DB::StringHashForHeterogeneousLookup::transparent_key_equal>;
+    PathAclMap path_acls;
 
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
+
+    int64_t last_zxid_seen = 0;
 
 private:
     void initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config);

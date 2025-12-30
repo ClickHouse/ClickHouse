@@ -3,13 +3,13 @@ import random
 import threading
 import time
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_logs_contain_with_retry
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 # FIXME: each sleep(1) is a time bomb, and not only this cause false positive
 # it also makes the test not reliable (i.e. assertions may be wrong, due timing issues)
@@ -26,7 +26,7 @@ node1 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
+    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
     macros={"shard": 0, "replica": 1},
     stay_alive=True,
 )
@@ -40,7 +40,7 @@ node2 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
+    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -76,7 +76,7 @@ def get_used_disks_for_table(node, table_name, partition=None):
     )
 
 
-def check_used_disks_with_retry(node, table_name, expected_disks, retries):
+def check_used_disks_with_retry(node, table_name, expected_disks, retries=1):
     for _ in range(retries):
         used_disks = get_used_disks_for_table(node, table_name)
         if set(used_disks).issubset(expected_disks):
@@ -87,7 +87,7 @@ def check_used_disks_with_retry(node, table_name, expected_disks, retries):
 
 # Use unique table name for flaky checker, that run tests multiple times
 def unique_table_name(base_name):
-    return f"{base_name}_{int(time.time())}"
+    return f"{base_name.replace('[', '_').replace(']', '_').replace('-', '_')}_{int(time.time())}"
 
 
 def wait_parts_mover(node, table, *args, **kwargs):
@@ -1613,7 +1613,7 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
             ALTER TABLE {name} MODIFY
             TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2',
                 d1 + INTERVAL 5 SECOND TO VOLUME 'external',
-                d1 + INTERVAL 10 SECOND DELETE
+                d1 + INTERVAL 30 SECOND DELETE
         """.format(
                 name=name
             )
@@ -1635,11 +1635,19 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
         optimize_table(20)
 
         if positive:
-            assert check_used_disks_with_retry(node1, name, set(["external"]), 100)
+            assert check_used_disks_with_retry(
+                node1, name, set(["external"])
+            ), "Parts: " + node1.query(
+                f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
+            )
         else:
-            assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]), 50)
+            assert check_used_disks_with_retry(
+                node1, name, set(["jbod1", "jbod2"])
+            ), "Parts: " + node1.query(
+                f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
+            )
 
-        time.sleep(5)
+        time.sleep(25)
 
         optimize_table(20)
 
@@ -1850,7 +1858,7 @@ class TestCancelBackgroundMoving:
         config = inspect.cleandoc(
             f"""
             <clickhouse>
-                <max_local_write_bandwidth_for_server>{ 256 * 1024 }</max_local_write_bandwidth_for_server>
+                <max_local_write_bandwidth_for_server>{256 * 1024}</max_local_write_bandwidth_for_server>
             </clickhouse>
             """
         )

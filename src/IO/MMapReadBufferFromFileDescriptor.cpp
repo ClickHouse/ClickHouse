@@ -87,7 +87,7 @@ off_t MMapReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     return new_pos;
 }
 
-size_t MMapReadBufferFromFileDescriptor::getFileSize()
+std::optional<size_t> MMapReadBufferFromFileDescriptor::tryGetFileSize()
 {
     return getSizeFromFileDescriptor(getFD(), getFileName());
 }

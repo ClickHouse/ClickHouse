@@ -2,17 +2,17 @@
 
 #include "config.h"
 
+#include <atomic>
+#include <memory>
 #include <unordered_map>
-#include <string>
+#include <vector>
+#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
-class WriteBufferFromOwnString;
 class KeeperDispatcher;
-
-using String = std::string;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
@@ -24,11 +24,11 @@ using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 struct IFourLetterCommand
 {
 public:
-    using StringBuffer = DB::WriteBufferFromOwnString;
     explicit IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_);
 
     virtual String name() = 0;
     virtual String run() = 0;
+    virtual String runWithArgument(const std::string &);
 
     virtual ~IFourLetterCommand();
     int32_t code();
@@ -49,8 +49,9 @@ public:
     /// Represents '*' which is used in allow list.
     static constexpr int32_t ALLOW_LIST_ALL = 0;
 
-    bool isKnown(int32_t code);
-    bool isEnabled(int32_t code);
+    bool isKnown(int32_t code) const;
+    bool isEnabled(int32_t code) const;
+    bool supportArguments(int32_t code) const;
 
     FourLetterCommandPtr get(int32_t code);
 
@@ -491,5 +492,32 @@ struct ProfileEventsCommand : public IFourLetterCommand
     String run() override;
     ~ProfileEventsCommand() override = default;
 };
+
+struct ToggleRequestLogging : public IFourLetterCommand
+{
+    explicit ToggleRequestLogging(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "lgrq"; }
+    String run() override;
+    ~ToggleRequestLogging() override = default;
+};
+
+/// Command which allow complex reconfiguration via 4lw command with argument
+struct ReconfigureCommand : public IFourLetterCommand
+{
+    explicit ReconfigureCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rcfg"; }
+    String run() override;
+    String runWithArgument(const std::string & argument) override;
+    ~ReconfigureCommand() override = default;
+};
+
 
 }

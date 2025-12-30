@@ -1,8 +1,8 @@
-import pty
+import multiprocessing
 import os
+import pty
 import shlex
 import time
-import multiprocessing
 
 COMPLETION_TIMEOUT_SECONDS = 30
 DEBUG_LOG = os.path.join(
@@ -10,18 +10,38 @@ DEBUG_LOG = os.path.join(
     os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
 )
 
+STATE_MAP = {
+    -1: "process did not start",
+    0: "completion was found",
+    1: "process started and said ':)'",
+    2: "completion search was started",
+    3: "completion is missing",
+}
+
 
 def run_with_timeout(func, args, timeout):
-    process = multiprocessing.Process(target=func, args=args)
-    process.start()
-    process.join(timeout)
+    for _ in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=func, args=args, kwargs={"state": state}
+        )
+        process.start()
+        process.join(timeout)
 
-    if process.is_alive():
-        process.terminate()
-        print("Timeout")
+        if state.value in (0, 3):
+            return
+
+        if process.is_alive():
+            process.terminate()
+
+            if state.value == -1:
+                continue
+
+            print(f"Timeout, state: {STATE_MAP[state.value]}")
+            return
 
 
-def test_completion(program, argv, comp_word):
+def test_completion(program, argv, comp_word, state=None):
     comp_begin = comp_word[:-3]
 
     shell_pid, master = pty.fork()
@@ -41,6 +61,8 @@ def test_completion(program, argv, comp_word):
                 debug_log_fd.write(repr(output_b) + "\n")
                 debug_log_fd.flush()
 
+            state.value = 1
+
             os.write(master, b"SET " + bytes(comp_begin.encode()))
             output_b = os.read(master, 4096)
             output = output_b.decode()
@@ -55,23 +77,28 @@ def test_completion(program, argv, comp_word):
             time.sleep(0.01)
             os.write(master, b"\t")
 
+            state.value = 2
+
             output_b = os.read(master, 4096)
             output = output_b.decode()
             debug_log_fd.write(repr(output_b) + "\n")
             debug_log_fd.flush()
-            # fail fast if there is a bell character in the output,
-            # meaning no concise completion is found
-            if "\x07" in output:
-                print(f"{comp_word}: FAIL")
-                return
 
             while not comp_word in output:
+                # fail fast if there is a bell character in the output,
+                # meaning no concise completion is found
+                if "\x07" in output:
+                    print(f"{comp_word}: FAIL")
+                    state.value = 3
+                    return
+
                 output_b = os.read(master, 4096)
                 output += output_b.decode()
                 debug_log_fd.write(repr(output_b) + "\n")
                 debug_log_fd.flush()
 
             print(f"{comp_word}: OK")
+            state.value = 0
         finally:
             os.close(master)
             debug_log_fd.close()

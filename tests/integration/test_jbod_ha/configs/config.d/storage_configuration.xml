@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <local_disk_check_period_ms>1000</local_disk_check_period_ms>
     <storage_configuration>
         <disks>
@@ -6,13 +6,13 @@
                 <keep_free_space_bytes>1024</keep_free_space_bytes>
             </default>
             <jbod1>
-                <path>/jbod1/</path>
+                <path>/test_jbod_ha_jbod1/</path>
             </jbod1>
             <jbod2>
-                <path>/jbod2/</path>
+                <path>/test_jbod_ha_jbod2/</path>
             </jbod2>
             <jbod3>
-                <path>/jbod3/</path>
+                <path>/test_jbod_ha_jbod3/</path>
             </jbod3>
         </disks>
         <policies>
@@ -27,4 +27,4 @@
             </jbod>
         </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>

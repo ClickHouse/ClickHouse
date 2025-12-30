@@ -184,36 +184,8 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
 }
 
 /** For template with two arguments.
+  * This is an extremely dangerous for code bloat - do not use.
   */
-template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
-static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type, TArgs && ... args)
-{
-    WhichDataType which(second_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<FirstType, TYPE>(args...);
-    FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, Int8>(args...);
-    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, Int16>(args...);
-    return nullptr;
-}
-
-template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
-static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
-{
-    WhichDataType which(first_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return createWithTwoNumericTypesSecond<TYPE, AggregateFunctionTemplate>(second_type, args...);
-    FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-    if (which.idx == TypeIndex::Enum8)
-        return createWithTwoNumericTypesSecond<Int8, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Enum16)
-        return createWithTwoNumericTypesSecond<Int16, AggregateFunctionTemplate>(second_type, args...);
-    return nullptr;
-}
-
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithTwoBasicNumericTypesSecond(const IDataType & second_type, TArgs && ... args)
 {
@@ -234,46 +206,6 @@ static IAggregateFunction * createWithTwoBasicNumericTypes(const IDataType & fir
         return createWithTwoBasicNumericTypesSecond<TYPE, AggregateFunctionTemplate>(second_type, args...);
     FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    return nullptr;
-}
-
-template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
-static IAggregateFunction * createWithTwoNumericOrDateTypesSecond(const IDataType & second_type, TArgs && ... args)
-{
-    WhichDataType which(second_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<FirstType, TYPE>(args...);
-    FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, Int8>(args...);
-    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, Int16>(args...);
-
-    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
-    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<FirstType, UInt16>(args...);
-    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<FirstType, UInt32>(args...);
-
-    return nullptr;
-}
-
-template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
-static IAggregateFunction * createWithTwoNumericOrDateTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
-{
-    WhichDataType which(first_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return createWithTwoNumericOrDateTypesSecond<TYPE, AggregateFunctionTemplate>(second_type, args...);
-    FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-    if (which.idx == TypeIndex::Enum8)
-        return createWithTwoNumericOrDateTypesSecond<Int8, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::Enum16)
-        return createWithTwoNumericOrDateTypesSecond<Int16, AggregateFunctionTemplate>(second_type, args...);
-
-    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
-    if (which.idx == TypeIndex::Date)
-        return createWithTwoNumericOrDateTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, args...);
-    if (which.idx == TypeIndex::DateTime)
-        return createWithTwoNumericOrDateTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, args...);
     return nullptr;
 }
 

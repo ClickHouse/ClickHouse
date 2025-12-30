@@ -76,6 +76,14 @@ if(NOT DEFINED PROTOBUF_GENERATE_CPP_APPEND_PATH)
 endif()
 
 function(protobuf_generate)
+  # ClickHouse build: Use the native plugins when cross-compiling
+  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+  else ()
+    set(NATIVE_protoc $<TARGET_FILE:protoc>)
+  endif()
+
+
   set(_options APPEND_PATH DESCRIPTORS)
   set(_singleargs LANGUAGE OUT_VAR EXPORT_MACRO PROTOC_OUT_DIR)
   if(COMMAND target_sources)
@@ -157,15 +165,13 @@ function(protobuf_generate)
 
   set(_generated_srcs_all)
   foreach(_proto ${protobuf_generate_PROTOS})
-    get_filename_component(_abs_file ${_proto} ABSOLUTE)
-    get_filename_component(_abs_dir ${_abs_file} DIRECTORY)
-    get_filename_component(_basename ${_proto} NAME_WE)
-    file(RELATIVE_PATH _rel_dir ${CMAKE_CURRENT_SOURCE_DIR} ${_abs_dir})
-
-    set(_possible_rel_dir)
-    if (NOT protobuf_generate_APPEND_PATH)
-        set(_possible_rel_dir ${_rel_dir}/)
-    endif()
+    # The protobuf compiler doesn't return paths to the files it generates so we have to calculate those paths here:
+    # _abs_file - absolute path to a .proto file,
+    # _possible_rel_dir - relative path to the .proto file from some import directory specified in Protobuf_IMPORT_DIRS,
+    # _basename - filename of the .proto file (without path and without extenstion).
+    get_proto_absolute_path(_abs_file "${_proto}" ${_protobuf_include_path})
+    get_proto_relative_path(_possible_rel_dir "${_abs_file}" ${_protobuf_include_path})
+    get_filename_component(_basename "${_abs_file}" NAME_WE)
 
     set(_generated_srcs)
     foreach(_ext ${protobuf_generate_GENERATE_EXTENSIONS})
@@ -173,7 +179,7 @@ function(protobuf_generate)
     endforeach()
 
     if(protobuf_generate_DESCRIPTORS AND protobuf_generate_LANGUAGE STREQUAL cpp)
-      set(_descriptor_file "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.desc")
+      set(_descriptor_file "${protobuf_generate_PROTOC_OUT_DIR}/${_possible_rel_dir}${_basename}.desc")
       set(_dll_desc_out "--descriptor_set_out=${_descriptor_file}")
       list(APPEND _generated_srcs ${_descriptor_file})
     endif()
@@ -181,9 +187,9 @@ function(protobuf_generate)
 
     add_custom_command(
       OUTPUT ${_generated_srcs}
-      COMMAND $<TARGET_FILE:protoc>
+      COMMAND ${NATIVE_protoc}
       ARGS --${protobuf_generate_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_PROTOC_OUT_DIR} ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} protoc
+      DEPENDS ${_abs_file} ${NATIVE_protoc}
       COMMENT "Running ${protobuf_generate_LANGUAGE} protocol buffer compiler on ${_proto}"
       VERBATIM)
   endforeach()
@@ -195,4 +201,37 @@ function(protobuf_generate)
   if(protobuf_generate_TARGET)
     target_sources(${protobuf_generate_TARGET} PRIVATE ${_generated_srcs_all})
   endif()
+endfunction()
+
+# Calculates the absolute path to a .proto file.
+function(get_proto_absolute_path result proto)
+  cmake_path(IS_ABSOLUTE proto _is_abs_path)
+  if(_is_abs_path)
+    set(${result} "${proto}" PARENT_SCOPE)
+    return()
+  endif()
+  foreach(_include_dir ${ARGN})
+    if(EXISTS "${_include_dir}/${proto}")
+      set(${result} "${_include_dir}/${proto}" PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+  message(SEND_ERROR "Not found protobuf ${proto} in Protobuf_IMPORT_DIRS: ${ARGN}")
+endfunction()
+
+# Calculates a relative path to a .proto file. The returned path is relative to one of include directories.
+function(get_proto_relative_path result abs_path)
+  set(${result} "" PARENT_SCOPE)
+  get_filename_component(_abs_dir "${abs_path}" DIRECTORY)
+  foreach(_include_dir ${ARGN})
+    cmake_path(IS_PREFIX _include_dir "${_abs_dir}" _is_prefix)
+    if(_is_prefix)
+      file(RELATIVE_PATH _rel_dir "${_include_dir}" "${_abs_dir}")
+      if(NOT _rel_dir STREQUAL "")
+        set(${result} "${_rel_dir}/" PARENT_SCOPE)
+      endif()
+      return()
+    endif()
+  endforeach()
+  message(WARNING "Not found protobuf ${abs_path} in Protobuf_IMPORT_DIRS: ${ARGN}")
 endfunction()

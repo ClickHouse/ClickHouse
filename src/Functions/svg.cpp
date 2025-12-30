@@ -54,11 +54,16 @@ public:
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 1 or 2 arguments");
         }
-        else if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
+        if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
         }
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -81,9 +86,9 @@ public:
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 boost::geometry::correct(figures[i]);
-                str << boost::geometry::svg(figures[i], has_style ? style->getDataAt(i).toString() : "");
+                str << boost::geometry::svg(figures[i], has_style ? std::string{style->getDataAt(i)} : "");
                 std::string serialized = str.str();
-                res_column->insertData(serialized.c_str(), serialized.size());
+                res_column->insertData(serialized.data(), serialized.size());
             }
         }
         );

@@ -1,5 +1,7 @@
 #include <Formats/ReadSchemaUtils.h>
 
+#include <Core/Settings.h>
+
 #include <IO/ReadBufferFromString.h>
 
 #include <Interpreters/Context.h>
@@ -23,6 +25,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsBool use_concurrency_control;
+}
 
 namespace ErrorCodes
 {
@@ -46,7 +53,11 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "Values"; }
+    const char * getStorageEngineName() const override
+    {
+        /// No underlying storage engine
+        return "";
+    }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -99,26 +110,24 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
         block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
-    auto input_format = context->getInputFormat(format_name, *read_buf, block, context->getSettingsRef().max_block_size);
+    auto input_format = context->getInputFormat(format_name, *read_buf, block, context->getSettingsRef()[Setting::max_block_size]);
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
     if (columns.hasDefaults())
     {
-        builder.addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
         });
     }
 
+    builder.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
-
-    if (blocks.size() == 1)
-        return blocks[0];
 
     /// In case when data contains more then 1 block we combine
     /// them all to one big block (this is considered a rare case).
@@ -209,7 +218,7 @@ Result:
 )", ""
         },
     },
-    .categories{"format", "table-functions"}
+    .category = FunctionDocumentation::Category::TableFunction
 };
 
 }
@@ -217,7 +226,7 @@ Result:
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::Case::Insensitive);
 }
 
 }

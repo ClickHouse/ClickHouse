@@ -24,11 +24,8 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleHammingDistance>(context_); }
 
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return 2; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -119,7 +116,7 @@ public:
 
             ColumnWithTypeAndName column;
             column.type = elem_compare->getResultType();
-            column.column = elem_compare->execute({left, right}, column.type, input_rows_count);
+            column.column = elem_compare->execute({left, right}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -129,7 +126,7 @@ public:
             {
                 auto plus_elem = plus->build({res, column});
                 auto res_type = plus_elem->getResultType();
-                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }
@@ -140,6 +137,42 @@ public:
 
 REGISTER_FUNCTION(TupleHammingDistance)
 {
-    factory.registerFunction<FunctionTupleHammingDistance>();
+    FunctionDocumentation::Description description = R"(
+Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
+
+:::note
+The result type is determined the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+
+```sql
+SELECT
+    toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
+    toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
+    toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
+```
+
+```text
+┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
+│ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
+└───────┴────────┴────────┴────────┴────────┘
+```
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "tupleHammingDistance(t1, t2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"t1", "First tuple.", {"Tuple(*)"}},
+        {"t2", "Second tuple.", {"Tuple(*)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Hamming distance.", {"UInt8/16/32/64"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT tupleHammingDistance((1, 2, 3), (3, 2, 1))", "2"},
+        {"With MinHash to detect semi-duplicate strings", "SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string)", "2"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTupleHammingDistance>(documentation);
 }
 }

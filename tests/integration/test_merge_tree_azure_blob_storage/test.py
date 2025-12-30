@@ -1,14 +1,13 @@
 import logging
-import time
 import os
+import time
 
 import pytest
+from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
-from helpers.utility import generate_values, replace_config, SafeThread
-from azure.storage.blob import BlobServiceClient
+from helpers.utility import SafeThread, generate_values, replace_config
 from test_storage_azure_blob_storage.test import azure_query
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NODE_NAME = "node"
@@ -394,7 +393,7 @@ def test_table_manipulations(cluster):
     )
 
     azure_query(node, f"RENAME TABLE {renamed_table} TO {TABLE_NAME}")
-    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values") == "(1)"
+    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
 
     node.query(f"DETACH TABLE {TABLE_NAME}")
     node.query(f"ATTACH TABLE {TABLE_NAME}")
@@ -537,10 +536,7 @@ def test_freeze_unfreeze(cluster):
 def test_apply_new_settings(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        "./_gen/disk_storage_conf.xml".format(cluster.instances_dir_name),
-    )
+    config_path = os.path.join(SCRIPT_DIR, "./_gen/disk_storage_conf.xml")
 
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"

@@ -83,6 +83,7 @@ NamespaceIndentation: None
 ObjCBlockIndentWidth: 4
 ObjCSpaceAfterProperty: true
 ObjCSpaceBeforeProtocolList: true
+PackConstructorInitializers: Never
 PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyBreakComment: 300
 PenaltyBreakFirstLessLess: 120

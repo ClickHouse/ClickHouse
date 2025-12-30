@@ -25,19 +25,14 @@ private:
     mutable std::optional<size_t> version;
 
     String getNameImpl(bool with_version) const;
-    size_t getVersion() const;
 
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
-        : function(std::move(function_))
-        , argument_types(argument_types_)
-        , parameters(parameters_)
-        , version(version_)
-    {
-    }
+                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt);
+
+    size_t getVersion() const;
 
     String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }
@@ -61,6 +56,7 @@ public:
 
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
     bool equals(const IDataType & rhs) const override;
+    void updateHashImpl(SipHash & hash) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
@@ -88,5 +84,8 @@ public:
 };
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
+
+/// Checks type of any nested type is DataTypeAggregateFunction.
+bool hasAggregateFunctionType(const DataTypePtr & type);
 
 }

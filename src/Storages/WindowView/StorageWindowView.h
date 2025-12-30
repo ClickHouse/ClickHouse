@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/DateLUT.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
+#include <Common/SharedMutex.h>
 
 #include <mutex>
 
@@ -111,6 +113,7 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
+        const String & comment,
         LoadingStrictnessLevel mode);
 
     String getName() const override { return "WindowView"; }
@@ -166,7 +169,7 @@ public:
 
     BlockIO populate();
 
-    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
+    static void writeIntoWindowView(StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
@@ -174,7 +177,7 @@ public:
 
     Block getInputHeader() const;
 
-    const Block & getOutputHeader() const;
+    SharedHeader getOutputHeader() const;
 
 private:
     LoggerPtr log;
@@ -240,8 +243,8 @@ private:
 
     ASTPtr inner_table_engine;
 
-    BackgroundSchedulePool::TaskHolder clean_cache_task;
-    BackgroundSchedulePool::TaskHolder fire_task;
+    BackgroundSchedulePoolTaskHolder clean_cache_task;
+    BackgroundSchedulePoolTaskHolder fire_task;
 
     String window_view_timezone;
     String function_now_timezone;

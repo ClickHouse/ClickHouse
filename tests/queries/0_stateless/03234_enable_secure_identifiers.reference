@@ -1,0 +1,3 @@
+CREATE TABLE default.test_foo\n(\n    `secure_123` Int8,\n    `date` Date,\n    `town` LowCardinality(String)\n)\nENGINE = MergeTree\nPARTITION BY toYear(date)\nPRIMARY KEY (town, date)\nORDER BY (town, date)\nSETTINGS index_granularity = 8192\nCOMMENT \'test\'
+CREATE TABLE default.test_foo\n(\n    `123_secure` Int8,\n    `date` Date,\n    `town` LowCardinality(String)\n)\nENGINE = MergeTree\nPARTITION BY toYear(date)\nPRIMARY KEY (town, date)\nORDER BY (town, date)\nSETTINGS index_granularity = 8192\nCOMMENT \'test\'
+CREATE TABLE default.test_foo\n(\n    `insecure_$` Int8,\n    `date` Date,\n    `town` LowCardinality(String)\n)\nENGINE = MergeTree\nPARTITION BY toYear(date)\nPRIMARY KEY (town, date)\nORDER BY (town, date)\nSETTINGS index_granularity = 8192

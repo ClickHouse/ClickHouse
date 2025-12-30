@@ -12,7 +12,6 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -23,8 +22,11 @@
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
+#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -32,11 +34,15 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <base/getThreadId.h>
 #include <sys/syscall.h>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds storage_system_stack_trace_pipe_read_timeout_ms;
+}
 
 namespace ErrorCodes
 {
@@ -163,8 +169,7 @@ bool wait(int timeout_ms)
         {
             if (notification_num == sequence_num.load(std::memory_order_relaxed))
                 return true;
-            else
-                continue;   /// Drain delayed notifications.
+            continue; /// Drain delayed notifications.
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
@@ -227,10 +232,11 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
 bool parseHexNumber(std::string_view sv, UInt64 & res)
 {
     errno = 0; /// Functions strto* don't clear errno.
-    char * pos_integer = const_cast<char *>(sv.begin());
-    res = std::strtoull(sv.begin(), &pos_integer, 16);
-    return (pos_integer == sv.begin() + sv.size() && errno != ERANGE);
+    char * pos_integer = const_cast<char *>(sv.data());
+    res = std::strtoull(sv.data(), &pos_integer, 16); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return (pos_integer == sv.data() + sv.size() && errno != ERANGE);
 }
+
 bool isSignalBlocked(UInt64 tid, int signal)
 {
     String buffer;
@@ -275,8 +281,8 @@ class StackTraceSource : public ISource
 public:
     StackTraceSource(
         const Names & column_names,
-        Block header_,
-        ActionsDAGPtr && filter_dag_,
+        SharedHeader header_,
+        std::shared_ptr<const ActionsDAG> filter_dag_,
         ContextPtr context_,
         UInt64 max_block_size_,
         LoggerPtr log_)
@@ -287,7 +293,7 @@ public:
         , predicate(filter_dag ? filter_dag->getOutputs().at(0) : nullptr)
         , max_block_size(max_block_size_)
         , pipe_read_timeout_ms(
-              static_cast<int>(context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds()))
+              static_cast<int>(context->getSettingsRef()[Setting::storage_system_stack_trace_pipe_read_timeout_ms].totalMilliseconds()))
         , log(log_)
         , proc_it("/proc/self/task")
         /// It shouldn't be possible to do concurrent reads from this table.
@@ -305,7 +311,8 @@ public:
 protected:
     Chunk generate() override
     {
-        MutableColumns res_columns = header.cloneEmptyColumns();
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
+        MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
         {
@@ -386,11 +393,18 @@ protected:
                     {
                         size_t stack_trace_size = stack_trace.getSize();
                         size_t stack_trace_offset = stack_trace.getOffset();
+                        auto frame_pointers = stack_trace.getFramePointers();
 
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                            arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace.getFramePointers()[i]));
+                        {
+                            const void * virtual_addr = frame_pointers[i];
+                            const auto * object = symbol_index.findObject(virtual_addr);
+                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
+                            arr.emplace_back(physical_addr);
+                        }
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);
@@ -421,8 +435,8 @@ protected:
 
 private:
     ContextPtr context;
-    Block header;
-    const ActionsDAGPtr filter_dag;
+    SharedHeader header;
+    const std::shared_ptr<const ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate;
 
     const size_t max_block_size;
@@ -469,8 +483,8 @@ public:
     {
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
-            getOutputStream().header,
-            std::move(filter_actions_dag),
+            getOutputHeader(),
+            filter_actions_dag,
             context,
             max_block_size,
             log));
@@ -485,7 +499,7 @@ public:
         Block sample_block,
         size_t max_block_size_,
         LoggerPtr log_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , max_block_size(max_block_size_)
         , log(log_)

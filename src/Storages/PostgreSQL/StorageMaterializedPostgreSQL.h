@@ -3,10 +3,9 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include "PostgreSQLReplicationHandler.h"
-#include "MaterializedPostgreSQLSettings.h"
+#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -17,6 +16,7 @@
 
 namespace DB
 {
+struct MaterializedPostgreSQLSettings;
 
 /** TODO list:
  * - Actually I think we can support ddl even though logical replication does not fully support it.
@@ -122,7 +122,7 @@ public:
     /// temporary nested, which will be created shortly after.
     StoragePtr createTemporary() const;
 
-    ContextPtr getNestedTableContext() const { return nested_context; }
+    ContextMutablePtr getNestedTableContext() const { return nested_context; }
 
     StorageID getNestedStorageID() const;
 

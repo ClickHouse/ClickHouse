@@ -8,6 +8,8 @@
 #    include <IO/WriteBufferFromFileBase.h>
 #    include <base/defines.h>
 
+#    include <mutex>
+
 
 namespace DB
 {
@@ -41,6 +43,8 @@ public:
     /// Finalizes writing of the archive. This function must be always called at the end of writing.
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
+
+    void cancel() noexcept override;
 
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.

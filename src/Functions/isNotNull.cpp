@@ -1,17 +1,29 @@
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
+
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace
 {
 
@@ -22,11 +34,37 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsNotNull>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+    }
+
+    explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override
     {
         return name;
+    }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+        if (!use_analyzer)
+            return nullptr;
+
+        /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
+        /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
+        if (isNothing(result_type))
+            return nullptr;
+
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull())
+            return result_type->createColumnConst(1, UInt8(0));
+
+        if (canContainNull(*elem.type))
+            return nullptr;
+
+        return result_type->createColumnConst(1, UInt8(1));
     }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -78,12 +116,27 @@ public:
             vector(src_data, res_data);
             return res_column;
         }
-        else
-        {
-            /// Since no element is nullable, return a constant one.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
-        }
+
+        /// Since no element is nullable, return a constant one.
+        return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+        {
+            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+            return b.CreateSelect(is_null, b.getInt8(0), b.getInt8(1));
+        }
+        else
+            return b.getInt8(1);
+    }
+#endif
 
 private:
     MULTITARGET_FUNCTION_AVX2_SSE42(
@@ -111,12 +164,51 @@ private:
 #endif
         vectorImpl(null_map, res);
     }
+
+    bool use_analyzer;
 };
 }
 
 REGISTER_FUNCTION(IsNotNull)
 {
-    factory.registerFunction<FunctionIsNotNull>();
+    FunctionDocumentation::Description description = R"(
+Checks if the argument is not `NULL`.
+
+Also see: operator [`IS NOT NULL`](/sql-reference/operators#is_not_null).
+    )";
+    FunctionDocumentation::Syntax syntax = "isNotNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of non-compound data type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is not `NULL`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_null
+(
+  x Int32,
+  y Nullable(Int32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT x FROM t_null WHERE isNotNull(y);
+        )",
+        R"(
+┌─x─┐
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsNotNull>(documentation);
 }
 
 }

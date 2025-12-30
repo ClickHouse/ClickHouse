@@ -1,6 +1,9 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
+#include <Common/Logger.h>
+#include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -21,6 +24,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -91,16 +99,14 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
-            else
-                return false;
+            return false;
         }
 
         if (!fs::is_regular_file(table_path))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
-            else
-                return false;
+            return false;
         }
     }
 
@@ -181,18 +187,19 @@ bool DatabaseFilesystem::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
+ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), path);
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;
@@ -256,6 +263,6 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn);
+    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
 }
 }

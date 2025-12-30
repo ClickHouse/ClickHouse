@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -66,19 +65,18 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : public WithContext
+class FunctionDictHelper
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
-        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
+        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
         if (!access_checked)
         {
-            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -95,7 +93,7 @@ public:
         return getDictionary(dict_name_col->getValue<String>());
     }
 
-    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    static void checkDictionaryHierarchySupport(const std::shared_ptr<const IDictionary> & dictionary)
     {
         const auto & dictionary_structure = dictionary->getStructure();
         auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
@@ -104,6 +102,14 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Dictionary {} does not support hierarchy",
                 dictionary->getFullName());
+    }
+
+    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    {
+        checkDictionaryHierarchySupport(dictionary);
+
+        const auto & dictionary_structure = dictionary->getStructure();
+        auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
 
         size_t hierarchical_attribute_index = *hierarchical_attribute_index_optional;
         const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
@@ -114,7 +120,7 @@ public:
     bool isDictGetFunctionInjective(const Block & sample_columns)
     {
         /// Assume non-injective by default
-        if (!sample_columns)
+        if (sample_columns.empty())
             return false;
 
         if (sample_columns.columns() < 3)
@@ -136,8 +142,10 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
+        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
     }
+
+    const ContextPtr context;
 
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
@@ -274,11 +282,9 @@ public:
                         getName(),
                         key_column_type->getName());
                 }
-                else
-                {
-                    key_columns = {key_column};
-                    key_types = {key_column_type};
-                }
+
+                key_columns = {key_column};
+                key_types = {key_column_type};
             }
         }
 
@@ -403,13 +409,10 @@ public:
 
             return std::make_shared<DataTypeTuple>(attribute_types, attribute_names);
         }
-        else
-        {
-            if (key_is_nullable)
-                return makeNullable(attribute_types.front());
-            else
-                return attribute_types.front();
-        }
+
+        if (key_is_nullable)
+            return makeNullable(attribute_types.front());
+        return attribute_types.front();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -575,11 +578,9 @@ public:
                          getName(),
                          key_col_with_type.type->getName());
                 }
-                else
-                {
-                    key_columns = {std::move(key_column)};
-                    key_types = {std::move(key_column_type)};
-                }
+
+                key_columns = {std::move(key_column)};
+                key_types = {std::move(key_column_type)};
             }
         }
 
@@ -630,11 +631,11 @@ private:
             column_before_cast.type,
             column_before_cast.name};
 
-        auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
+        auto cast = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
 
         auto mask_col = ColumnUInt8::create();
         mask_col->getData() = std::move(default_mask);
-        return {std::move(casted), std::move(mask_col)};
+        return {std::move(cast), std::move(mask_col)};
     }
 
     void restoreShortCircuitColumn(
@@ -643,7 +644,7 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
-        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
+        auto if_func = FunctionFactory::instance().get("if", helper.context);
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},
@@ -652,21 +653,9 @@ private:
         };
 
         auto rows = mask_column->size();
-        result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
+        result_column = if_func->build(if_args)->execute(if_args, result_type, rows, /* dry_run = */ false);
     }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
-    void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter) const
-    {
-        size_t expected_size = filter.size() - countBytesInFilter(filter);
-        size_t col_size = column->size();
-        if (col_size != expected_size)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid size of getColumnsOrDefaultShortCircuit result. Column has {} rows, but filter contains {} bytes.",
-                col_size, expected_size);
-    }
-#endif
 
     ColumnPtr executeDictionaryRequest(
         std::shared_ptr<const IDictionary> & dictionary,
@@ -695,11 +684,6 @@ private:
             {
                 IColumn::Filter default_mask;
                 result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-                for (const auto & column : result_columns)
-                    validateShortCircuitResult(column, default_mask);
-#endif
 
                 auto [defaults_column, mask_column] =
                     getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
@@ -735,10 +719,6 @@ private:
             {
                 IColumn::Filter default_mask;
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-                validateShortCircuitResult(result, default_mask);
-#endif
 
                 auto [defaults_column, mask_column] =
                     getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
@@ -1153,9 +1133,9 @@ private:
         const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        ColumnPtr result = dictionary->getHierarchy(key_column_casted, hierarchical_attribute.type);
+        ColumnPtr result = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
 
         return result;
     }
@@ -1211,10 +1191,10 @@ private:
         auto in_key_column = ColumnWithTypeAndName{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
 
         auto hierarchical_attribute_non_nullable = removeNullable(hierarchical_attribute.type);
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
-        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
+        auto key_column_cast = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
+        auto in_key_column_cast = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
 
-        ColumnPtr result = dictionary->isInHierarchy(key_column_casted, in_key_column_casted, hierarchical_attribute.type);
+        ColumnPtr result = dictionary->isInHierarchy(key_column_cast, in_key_column_cast, hierarchical_attribute.type);
 
         return result;
     }
@@ -1248,12 +1228,12 @@ public:
             return result_type->createColumn();
 
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        return dictionary->getDescendants(key_column_casted, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
+        return dictionary->getDescendants(key_column_cast, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
     }
 
     String name;
@@ -1345,6 +1325,9 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
+
+        FunctionDictHelper::checkDictionaryHierarchySupport(dictionary);
+
         auto hierarchical_parent_to_child_index = dictionary->getHierarchicalIndex();
 
         size_t level = Strategy::default_level;
@@ -1400,7 +1383,7 @@ public:
         }
 
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
 
         return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }

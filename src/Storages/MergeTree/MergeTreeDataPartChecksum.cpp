@@ -1,4 +1,4 @@
-#include "MergeTreeDataPartChecksum.h"
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Common/SipHash.h>
 #include <base/hex.h>
 #include <IO/ReadHelpers.h>
@@ -7,9 +7,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/GinIndexStore.h>
+#include <filesystem>
 #include <optional>
+
+#include <fmt/ranges.h>
+#include <fmt/std.h>
 
 
 namespace DB
@@ -61,22 +65,18 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    /// Skip full-text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
-    if (isGinFile(name))
-        return;
-
-    if (!storage.exists(name))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
-
     // This is a projection, no need to check its size.
-    if (storage.isDirectory(name))
+    if (storage.existsDirectory(name))
         return;
+
+    if (!storage.existsFile(name))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", std::filesystem::path(storage.getRelativePath()) / name);
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)
         throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
             "{} has unexpected size: {} instead of {}",
-            fs::path(storage.getRelativePath()) / name, size, file_size);
+            std::filesystem::path(storage.getRelativePath()) / name, size, file_size);
 }
 
 
@@ -88,22 +88,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
     for (const auto & [name, checksum] : files)
     {
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
-        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
-            continue;
-
         auto it = rhs.files.find(name);
         if (it == rhs.files.end())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
 
         checksum.checkEqual(it->second, have_uncompressed, name, part_name);
     }
-}
-
-void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
-{
-    for (const auto & [name, checksum] : files)
-        checksum.checkSize(storage, name);
 }
 
 UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
@@ -245,11 +235,18 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
             writeBinaryLittleEndian(sum.uncompressed_hash, out);
         }
     }
+
+    out.finalize();
 }
 
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
     files[file_name] = Checksum(file_size, file_hash);
+}
+
+void MergeTreeDataPartChecksums::addFile(const String & file_name, const Checksum & checksum)
+{
+    files[file_name] = checksum;
 }
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)

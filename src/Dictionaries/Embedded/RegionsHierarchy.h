@@ -3,7 +3,7 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
-#include "GeodataProviders/IHierarchiesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
 #include <Core/Defines.h>
 
 namespace DB

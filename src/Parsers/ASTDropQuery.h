@@ -27,7 +27,16 @@ public:
     bool no_ddl_lock{false};
 
     /// For `TRUNCATE ALL TABLES` query
-    bool has_all_tables{false};
+    bool has_all{false};
+
+    /// For `TRUNCATE TABLES` query (basically the same as above)
+    bool has_tables{false};
+
+    /// For specifying table name patterns for `TRUNCATE ALL TABLES` query
+    String like;
+
+    bool not_like = false;
+    bool case_insensitive_like = false;
 
     /// We dropping dictionary, so print correct word
     bool is_dictionary{false};
@@ -58,7 +67,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

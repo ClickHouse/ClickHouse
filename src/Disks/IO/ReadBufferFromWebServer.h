@@ -4,7 +4,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 

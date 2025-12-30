@@ -1,41 +1,74 @@
 #pragma once
 
+#include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+
 #include <base/types.h>
 
 namespace DB
 {
 
-enum StatisticType
+enum class StatisticsType : UInt8
 {
     TDigest = 0,
+    Uniq = 1,
+    CountMinSketch = 2,
+    MinMax = 3,
+
+    Max = 63,
+};
+
+struct SingleStatisticsDescription
+{
+    StatisticsType type;
+    ASTPtr ast;
+    bool is_implicit = false;
+
+    String getTypeName() const;
+
+    SingleStatisticsDescription() = delete;
+    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
+
+    SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
+    SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
+    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept { *this = std::move(other); }
+    SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
+
+    bool operator==(const SingleStatisticsDescription & other) const;
 };
 
 class ColumnsDescription;
 
-struct StatisticDescription
+struct ColumnStatisticsDescription
 {
-    /// the type of statistic, right now it's only tdigest.
-    StatisticType type;
+    bool operator==(const ColumnStatisticsDescription & other) const;
 
-    /// Names of statistic columns
-    String column_name;
+    bool empty() const;
 
-    ASTPtr ast;
+    bool hasExplicitStatistics() const;
 
-    String getTypeName() const;
+    bool contains(const String & stat_type) const;
 
-    StatisticDescription() = default;
+    void merge(const ColumnStatisticsDescription & other, const String & column_name, DataTypePtr column_type, bool if_not_exists);
 
-    bool operator==(const StatisticDescription & other) const
-    {
-        return type == other.type && column_name == other.column_name;
-    }
+    void assign(const ColumnStatisticsDescription & other);
 
-    static StatisticDescription getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column);
+    void clear();
 
-    static std::vector<StatisticDescription> getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
+    ASTPtr getAST() const;
+
+    String getNameForLogs() const;
+
+    /// get a vector of <column name, statistics desc> pair
+    static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
+    static ColumnStatisticsDescription fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type);
+
+    using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
+    StatisticsTypeDescMap types_to_desc;
+    DataTypePtr data_type;
 };
+
+StatisticsType stringToStatisticsType(String type);
 
 }

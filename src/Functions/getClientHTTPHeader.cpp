@@ -5,10 +5,16 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_get_client_http_header;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -24,7 +30,7 @@ public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
         : WithContext(context_)
     {
-        if (!getContext()->getSettingsRef().allow_get_client_http_header)
+        if (!getContext()->getSettingsRef()[Setting::allow_get_client_http_header])
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
     }
 
@@ -57,7 +63,7 @@ public:
         {
             Field header;
             source->get(row, header);
-            if (auto it = client_info.http_headers.find(header.get<String>()); it != client_info.http_headers.end())
+            if (auto it = client_info.http_headers.find(header.safeGet<String>()); it != client_info.http_headers.end())
                 result->insert(it->second);
             else
                 result->insertDefault();
@@ -71,26 +77,44 @@ public:
 
 REGISTER_FUNCTION(GetClientHTTPHeader)
 {
-    factory.registerFunction("getClientHTTPHeader",
-        [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
-        FunctionDocumentation{
-            .description = R"(
-Get the value of an HTTP header.
-
+    FunctionDocumentation::Description description = R"(
+Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
 
+:::note Setting `allow_get_client_http_header` is required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+:::
 
 HTTP headers are case sensitive for this function.
-
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
-",
-            .syntax = "getClientHTTPHeader(name)",
-            .arguments = {{"name", "The HTTP header name (String)"}},
-            .returned_value = "The value of the header (String).",
-            .categories{"Miscellaneous"}});
+)";
+    FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "The HTTP header name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the header.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT getClientHTTPHeader('Content-Type');
+            )",
+            R"(
+┌─getClientHTTPHeader('Content-Type')─┐
+│ application/x-www-form-urlencoded   │
+└─────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("getClientHTTPHeader",
+        [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
+        documentation);
 }
 
 }

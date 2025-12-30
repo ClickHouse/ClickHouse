@@ -1,0 +1,71 @@
+services:
+  spark-iceberg:
+    image: tabulario/spark-iceberg:3.5.5_1.8.1
+    build: spark/
+    depends_on:
+      rest:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    ports:
+      - 8080:8080
+      - 10002:10000
+      - 10003:10001
+    stop_grace_period: 5s
+  rest:
+    image: tabulario/iceberg-rest:1.6.0
+    ports:
+      - 8182:8181
+    environment:
+      - AWS_ACCESS_KEY_ID=minio
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_REGION=us-east-1
+      - CATALOG_WAREHOUSE=s3://iceberg_data/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8181"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 5s
+  # TODO: can we simply use with_minio=True instead?
+  minio:
+    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
+    environment:
+      - MINIO_ROOT_USER=minio
+      - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
+      - MINIO_DOMAIN=minio
+    networks:
+      default:
+        aliases:
+          - warehouse-rest.minio
+    ports:
+      - 9001
+      - 9000
+    command: ["server", "/data", "--console-address", ":9001"]
+    stop_grace_period: 5s
+  # TODO: move this code to cluster.py
+  mc:
+    depends_on:
+      - minio
+    # Stick to version with "mc config"
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    environment:
+      - AWS_ACCESS_KEY_ID=minio
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_REGION=us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse-rest;
+      /usr/bin/mc mb minio/warehouse-rest --ignore-existing;
+      /usr/bin/mc policy set public minio/warehouse-rest;
+      tail -f /dev/null
+      "
+      stop_grace_period: 5s

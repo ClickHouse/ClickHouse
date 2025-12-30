@@ -1,10 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include "ArrowBufferedStreams.h"
-
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #if USE_ARROW || USE_ORC || USE_PARQUET
-#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -12,9 +11,8 @@
 #include <arrow/util/future.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
+#include <arrow/memory_pool_internal.h>
 #include <Core/Settings.h>
-
-#include <sys/stat.h>
 
 
 namespace DB
@@ -100,7 +98,7 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbyt
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
 {
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes, arrow::default_memory_pool()))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
     if (bytes_read < nbytes)
@@ -157,7 +155,7 @@ arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes, void
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes)
 {
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes, arrow::default_memory_pool()))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
     if (bytes_read < nbytes)
@@ -182,7 +180,11 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_) {}
+RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(std::move(io_pool_))
+{
+    if (io_pool)
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, ThreadName::ARROW_FILE);
+}
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 {
@@ -193,7 +195,8 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_
 {
     try
     {
-        return in.readBigAt(reinterpret_cast<char *>(out), nbytes, position, nullptr);
+        int64_t r = in.readBigAt(reinterpret_cast<char *>(out), nbytes, position, nullptr);
+        return r;
     }
     catch (...)
     {
@@ -205,7 +208,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes)
 {
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes, arrow::default_memory_pool()))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, ReadAt(position, nbytes, buffer->mutable_data()))
 
     if (bytes_read < nbytes)
@@ -216,7 +219,14 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessRe
 
 arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes)
 {
-    return arrow::Future<std::shared_ptr<arrow::Buffer>>::MakeFinished(ReadAt(position, nbytes));
+    auto future = arrow::Future<std::shared_ptr<arrow::Buffer>>::Make();
+    if (io_pool)
+    {
+        async_runner([this, future, position, nbytes]() mutable { asyncThreadFunction(future, position, nbytes); }, {});
+        return future.Then([=]() { return future.result(); });
+    }
+    asyncThreadFunction(future, position, nbytes);
+    return future;
 }
 
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
@@ -226,11 +236,17 @@ arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
     return arrow::Status::OK();
 }
 
+void RandomAccessFileFromRandomAccessReadBuffer::asyncThreadFunction(
+    arrow::Future<std::shared_ptr<arrow::Buffer>> future, int64_t position, int64_t nbytes)
+{
+    auto buffer = ReadAt(position, nbytes);
+    future.MarkFinished(buffer);
+}
+
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Seek(int64_t) { return arrow::Status::NotImplemented(""); }
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::Tell() const { return arrow::Status::NotImplemented(""); }
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::Read(int64_t, void*) { return arrow::Status::NotImplemented(""); }
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::Read(int64_t) { return arrow::Status::NotImplemented(""); }
-
 
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     ReadBuffer & in,
@@ -238,7 +254,8 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     std::atomic<int> & is_cancelled,
     const std::string & format_name,
     const std::string & magic_bytes,
-    bool avoid_buffering)
+    bool avoid_buffering,
+    std::shared_ptr<ThreadPool> io_pool)
 {
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
@@ -246,7 +263,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     if (has_file_size && seekable_in && settings.seekable_read)
     {
         if (avoid_buffering && seekable_in->supportsReadAt())
-            return std::make_shared<RandomAccessFileFromRandomAccessReadBuffer>(*seekable_in, getFileSizeFromReadBuffer(in));
+            return std::make_shared<RandomAccessFileFromRandomAccessReadBuffer>(*seekable_in, getFileSizeFromReadBuffer(in), io_pool);
 
         if (seekable_in->checkIfActuallySeekable())
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in, std::nullopt, avoid_buffering);
@@ -269,9 +286,10 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(
     if (bytes_read < magic_bytes.size() || file_data != magic_bytes)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not a {} file", format_name);
 
-    WriteBufferFromString file_buffer(file_data, AppendModeTag{});
-    copyData(in, file_buffer, is_cancelled);
-    file_buffer.finalize();
+    {
+        WriteBufferFromString file_buffer(file_data, AppendModeTag{});
+        copyData(in, file_buffer, is_cancelled);
+    }
 
     return std::make_shared<arrow::io::BufferReader>(arrow::Buffer::FromString(std::move(file_data)));
 }

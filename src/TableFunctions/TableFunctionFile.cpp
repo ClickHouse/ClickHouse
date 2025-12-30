@@ -2,18 +2,25 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/HivePartitioningUtils.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_archive_path_syntax;
+    extern const SettingsString rename_files_after_processing;
+}
 
 namespace ErrorCodes
 {
@@ -25,7 +32,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
+        file_source = StorageFile::FileSource::parse(filename, context);
         return;
     }
 
@@ -41,12 +48,12 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         else if (filename == "stderr")
             fd = STDERR_FILENO;
         else
-            StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
+            file_source = StorageFile::FileSource::parse(filename, context);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
         fd = static_cast<int>(
-            (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>());
+            (type == Field::Types::Int64) ? literal->value.safeGet<Int64>() : literal->value.safeGet<UInt64>());
         if (fd < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
@@ -58,14 +65,19 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
-    else
-        return FormatFactory::instance().tryGetFormatFromFileName(filename);
+
+    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
+    return file_source->format_from_filenames;
 }
 
-StoragePtr TableFunctionFile::getStorage(const String & source,
-    const String & format_, const ColumnsDescription & columns,
-    ContextPtr global_context, const std::string & table_name,
-    const std::string & compression_method_) const
+StoragePtr TableFunctionFile::getStorage(
+    const String & /*source*/,
+    const String & format_,
+    const ColumnsDescription & columns,
+    ContextPtr global_context,
+    const std::string & table_name,
+    const std::string & compression_method_,
+    bool /*is_insert_query*/) const
 {
     // For `file` table function, we are going to use format settings from the
     // query context.
@@ -78,14 +90,14 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         columns,
         ConstraintsDescription{},
         String{},
-        global_context->getSettingsRef().rename_files_after_processing,
-        path_to_archive,
+        global_context->getSettingsRef()[Setting::rename_files_after_processing],
     };
 
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
+    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
+    return std::make_shared<StorageFile>(*file_source, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -94,19 +106,25 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     {
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
-        size_t total_bytes_to_read = 0;
 
-        Strings paths;
-        std::optional<StorageFile::ArchiveInfo> archive_info;
-        if (path_to_archive.empty())
-            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        else
-            archive_info
-                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
 
+        ColumnsDescription columns;
         if (format == "auto")
-            return StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
+            columns = StorageFile::getTableStructureAndFormatFromFile(file_source->paths, compression_method, std::nullopt, context, file_source->archive_info).first;
+        else
+            columns = StorageFile::getTableStructureFromFile(format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info);
+
+        auto sample_path = file_source->paths.empty() ? String{} : file_source->paths.front();
+
+        HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+            columns,
+            sample_path,
+            /* inferred_schema */ true,
+            /* format_settings */ std::nullopt,
+            context);
+
+        return columns;
     }
 
     return parseColumnsListFromString(structure, context);
