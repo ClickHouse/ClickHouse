@@ -2516,13 +2516,21 @@ class ClickHouseCluster:
             exec_cmd += [container_id]
             exec_cmd += list(cmd)
 
-            result = subprocess_check_call(
-                exec_cmd, detach=detach, nothrow=nothrow, env=env
-            )
+            t = kwargs.get("timeout", None)
+            if t is None:
+                result = subprocess_check_call(
+                    exec_cmd, detach=detach, nothrow=nothrow, env=env
+                )
+            else:
+                result = subprocess_check_call(
+                    exec_cmd, detach=detach, nothrow=nothrow, env=env, timeout=t
+                )
             return result
         else:
             assert self.docker_client is not None
-            exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
+            _kwargs = dict(kwargs)
+            _kwargs.pop("timeout", None)
+            exec_id = self.docker_client.api.exec_create(container_id, cmd, **_kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
