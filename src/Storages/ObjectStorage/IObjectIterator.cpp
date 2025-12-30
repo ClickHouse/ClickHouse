@@ -102,13 +102,6 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
 
 ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 {
-    if (!pending_objects_info.empty())
-    {
-        auto result = pending_objects_info.front();
-        pending_objects_info.pop();
-        return result;
-    }
-
     while (pending_objects_info.empty())
     {
         auto last_object_info = iterator->next(id);
