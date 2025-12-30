@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
@@ -299,3 +303,5 @@ void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
 
 
 }
+
+#endif

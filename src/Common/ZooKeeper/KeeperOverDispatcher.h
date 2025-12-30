@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
@@ -114,3 +118,5 @@ private:
 };
 
 }
+
+#endif
