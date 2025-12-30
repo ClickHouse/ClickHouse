@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: output of explain is different
+
 SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS test;
