@@ -2,7 +2,7 @@ import shlex
 import time
 
 
-def _exec(node, cmd, user=None, privileged=False):
+def _exec(node, cmd, user=None, privileged=False, timeout=None):
     if isinstance(cmd, str):
         args = ["bash", "-lc", cmd]
     else:
@@ -12,13 +12,15 @@ def _exec(node, cmd, user=None, privileged=False):
         kwargs["user"] = user
     if privileged:
         kwargs["privileged"] = True
+    if timeout is not None:
+        kwargs["timeout"] = timeout
     out = node.exec_in_container(args, **kwargs)
     return out
 
 
-def sh(node, cmd, user=None, privileged=False):
+def sh(node, cmd, user=None, privileged=False, timeout=None):
     try:
-        out = _exec(node, cmd, user=user, privileged=privileged)
+        out = _exec(node, cmd, user=user, privileged=privileged, timeout=timeout)
         return {"out": out}
     except Exception:
         return {"out": ""}
