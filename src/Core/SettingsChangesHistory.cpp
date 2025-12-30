@@ -45,6 +45,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
+            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
+            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -1007,6 +1010,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
             {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
+            {"object_serialization_version", "v2", "v3", "Enable v3 serialization version for JSON by default to use advanced shared data serialization"},
+            {"dynamic_serialization_version", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"},
+            {"object_shared_data_serialization_version", "map", "advanced", "Enable advanced shared data serialization version by default"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map_with_buckets", "Enable map_with_buckets shared data serialization version for zero level parts by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
