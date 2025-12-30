@@ -307,11 +307,28 @@ def main():
     env["PYTHONPATH"] = (
         repo_pythonpath if not cur_pp else f"{repo_pythonpath}:{cur_pp}"
     )
-    # Propagate commit sha for tagging metrics/checks
+    # Propagate commit sha for tagging metrics/checks with robust fallbacks
     try:
-        if not env.get("COMMIT_SHA"):
-            sha = env.get("GITHUB_SHA") or env.get("SHA") or "local"
-            env["COMMIT_SHA"] = sha
+        need = (not env.get("COMMIT_SHA")) or env.get("COMMIT_SHA") in ("", "local")
+        if need:
+            sha = (
+                env.get("GITHUB_SHA")
+                or env.get("GITHUB_HEAD_SHA")
+                or env.get("SHA")
+                or ""
+            )
+            if not sha:
+                try:
+                    out = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=repo_dir,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    sha = (out or "").strip()
+                except Exception:
+                    sha = ""
+            env["COMMIT_SHA"] = sha if sha else "local"
     except Exception:
         pass
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
@@ -434,15 +451,20 @@ def main():
             helper = ClickHouseHelper()
         except Exception:
             helper = None
-        if helper is not None and sha and sha != "local":
+        if helper is not None:
             try:
+                if sha and sha != "local":
+                    filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
+                else:
+                    # Fallback: recent window without sha filter (covers 'local' runs)
+                    filt_metrics = "ts > now() - INTERVAL 2 DAY"
                 q = (
                     "SELECT backend, count() FROM keeper_stress_tests.keeper_metrics_ts "
-                    f"WHERE commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY "
+                    f"WHERE {filt_metrics} "
                     "GROUP BY backend ORDER BY backend FORMAT TabSeparated"
                 )
                 r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
-                txt = r.text.strip()
+                txt = (r.text or "").strip()
                 for line in txt.splitlines():
                     parts = line.split("\t")
                     if len(parts) == 2:
@@ -450,23 +472,34 @@ def main():
             except Exception:
                 pass
             try:
+                if sha and sha != "local":
+                    filt_bench = f"commit_sha = '{sha}' AND source = 'bench' AND ts > now() - INTERVAL 2 DAY"
+                else:
+                    filt_bench = "source = 'bench' AND ts > now() - INTERVAL 2 DAY"
                 q = (
                     "SELECT count() FROM keeper_stress_tests.keeper_metrics_ts "
-                    f"WHERE commit_sha = '{sha}' AND source = 'bench' AND ts > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                    f"WHERE {filt_bench} FORMAT TabSeparated"
                 )
                 r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
-                t2 = r.text.strip()
+                t2 = (r.text or "").strip()
                 bench_rows = int(float(t2.splitlines()[0])) if t2 else 0
             except Exception:
                 pass
             try:
-                q = (
-                    "SELECT count() FROM default.checks "
-                    f"WHERE check_name LIKE 'keeper_stress:%' AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
-                    "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
-                )
+                if sha and sha != "local":
+                    q = (
+                        "SELECT count() FROM default.checks "
+                        f"WHERE check_name LIKE 'keeper_stress:%' AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                        "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                    )
+                else:
+                    q = (
+                        "SELECT count() FROM default.checks "
+                        "WHERE check_name LIKE 'keeper_stress:%' "
+                        "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                    )
                 r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
-                t3 = r.text.strip()
+                t3 = (r.text or "").strip()
                 checks_rows = int(float(t3.splitlines()[0])) if t3 else 0
             except Exception:
                 pass
