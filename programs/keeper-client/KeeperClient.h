@@ -4,12 +4,16 @@
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 
+#include <iostream>
+
 namespace DB
 {
 
 class KeeperClient: public Poco::Util::Application, public KeeperClientBase
 {
 public:
+    KeeperClient() : KeeperClientBase(std::cout, std::cerr) {}
+
     void initialize(Poco::Util::Application & self) override;
 
     int main(const std::vector<String> & args) override;
