@@ -29,7 +29,6 @@
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -44,7 +43,6 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -395,21 +393,21 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(ThreadName::METRIC_LOG, collect_interval_milliseconds);
+        metric_log->startCollect("MetricLog", collect_interval_milliseconds);
     }
 
     if (transposed_metric_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
+        transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(ThreadName::ERROR_LOG, collect_interval_milliseconds);
+        error_log->startCollect("ErrorLog", collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -421,13 +419,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
-    }
-
-    if (background_schedule_pool_log)
-    {
-        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
-        background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
+        aggregated_zookeeper_log->startCollect("AggregatedZooKeeperLog", collect_interval_milliseconds);
     }
 }
 
@@ -471,7 +463,7 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names, bool should_prepare_tables_anyway, bool ignore_errors)
+void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
@@ -485,7 +477,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             log->flushBufferToLog(std::chrono::system_clock::now());
 
             auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, last_log_index});
+            logs_to_wait.push_back({log, log->getLastLogIndex()});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -506,10 +498,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
         for (const auto & name : names)
         {
-            if (!name.first.empty() && name.first != "system")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}.{}' does not exist", name.first, name.second);
-
-            String log_name = getLowerCaseAndRemoveUnderscores(name.second);
+            String log_name = getLowerCaseAndRemoveUnderscores(name);
 
             auto it = logs_map.find(log_name);
             if (it == logs_map.end())
@@ -551,7 +540,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     }
 }
 
-void SystemLogs::flush(const std::vector<std::pair<String, String>> & names)
+void SystemLogs::flush(const Strings & names)
 {
     flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
 }
@@ -605,7 +594,7 @@ void SystemLog<LogElement>::shutdown()
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
 {
-    DB::setThreadName(ThreadName::SYSTEM_LOG_FLUSH);
+    setThreadName("SystemLogFlush");
 
     while (true)
     {
@@ -640,14 +629,6 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
-    Stopwatch stopwatch;
-    UInt64 prepare_table_time = 0;
-    UInt64 prepare_reserve_block = 0;
-    UInt64 prepare_insert_data_to_block = 0;
-    UInt64 execute_insert_time = 0;
-    UInt64 confirm_time = 0;
-    size_t flush_size = to_flush.size();
-
     try
     {
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
@@ -663,8 +644,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// (new empty table will be created automatically). BTW, flush method
         /// is called from single thread.
         prepareTable();
-        prepare_table_time = stopwatch.elapsedMilliseconds();
-        stopwatch.restart();
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
@@ -679,15 +658,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         for (auto & column : columns)
             column->reserve(to_flush.size());
 
-        prepare_reserve_block = stopwatch.elapsedMilliseconds();
-        stopwatch.restart();
-
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
         block.setColumns(std::move(columns));
-        prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();
-        stopwatch.restart();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -715,8 +689,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
-        execute_insert_time = stopwatch.elapsedMilliseconds();
-        stopwatch.restart();
     }
     catch (...)
     {
@@ -726,19 +698,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     queue->confirm(to_flush_end);
-    confirm_time = stopwatch.elapsedMilliseconds();
 
-    LOG_TRACE(
-        log,
-        "Flushed system log up to offset {}. Entries {}. Timings: prepare_table={}ms, reserve_block={}ms, insert_to_block={}ms, "
-        "execute_insert={}ms, confirm={}ms",
-        to_flush_end,
-        flush_size,
-        prepare_table_time,
-        prepare_reserve_block,
-        prepare_insert_data_to_block,
-        execute_insert_time,
-        confirm_time);
+    LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
 template <typename LogElement>

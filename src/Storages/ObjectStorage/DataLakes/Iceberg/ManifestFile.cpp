@@ -129,7 +129,7 @@ namespace
 
 }
 
-const std::vector<ManifestFileEntryPtr> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
+const std::vector<ManifestFileEntry> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
 {
     if (content_type == FileContentType::DATA)
         return data_files_without_deleted;
@@ -196,7 +196,6 @@ ManifestFileContent::ManifestFileContent(
             "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
             manifest_file_name,
             f_schema);
-
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
@@ -415,20 +414,10 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        std::optional<Int32> sort_order_id;
-        if (manifest_file_deserializer.hasPath(c_data_file_sort_order_id))
-        {
-            auto sort_order_id_value = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_sort_order_id);
-            if (sort_order_id_value.isNull())
-                sort_order_id = std::nullopt;
-            else
-                sort_order_id = sort_order_id_value.safeGet<Int32>();
-        }
-
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
+                this->data_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
                     i,
@@ -441,8 +430,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt,
-                    sort_order_id));
+                    /*equality_ids*/ std::nullopt);
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -456,7 +444,7 @@ ManifestFileContent::ManifestFileContent(
                         reference_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
-                this->position_deletes_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
+                this->position_deletes_files_without_deleted.emplace_back(
                     file_path_key,
                     file_path,
                     i,
@@ -469,8 +457,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     reference_file_path,
-                    /*equality_ids*/ std::nullopt,
-                    /*sort_order_id = */ std::nullopt));
+                    /*equality_ids*/ std::nullopt);
                 break;
             }
             case FileContentType::EQUALITY_DELETE:
@@ -486,7 +473,7 @@ ManifestFileContent::ManifestFileContent(
                     throw Exception(
                             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                             "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
-                this->equality_deletes_files.emplace_back(std::make_shared<ManifestFileEntry>(
+                this->equality_deletes_files.emplace_back(
                     file_path_key,
                     file_path,
                     i,
@@ -499,8 +486,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    equality_ids,
-                    /*sort_order_id = */ std::nullopt));
+                    equality_ids);
                 break;
             }
         }
@@ -509,7 +495,7 @@ ManifestFileContent::ManifestFileContent(
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
-void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
+void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files)
 {
     std::vector<size_t> indices(files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -519,14 +505,14 @@ void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFile
         indices.end(),
         [&](size_t i, size_t j)
         {
-            if (files[i]->schema_id != files[j]->schema_id)
+            if (files[i].schema_id != files[j].schema_id)
             {
-                return files[i]->schema_id < files[j]->schema_id;
+                return files[i].schema_id < files[j].schema_id;
             }
             return i < j;
         });
 
-    std::vector<ManifestFileEntryPtr> sorted_files;
+    std::vector<ManifestFileEntry> sorted_files;
     sorted_files.reserve(files.size());
     for (const auto & index : indices)
     {
@@ -557,22 +543,6 @@ const std::set<Int32> & ManifestFileContent::getColumnsIDsWithBounds() const
     return column_ids_which_have_bounds;
 }
 
-bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const
-{
-    for (const auto & file : data_files_without_deleted)
-    {
-        // Treat missing sort_order_id as "not sorted by the expected order".
-        // This can happen if:
-        // 1. The field is not present in older Iceberg format versions.
-        // 2. The data file was written without sort order information.
-        if (!file->sort_order_id.has_value() || (*file->sort_order_id != sort_order_id))
-            return false;
-    }
-    /// Empty manifest (no data files) is considered sorted by definition
-    return true;
-
-}
-
 size_t ManifestFileContent::getSizeInMemory() const
 {
     size_t total_size = sizeof(ManifestFileContent);
@@ -592,7 +562,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
     {
         /// Have at least one column with rows count
         bool found = false;
-        for (const auto & [column, column_info] : file->columns_infos)
+        for (const auto & [column, column_info] : file.columns_infos)
         {
             if (column_info.rows_count.has_value())
             {
@@ -615,7 +585,7 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcludingDe
     {
         /// Have at least one column with bytes count
         bool found = false;
-        for (const auto & [column, column_info] : file->columns_infos)
+        for (const auto & [column, column_info] : file.columns_infos)
         {
             if (column_info.bytes_size.has_value())
             {
@@ -655,10 +625,10 @@ bool operator<(const DB::Row & lhs, const DB::Row & rhs)
     return less(lhs, rhs);
 }
 
-std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
+std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
 {
-    return std::tie(lhs->common_partition_specification, lhs->partition_key_value, lhs->added_sequence_number)
-        <=> std::tie(rhs->common_partition_specification, rhs->partition_key_value, rhs->added_sequence_number);
+    return std::tie(lhs.common_partition_specification, lhs.partition_key_value, lhs.added_sequence_number)
+        <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
 }
 }
 

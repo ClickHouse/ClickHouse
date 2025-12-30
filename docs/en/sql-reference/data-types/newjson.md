@@ -129,9 +129,22 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 └────────────────────────────────────────────────────────┘
 ```
 
+#### CAST from deprecated `Object('json')` to `JSON` {#cast-from-deprecated-objectjson-to-json}
+
+```sql title="Query"
+SET allow_experimental_object_type = 1;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
+```
+
+```text title="Response"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
 :::note
 JSON paths are stored flattened. This means that when a JSON object is formatted from a path like `a.b.c`
-it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a": { "b": { "c": ... } } }`.
+it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a" " {"b" : {"c" : ... }}}`.
 Our implementation will always assume the latter.
 
 For example:
@@ -579,7 +592,7 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`,
 └───────────────────────────────────────┴────────────┴──────────────┘
 ```
 
-Note: due to identifiers parser and analyzer limitations subcolumn `` json.`a.b` `` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
+Note: due to identifiers parser and analyzer limitations subcolumn ``json.`a.b`\`` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
 
 ```sql title="Query"
 SET json_type_escape_dots_in_keys=1;
@@ -618,12 +631,12 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 
 ## Reading JSON type from data {#reading-json-type-from-data}
 
-All text formats
-([`JSONEachRow`](/interfaces/formats/JSONEachRow),
-[`TSV`](/interfaces/formats/TabSeparated),
-[`CSV`](/interfaces/formats/CSV),
-[`CustomSeparated`](/interfaces/formats/CustomSeparated),
-[`Values`](/interfaces/formats/Values), etc.) support reading the `JSON` type.
+All text formats 
+([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md), 
+[`TSV`](../../interfaces/formats/TabSeparated/TabSeparated.md), 
+[`CSV`](../../interfaces/formats/CSV/CSV.md), 
+[`CustomSeparated`](../../interfaces/formats/CustomSeparated/CustomSeparated.md), 
+[`Values`](../../interfaces/formats/Values.md), etc.) support reading the `JSON` type.
 
 Examples:
 
@@ -843,8 +856,8 @@ There are several functions that can help to inspect the content of the JSON col
 - [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
 - [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
 - [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
-- [`distinctDynamicTypes`](../aggregate-functions/reference/distinctDynamicTypes.md)
-- [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctJSONPaths.md)
+- [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
+- [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
 
 **Examples**
 

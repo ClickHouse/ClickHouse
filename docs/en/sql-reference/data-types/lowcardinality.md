@@ -55,7 +55,7 @@ Settings:
 
 Functions:
 
-- [toLowCardinality](../../sql-reference/functions/type-conversion-functions.md#toLowCardinality)
+- [toLowCardinality](../../sql-reference/functions/type-conversion-functions.md#tolowcardinality)
 
 ## Related content {#related-content}
 

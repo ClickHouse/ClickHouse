@@ -11,7 +11,7 @@
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
@@ -85,8 +85,6 @@ public:
     size_t getReadUntilPosition() const { return read_until_position; }
 
     std::string getStopReason() const { return stop_reason; }
-
-    size_t getObjectSizeFromS3() const;
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);

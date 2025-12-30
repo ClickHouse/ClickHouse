@@ -114,11 +114,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    /// Sharding requires both pipelines to have the same number of streams.
-    /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts
-    bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
-    if (!use_sharding)
+    if (primary_key_sharding.empty())
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
@@ -172,7 +168,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
+    if (join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
@@ -193,16 +189,6 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 bool JoinStep::allowPushDownToRight() const
 {
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
-}
-
-void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
-{
-    if (disable_squashing)
-    {
-        min_block_size_rows = 0;
-        min_block_size_bytes = 0;
-    }
-    keep_left_read_in_order = true;
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const

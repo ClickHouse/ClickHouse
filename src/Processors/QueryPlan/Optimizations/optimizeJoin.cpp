@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -31,7 +30,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <ranges>
 #include <Core/Joins.h>
@@ -106,19 +104,11 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 
             auto [_, inserted] = visited_nodes.insert(node);
             if (!inserted)
-            {
-                /// Node was already visited, check if it was an input or if it was already remapped to and input
-                if (input_nodes.contains(node))
-                    output_names.insert(out_node->result_name);
                 break;
-            }
 
             if (input_nodes.contains(node))
             {
-                /// We reached an input node so add the current output node name to list of remapped
                 output_names.insert(out_node->result_name);
-                /// Also add this output node to the list of inputs to handle more aliases pointing to it
-                input_nodes.insert(out_node);
                 break;
             }
 
@@ -191,43 +181,6 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
-{
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
-    std::optional<Float64> total_number_of_distinct_values = 1;
-    RelationStats aggregation_stats;
-    for (const auto & key : aggregator_params.keys)
-    {
-        auto key_stats = input_stats.column_stats.find(key);
-        if (key_stats == input_stats.column_stats.end())
-        {
-            /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns
-            total_number_of_distinct_values.reset();
-            continue;
-        }
-
-        UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
-
-        if (input_stats.estimated_rows)
-            key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
-
-        aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
-
-        /// For now assume that aggregation columns are independent, so multiply their NDVs
-        if (total_number_of_distinct_values)
-            *total_number_of_distinct_values *= key_number_of_distinct_values;
-    }
-
-    if (total_number_of_distinct_values && input_stats.estimated_rows)
-        total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
-    else
-        total_number_of_distinct_values = input_stats.estimated_rows;
-
-    aggregation_stats.estimated_rows = total_number_of_distinct_values;
-
-    return aggregation_stats;
-}
-
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
@@ -243,7 +196,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator_->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
@@ -322,13 +275,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
-    }
-
-    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
     }
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
@@ -559,6 +505,12 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
+    if (!label.empty() && !graph.context->dummy_stats.empty())
+    {
+        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
+        if (!dummy_stats.table_name.empty())
+            stats = std::move(dummy_stats);
+    }
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (num_rows_from_cache)
@@ -627,8 +579,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     auto [expression_actions_dag, expression_actions_sources] = expression_actions.detachActionsDAG();
 
-    auto existing_outputs = std::ranges::to<std::unordered_set>(query_graph.expression_actions.getActionsDAG()->getOutputs());
-
     ActionsDAG::NodeMapping node_mapping;
     query_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_actions_dag), node_mapping, true);
 
@@ -657,8 +607,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     for (const auto * out_node : join_outputs)
     {
         if (out_node->type == ActionsDAG::ActionType::INPUT ||
-            out_node->type == ActionsDAG::ActionType::COLUMN ||
-            existing_outputs.contains(out_node))
+            out_node->type == ActionsDAG::ActionType::COLUMN)
             continue;
 
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
@@ -802,9 +751,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     if (!global_actions_dag)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
-    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
-
-    auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
+    auto optimized = optimizeJoinOrder(std::move(query_graph));
     auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())
@@ -877,6 +824,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         input_node_map[input] = input_idx;
     }
 
+    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
         auto * entry = sequence[entry_idx];
@@ -944,6 +892,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             const auto & right_header = *right_header_ptr;
 
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
+            for (const auto & action : join_operator.expression)
+                required_output_nodes.push_back(action.getNode());
+            for (const auto & action : join_operator.residual_filter)
+                required_output_nodes.push_back(action.getNode());
 
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
@@ -979,11 +931,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 /// add input (possibly which changed type) to required output
                 required_output_nodes.push_back(out_node);
             }
-
-            for (const auto & action : join_operator.expression)
-                required_output_nodes.push_back(action.getNode());
-            for (const auto & action : join_operator.residual_filter)
-                required_output_nodes.push_back(action.getNode());
 
             if (entry_idx == sequence.size() - 1)
             {

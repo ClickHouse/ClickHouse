@@ -6,7 +6,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Common/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -45,11 +44,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
-
-Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-    :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
-    , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
-{}
 
 
 template <typename Method>
@@ -639,10 +633,6 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
-    /// Deduplicate key columns. This can make the condition weaker, e.g.:
-    ///     (x + 1, x + 2) IN (10, 10)
-    /// effectively turns into:
-    ///     (x + 1) IN (10)
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)

@@ -1,11 +1,13 @@
 #include <IO/S3/BlobStorageLogWriter.h>
 
+#if USE_AWS_S3
+
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <IO/S3/Client.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -16,9 +18,7 @@ void BlobStorageLogWriter::addEvent(
     const String & remote_path,
     const String & local_path_,
     size_t data_size,
-    size_t elapsed_microseconds,
-    Int32 error_code,
-    const String & error_message,
+    const Aws::S3::S3Error * error,
     BlobStorageLogElement::EvenTime time_now)
 {
     if (!log)
@@ -49,9 +49,12 @@ void BlobStorageLogWriter::addEvent(
     element.remote_path = remote_path;
     element.local_path = local_path_.empty() ? local_path : local_path_;
     element.data_size = data_size;
-    element.elapsed_microseconds = elapsed_microseconds;
-    element.error_code = error_code;
-    element.error_message = error_message;
+
+    if (error)
+    {
+        element.error_code = static_cast<Int32>(error->GetErrorType());
+        element.error_message = error->GetMessage();
+    }
 
     element.event_time = time_now;
 
@@ -74,3 +77,5 @@ BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 }
 
 }
+
+#endif

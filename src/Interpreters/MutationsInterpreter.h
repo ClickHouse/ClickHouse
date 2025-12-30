@@ -100,8 +100,6 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
-    NameSet grabDroppedIndices() { return std::move(dropped_indices); }
-
     NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
 
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
@@ -253,7 +251,6 @@ private:
     NameSet materialized_indices;
     NameSet materialized_projections;
     NameSet materialized_statistics;
-    NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

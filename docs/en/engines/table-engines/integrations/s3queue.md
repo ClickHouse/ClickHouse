@@ -5,7 +5,7 @@ description: 'This engine provides integration with the Amazon S3 ecosystem and 
 sidebar_label: 'S3Queue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/s3queue
-title: 'S3Queue table engine'
+title: 'S3Queue Table Engine'
 doc_type: 'reference'
 ---
 
@@ -89,14 +89,6 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-:::note Setting Names (24.7+)
-Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
-- **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
-- **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
-
-Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-:::
-
 ### Mode {#mode}
 
 Possible values:
@@ -108,109 +100,13 @@ Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no
 
 ### `after_processing` {#after_processing}
 
-How to handle file after successful processing.
-
+Delete or keep file after successful processing.
 Possible values:
 
 - keep.
 - delete.
-- move.
-- tag.
 
 Default value: `keep`.
-
-Move requires additional settings. In case of a move within the same bucket, a new path prefix must be provided as `after_processing_move_prefix`.
-
-Move to another S3 bucket requires the target bucket URI as `after_processing_move_uri`, S3 credentials as `after_processing_move_access_key_id` and `after_processing_move_secret_access_key`.
-
-Example:
-
-```sql
-CREATE TABLE s3queue_engine_table (name String, value UInt32)
-ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
-SETTINGS
-    mode = 'unordered',
-    after_processing = 'move',
-    after_processing_retries = 20,
-    after_processing_move_prefix = 'dst_prefix',
-    after_processing_move_uri = 'https://clickhouse-public-datasets.s3.amazonaws.com/dst-bucket',
-    after_processing_move_access_key_id = 'test',
-    after_processing_move_secret_access_key = 'test';
-```
-
-Move from an Azure container to another Azure container requires the Blob Storage connection string as `after_processing_move_connection_string` and the container name as `after_processing_move_container`. See [the AzureQueue settings](../../../engines/table-engines/integrations/azure-queue.md#settings).
-
-Tagging requires tag key and value provided as `after_processing_tag_key` and `after_processing_tag_value`.
-
-### `after_processing_retries` {#after_processing_retries}
-
-Number of retries for the requested after-processing action, before giving up.
-
-Possible values:
-
-- Non-negative integer.
-
-Default value: `10`.
-
-### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
-
-Access Key ID for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
-
-Possible values:
-
-- String.
-
-Default value: empty string.
-
-### `after_processing_move_prefix` {#after_processing_move_prefix}
-
-Path prefix to move successfully processed files to. It is applicable in both cases, move within the same and to another bucket.
-
-Possible values:
-
-- String.
-
-Default value: empty string.
-
-### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
-
-Secret Access Key for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
-
-Possible values:
-
-- String.
-
-Default value: empty string.
-
-### `after_processing_move_uri` {#after_processing_move_uri}
-
-URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
-
-Possible values:
-
-- String.
-
-Default value: empty string.
-
-### `after_processing_tag_key` {#after_processing_tag_key}
-
-Tag key to put tagging on successfully processed files, if `after_processing='tag'`.
-
-Possible values:
-
-- String.
-
-Default value: empty string.
-
-### `after_processing_tag_value` {#after_processing_tag_value}
-
-Tag value to put tagging on successfully processed files, if `after_processing='tag'`.
-
-Possible values:
-
-- String.
-
-Default value: empty string.
 
 ### `keeper_path` {#keeper_path}
 
@@ -221,7 +117,7 @@ Possible values:
 
 Default value: `/`.
 
-### `loading_retries` {#loading_retries}
+### `s3queue_loading_retries` {#loading_retries}
 
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
@@ -230,13 +126,13 @@ Possible values:
 
 Default value: `0`.
 
-### `processing_threads_num` {#processing_threads_num}
+### `s3queue_processing_threads_num` {#processing_threads_num}
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
 Default value: Number of CPUs or 16.
 
-### `parallel_inserts` {#parallel_inserts}
+### `s3queue_parallel_inserts` {#parallel_inserts}
 
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
@@ -247,13 +143,13 @@ But this limits the parallelism, so for better throughput use `parallel_inserts=
 
 Default value: `false`.
 
-### `enable_logging_to_s3queue_log` {#enable_logging_to_s3queue_log}
+### `s3queue_enable_logging_to_s3queue_log` {#enable_logging_to_s3queue_log}
 
 Enable logging to `system.s3queue_log`.
 
 Default value: `0`.
 
-### `polling_min_timeout_ms` {#polling_min_timeout_ms}
+### `s3queue_polling_min_timeout_ms` {#polling_min_timeout_ms}
 
 Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
 
@@ -263,7 +159,7 @@ Possible values:
 
 Default value: `1000`.
 
-### `polling_max_timeout_ms` {#polling_max_timeout_ms}
+### `s3queue_polling_max_timeout_ms` {#polling_max_timeout_ms}
 
 Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
 
@@ -273,7 +169,7 @@ Possible values:
 
 Default value: `10000`.
 
-### `polling_backoff_ms` {#polling_backoff_ms}
+### `s3queue_polling_backoff_ms` {#polling_backoff_ms}
 
 Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
 
@@ -283,7 +179,7 @@ Possible values:
 
 Default value: `0`.
 
-### `tracked_files_limit` {#tracked_files_limit}
+### `s3queue_tracked_files_limit` {#tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
@@ -294,7 +190,7 @@ Possible values:
 
 Default value: `1000`.
 
-### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
+### `s3queue_tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
 Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
@@ -305,25 +201,25 @@ Possible values:
 
 Default value: `0`.
 
-### `cleanup_interval_min_ms` {#cleanup_interval_min_ms}
+### `s3queue_cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
 For 'Ordered' mode. Defines a minimum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `10000`.
 
-### `cleanup_interval_max_ms` {#cleanup_interval_max_ms}
+### `s3queue_cleanup_interval_max_ms` {#cleanup_interval_max_ms}
 
 For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `30000`.
 
-### `buckets` {#buckets}
+### `s3queue_buckets` {#buckets}
 
-For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `buckets` needs to be equal to at least the number of replicas. If `processing_threads` setting is used as well, it makes sense to increase the value of `buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
+For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 
 ### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
-By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session.
+By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session. 
 
 ### `persistent_processing_nodes_ttl_seconds` {#persistent_processing_nodes_ttl_seconds}
 
@@ -350,10 +246,10 @@ CREATE TABLE s3_table
     value UInt64
 )
 ENGINE = S3Queue(
-                'https://<your_bucket>/*.csv',
+                'https://<your_bucket>/*.csv', 
                 extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/<your_role>')
                 ,'CSV')
-SETTINGS
+SETTINGS 
     ...
 ```
 
@@ -365,12 +261,6 @@ SETTINGS
 In addition, `ordered` mode also introduces another setting called `(s3queue_)buckets` which means "logical threads". It means that in distributed scenario, when there are several servers with `S3Queue` table replicas, where this setting defines the number of processing units. E.g. each processing thread on each `S3Queue` replica will try to lock a certain `bucket` for processing, each `bucket` is attributed to certain files by hash of the file name. Therefore, in distributed scenario it is highly recommended to have `(s3queue_)buckets` setting to be at least equal to the number of replicas or bigger. This is fine to have the number of buckets bigger than the number of replicas. The most optimal scenario would be for `(s3queue_)buckets` setting to equal a multiplication of `number_of_replicas` and `(s3queue_)processing_threads_num`.
 The setting `(s3queue_)processing_threads_num` is not recommended for usage before version `24.6`.
 The setting `(s3queue_)buckets` is available starting with version `24.6`.
-
-## SELECT from S3Queue table engine {#select}
-
-SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
-However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
 
 ## Description {#description}
 
@@ -501,7 +391,8 @@ Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
-ORDER BY (event_date, event_time) │
+ORDER BY (event_date, event_time)
+SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
