@@ -1311,8 +1311,30 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
 void DDLWorker::markReplicasActive(bool reinitialized)
 {
     auto zookeeper = getZooKeeper();
+    const auto maybe_secure_port = context->getTCPPortSecure();
+    const auto port = context->getTCPPort();
 
     auto all_host_ids = getAllHostIDsFromClusters();
+
+    // Add interserver IO host IDs for Replicated DBs
+    try
+    {
+        auto host_port = context->getInterserverIOAddress();
+        HostID interserver_io_host_id = {host_port.first, port};
+        all_host_ids.emplace(interserver_io_host_id.toString());
+        LOG_INFO(log, "Add interserver IO host ID {}", interserver_io_host_id.toString());
+        if (maybe_secure_port)
+        {
+            HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
+            all_host_ids.emplace(interserver_io_secure_host_id.toString());
+            LOG_INFO(log, "Add interserver IO secure host ID  {}", interserver_io_secure_host_id.toString());
+        }
+    }
+    catch (const Exception & e)
+    {
+        LOG_INFO(log, "Unable to get interserver IO address, error {}", e.what());
+    }
+
     createReplicaDirs(zookeeper, all_host_ids);
 
     if (reinitialized)
@@ -1328,8 +1350,6 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         active_node_holders.clear();
     }
 
-    const auto maybe_secure_port = context->getTCPPortSecure();
-    const auto port = context->getTCPPort();
 
     Coordination::Stat replicas_stat;
     Strings host_ids = zookeeper->getChildren(replicas_dir, &replicas_stat);
@@ -1438,19 +1458,6 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         std::lock_guard lock{checked_host_id_set_mutex};
         checked_host_id_set = checking_host_ids;
     }
-
-    if (active_node_holders.empty())
-    {
-        for (const auto & it : context->getClusters())
-        {
-            const auto & cluster = it.second;
-            if (!cluster->getHostIDs().empty())
-            {
-                LOG_WARNING(log, "There are clusters with host ids but no local host found for this replica.");
-                break;
-            }
-        }
-    }
 }
 
 void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
@@ -1525,21 +1532,6 @@ NameSet DDLWorker::getAllHostIDsFromClusters() const
         for (const auto & host_ids : cluster->getHostIDs())
             for (const auto & host_id : host_ids)
                 host_id_set.emplace(host_id);
-    }
-
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-    for (const auto & database : databases)
-    {
-        if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(database.second.get()))
-        {
-            auto cluster = replicated_db->tryGetAllGroupsCluster();
-            if (!cluster)
-                continue;
-
-            for (const auto & host_ids : cluster->getHostIDs())
-                for (const auto & host_id : host_ids)
-                    host_id_set.emplace(host_id);
-        }
     }
     return host_id_set;
 }

@@ -318,15 +318,11 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
 
 void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
 {
-    {
-        std::lock_guard lock{mutex};
-        if (all_groups)
-            cluster_all_groups = std::move(new_cluster);
-        else
-            cluster = std::move(new_cluster);
-    }
-    DDLWorker & shared_ddl_worker = getContext()->getDDLWorker();
-    shared_ddl_worker.notifyHostIDsUpdated();
+    std::lock_guard lock{mutex};
+    if (all_groups)
+        cluster_all_groups = std::move(new_cluster);
+    else
+        cluster = std::move(new_cluster);
 }
 
 ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
