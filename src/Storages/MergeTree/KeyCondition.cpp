@@ -2641,15 +2641,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 is_constant_transformed = true;
             }
             else if (
-                func_name == "equals"
+                (func_name == "equals" || func_name == "notEquals")
+                && canConstantBeWrappedByDeterministicInjectiveFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+            {
+
+            }
+            else if (
+                (func_name == "equals" || func_name == "notEquals")
                 && canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
             {
                 is_constant_transformed = true;
-            }
-            else if (
-                func_name == "notEquals"
-                && canConstantBeWrappedByDeterministicInjectiveFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
-            {
             }
             else
                 return false;
