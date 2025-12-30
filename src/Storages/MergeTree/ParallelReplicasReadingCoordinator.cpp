@@ -1097,6 +1097,18 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
     return response;
 }
 
+void ParallelReplicasReadingCoordinator::handleDistributedAnalysisResults(DistributedIndexAnalysisPartsRanges analysis)
+{
+    chassert(replicas_parts_from_distributed_analysis.empty());
+    replicas_parts_from_distributed_analysis.resize(analysis.size());
+    for (size_t replica_index = 0; replica_index < analysis.size(); ++replica_index)
+    {
+        auto & replica_parts = replicas_parts_from_distributed_analysis[replica_index];
+        for (const auto & [part_name, _] : analysis[replica_index].second)
+            replica_parts.insert(part_name);
+    }
+    LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Added {} replicas from distributed index analysis", analysis.size());
+}
 
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
@@ -1116,6 +1128,20 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
         snapshot_replica_num = announcement.replica_num;
 
         LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Using snapshot from replica num {}", snapshot_replica_num.value());
+    }
+    else if (replicas_parts_from_distributed_analysis.size() > announcement.replica_num)
+    {
+        const auto & replicas_allowed_parts = replicas_parts_from_distributed_analysis[announcement.replica_num];
+        RangesInDataPartsDescription filtered_description;
+        for (auto & ranges_in_data_part : announcement.description)
+        {
+            if (!replicas_allowed_parts.contains(ranges_in_data_part.info.getPartNameV1()))
+                continue;
+            filtered_description.push_back(std::move(ranges_in_data_part));
+        }
+        LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Announcement has been filtered ({} -> {})",
+            announcement.description.size(), filtered_description.size());
+        announcement.description = std::move(filtered_description);
     }
 
     if (announcement.mode != pimpl->getCoordinationMode())
