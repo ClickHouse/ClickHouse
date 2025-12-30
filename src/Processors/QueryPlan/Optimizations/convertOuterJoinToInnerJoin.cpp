@@ -137,8 +137,13 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     for (const auto & expr : join_step->getJoinOperator().expression)
     {
         auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
+
+        /// In case of the presence non equality predicate we cannot guarantee uniqueness of matching rows, e.g:
+        /// Grouping keys: name, uid
+        /// JOIN condition: t1.name = t2.name and t1.uid > t2.uid
+        /// There can be multiple rows matching the join condition (same name, but different uid).
         if (predicate_op != JoinConditionOperator::Equals)
-            continue;
+            return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
             handle_interesting_side_key(lhs, rhs);
@@ -149,7 +154,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     if (join_keys_interesting_side.empty())
         return 0;
 
-    /// During scalar subquery decorrelation process, at the end there added renamings of useful columns.
+    /// During scalar subquery decorrelation process, at the end there added remaining of useful columns.
     /// This is done to avoid name conflicts. Instead of JOIN condition like 'a = a' it becomes 'a = <subquery name>.a'.
     /// So, we need to revert such renaming to be able to compare columns with the aggregating step keys.
     if (auto * expr_step = typeid_cast<ExpressionStep *>(interesting_side_plan_node->step.get()))
