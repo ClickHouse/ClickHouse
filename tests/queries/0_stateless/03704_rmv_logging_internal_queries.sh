@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, atomic-database
+# If other tests are using materialized views, the `countIf` query below may be affected.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
