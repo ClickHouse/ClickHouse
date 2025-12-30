@@ -94,6 +94,7 @@ struct FunctionDocumentation
         Distance,
         EmbeddedDictionary,
         Geo,
+        GeoPolygon,
         Encoding,
         Encryption,
         Financial,

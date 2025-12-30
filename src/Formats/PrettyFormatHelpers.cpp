@@ -16,13 +16,7 @@ static constexpr const char * RESET_COLOR = "\033[0m";
 namespace DB
 {
 
-void writeReadableNumberTipIfSingleValue(WriteBuffer & out, const Chunk & chunk, const FormatSettings & settings, bool color)
-{
-    if (chunk.getNumRows() == 1 && chunk.getNumColumns() == 1)
-        writeReadableNumberTip(out, *chunk.getColumns()[0], 0, settings, color);
-}
-
-void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t row, const FormatSettings & settings, bool color)
+void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t row, const FormatSettings & settings, bool color, size_t max_width)
 {
     if (column.isNullAt(row))
         return;
@@ -35,12 +29,18 @@ void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t ro
         /// Most (~99.5%) of 64-bit hash values are in this range, and it is not necessarily to highlight them:
         && !(abs_value > 1e17 && abs_value < 1.844675e19))
     {
-        if (color)
-            writeCString(GRAY_COLOR, out);
-        writeCString(" -- ", out);
-        formatReadableQuantity(value, out, 2);
-        if (color)
-            writeCString(RESET_COLOR, out);
+        std::string output = formatReadableQuantity(value, 2);
+        size_t tip_width = output.size() + 4;
+
+        if (tip_width <= max_width)
+        {
+            if (color)
+                writeCString(GRAY_COLOR, out);
+            writeCString(" -- ", out);
+            writeString(output, out);
+            if (color)
+                writeCString(RESET_COLOR, out);
+        }
     }
 }
 

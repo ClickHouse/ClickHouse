@@ -109,7 +109,7 @@ private:
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
-    bool tryExecuteFourLetterWordCmd(int32_t command);
+    bool tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 

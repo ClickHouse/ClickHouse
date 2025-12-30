@@ -241,7 +241,7 @@ SELECT serverUUID();
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns the [native interface](../../interfaces/tcp.md) TCP port number listened to by the server.
+Returns the [native interface](/interfaces/tcp) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";

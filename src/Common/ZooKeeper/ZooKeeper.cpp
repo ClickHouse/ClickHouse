@@ -19,9 +19,9 @@
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
-#include <base/getFQDNOrHostName.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
@@ -29,7 +29,6 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <chrono>
 #include <functional>
 #include <optional>
 #include <random>
