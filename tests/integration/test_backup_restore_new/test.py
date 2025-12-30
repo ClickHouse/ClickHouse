@@ -1132,7 +1132,7 @@ def test_skip_rmv_backup():
         "CREATE TABLE test.target(x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
     )
     instance.query(
-        "CREATE MATERIALIZED VIEW test.view TO test.target REFRESH EVERY 6 HOURS AS SELECT y, x FROM test.table"
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS TO test.target AS SELECT y, x FROM test.table"
     )
 
     backup_name = new_backup_name()
