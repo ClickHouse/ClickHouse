@@ -12,10 +12,10 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance(
     "server",
+    base_config_dir="configs/server",
     main_configs=[
-        "configs/config.xml",
-        "configs/server.crt",
-        "configs/server.key",
+        "keys/server.crt",
+        "keys/server.key",
     ],
 )
 
@@ -36,6 +36,6 @@ def test_composable_protocol_without_global_ssl():
         9440,
         command=cluster.client_bin_path,
         secure=True,
-        config=f"{SCRIPT_DIR}/configs/client.xml",
+        config=f"{SCRIPT_DIR}/configs/client/client.xml",
     )
     assert client.query("SELECT 1") == "1\n"

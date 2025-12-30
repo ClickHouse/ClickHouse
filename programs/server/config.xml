@@ -5,19 +5,6 @@
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <clickhouse>
-    <protocols>
-        <tcp_secure>
-            <type>tls</type>
-            <impl>tcp</impl>
-            <port>9440</port>
-            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
-            <verificationMode>none</verificationMode>
-            <caConfig>/etc/ssl/certs/ca-certificates.crt</caConfig>
-            <description>secure native protocol</description>
-        </tcp_secure>
-    </protocols>
-
     <logger>
         <!-- Possible levels [1]:
 
@@ -360,6 +347,47 @@
         <!-- Enable if you want very detailed logs -->
         <verbose_logs>false</verbose_logs>
     </grpc>
+
+    <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
+         Note: ClickHouse Cloud https://clickhouse.com/cloud always has secure connections configured.
+    -->
+    <openSSL>
+        <server> <!-- Used for https server AND secure tcp port -->
+            <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
+            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
+            <!-- dhparams are optional. You can delete the <dhParamsFile> element.
+                 To generate dhparams, use the following command:
+                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
+                 Only file format with BEGIN DH PARAMETERS is supported.
+              -->
+            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>-->
+            <verificationMode>none</verificationMode>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+
+            <invalidCertificateHandler>
+                <!-- The server, in contrast to the client, cannot ask about the certificate interactively.
+                     The only reasonable option is to reject.
+                -->
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </server>
+
+        <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <!-- Use for self-signed: <verificationMode>none</verificationMode> -->
+            <invalidCertificateHandler>
+                <!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
 
     <!-- Let's Encrypt certificate provider configuration -->
     <!--

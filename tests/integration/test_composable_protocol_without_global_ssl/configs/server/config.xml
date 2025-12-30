@@ -11,5 +11,10 @@
             <caConfig>/etc/ssl/certs/ca-certificates.crt</caConfig>
             <description>secure native protocol</description>
         </tcp_secure>
+        <tcp>
+            <type>tcp</type>
+            <port>9000</port>
+            <description>native</description>
+        </tcp>
     </protocols>
 </clickhouse>
