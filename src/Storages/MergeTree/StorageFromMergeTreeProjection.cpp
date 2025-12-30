@@ -34,7 +34,7 @@ void StorageFromMergeTreeProjection::read(
     const auto & parts = snapshot_data.parts;
 
     RangesInDataParts projection_parts;
-    for (const auto & part : parts)
+    for (const auto & part : *parts)
     {
         const auto & created_projections = part.data_part->getProjectionParts();
         auto it = created_projections.find(projection->name);
@@ -45,9 +45,9 @@ void StorageFromMergeTreeProjection::read(
         }
     }
 
-    auto step = MergeTreeDataSelectExecutor(merge_tree)
+    auto step = MergeTreeDataSelectExecutor(merge_tree, projection)
                     .readFromParts(
-                        std::move(projection_parts),
+                        std::make_shared<RangesInDataParts>(projection_parts),
                         snapshot_data.mutations_snapshot->cloneEmpty(),
                         column_names,
                         storage_snapshot,

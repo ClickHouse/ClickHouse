@@ -21,7 +21,7 @@ void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerializa
     if (!column.isNullAt(row_num))
     {
         auto value = column.getDataAt(row_num);
-        out.write(value.data, value.size);
+        out.write(value.data(), value.size());
     }
 }
 
