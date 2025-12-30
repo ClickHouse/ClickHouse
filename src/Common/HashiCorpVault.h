@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 
 #if USE_SSL
@@ -31,7 +30,7 @@ public:
     static HashiCorpVault & instance();
 
     /// Load data and throw exception if something went wrong.
-    void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context_);
+    void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
     String readSecret(const String & secret, const String & key);
 
@@ -68,7 +67,6 @@ private:
     String host;
     int port;
     HashiCorpVaultAuthMethod auth_method;
-    ContextPtr context;
 #if USE_SSL
     Poco::Net::Context::Ptr request_context;
 #endif

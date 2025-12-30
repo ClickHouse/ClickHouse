@@ -1597,7 +1597,7 @@ try
         global_context->setConfig(loaded_config.configuration);
     }
 
-    HashiCorpVault::instance().load(config(), "hashicorp_vault", global_context);
+    HashiCorpVault::instance().load(config(), "hashicorp_vault");
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
@@ -2084,7 +2084,7 @@ try
         dns_cache_updater->start();
     }
 
-    HashiCorpVault::instance().load(config(), "hashicorp_vault", global_context);
+    HashiCorpVault::instance().load(config(), "hashicorp_vault");
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,

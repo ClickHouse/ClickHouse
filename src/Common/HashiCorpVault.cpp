@@ -125,11 +125,9 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
 }
 #endif
 
-void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & prefix, ContextPtr context_)
+void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     reset();
-
-    context = context_;
 
     if (config.has(prefix))
     {
