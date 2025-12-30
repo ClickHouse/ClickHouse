@@ -739,10 +739,13 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
         return parse_function(object);
     }
 
+    chassert(!object->children.empty());
+    chassert(object->children[0]->as<ASTExpressionList>());
     auto function_desc = object->children[0]->children[i];
     if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
         return {"identity", identifier->name()};
 
+    chassert(!function_desc->children.empty());
     function_desc = function_desc->children[0];
     if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
         return {"identity", identifier->name()};

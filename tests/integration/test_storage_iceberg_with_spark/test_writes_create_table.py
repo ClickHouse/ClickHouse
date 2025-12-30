@@ -133,3 +133,8 @@ def test_writes_create_table_bug_tuple(started_cluster_iceberg_with_spark, forma
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int, y Int)", order_by="(x ASC, y DESC)", format_version=format_version)
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2), (1, 3);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == '1\t3\n1\t2\n'
+
+    TABLE_NAME = "test_writes_create_table_bug_tuple_" + storage_type + "_" + get_uuid_str()
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int, y Int)", order_by="tuple()", format_version=format_version)
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2), (1, 3);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\t2\n1\t3\n'
