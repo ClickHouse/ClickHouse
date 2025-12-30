@@ -64,7 +64,9 @@ size_t MergeTreeReaderIndex::readRows(
     size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
     if (starting_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
-    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
+    // Fix reading the row count of the last granule in the fixed index granularity case.
+    if (auto last_granule_rows_count = data_part_info_for_read->getRowsCountForLastGranuleOrZero(from_mark))
+        max_rows_to_read = last_granule_rows_count;
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
     {
