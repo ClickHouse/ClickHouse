@@ -309,7 +309,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* is_datalake_query*/ false,
         /* distributed_processing */ can_use_distributed_iterator,
         /* partition_by */ partition_by,
-        /* order_by */ nullptr,
         /* is_table_function */true);
 
     storage->startup();

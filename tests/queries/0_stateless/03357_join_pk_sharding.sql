@@ -1,6 +1,5 @@
--- Tags: long, no-asan, no-msan
+-- Tags: long
 
-SET allow_statistics_optimize = 0;
 drop table if exists tab_l;
 drop table if exists tab_m;
 drop table if exists tab_r;
@@ -20,7 +19,6 @@ set enable_analyzer=1;
 set query_plan_join_swap_table=0;
 set query_plan_join_shard_by_pk_ranges=1;
 set allow_experimental_parallel_reading_from_replicas=0;
-set max_threads=4;
 
 -- { echo On }
 

@@ -788,7 +788,7 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot convert value '{}'{}: it cannot be represented as {}",
-            fieldToString(from_value),
+            toString(from_value),
             from_type_hint ? " from " + from_type_hint->getName() : "",
             to_type.getName());
 

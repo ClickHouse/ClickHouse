@@ -17,7 +17,7 @@ namespace Poco { namespace Util { class LayeredConfiguration; }}
 class CrashWriter
 {
 public:
-    using FramePointers = FramePointers;
+    using FramePointers = StackTrace::FramePointers;
 
     static void initialize(Poco::Util::LayeredConfiguration & config);
     static bool initialized();

@@ -80,7 +80,7 @@ public:
         {
             std::string number_str;
             if (number_col)
-                number_str = std::string{number_col->getDataAt(i)};
+                number_str = number_col->getDataAt(i).toString();
             else
                 number_str = number_const_col->getValue<String>();
             const Int64 from_base = from_base_column->getInt(i);

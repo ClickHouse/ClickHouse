@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE OR REPLACE TEMPORARY TABLE tmp (n UInt32) AS SELECT * FROM numbers(10);
 
 SELECT * FROM tmp;

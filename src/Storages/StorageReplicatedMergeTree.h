@@ -241,7 +241,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -379,7 +379,8 @@ private:
     size_t clearOldPartsAndRemoveFromZK();
     void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
-    friend class ReplicatedMergeTreeSink;
+    template<bool async_insert>
+    friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreeSinkPatch;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
@@ -450,6 +451,7 @@ private:
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
+    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
@@ -826,17 +828,18 @@ private:
     /// Creates new block number if block with such block_id does not exist
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
-    EphemeralLockInZooKeeper allocateBlockNumber(
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const zkutil::ZooKeeperPtr & zookeeper,
-        const std::vector<std::string> & zookeeper_block_id_paths = {},
+        const String & zookeeper_block_id_path = "",
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
-    EphemeralLockInZooKeeper allocateBlockNumber(
+    template<typename T>
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::vector<std::string> & zookeeper_block_id_paths = {},
+        const T & zookeeper_block_id_path,
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 

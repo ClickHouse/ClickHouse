@@ -153,7 +153,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 }
@@ -269,8 +268,8 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     struct Id
     {
-        std::string_view name;
-        std::string_view host_name;
+        StringRef name;
+        StringRef host_name;
 
         bool operator<(const Id & rhs) const
         {
@@ -1384,15 +1383,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        PreformattedMessage error_message = PreformattedMessage::create
-                        (
-                            "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
-                            static_cast<size_t>(elapsed),
-                            receive_timeout.totalSeconds()
-                        );
-
-                        client_exception = std::make_unique<Exception>(error_message, ErrorCodes::TIMEOUT_EXCEEDED);
-                        have_error = true;
+                        output_stream << "Timeout exceeded while receiving data from server."
+                                    << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
+                                    << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
 
                         cancelQuery();
                     }
@@ -1579,14 +1572,14 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
         const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
-        std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-        std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
-            std::string host_name{host_names.getDataAt(i)};
+            auto host_name = host_names.getDataAt(i).toString();
 
             /// In ProfileEvents packets thread id 0 specifies common profiling information
             /// for all threads executing current query on specific host. So instead of summing per thread
@@ -3148,7 +3141,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                         {
                             if (!result.empty())
                                 result += "\n";
-                            result.append(column->getDataAt(i));
+                            result += column->getDataAt(i).toString();
                         }
                     }
                     break;
@@ -3413,11 +3406,6 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
-    if (options.contains("oauth-url"))
-        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
-    if (options.contains("oauth-client-id"))
-        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
-
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.contains("server_logs_file"))
@@ -3561,7 +3549,6 @@ void ClientBase::runInteractive()
         .multiline = getClientConfiguration().has("multiline"),
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
-        .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

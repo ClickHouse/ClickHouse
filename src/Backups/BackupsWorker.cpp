@@ -807,7 +807,7 @@ void BackupsWorker::writeBackupEntries(
             continue;
         }
 
-        runner.enqueueAndKeepTrack(std::move(job));
+        runner(std::move(job));
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

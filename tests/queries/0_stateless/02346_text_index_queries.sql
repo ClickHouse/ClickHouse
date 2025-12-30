@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: It can be slow
 
-SET enable_full_text_index = 1;
+SET allow_experimental_full_text_index = 1;
 SET log_queries = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
@@ -23,7 +23,7 @@ INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'
 SELECT name, type FROM system.data_skipping_indices WHERE table =='tab' AND database = currentDatabase() LIMIT 1;
 
 -- throw in a random consistency check
-CHECK TABLE tab SETTINGS check_query_single_value_result = 1;
+CHECK TABLE tab;
 
 -- search text index with ==
 SELECT * FROM tab WHERE s == 'Alick a01';

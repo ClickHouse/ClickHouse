@@ -1,7 +1,6 @@
 #include <IO/Archives/ZipArchiveWriter.h>
 
 #if USE_MINIZIP
-#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/WriteBufferFromFileBase.h>

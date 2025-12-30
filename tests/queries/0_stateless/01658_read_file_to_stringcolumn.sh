@@ -50,6 +50,9 @@ echo -n aaaaaaaaa > a.txt
 echo -n bbbbbbbbb > b.txt
 echo -n ccccccccc > c.txt
 mkdir -p dir
+#Test for large files, with length : 699415
+c_count=$(wc -c ${CURDIR}/01518_nullable_aggregate_states2.reference | awk '{print $1}')
+echo $c_count
 
 # Valid cases:
 # The default dir is the CWD path in LOCAL mode
@@ -61,6 +64,7 @@ ${CLICKHOUSE_LOCAL} --query "
     insert into data select file('a.txt'), file('b.txt');
     select file('c.txt'), * from data;
     select file('/tmp/c.txt'), * from data;
+    select $c_count, $c_count -length(file('${CURDIR}/01518_nullable_aggregate_states2.reference'))
 "
 echo ":"$?
 
