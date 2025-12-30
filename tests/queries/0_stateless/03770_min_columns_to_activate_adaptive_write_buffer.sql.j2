@@ -33,8 +33,8 @@ select
     peak_memory_usage,
     multiIf(
       -- see comments for max_memory_usage
-      part_type = 'Compact', 100e6,
-      table = 'metric_log_1', 100e6,
+      part_type = 'Compact', 200e6,
+      table = 'metric_log_1', 200e6,
       table = 'metric_log_0', 1.5e9,
       0.
     )
