@@ -108,27 +108,28 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         pending_objects_info.pop();
         return result;
     }
-    auto last_object_info = iterator->next(id);
-    if (!last_object_info)
-        return {};
 
-
-    auto splitter = FormatFactory::instance().getSplitter(format);
-    if (splitter)
+    while (pending_objects_info.empty())
     {
-        auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
-        size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
-        auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
-        for (const auto & file_bucket : file_bucket_info)
+        auto last_object_info = iterator->next(id);
+        if (!last_object_info)
+            return {};
+
+        auto splitter = FormatFactory::instance().getSplitter(format);
+        if (splitter)
         {
-            auto copy_object_info = *last_object_info;
-            copy_object_info.file_bucket_info = file_bucket;
-            pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+            size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
+            auto file_bucket_info = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+            for (const auto & file_bucket : file_bucket_info)
+            {
+                auto copy_object_info = *last_object_info;
+                copy_object_info.file_bucket_info = file_bucket;
+                pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+            }
         }
     }
 
-    if (pending_objects_info.empty())
-        return {};
     auto result = pending_objects_info.front();
     pending_objects_info.pop();
     return result;
