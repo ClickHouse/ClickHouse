@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <memory>
@@ -22,6 +23,7 @@ public:
     explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
     ~ParallelReplicasReadingCoordinator();
 
+    void handleDistributedAnalysisResults(DistributedIndexAnalysisPartsRanges analysis);
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement);
     ParallelReadResponse handleRequest(ParallelReadRequest request);
 
@@ -56,8 +58,12 @@ private:
     /// The problem is `markReplicaAsUnavailable` might be called before any of these requests happened.
     /// In this case we will remember the numbers of unavailable replicas and apply this knowledge later on initialization.
     std::vector<size_t> unavailable_nodes_registered_before_initialization;
+
+    std::vector<std::unordered_set<std::string>> replicas_parts_from_distributed_analysis;
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
+
+using MergeTreeDistributedAnalysisCallback = std::function<void(DistributedIndexAnalysisPartsRanges)>;
 
 }

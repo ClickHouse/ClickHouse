@@ -1502,6 +1502,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         log,
         merge_tree_select_result_ptr,
         enable_parallel_reading,
+        std::nullopt,
         extension_ ? std::optional(extension_->getAllRangesCallback()) : std::nullopt,
         extension_ ? std::optional(extension_->getReadTaskCallback()) : std::nullopt,
         extension_ ? std::optional(extension_->getNumberOfCurrentReplica()) : std::nullopt);
