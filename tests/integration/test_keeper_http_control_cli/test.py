@@ -44,7 +44,7 @@ def started_cluster():
 def test_http_commands_basic_responses(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
     response = requests.get(
-        "http://{host}:{port}/api/v1/commands/conf".format(
+        "http://{host}:{port}/api/v1/commands?command=conf".format(
             host=leader.ip_address, port=9182
         )
     )
@@ -55,7 +55,7 @@ def test_http_commands_basic_responses(started_cluster):
 
     follower = keeper_utils.get_any_follower(cluster, [node1, node2, node3])
     response = requests.get(
-        "http://{host}:{port}/api/v1/commands/conf".format(
+        "http://{host}:{port}/api/v1/commands?command=conf".format(
             host=follower.ip_address, port=9182
         )
     )
@@ -78,7 +78,7 @@ def test_http_commands_cli_response(started_cluster):
     assert response.status_code == 200
 
     with keeper_utils.KeeperClient.from_cluster(
-        cluster, leader.name, port=9182
+        cluster, keeper_ip=leader.ip_address, port=9182
     ) as client:
         assert client.get("foo") == "bar"
         client.rm("foo")
