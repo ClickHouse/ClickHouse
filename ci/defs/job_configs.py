@@ -96,6 +96,7 @@ common_integration_test_job_config = Job.Config(
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
+            "./ci/jobs/scripts/integration_tests_configs.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
