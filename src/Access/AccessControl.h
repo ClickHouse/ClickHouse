@@ -195,6 +195,16 @@ public:
     void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
     bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
 
+    enum class MissingGrantsHintsLevel : uint8_t
+    {
+        Always,        /// Always show detailed missing-grant info.
+        RequireShow,   /// Show details only when SHOW grants are present.
+        Never          /// Never show details.
+    };
+
+    void setMissingGrantsHintsLevel(MissingGrantsHintsLevel level) { missing_grants_hints_level = level; }
+    MissingGrantsHintsLevel getMissingGrantsHintsLevel() const { return missing_grants_hints_level; }
+
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
@@ -284,6 +294,7 @@ private:
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
+    std::atomic<MissingGrantsHintsLevel> missing_grants_hints_level = MissingGrantsHintsLevel::RequireShow;
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
