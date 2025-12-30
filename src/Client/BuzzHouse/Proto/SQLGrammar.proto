@@ -3306,6 +3306,7 @@ message IndexDef {
 message ProjectionDef {
     required Projection proj = 1;
     required Select select = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message ConstraintDef {
@@ -3643,8 +3644,8 @@ message TopSelect {
 message CheckTable {
     required ExprSchemaTable est = 1;
     optional SinglePartitionExpr single_partition = 2;
-    optional bool single_result = 3;
-    optional SettingValues setting_values = 4;
+    optional SettingValues setting_values = 3;
+    optional OutFormat format = 4;
 }
 
 message DescribeStatement {
@@ -3654,6 +3655,7 @@ message DescribeStatement {
         SQLTableFuncCall stf = 3;
     }
     optional SettingValues setting_values = 4;
+    optional OutFormat format = 5;
 }
 
 message DeduplicateExpr {
@@ -3673,6 +3675,7 @@ message OptimizeTable {
     optional DeduplicateExpr dedup = 6;
     optional bool cleanup = 7;
     optional SettingValues setting_values = 8;
+    optional OutFormat format = 9;
 }
 
 message Exchange {
@@ -3993,7 +3996,7 @@ message AlterItem {
         /// For views
         SelectParen modify_query = 49;
         RefreshableView refresh = 50;
-        // For tables, views and databases
+        /// For tables, views and databases
         string comment = 51;
     }
 }
@@ -4315,17 +4318,17 @@ message ShowStatement {
         ShowDictionaries dictionaries = 5;
         ShowIndex indexes = 6;
         bool processlist = 7;
-        bool grants = 8;// bool is used here
+        bool grants = 8; /// bool is used here
         bool users = 9;
-        bool roles = 10; // bool is used here
-        bool profiles = 11; // bool is used here
+        bool roles = 10; /// bool is used here
+        bool profiles = 11; /// bool is used here
         ExprSchemaTable policies = 12;
         bool quotas = 13;
-        bool quota = 14; // bool is used here
+        bool quota = 14; /// bool is used here
         bool access = 15;
         Cluster cluster = 16;
         bool clusters = 17;
-        bool settings = 18; // bool is used here
+        bool settings = 18; /// bool is used here
         string setting = 19;
         bool filesystem_caches = 20;
         bool engines = 21;
@@ -4333,6 +4336,7 @@ message ShowStatement {
         bool merges = 23;
     }
     optional SettingValues setting_values = 24;
+    optional OutFormat format = 25;
 }
 
 message SQLQueryInner {

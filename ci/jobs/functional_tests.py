@@ -191,6 +191,9 @@ def main():
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
             nproc = int(Utils.cpu_count() * 0.4)
+        elif "msan" in args.options:
+            # MSan is slow
+            nproc = int(Utils.cpu_count() * 0.4)
         elif is_coverage:
             cidb_cluster = CIDBCluster()
             assert cidb_cluster.is_ready()

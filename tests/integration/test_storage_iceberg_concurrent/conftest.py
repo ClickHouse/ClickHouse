@@ -49,7 +49,7 @@ def get_spark(cluster : ClickHouseCluster):
         pyspark.sql.SparkSession.builder \
             .appName("IcebergS3Example") \
             .config("spark.jars.repositories", "https://repo1.maven.org/maven2") \
-            .config("spark.jars.packages", 
+            .config("spark.jars.packages",
             f'org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:{iceberg_version},'
             f'org.apache.spark:spark-avro_2.12:{spark_version},'
             f'org.apache.hadoop:hadoop-aws:{hadoop_aws_version},'
@@ -65,7 +65,7 @@ def get_spark(cluster : ClickHouseCluster):
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
                 .master("local")
             )
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
 @pytest.fixture(scope="package")
 def started_cluster_iceberg():
@@ -81,6 +81,8 @@ def started_cluster_iceberg():
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             stay_alive=True,
+            mem_limit='15g',
+            cpu_limit=False,
         )
 
         logging.info("Starting cluster...")
