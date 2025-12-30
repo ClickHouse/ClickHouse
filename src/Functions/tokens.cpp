@@ -135,7 +135,7 @@ private:
         {
             std::string_view input = column_input.getDataAt(i);
 
-            forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+            forEachToken(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
             {
                 column_result.insertData(token_start, token_len);
                 ++tokens_count;

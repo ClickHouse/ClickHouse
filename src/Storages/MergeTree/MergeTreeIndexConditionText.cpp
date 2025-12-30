@@ -1,5 +1,13 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/RPNBuilder.h>
+
+#include <Core/Settings.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/hasAnyAllTokens.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>

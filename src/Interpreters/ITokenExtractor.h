@@ -38,12 +38,6 @@ public:
     /// Returns false if parsing is finished, otherwise returns true.
     virtual bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const = 0;
 
-    /// Optimized version that can assume at least 15 padding bytes after data + len (as our Columns provide).
-    virtual bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
-    {
-        return nextInString(data, length, pos, token_start, token_length);
-    }
-
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
     virtual bool nextInStringLike(const char * data, size_t length, size_t * pos, String & out) const = 0;
@@ -60,11 +54,6 @@ public:
         BloomFilter & bloom_filter,
         bool /*is_prefix*/,
         bool /*is_suffix*/) const
-    {
-        stringToBloomFilter(data, length, bloom_filter);
-    }
-
-    virtual void stringPaddedToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
     {
         stringToBloomFilter(data, length, bloom_filter);
     }
@@ -116,16 +105,6 @@ private:
         size_t token_len = 0;
 
         while (cur < length && static_cast<const Derived *>(this)->nextInString(data, length, &cur, &token_start, &token_len))
-            bloom_filter.add(data + token_start, token_len);
-    }
-
-    void stringPaddedToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override
-    {
-        size_t cur = 0;
-        size_t token_start = 0;
-        size_t token_len = 0;
-
-        while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
             bloom_filter.add(data + token_start, token_len);
     }
 
@@ -202,8 +181,9 @@ struct SplitByNonAlphaTokenExtractor final : public ITokenExtractorHelper<SplitB
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "splitByNonAlpha"; }
 
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const;
     bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-    bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
@@ -263,36 +243,126 @@ private:
     mutable size_t previous_len = 0;
 };
 
+template <Fn<bool(const char *, size_t)> Callback>
+void SplitByNonAlphaTokenExtractor::forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
+{
+    const char * begin = data;
+    const char * end = data + length;
+    const char * pos = begin;
+
+    while (pos < end)
+    {
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
+        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
+        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+        const size_t haystack_length = 16;
+
+#if defined(__SSE4_2__)
+        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
+        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
+        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
+        unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
+#else
+        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
+        const auto number_begin =      _mm_set1_epi8('0' - 1);
+        const auto number_end =        _mm_set1_epi8('9' + 1);
+        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
+        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
+        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
+        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
+        const auto zero =              _mm_set1_epi8(0);
+
+        // every bit represents if `haystack` character `c` satisfies condition:
+        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
+        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
+        unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
+                _mm_cmplt_epi8(haystack, zero),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
+#endif
+        const char * next_pos = std::min(end, pos + haystack_length);
+        while (pos < next_pos)
+        {
+            if (result_bitmask == 0)
+            {
+                if (pos > begin)
+                {
+                    if (callback(begin, pos - begin))
+                        return;
+                }
+
+                pos = next_pos;
+                begin = pos;
+                break;
+            }
+
+            const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
+            if (token_start_pos_in_current_haystack != 0)
+            {
+                if (begin < pos)
+                {
+                    if (callback(begin, pos - begin))
+                        return;
+                }
+                pos += token_start_pos_in_current_haystack;
+                begin = pos;
+            }
+
+            const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
+            pos += token_bytes_in_current_haystack;
+
+            result_bitmask >>= token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
+        }
+#else
+        if (isASCII(*pos) && !isAlphaNumericASCII(*pos))
+        {
+            /// Finish current token if any
+            if (pos > begin)
+            {
+                if (callback(begin, pos - begin))
+                    return;
+            }
+
+            begin = ++pos;
+        }
+        else
+        {
+            ++pos;
+        }
+#endif
+    }
+
+    if (begin >= end)
+        return;
+
+    callback(begin, end - begin);
+}
+
 namespace detail
 {
 
-template <bool is_padded, typename TokenExtractorType, typename Callback>
+template <typename TokenExtractorType, typename Callback>
 void forEachTokenImpl(const TokenExtractorType & extractor, const char * __restrict data, size_t length, Callback && callback)
 {
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
 
-    if constexpr (is_padded)
+    while (cur < length && extractor.nextInString(data, length, &cur, &token_start, &token_len))
     {
-        while (cur < length && extractor.nextInStringPadded(data, length, &cur, &token_start, &token_len))
-        {
-            if (callback(data + token_start, token_len))
-                return;
-        }
-    }
-    else
-    {
-        while (cur < length && extractor.nextInString(data, length, &cur, &token_start, &token_len))
-        {
-            if (callback(data + token_start, token_len))
-                return;
-        }
+        if (callback(data + token_start, token_len))
+            return;
     }
 }
 
-template <bool is_padded, typename Callback>
-void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict data, size_t length, Callback && callback)
+}
+
+/// Calls the callback for each token in the data.
+/// Stops searching tokens if the callback returns true.
+template <Fn<bool(const char *, size_t)> Callback>
+void forEachToken(const ITokenExtractor & extractor, const char * __restrict data, size_t length, Callback && callback)
 {
     if (length == 0)
         return;
@@ -302,23 +372,23 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
         case ITokenExtractor::Type::SplitByNonAlpha:
         {
             const auto & split_by_non_alpha_extractor = assert_cast<const SplitByNonAlphaTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(split_by_non_alpha_extractor, data, length, callback);
+            split_by_non_alpha_extractor.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenExtractor::Type::Ngrams:
         {
-            const auto & ngrams_tokenizer = assert_cast<const NgramsTokenExtractor &>(extractor);
+            const auto & ngrams_extractor = assert_cast<const NgramsTokenExtractor &>(extractor);
 
-            if (length < ngrams_tokenizer.getN())
+            if (length < ngrams_extractor.getN())
                 return;
 
-            forEachTokenImpl<is_padded>(ngrams_tokenizer, data, length, callback);
+            detail::forEachTokenImpl(ngrams_extractor, data, length, callback);
             return;
         }
         case ITokenExtractor::Type::SplitByString:
         {
             const auto & split_by_string_extractor = assert_cast<const SplitByStringTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(split_by_string_extractor, data, length, callback);
+            detail::forEachTokenImpl(split_by_string_extractor, data, length, callback);
             return;
         }
         case ITokenExtractor::Type::Array:
@@ -329,26 +399,12 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
         case ITokenExtractor::Type::SparseGrams:
         {
             const auto & sparse_grams_extractor = assert_cast<const SparseGramsTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(sparse_grams_extractor, data, length, callback);
+            detail::forEachTokenImpl(sparse_grams_extractor, data, length, callback);
             return;
         }
     }
 }
 
-}
-
-/// Calls the callback for each token in the data.
-/// Stops searching tokens if the callback returns true.
-template <Fn<bool(const char *, size_t)> Callback>
-void forEachTokenPadded(const ITokenExtractor & extractor, const char * __restrict data, size_t length, Callback && callback)
-{
-    detail::forEachTokenCase<true>(extractor, data, length, callback);
-}
-
-template <Fn<bool(const char *, size_t)> Callback>
-void forEachToken(const ITokenExtractor & extractor, const char * __restrict data, size_t length, Callback && callback)
-{
-    detail::forEachTokenCase<false>(extractor, data, length, callback);
-}
+void forEachTokenToBloomFilter(const ITokenExtractor & extractor, const char * data, size_t length, BloomFilter & bloom_filter);
 
 }
