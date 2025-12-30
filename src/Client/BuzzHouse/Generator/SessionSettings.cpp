@@ -591,7 +591,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
                  static const std::vector<uint32_t> & values = {1, 2, 3, 5, 10, 15, 20};
                  const auto now = std::chrono::system_clock::now();
 
-                 // Convert to milliseconds since epoch
+                 /// Convert to milliseconds since epoch
                  auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
                  ms -= (rg.pickRandomly(values) * 1000);
                  return std::to_string(ms);
@@ -967,6 +967,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'UTF-8'" : "'ASCII'"; }, {}, false)},
     {"output_format_pretty_highlight_digit_groups", trueOrFalseSettingNoOracle},
     {"output_format_pretty_multiline_fields", trueOrFalseSettingNoOracle},
+    {"output_format_pretty_named_tuples_as_json", trueOrFalseSettingNoOracle},
     {"output_format_pretty_row_numbers", trueOrFalseSettingNoOracle},
     {"output_format_protobuf_nullables_with_google_wrappers", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_include_column_names", trueOrFalseSettingNoOracle},
@@ -1258,6 +1259,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "filesystem_prefetch_min_bytes_for_single_read_task",
            "filesystem_prefetch_step_bytes",
            "group_by_two_level_threshold_bytes",
+           "iceberg_insert_max_bytes_in_data_file",
            "input_format_max_block_size_bytes",
            "input_format_parquet_local_file_min_bytes_for_seek",
            "input_format_parquet_prefer_block_bytes",
@@ -1268,8 +1270,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "max_bytes_before_external_sort",
            "max_bytes_before_remerge_sort",
            "max_download_buffer_size",
-           "iceberg_insert_max_bytes_in_data_file",
            "max_joined_block_size_bytes",
+           "max_partition_size_to_drop",
+           "max_partitions_per_insert_block",
            "max_read_buffer_size",
            "max_read_buffer_size_local_fs",
            "max_read_buffer_size_remote_fs",
@@ -1367,6 +1370,29 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"remote_filesystem_read_method",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
+        max_block_sizes.insert(
+            max_block_sizes.end(),
+            {"max_analyze_depth",
+             "max_ast_depth",
+             "max_ast_elements",
+             "max_autoincrement_series",
+             "max_backup_bandwidth",
+             "max_distributed_connections",
+             "max_distributed_depth",
+             "max_download_threads",
+             "max_expanded_ast_elements",
+             "max_fetch_partition_retries_count",
+             "max_http_get_redirects",
+             "max_network_bandwidth",
+             "max_network_bandwidth_for_all_users",
+             "max_network_bandwidth_for_user",
+             "max_parser_backtracks",
+             "max_parser_depth",
+             "max_partitions_to_read",
+             "max_sessions_for_user",
+             "max_streams_for_merge_tree_reading",
+             "max_streams_multiplier_for_merge_tables",
+             "max_subquery_depth"});
         max_bytes_values.insert(
             max_bytes_values.end(),
             {"max_bytes_in_distinct",
@@ -1376,18 +1402,31 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_bytes_to_read_leaf",
              "max_bytes_to_sort",
              "max_bytes_to_transfer",
-             "max_result_bytes"});
+             "max_execution_speed_bytes",
+             "max_hyperscan_regexp_length",
+             "max_hyperscan_regexp_total_length",
+             "max_network_bytes",
+             "max_query_size",
+             "max_result_bytes",
+             "max_size_to_preallocate_for_aggregation",
+             "max_size_to_preallocate_for_joins",
+             "min_execution_speed_bytes"});
         max_rows_values.insert(
             max_rows_values.end(),
             {"limit",
+             "max_concurrent_queries_for_all_users",
+             "max_concurrent_queries_for_user",
+             "max_execution_speed",
              "max_result_rows",
              "max_rows_in_distinct",
              "max_rows_in_join",
              "max_rows_in_set",
+             "max_rows_in_set_to_optimize_join",
              "max_rows_to_group_by",
              "max_rows_to_read",
              "max_rows_to_read_leaf",
-             "max_rows_to_sort"});
+             "max_rows_to_sort",
+             "min_execution_speed"});
         /*max_columns_values.insert( too many errors on queries
             max_columns_values.end(), {"max_columns_to_read", "max_temporary_columns", "max_temporary_non_const_columns"});*/
     }
@@ -1396,17 +1435,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (const auto & entry : max_bytes_values)
     {
         performanceSettings.insert({{entry, CHSetting(bytesRange, {"32768", "65536", "1048576", "4194304", "33554432", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(bytesRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_rows_values)
     {
         performanceSettings.insert({{entry, CHSetting(rowsRange, {"0", "512", "1024", "2048", "4096", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(rowsRange, {"0", "4", "8", "16", "32", "1024", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_block_sizes)
     {
         performanceSettings.insert({{entry, CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(highRange, {"4", "8", "16", "32", "64", "1024", "4096", "16384"}, false)}});
     }
     for (const auto & entry : max_columns_values)
     {
@@ -1566,6 +1605,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"format_custom_result_after_delimiter", CHSetting(nastyStrings, {}, false)},
          {"format_tsv_null_representation", CHSetting(nastyStrings, {}, false)},
          {"input_format_binary_decode_types_in_binary_format", trueOrFalseSettingNoOracle},
+         {"input_format_binary_max_type_complexity", CHSetting(rowsRange, {}, false)},
          {"input_format_csv_arrays_as_nested_csv", trueOrFalseSettingNoOracle},
          {"input_format_csv_detect_header", trueOrFalseSettingNoOracle},
          {"input_format_csv_enum_as_number", trueOrFalseSettingNoOracle},

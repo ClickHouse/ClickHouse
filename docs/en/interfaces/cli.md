@@ -387,7 +387,7 @@ Starting AI SQL generation with schema discovery...
 ✨ SQL query generated successfully!
 ──────────────────────────────────────────────────
 
-SELECT 
+SELECT
     c.name AS category,
     COUNT(DISTINCT o.order_id) AS order_count
 FROM sales_db.orders o
@@ -659,7 +659,7 @@ Non-US ASCII, spaces and special characters in the following parameters must be 
 - `password`
 - `hosts`
 - `database`
-- `query parameters` 
+- `query parameters`
 
 ### Examples {#connection_string_examples}
 
@@ -844,6 +844,7 @@ All command-line options can be specified directly on the command line or as def
 | `-s [ --secure ]`                | Whether to use TLS. <br/><br/>Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud. <br/><br/>You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl). | Auto-enabled when connecting to port 9440 or ClickHouse Cloud                                                   |
 | `--ssh-key-file <path-to-file>`  | File containing the SSH private key for authenticate with the server.                                                                                                                                                                                                                                                              | -                                                                                                                |
 | `--ssh-key-passphrase <value>`   | Passphrase for the SSH private key specified in `--ssh-key-file`.                                                                                                                                                                                                                                                                 | -                                                                                                                |
+| `--tls-sni-override <server name>`       | If using TLS, the server name (SNI) to pass in the handshake.                                                                                                                                                                                                                                                                                                    | The host provided via `-h` or `--host`.                                                                                                        |
 | `-u [ --user ] <username>`       | The database user to connect as.                                                                                                                                                                                                                                                                                                   | `default`                                                                                                        |
 
 :::note
