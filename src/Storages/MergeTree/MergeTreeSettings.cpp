@@ -298,7 +298,7 @@ namespace ErrorCodes
 
     - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
     )", 0) \
-    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
     Serialization version for JSON data type. Required for compatibility.
 
     Possible values:
@@ -308,7 +308,7 @@ namespace ErrorCodes
 
     Only version `v3` supports changing the shared data serialization version.
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
     Serialization version for shared data inside JSON data type.
 
     Possible values:
@@ -320,7 +320,7 @@ namespace ErrorCodes
     Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
     [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
     This setting allows to specify different serialization version of the
     shared data inside JSON type for zero level parts that are created during inserts.
     It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
@@ -332,7 +332,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
     Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
     )", 0) \
-    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
     Serialization version for Dynamic data type. Required for compatibility.
 
     Possible values:
