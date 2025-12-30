@@ -349,7 +349,7 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     return nullptr;
 }
 
-void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues *)
+void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
     if (t.isExternalDistributedEngine())
     {
@@ -592,7 +592,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     return nullptr;
 }
 
-void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues *)
+void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
     if (t.isExternalDistributedEngine())
     {
@@ -781,7 +781,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     }
 }
 
-void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te, SettingValues *)
+void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
     te->add_params()->set_svalue(t.getTableName());
@@ -861,7 +861,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 }
 #endif
 
-void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te, SettingValues *)
+void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_num(rg.nextBool() ? 0 : rg.randomInt<uint32_t>(0, 15));
@@ -928,7 +928,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     }
 }
 
-void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te, SettingValues *)
+void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
@@ -1411,7 +1411,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 }
 #endif
 
-void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te, SettingValues *)
+void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_rvalue(sc.named_collection);
 }
@@ -1427,7 +1427,7 @@ bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, co
     return true;
 }
 
-void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te, SettingValues *)
+void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_rvalue(sc.named_collection);
 }
@@ -1443,7 +1443,7 @@ bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, 
     return true;
 }
 
-void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues *)
+void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
 }
@@ -1532,7 +1532,7 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
 
 static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
 
-void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
 {
     String catalog_str;
     const Catalog * cat = nullptr;
@@ -1588,6 +1588,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
     for (uint32_t i = 0; i < total_to_add; i++)
     {
+        SettingValues * svs = de->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         const uint32_t add_type = 3 * static_cast<uint32_t>(added_type < toadd_type);
         const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
@@ -1690,7 +1691,7 @@ bool DolorIntegration::reRunCreateTable(const String & body)
     return httpPut("/sparktable", body);
 }
 
-void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te, SettingValues * svs)
+void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
     if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
     {
@@ -1760,6 +1761,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
 
             for (uint32_t i = 0; i < total_to_add; i++)
             {
+                SettingValues * svs = te->mutable_setting_values();
                 SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
                 const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
                 const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
@@ -1887,7 +1889,7 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     }
 }
 
-void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
+void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1901,11 +1903,11 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
-    next->setDatabaseDetails(rg, d, de, svs);
+    next->setDatabaseDetails(rg, d, de);
 }
 
 void ExternalIntegrations::createExternalDatabaseTable(
-    RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te, SettingValues * svs)
+    RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te)
 {
     ClickHouseIntegration * next = nullptr;
 
@@ -1943,7 +1945,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
-    next->setTableEngineDetails(rg, t, te, svs);
+    next->setTableEngineDetails(rg, t, te);
 }
 
 bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const String & body)

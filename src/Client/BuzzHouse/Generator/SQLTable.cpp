@@ -1218,7 +1218,6 @@ static void dupTableDef(SQLTable & next, const SQLTable & t)
 void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
-    SettingValues * svs = nullptr;
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
     /// Set what the filename is going to be first
@@ -1282,8 +1281,7 @@ void StatementGenerator::generateEngineDetails(
     {
         if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
-            svs = svs ? svs : te->mutable_setting_values();
-            connections.createExternalDatabaseTable(rg, *t, entries, te, svs);
+            connections.createExternalDatabaseTable(rg, *t, entries, te);
         }
         if (b.isURLEngine())
         {
@@ -1447,8 +1445,7 @@ void StatementGenerator::generateEngineDetails(
         {
             if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
             {
-                svs = svs ? svs : te->mutable_setting_values();
-                connections.createExternalDatabaseTable(rg, *t, entries, te, svs);
+                connections.createExternalDatabaseTable(rg, *t, entries, te);
             }
         }
         else
@@ -1501,23 +1498,20 @@ void StatementGenerator::generateEngineDetails(
             && ((!b.isJoinEngine() && !b.isSetEngine()) || !b.is_deterministic) && rg.nextBool())
         {
             /// Add table engine settings
-            svs = svs ? svs : te->mutable_setting_values();
-            generateSettingValues(rg, engineSettings, svs);
+            generateSettingValues(rg, engineSettings, te->mutable_setting_values());
         }
         if (rg.nextSmallNumber() < 4)
         {
             /// Add server settings
-            svs = svs ? svs : te->mutable_setting_values();
-            generateSettingValues(rg, serverSettings, svs);
+            generateSettingValues(rg, serverSettings, te->mutable_setting_values());
         }
         if (b.isMergeTreeFamily() && !fc.hot_table_settings.empty() && rg.nextBool())
         {
-            svs = svs ? svs : te->mutable_setting_values();
-            generateHotTableSettingsValues(rg, true, svs);
+            generateHotTableSettingsValues(rg, true, te->mutable_setting_values());
         }
         if (b.isAnyS3Engine() && rg.nextBool())
         {
-            svs = svs ? svs : te->mutable_setting_values();
+            SettingValues * svs = te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
             sv->set_property("input_format_with_names_use_header");
@@ -1526,13 +1520,15 @@ void StatementGenerator::generateEngineDetails(
         if (b.isS3QueueEngine() || b.isAzureQueueEngine())
         {
             /// The mode setting is mandatory
-            svs = svs ? svs : te->mutable_setting_values();
+            SettingValues * svs = te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
         const bool smt_disk = (b.isShared() && fc.set_smt_disk);
+        SettingValues * svs = te->has_setting_values() ? te->mutable_setting_values() : nullptr;
+
         if ((b.isMergeTreeFamily() || b.isLogFamily() || smt_disk) && (smt_disk || rg.nextSmallNumber() < 3)
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
@@ -1544,8 +1540,8 @@ void StatementGenerator::generateEngineDetails(
                                [](const auto & val) { return val.property() == "storage_policy" || val.property() == "disk"; })
                             == svs->other_values().end()))))
         {
-            svs = svs ? svs : te->mutable_setting_values();
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            SettingValues * svss = te->mutable_setting_values();
+            SetValue * sv = svss->has_set_value() ? svss->add_other_values() : svss->mutable_set_value();
             const String & pick = (fc.keeper_disks.empty() || rg.nextSmallNumber() < 3) ? "storage_policy" : "disk";
 
             sv->set_property(pick);
@@ -2239,7 +2235,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(URL);
         }
-        if (connections.hasDolorConnection() && fc.kafka_server.has_value() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
+        if (fc.kafka_server.has_value() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
         {
             this->ids.emplace_back(Kafka);
         }
@@ -2850,7 +2846,6 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
 void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd)
 {
     SQLDatabase next;
-    SettingValues * svs = nullptr;
     const uint32_t dname = this->database_counter++;
     DatabaseEngine * deng = cd->mutable_dengine();
 
@@ -2886,12 +2881,11 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
-        svs = svs ? svs : cd->mutable_setting_values();
-        generateSettingValues(rg, serverSettings, svs);
+        generateSettingValues(rg, serverSettings, deng->mutable_setting_values());
     }
     if ((next.isAtomicDatabase() || next.isOrdinaryDatabase()) && !fc.disks.empty() && rg.nextSmallNumber() < 4)
     {
-        svs = svs ? svs : cd->mutable_setting_values();
+        SettingValues * svs = deng->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         sv->set_property("disk");
@@ -2899,8 +2893,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else if (!next.random_engine && next.isDataLakeCatalogDatabase())
     {
-        svs = svs ? svs : cd->mutable_setting_values();
-        connections.createExternalDatabase(rg, next, deng, svs);
+        connections.createExternalDatabase(rg, next, deng);
     }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }

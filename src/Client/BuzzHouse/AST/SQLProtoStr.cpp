@@ -3050,6 +3050,11 @@ CONV_FN(DatabaseEngine, deng)
         }
         ret += ")";
     }
+    if (deng.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, deng.setting_values());
+    }
 }
 
 CONV_FN(CreateDatabase, create_database)
@@ -3072,11 +3077,6 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
-    if (create_database.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, create_database.setting_values());
-    }
     if (create_database.has_comment())
     {
         ret += " COMMENT ";

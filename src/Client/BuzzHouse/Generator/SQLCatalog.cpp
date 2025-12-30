@@ -680,8 +680,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     else if (has_dolor && isKafkaEngine())
     {
         integration = IntegrationCall::Dolor;
-        topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 5));
-        group = "g" + std::to_string(rg.randomInt<uint32_t>(0, 5));
+        topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        group = "g" + std::to_string(rg.randomInt<uint32_t>(0, 19));
     }
 }
 

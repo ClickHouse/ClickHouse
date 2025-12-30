@@ -61,19 +61,19 @@ class KafkaHandler:
 
     def update_table(self, cluster, database_name: str, table_name: str) -> bool:
         next_operation = random.randint(1, 1000)
-        next_topic = f"t{random.randint(0, 5)}"
+        next_topic = f"t{random.randint(0, 19)}"
         next_tbl = f"{database_name}.{table_name}"
         if next_tbl in self.table_topics and random.randint(1, 10) < 9:
             next_topic = self.table_topics[next_tbl].topic
 
         try:
-            if next_operation <= 250:
+            if next_operation <= 150:
                 # Create topic
                 num_partitions = (
                     1 if random.randint(1, 2) == 1 else random.randint(1, 32)
                 )
                 k.kafka_create_topic(self.admin_client, next_topic, num_partitions)
-            elif next_operation <= 350:
+            elif next_operation <= 200:
                 # Delete topic
                 k.kafka_delete_topic(self.admin_client, next_topic)
             else:
