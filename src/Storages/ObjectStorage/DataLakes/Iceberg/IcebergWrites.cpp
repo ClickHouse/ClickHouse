@@ -540,8 +540,8 @@ void generateManifestList(
             {
                 auto manifest_list = snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list);
 
-                RelativePathWithMetadata path_with_metadata(filename_generator.convertMetadataPathToStoragePath(manifest_list));
-                auto manifest_list_buf = createReadBuffer(path_with_metadata, object_storage, context, getLogger("IcebergWrites"));
+                RelativePathWithMetadata relative_path_with_metadata(filename_generator.convertMetadataPathToStoragePath(manifest_list));
+                auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger("IcebergWrites"));
 
                 auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
                 avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));
@@ -575,7 +575,7 @@ void generateManifestList(
                                     throw Exception(
                                         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                                         "Manifest list {} has null value for field '{}', but it is required",
-                                        path_with_metadata.getPath(),
+                                        relative_path_with_metadata.getPath(),
                                         Iceberg::f_added_snapshot_id);
                                 }
                             }
@@ -586,7 +586,7 @@ void generateManifestList(
                             throw Exception(
                                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                                 "Manifest list {} has null value for field '{}', but it is required",
-                                path_with_metadata.getPath(),
+                                relative_path_with_metadata.getPath(),
                                 Iceberg::f_added_snapshot_id);
                         auto add_field_to_datum = [&](const String & field)
                         {

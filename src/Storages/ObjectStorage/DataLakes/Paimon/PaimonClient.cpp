@@ -157,9 +157,9 @@ std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 {
     /// read latest hint
     Int64 snapshot_version;
-    RelativePathWithMetadata path_with_metadata(
+    RelativePathWithMetadata relative_path_with_metadata(
         std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
-    auto buf = createReadBuffer(path_with_metadata, object_storage, getContext(), log);
+    auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
     String hint_version_string;
     readStringUntilEOF(hint_version_string, *buf);
     {
@@ -183,9 +183,9 @@ std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
             *object_storage,
             table_location,
             PAIMON_SNAPSHOT_DIR,
-            [](const RelativePathWithMetadata & path_with_metadata_)
+            [](const RelativePathWithMetadata & path_with_metadata)
             {
-                String relative_path = path_with_metadata_.relative_path;
+                String relative_path = path_with_metadata.relative_path;
                 String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
                 return file_name.starts_with(PAIMON_SNAPSHOT_PRIFIX);
             });
