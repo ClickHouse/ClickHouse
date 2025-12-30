@@ -26,9 +26,7 @@ namespace
 int callSetCertificate(SSL * ssl, void * arg)
 {
     if (!arg)
-    {
         return -1;
-    }
 
     const CertificateReloader::MultiData * pdata = reinterpret_cast<CertificateReloader::MultiData *>(arg);
     return CertificateReloader::instance().setCertificate(ssl, pdata);
@@ -42,18 +40,14 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
     auto current = pdata->data.get();
 
     if (!current)
-    {
         return -1;
-    }
     return setCertificateCallback(ssl, current.get(), log);
 }
 
 int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_data, LoggerPtr log)
 {
     if (current_data->certs_chain.empty())
-    {
         return -1;
-    }
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
