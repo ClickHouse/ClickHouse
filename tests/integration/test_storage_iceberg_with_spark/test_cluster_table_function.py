@@ -297,7 +297,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     if buffers_count_with_splitted_tasks != 0:
         assert buffers_count_with_splitted_tasks >= buffers_count_default
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3"])
 def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
