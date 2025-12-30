@@ -99,9 +99,6 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    if "Reverts ClickHouse/" in pr_body:
-        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
-
     category = ""
     error = ""
     i = 0
@@ -130,6 +127,8 @@ def get_category(pr_body: str) -> Tuple[str, str]:
         else:
             i += 1
     if not category or normalize_category(category) not in CATEGORIES_FOLD:
+        if "Reverts ClickHouse/" in pr_body:
+            return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
         error = "Change category is missing or invalid"
     return error, category
 

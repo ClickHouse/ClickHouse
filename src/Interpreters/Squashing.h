@@ -44,14 +44,15 @@ public:
     Squashing(Squashing && other) = default;
 
     Chunk add(Chunk && input_chunk, bool flush_if_enough_size = false);
-    static Chunk squash(Chunk && input_chunk);
-    static Chunk squash(std::vector<Chunk> && input_chunks);
+    static Chunk squash(Chunk && input_chunk, SharedHeader header);
+
     Chunk flush();
 
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
     const SharedHeader & getHeader() const { return header; }
 
 private:
+
     struct CurrentData
     {
         std::vector<Chunk> chunks = {};
@@ -70,7 +71,12 @@ private:
 
     CurrentData accumulated;
 
-    static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos);
+    static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos, SharedHeader header);
+    static Chunk squash(std::vector<Chunk> && input_chunks);
+    // LazilyMaterializingTransform calls private method squash(std::vector<Chunk> && input_chunks)
+    // that method does not handle ChunkInfos,
+    // therefore it is private method to force using Squashing instance with proper arguments
+    friend class LazilyMaterializingTransform;
 
     bool isEnoughSize() const;
     bool isEnoughSize(size_t rows, size_t bytes) const;
