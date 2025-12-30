@@ -136,6 +136,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_llvm_coverage = False
     is_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
@@ -148,20 +149,23 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif to.startswith("amd_") or to.startswith("arm_"):
+        elif (
+            to.startswith("amd_")
+            or to.startswith("arm_")
+            or "llvm coverage" in to
+        ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
-        else:
-            assert False, f"Unknown option [{to}]"
-
-        if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+            else:
+                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+                print(
+                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+                )
+        else:
+            assert False, f"Unknown option [{to}]"           
 
         if "targeted" in to:
             is_targeted_check = True
@@ -169,9 +173,10 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
+        elif "llvm coverage" in to:
+            is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
-
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
@@ -207,6 +212,9 @@ def main():
     else:
         print(f"Workers count set to optimal value: {nproc}")
         runner_options += f" --jobs {nproc}"
+
+    if is_llvm_coverage:
+        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
 
     rerun_count = 1
     if args.count:
@@ -392,6 +400,9 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
+        if is_llvm_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%m.profraw"
+
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             res = res and CH.start()
@@ -428,6 +439,8 @@ def main():
         )
         res = results[-1].is_ok()
 
+    if is_llvm_coverage:
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%m.profraw"
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -553,7 +566,10 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        test_case.set_label(Result.Label.OK_ON_RETRY)
+                        if is_llvm_coverage:
+                            test_case.set_success()
+                        else:
+                            test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
@@ -629,12 +645,50 @@ def main():
     if test_result:
         test_result.sort()
 
-    Result.create_from(
+    R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    )
+
+    if is_llvm_coverage:
+        print("Collecting and merging LLVM coverage files...")
+        profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
+        profraw_files = [f.strip() for f in profraw_files if f.strip()]
+        
+        if profraw_files:
+            print(f"Found {len(profraw_files)} .profraw files")
+            
+            # Auto-detect available LLVM profdata tool
+            llvm_profdata = None
+            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+                if Shell.check(f"command -v {cmd}", verbose=False):
+                    llvm_profdata = cmd
+                    break
+            
+            if not llvm_profdata:
+                print("ERROR: llvm-profdata not found in PATH")
+            else:
+                print(f"Using {llvm_profdata} to merge coverage files")
+                
+                # Merge all profraw files to current directory
+                merged_file = f"./ft-{batch_num}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                merge_output = Shell.get_output(merge_cmd, verbose=True)
+                
+                # Check for corrupted files in the output
+                corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
+                if corrupted_files:
+                    print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
+                    for corrupted in corrupted_files:
+                        print(f"  {corrupted}")
+                
+        else:
+            print("No .profraw files found for coverage")
+
+    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":
