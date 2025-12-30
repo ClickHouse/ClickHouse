@@ -7,6 +7,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/escapeForFileName.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -33,7 +35,7 @@ class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
-using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+using Databases = std::map<String, std::shared_ptr<IDatabase>, std::less<>>;
 using DiskPtr = std::shared_ptr<IDisk>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
@@ -126,7 +128,8 @@ struct GetDatabasesOptions
     bool with_datalake_catalogs{false};
 };
 
-/// For some reason Context is required to get Storage from Database object
+/// For some reason Context is required to get Storage from Database object.
+/// This must not hold the Database mutex.
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -139,6 +142,17 @@ public:
 
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
+
+    static fs::path getMetadataDirPath() { return fs::path("metadata"); }
+    static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
+    static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }
+    static fs::path getMetadataTmpFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp"); }
+
+    static fs::path getDataDirPath() { return fs::path("data"); }
+    static fs::path getDataDirPath(const String & database_name) { return getDataDirPath() / escapeForFileName(database_name); }
+
+    static fs::path getStoreDirPath() { return fs::path("store"); }
+    static fs::path getStoreDirPath(const UUID & uuid) { return getStoreDirPath() / getPathForUUID(uuid); }
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -171,11 +185,11 @@ public:
     void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
     /// database_name must be not empty
-    DatabasePtr getDatabase(const String & database_name) const;
-    DatabasePtr tryGetDatabase(const String & database_name) const;
+    DatabasePtr getDatabase(std::string_view database_name) const;
+    DatabasePtr tryGetDatabase(std::string_view database_name) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
-    bool isDatabaseExist(const String & database_name) const;
+    bool isDatabaseExist(std::string_view database_name) const;
     /// Datalake catalogs are implement at IDatabase level in ClickHouse.
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
@@ -282,7 +296,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const DatabasePtr & database);
+    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
     bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
 

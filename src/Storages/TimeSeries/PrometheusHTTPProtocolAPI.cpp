@@ -372,7 +372,7 @@ void DB::PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, co
                 bool first = true;
                 for (size_t j = start; j < end; ++j)
                 {
-                    String key = key_column.getDataAt(j).toString();
+                    String key{key_column.getDataAt(j)};
 
                     if (!first)
                         writeString(",", response);
@@ -381,7 +381,7 @@ void DB::PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, co
                     writeString("\"", response);
                     writeString(key, response);
                     writeString("\":\"", response);
-                    writeString(value_column.getDataAt(j).toString(), response);
+                    writeString(value_column.getDataAt(j), response);
                     writeString("\"", response);
                 }
             }

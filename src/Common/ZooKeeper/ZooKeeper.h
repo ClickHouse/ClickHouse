@@ -202,6 +202,8 @@ public:
 
     ~ZooKeeper();
 
+    ZooKeeperArgs getArgs() const { return args; }
+
     std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(ZooKeeperArgs args_,
@@ -565,6 +567,8 @@ public:
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
+
+    int64_t getLastZXIDSeen() const { return impl->getLastZXIDSeen(); }
 
     void setServerCompletelyStarted();
 

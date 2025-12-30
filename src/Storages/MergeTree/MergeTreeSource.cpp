@@ -4,6 +4,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {

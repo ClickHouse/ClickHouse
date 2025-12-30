@@ -1,10 +1,11 @@
 #include <memory>
 #include <optional>
 #include <Core/Settings.h>
+#include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -29,8 +30,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <boost/operators.hpp>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Disks/IO/ReadBufferFromDistributedCache.h>
@@ -38,7 +41,8 @@
 #endif
 
 #include <fmt/ranges.h>
-
+#include <Common/ProfileEvents.h>
+#include <Core/SettingsEnums.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -65,6 +69,7 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
+    extern const SettingsUInt64 s3_path_filter_limit;
 }
 
 namespace ErrorCodes
@@ -174,23 +179,66 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    if (reading_path.hasGlobs())
+    if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
-        if (hasExactlyOneBracketsExpansion(reading_path.path))
+        auto paths = expandSelectionGlob(reading_path.path);
+        iterator = std::make_unique<KeysIterator>(
+            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
+            file_progress_callback);
+    }
+    else if (reading_path.hasGlobs())
+    {
+        // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
+        std::optional<Strings> paths;
+        if (filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+            paths = VirtualColumnUtils::extractPathValuesFromFilter(
+                filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
+
+        // If paths is nullopt, use the glob iterator to scan all matching files.
+        // If paths contains a value, validate the extracted paths and use the key-based iterator
+        // (even if the result is empty, indicating no scanning is required).
+        if (!paths)
+            iterator = std::make_unique<GlobIterator>(
+                object_storage,
+                configuration,
+                predicate,
+                virtual_columns,
+                hive_columns,
+                local_context,
+                is_archive ? nullptr : read_keys,
+                query_settings.list_object_keys_size,
+                query_settings.throw_on_zero_files_match,
+                with_tags,
+                file_progress_callback);
+        else
         {
-            auto paths = expandSelectionGlob(reading_path.path);
+            // Validate that extracted paths match the glob pattern to prevent scanning unallowed data
+            Strings validated_paths;
+            re2::RE2 matcher(makeRegexpPatternFromGlobs(reading_path.path));
+            if (matcher.ok())
+            {
+                for (const auto & path : paths.value())
+                {
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    if (RE2::FullMatch(relative_path, matcher))
+                        validated_paths.push_back(relative_path);
+                }
+            }
+            else
+                throw Exception(
+                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", reading_path.path, matcher.error());
+
             iterator = std::make_unique<KeysIterator>(
-                paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
+                validated_paths,
+                object_storage,
+                virtual_columns,
+                is_archive ? nullptr : read_keys,
+                query_settings.ignore_non_existent_file,
+                skip_object_metadata,
+                with_tags,
                 file_progress_callback);
         }
-        else
-            /// Iterate through disclosed globs and make a source for each file
-            iterator = std::make_unique<GlobIterator>(
-                object_storage, configuration, predicate, virtual_columns, hive_columns,
-                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match, with_tags,
-                file_progress_callback);
     }
     else if (configuration->supportsFileIterator())
     {
@@ -199,7 +247,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
         if (filter_actions_dag)
         {
-            return std::make_shared<ObjectIteratorWithPathAndFileFilter>(
+            iter = std::make_shared<ObjectIteratorWithPathAndFileFilter>(
                 std::move(iter),
                 *filter_actions_dag,
                 virtual_columns,
@@ -587,6 +635,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
+        input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)
