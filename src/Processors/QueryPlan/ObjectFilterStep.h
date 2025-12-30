@@ -10,7 +10,7 @@ class ObjectFilterStep : public IQueryPlanStep
 {
 public:
     ObjectFilterStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_);
 

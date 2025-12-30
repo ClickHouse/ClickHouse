@@ -565,9 +565,10 @@ ALWAYS_INLINE void addFilterStep(
     query_plan.addStep(std::move(where_step));
 }
 
-void addObjectFilterStep(QueryPlan & query_plan,
+template <size_t size>
+ALWAYS_INLINE void addObjectFilterStep(QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
-    const std::string & step_description)
+    const char (&step_description)[size])
 {
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
 

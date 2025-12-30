@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 ObjectFilterStep::ObjectFilterStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     ActionsDAG actions_dag_,
     String filter_column_name_)
     : actions_dag(std::move(actions_dag_))
