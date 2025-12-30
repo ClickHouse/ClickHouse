@@ -202,6 +202,8 @@ public:
 
     ~ZooKeeper();
 
+    ZooKeeperArgs getArgs() const { return args; }
+
     std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(ZooKeeperArgs args_,
