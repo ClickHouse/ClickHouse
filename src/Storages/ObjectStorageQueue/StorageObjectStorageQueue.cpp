@@ -1319,18 +1319,26 @@ void StorageObjectStorageQueue::alter(
         }
         if (requires_detached_mv)
         {
+            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
+
             for (auto & task : streaming_tasks)
                 task->deactivate();
+
+            LOG_TRACE(log, "Deactivated streaming tasks");
         }
         SCOPE_EXIT({
             if (requires_detached_mv)
             {
                 for (auto & task : streaming_tasks)
                     task->activateAndSchedule();
+
+                LOG_TRACE(log, "Re-activated streaming tasks");
             }
         });
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+        LOG_TRACE(
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings: {})",
+            new_metadata.settings_changes->formatForLogging(), requires_detached_mv, changed_settings.size());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
