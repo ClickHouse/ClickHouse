@@ -20,7 +20,6 @@
 #include <Common/re2.h>
 #include <base/find_symbols.h>
 
-#include <IO/copyData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -1049,9 +1048,7 @@ static void processDiffs(
         }
 
         if (size_limit && diff_size > *size_limit)
-        {
             return;
-        }
     }
 }
 
@@ -1180,7 +1177,9 @@ static void processLog(const Options & options)
 
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        ReadBuffer & show_in = show_commands[i % num_threads]->out;
+        processCommit(show_in, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        show_in.ignoreAll();
 
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;

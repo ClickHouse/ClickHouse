@@ -74,6 +74,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (node.children.size() != 2)
         return false;
 
+    /// If right table is already filled and will be used for lookups directly (e.g. StorageJoin) then runtime filter cannot be constructed
+    if (typeid_cast<JoinStepLogicalLookup *>(node.children[1]->step.get()))
+        return false;
+
     /// There are cases when either or both joined tables are replaced with const data at optimization time, e.g. when they are (SELECT 1 AS col).
     /// In such cases a header can be empty and all the const data is in the ActionsDAG in the Join step. There is no need (and no way) to build
     /// runtime filter in this scenario.
