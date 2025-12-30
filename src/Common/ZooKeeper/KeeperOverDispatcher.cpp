@@ -88,7 +88,7 @@ void KeeperOverDispatcher::removeRecursive(
 void KeeperOverDispatcher::exists(
     const String & path,
     ExistsCallback callback,
-    WatchCallbackPtr watch)
+    WatchCallbackPtrOrEventPtr watch)
 {
     if (watch)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
@@ -113,7 +113,7 @@ void KeeperOverDispatcher::exists(
 void KeeperOverDispatcher::get(
     const String & path,
     GetCallback callback,
-    WatchCallbackPtr watch)
+    WatchCallbackPtrOrEventPtr watch)
 {
     if (watch)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
@@ -164,7 +164,7 @@ void KeeperOverDispatcher::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtr watch)
+    WatchCallbackPtrOrEventPtr watch)
 {
     if (watch)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
@@ -284,5 +284,25 @@ void KeeperOverDispatcher::multi(
     keeper_dispatcher->registerSession(session_id, response_callback);
     keeper_dispatcher->putRequest(request, session_id, false);
 }
+
+void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
+{
+    const auto request = std::make_shared<ZooKeeperGetACLRequest>();
+    request->path = path;
+
+    const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
+
+    auto response_callback = [callback](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    {
+        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
+            return;
+
+        callback(dynamic_cast<const GetACLResponse &>(*response));
+    };
+
+    keeper_dispatcher->registerSession(session_id, response_callback);
+    keeper_dispatcher->putLocalReadRequest(request, session_id);
+}
+
 
 }

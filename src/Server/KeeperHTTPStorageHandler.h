@@ -19,7 +19,7 @@ class IServer;
 class KeeperHTTPStorageHandler : public HTTPRequestHandler
 {
 public:
-    KeeperHTTPStorageHandler(const IServer & server_, std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
+    KeeperHTTPStorageHandler(const IServer & server_, const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -32,7 +32,7 @@ private:
     void performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const;
     void performZooKeeperSetRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
     void performZooKeeperCreateRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
-    void performZooKeeperRemoveRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
+    void performZooKeeperRemoveRequest(const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponse & response) const;
 
     LoggerPtr log;
     const IServer & server;
@@ -40,6 +40,7 @@ private:
     std::shared_ptr<zkutil::ZooKeeper> keeper_client;
     Poco::Timespan session_timeout;
     Poco::Timespan operation_timeout;
+    size_t max_request_size = 0;
 };
 
 }

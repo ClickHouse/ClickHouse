@@ -4,16 +4,17 @@
 
 #include "IServer.h"
 
-#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <IO/HTTPCommon.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Coordination/CoordinationSettings.h>
 
 #include <memory>
 
@@ -22,9 +23,16 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 max_request_size;
+}
+
+namespace
+{
 Poco::JSON::Object statToJSON(const Coordination::Stat & stat)
 {
     Poco::JSON::Object result;
@@ -48,7 +56,7 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
     Poco::URI uri(request.getURI());
     const auto query_params = uri.getQueryParameters();
     const auto version_param
-        = std::find_if(query_params.begin(), query_params.begin(), [](const auto & param) { return param.first == "version"; });
+        = std::ranges::find_if(query_params, [](const auto & param) { return param.first == "version"; });
     if (version_param == query_params.end())
         return std::nullopt;
 
@@ -62,16 +70,28 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
     }
 }
 
-std::string getRawBytesFromRequest(HTTPServerRequest & request)
+std::string getRawBytesFromRequest(HTTPServerRequest & request, const size_t max_request_size)
 {
     std::string request_data;
-    char ch = 0;
-    while (request.getStream().read(ch))
-        request_data += ch;
+    auto stream = request.getStream();
+
+    if (max_request_size > 0)
+    {
+        LimitReadBuffer limited_stream(*stream, LimitReadBuffer::Settings{
+            .read_no_more = max_request_size,
+            .expect_eof = false,
+            .excetion_hint = "request body is too large"});
+        readStringUntilEOF(request_data, limited_stream);
+    }
+    else
+    {
+        readStringUntilEOF(request_data, *stream);
+    }
+
     return request_data;
 }
 
-bool setErrorResponseForZKCode(Coordination::Error error, HTTPServerResponse & response)
+bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerResponse & response)
 {
     switch (error)
     {
@@ -80,6 +100,10 @@ bool setErrorResponseForZKCode(Coordination::Error error, HTTPServerResponse & r
         case Coordination::Error::ZNONODE:
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "Node not found.");
             *response.send() << "Requested node not found.\n";
+            return true;
+        case Coordination::Error::ZNODEEXISTS:
+            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_CONFLICT, "Node already exists.");
+            *response.send() << "Node already exists.\n";
             return true;
         case Coordination::Error::ZBADVERSION:
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_CONFLICT, "Version conflict.");
@@ -91,8 +115,9 @@ bool setErrorResponseForZKCode(Coordination::Error error, HTTPServerResponse & r
             return true;
     }
 }
+}
 
-KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
+KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_)
     : log(getLogger("KeeperHTTPStorageHandler"))
     , server(server_)
     , keeper_dispatcher(keeper_dispatcher_)
@@ -102,6 +127,7 @@ KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, std:
     , operation_timeout(
           server.config().getUInt("keeper_server.http_control.storage.operation_timeout", Coordination::DEFAULT_OPERATION_TIMEOUT_MS)
           * Poco::Timespan::MILLISECONDS)
+    , max_request_size(keeper_dispatcher_->getKeeperContext()->getCoordinationSettings()[CoordinationSetting::max_request_size])
 {
     keeper_client = zkutil::ZooKeeper::create_from_impl(
         std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, operation_timeout));
@@ -138,10 +164,12 @@ void KeeperHTTPStorageHandler::performZooKeeperRequest(
 void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
     Coordination::Stat stat;
-    bool exits = keeper_client->exists(storage_path, &stat);
 
-    if (!exits)
+    if (!keeper_client->exists(storage_path, &stat))
+    {
         setErrorResponseForZKCode(Coordination::Error::ZNONODE, response);
+        return;
+    }
 
     Poco::JSON::Object response_json;
     response_json.set("stat", statToJSON(stat));
@@ -182,10 +210,11 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
 void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const
 {
     String result;
-    bool exits = keeper_client->tryGet(storage_path, result);
-
-    if (!exits)
+    if (!keeper_client->tryGet(storage_path, result))
+    {
         setErrorResponseForZKCode(Coordination::Error::ZNONODE, response);
+        return;
+    }
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
     response.setContentType("application/octet-stream");
@@ -207,7 +236,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
         return;
     }
 
-    const auto error = keeper_client->trySet(storage_path, getRawBytesFromRequest(request), maybe_request_version.value());
+    const auto error = keeper_client->trySet(storage_path, getRawBytesFromRequest(request, max_request_size), maybe_request_version.value());
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -220,7 +249,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
-    const auto error = keeper_client->tryCreate(storage_path, getRawBytesFromRequest(request), zkutil::CreateMode::Persistent);
+    const auto error = keeper_client->tryCreate(storage_path, getRawBytesFromRequest(request, max_request_size), zkutil::CreateMode::Persistent);
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -231,7 +260,7 @@ void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
-    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
+    const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponse & response) const
 {
     const auto maybe_request_version = getVersionFromRequest(request);
     if (!maybe_request_version.has_value())
@@ -255,7 +284,7 @@ void KeeperHTTPStorageHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 try
 {
-    static const auto uri_segments_prefix_length = 3;  /// /api/v1/storage
+    static constexpr auto uri_segments_prefix_length = 3;  /// /api/v1/storage
     static const std::unordered_map<std::string, Coordination::OpNum> supported_storage_operations = {
         {"exists", Coordination::OpNum::Exists},
         {"list", Coordination::OpNum::List},
@@ -297,7 +326,7 @@ try
 
     std::string storage_path;
     for (size_t i = uri_segments_prefix_length + 1; i < uri_segments.size(); ++i)
-        storage_path += ("/" + uri_segments[i]);
+        storage_path += "/" + uri_segments[i];
     if (storage_path.empty())
         storage_path = "/";
 

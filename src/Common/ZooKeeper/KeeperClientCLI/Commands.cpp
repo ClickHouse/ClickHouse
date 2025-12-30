@@ -1,8 +1,8 @@
 
-#include <Commands.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
+#include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 #include <queue>
-#include <KeeperClient.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
@@ -797,7 +797,7 @@ class CPMVROperation
     }
 
 public:
-    CPMVROperation(String src_, String dest_, bool remove_src_, KeeperClient * client_)
+    CPMVROperation(String src_, String dest_, bool remove_src_, KeeperClientBase * client_)
         : src(std::move(src_)), dest(std::move(dest_)), remove_src(remove_src_), client(client_)
     {
     }
@@ -862,7 +862,7 @@ private:
     String src;
     String dest;
     bool remove_src = false;
-    KeeperClient * client = nullptr;
+    KeeperClientBase * client = nullptr;
 
     bool is_completed = false;
     uint64_t failed_tries_count = 0;
@@ -911,7 +911,7 @@ bool CPRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
     return true;
 }
 
-void CPRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void CPRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
@@ -963,7 +963,7 @@ bool MVRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
     return true;
 }
 
-void MVRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void MVRCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
     auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
@@ -984,7 +984,7 @@ bool GetAclCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     return true;
 }
 
-void GetAclCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+void GetAclCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
     String path;
     if (!query->args.empty())

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Client/LineReader.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 

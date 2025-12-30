@@ -1,5 +1,3 @@
-#include "Commands.h"
-#include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -8,8 +6,8 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/Util/HelpFormatter.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
+#include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 
 
 namespace DB

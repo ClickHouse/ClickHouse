@@ -1,5 +1,5 @@
-#include <Parser.h>
-#include <KeeperClient.h>
+#include <Common/ZooKeeper/KeeperClientCLI/Parser.h>
+#include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>

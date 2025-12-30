@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parser.h>
+#include <Common/ZooKeeper/KeeperClientCLI/Parser.h>
 
 namespace DB
 {
@@ -287,7 +287,7 @@ class CPRCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -315,7 +315,7 @@ class MVRCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
@@ -329,7 +329,7 @@ class GetAclCommand : public IKeeperClientCommand
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
-    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
     String getHelpMessage() const override
     {
