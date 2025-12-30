@@ -53,7 +53,7 @@ The dashboard provides:
 
 - **Path**: `/ready` (configurable)
 - **Method**: GET
-- **Description**: Health check endpoint for load balancers and orchestration tools
+- **Description**: Health check endpoint
 
 Success response (HTTP 200):
 ```json
