@@ -2539,7 +2539,9 @@ class ClickHouseCluster:
             return result
         else:
             assert self.docker_client is not None
-            exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
+            _kwargs = dict(kwargs)
+            _kwargs.pop("timeout", None)
+            exec_id = self.docker_client.api.exec_create(container_id, cmd, **_kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
