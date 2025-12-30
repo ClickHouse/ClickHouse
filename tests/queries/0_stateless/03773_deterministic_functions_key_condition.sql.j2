@@ -26,8 +26,17 @@ VALUES (
     '017adbc0-98b5-0000-3f74-619a368fe65d',
     '017adbc0-98b5-0000-3f74-619a368fe65d',
     'page_view',
-    now64(6, 'UTC'),
+    toDateTime64('2026-01-01 00:00:00', 6, 'UTC'),
     1
+);
+
+INSERT INTO events (uuid, person_id, event, timestamp, team_id)
+VALUES (
+    '017adbc0-98b5-0000-3f74-619a368fe65g',
+    '017adbc0-98b5-0000-3f74-619a368fe65a',
+    'page_view',
+    toDateTime64('2026-01-01 00:00:01', 6, 'UTC'),
+    3
 );
 
 SELECT count()
@@ -245,6 +254,8 @@ ENGINE = MergeTree
 ORDER BY toUUID(p);
 
 INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65a');
 
 SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
 

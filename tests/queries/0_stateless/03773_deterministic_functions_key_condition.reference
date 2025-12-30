@@ -18,8 +18,16 @@ VALUES (
     '017adbc0-98b5-0000-3f74-619a368fe65d',
     '017adbc0-98b5-0000-3f74-619a368fe65d',
     'page_view',
-    now64(6, 'UTC'),
+    toDateTime64('2026-01-01 00:00:00', 6, 'UTC'),
     1
+);
+INSERT INTO events (uuid, person_id, event, timestamp, team_id)
+VALUES (
+    '017adbc0-98b5-0000-3f74-619a368fe65g',
+    '017adbc0-98b5-0000-3f74-619a368fe65a',
+    'page_view',
+    toDateTime64('2026-01-01 00:00:01', 6, 'UTC'),
+    3
 );
 SELECT count()
 FROM events e
@@ -37,24 +45,24 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) in [4512983270581420426, 4512983270581420426])
-            Parts: 0/1
-            Granules: 0/1
+            Parts: 0/2
+            Granules: 0/2
             Search Algorithm: generic exclusion search
           Ranges: 0
 SELECT count()
 FROM events e
 WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
-1
+2
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -67,21 +75,21 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Ranges: 1
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
-1
+2
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -94,20 +102,20 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) not in [4512983270581420426, 4512983270581420426])
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
@@ -124,18 +132,18 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: generic exclusion search
           Ranges: 1
 SELECT count()
@@ -154,24 +162,24 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: generic exclusion search
           Ranges: 1
 SELECT count()
 FROM events e
 WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
-0
+1
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -184,24 +192,24 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) notIn 2-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SELECT count()
 FROM events e
 WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
-0
+1
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -214,20 +222,20 @@ Expression ((Project names + Projection))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: not((cityHash64(person_id) in 2-element set))
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
     pod String
@@ -528,6 +536,7 @@ CREATE TABLE test_dag_execution
 ENGINE = MergeTree
 ORDER BY toUUID(p);
 INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65a');
 SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
 0
 EXPLAIN indexes = 1
@@ -540,9 +549,9 @@ Expression ((Project names + Projection))
         Indexes:
           PrimaryKey
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Ranges: 1
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 1
 EXPLAIN indexes = 1
@@ -557,8 +566,8 @@ Expression ((Project names + Projection))
             Keys:
               toUUID(p)
             Condition: (toUUID(p) in 1-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: binary search
           Ranges: 1
 SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
@@ -575,12 +584,12 @@ Expression ((Project names + Projection))
             Keys:
               toUUID(p)
             Condition: (toUUID(p) in 1-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: binary search
           Ranges: 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
-0
+1
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 Expression ((Project names + Projection))
@@ -593,12 +602,12 @@ Expression ((Project names + Projection))
             Keys:
               toUUID(p)
             Condition: (toUUID(p) notIn 1-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-0
+1
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
 Expression ((Project names + Projection))
@@ -611,10 +620,10 @@ Expression ((Project names + Projection))
             Keys:
               toUUID(p)
             Condition: not((toUUID(p) in 1-element set))
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SET enable_analyzer = 0;
 DROP TABLE IF EXISTS events;
 CREATE TABLE events
@@ -633,8 +642,16 @@ VALUES (
     '017adbc0-98b5-0000-3f74-619a368fe65d',
     '017adbc0-98b5-0000-3f74-619a368fe65d',
     'page_view',
-    now64(6, 'UTC'),
+    toDateTime64('2026-01-01 00:00:00', 6, 'UTC'),
     1
+);
+INSERT INTO events (uuid, person_id, event, timestamp, team_id)
+VALUES (
+    '017adbc0-98b5-0000-3f74-619a368fe65g',
+    '017adbc0-98b5-0000-3f74-619a368fe65a',
+    'page_view',
+    toDateTime64('2026-01-01 00:00:01', 6, 'UTC'),
+    3
 );
 SELECT count()
 FROM events e
@@ -652,24 +669,24 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) in [4512983270581420426, 4512983270581420426])
-            Parts: 0/1
-            Granules: 0/1
+            Parts: 0/2
+            Granules: 0/2
             Search Algorithm: generic exclusion search
           Ranges: 0
 SELECT count()
 FROM events e
 WHERE person_id < '017adbc0-98b5-0000-3f74-619a368fe65e';
-1
+2
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -682,21 +699,21 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Ranges: 1
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id != '017adbc0-98b5-0000-3f74-619a368fe65e';
-1
+2
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -709,20 +726,20 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) not in [4512983270581420426, 4512983270581420426])
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SELECT count()
 FROM events e
 WHERE person_id IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
@@ -739,18 +756,18 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: generic exclusion search
           Ranges: 1
 SELECT count()
@@ -769,24 +786,24 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) in 2-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: generic exclusion search
           Ranges: 1
 SELECT count()
 FROM events e
 WHERE person_id NOT IN (toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
-0
+1
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -799,24 +816,24 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: (cityHash64(person_id) notIn 2-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SELECT count()
 FROM events e
 WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
-0
+1
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -829,20 +846,20 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           MinMax
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
           PrimaryKey
             Keys:
               cityHash64(person_id)
             Condition: not((cityHash64(person_id) in 2-element set))
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
     pod String
@@ -1143,6 +1160,7 @@ CREATE TABLE test_dag_execution
 ENGINE = MergeTree
 ORDER BY toUUID(p);
 INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65d');
+INSERT INTO test_dag_execution VALUES ('017adbc0-98b5-0000-3f74-619a368fe65a');
 SELECT count() FROM test_dag_execution WHERE p = 'NOT-a-uuid';
 0
 EXPLAIN indexes = 1
@@ -1155,9 +1173,9 @@ Expression ((Projection + Before ORDER BY))
         Indexes:
           PrimaryKey
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Ranges: 1
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE p IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 1
 EXPLAIN indexes = 1
@@ -1172,8 +1190,8 @@ Expression ((Projection + Before ORDER BY))
             Keys:
               toUUID(p)
             Condition: (toUUID(p) in 1-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: binary search
           Ranges: 1
 SELECT count() FROM test_dag_execution WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
@@ -1190,12 +1208,12 @@ Expression ((Projection + Before ORDER BY))
             Keys:
               toUUID(p)
             Condition: (toUUID(p) in 1-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 1/2
+            Granules: 1/2
             Search Algorithm: binary search
           Ranges: 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
-0
+1
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 Expression ((Projection + Before ORDER BY))
@@ -1208,12 +1226,12 @@ Expression ((Projection + Before ORDER BY))
             Keys:
               toUUID(p)
             Condition: (toUUID(p) notIn 1-element set)
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-0
+1
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
 Expression ((Projection + Before ORDER BY))
@@ -1226,7 +1244,7 @@ Expression ((Projection + Before ORDER BY))
             Keys:
               toUUID(p)
             Condition: not((toUUID(p) in 1-element set))
-            Parts: 1/1
-            Granules: 1/1
+            Parts: 2/2
+            Granules: 2/2
             Search Algorithm: generic exclusion search
-          Ranges: 1
+          Ranges: 2
