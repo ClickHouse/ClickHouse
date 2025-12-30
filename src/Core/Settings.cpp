@@ -4361,8 +4361,8 @@ These functions can be transformed:
 - [isNull](/sql-reference/functions/functions-for-nulls#isNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [isNotNull](/sql-reference/functions/functions-for-nulls#isNotNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [mapKeys](/sql-reference/functions/tuple-map-functions#mapkeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
-- [mapValues](/sql-reference/functions/tuple-map-functions#mapvalues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapKeys](/sql-reference/functions/tuple-map-functions#mapKeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapValues](/sql-reference/functions/tuple-map-functions#mapValues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -5482,6 +5482,7 @@ The engine family allowed in Cloud.
 - 1 - rewrite DDLs to use *ReplicatedMergeTree
 - 2 - rewrite DDLs to use SharedMergeTree
 - 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
+- 4 - same as 3, plus additionally use Alias instead of Distributed
 
 UInt64 to minimize public part
 )", 0) \
@@ -6343,6 +6344,9 @@ Only has an effect in ClickHouse Cloud. Use clients cache for write requests.
 )", 0) \
     DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
 Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
+)", 0) \
+    DECLARE(String, distributed_cache_file_cache_name, "", R"(
+Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
 Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
@@ -7445,6 +7449,15 @@ Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_run
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
 Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
+If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
+Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
+)", EXPERIMENTAL) \
+    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
+If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
 )", EXPERIMENTAL) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.

@@ -561,17 +561,12 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                     "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
             }
         }
-        else if (isS3QueueEngine() || isAzureQueueEngine())
-        {
-            next_bucket_path = fmt::format("{}queue{}/", rg.nextBool() ? "subdir/" : "", tname);
-        }
         else
         {
             /// S3 and Azure engines point to files
             bool used_partition = false;
-            const bool add_before = rg.nextBool();
 
-            chassert(isS3Engine() || isAzureEngine());
+            chassert(isAnyS3Engine() || isAnyAzureEngine());
             if (rg.nextBool())
             {
                 /// Use a subdirectory
@@ -584,19 +579,32 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 }
                 next_bucket_path += "/";
             }
-            next_bucket_path += "file";
-            next_bucket_path += add_before ? std::to_string(tname) : "";
-            if (has_partition_by && !used_partition && rg.nextBool())
+            if (rg.nextBool())
             {
-                next_bucket_path += PARTITION_STR;
+                const bool add_before = rg.nextBool();
+
+                next_bucket_path += "file";
+                next_bucket_path += add_before ? std::to_string(tname) : "";
+                if (has_partition_by && !used_partition && rg.nextBool())
+                {
+                    next_bucket_path += PARTITION_STR;
+                }
+                next_bucket_path += !add_before ? std::to_string(tname) : "";
+                if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
+                {
+                    next_bucket_path += "/";
+                }
             }
-            next_bucket_path += !add_before ? std::to_string(tname) : "";
+            if (rg.nextBool())
+            {
+                next_bucket_path += "*";
+            }
             if (rg.nextBool())
             {
                 next_bucket_path += ".data";
             }
         }
-        bucket_path = next_bucket_path;
+        bucket_path = std::move(next_bucket_path);
     }
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
@@ -700,7 +708,7 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
 
 String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
 {
-    if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
+    if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
         /// Replace PARTITION BY str
@@ -711,6 +719,12 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
                 partition_pos,
                 PARTITION_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+        }
+        /// Replace glob for number
+        const size_t glob_pos = res.rfind('*');
+        if (glob_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(glob_pos, 1, std::to_string(rg.randomInt<uint32_t>(0, 100)));
         }
         /// Use globs
         const size_t slash_pos = res.rfind('/');

@@ -3873,6 +3873,11 @@ CONV_FN(CheckTable, ct)
         ret += " SETTINGS ";
         SettingValuesToString(ret, ct.setting_values());
     }
+    if (ct.has_format())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(ct.format()).substr(4);
+    }
 }
 
 CONV_FN(DescribeStatement, ds)
@@ -3899,6 +3904,11 @@ CONV_FN(DescribeStatement, ds)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ds.setting_values());
+    }
+    if (ds.has_format())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(ds.format()).substr(4);
     }
 }
 
@@ -3956,6 +3966,11 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ot.setting_values());
+    }
+    if (ot.has_format())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(ot.format()).substr(4);
     }
 }
 
@@ -5479,6 +5494,11 @@ CONV_FN(ShowStatement, sh)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, sh.setting_values());
+    }
+    if (sh.has_format())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(sh.format()).substr(4);
     }
 }
 

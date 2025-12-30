@@ -443,11 +443,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
         }
-        if ((sfunc || afunc || lfunc) && !t.isAnyQueueEngine())
+        if (sfunc || afunc || lfunc)
         {
-            /// Queue tables don't support settings in table function counterparts
-            SettingValues * svs = nullptr;
-            const auto & engineSettings = allTableSettings.at(t.teng);
+            const auto & engineSettings = allTableSettings.at(
+                t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
 
             if (sfunc)
             {
@@ -461,10 +460,12 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 setObjectStoreParams<SQLTable, LocalFunc>(rg, t, lfunc);
             }
-            if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+            if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
             {
-                svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values());
-                generateSettingValues(rg, engineSettings, svs);
+                generateSettingValues(
+                    rg,
+                    engineSettings,
+                    sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values()));
             }
         }
     }
