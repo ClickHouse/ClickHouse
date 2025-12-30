@@ -20,9 +20,8 @@ namespace DB
 /// `AllocatorWithMemoryTracking`, which tracks memory using throwing methods of the `MemoryTracker`.
 
 template <typename T>
-using SafeList = std::list<T, AllocatorWithMemoryTracking<T>>;
+using StrictList = std::list<T, AllocatorWithMemoryTracking<T>>;
 
 template <typename T>
-using SafeVector = std::vector<T, AllocatorWithMemoryTracking<T>>;
-
+using StrictVector = std::vector<T, AllocatorWithMemoryTracking<T>>;
 }
