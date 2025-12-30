@@ -240,7 +240,8 @@ void Client::initialize(Poco::Util::Application & self)
         if (config().has("connection"))
             connection_name.emplace(config().getString("connection"));
 
-        const auto have_password = config().has("password");
+        const auto have_user = config().has("user");
+        const auto have_password_or_ssh_key = config().has("password") || config().has("ssh-key-file");
 
         /// Connection credentials overrides should be set via loaded_config.configuration to have proper order.
         auto overrides = parseConnectionsCredentials(configuration, default_host, connection_name);
@@ -255,16 +256,13 @@ void Client::initialize(Poco::Util::Application & self)
             else
                 configuration.setBool("no-secure", true);
         }
-        if (overrides.user.has_value())
+        if (overrides.user.has_value() && !have_user)
             configuration.setString("user", overrides.user.value());
-        if (overrides.password.has_value())
+        if (overrides.password.has_value() && !have_password_or_ssh_key)
             configuration.setString("password", overrides.password.value());
-        if (overrides.ssh_key_file.has_value())
-        {
-            if (!have_password) /// only override if no --password
-                configuration.setString("ssh-key-file", overrides.ssh_key_file.value());
-        }
-        if (overrides.ssh_key_passphrase.has_value())
+        if (overrides.ssh_key_file.has_value() && !have_password_or_ssh_key)
+            configuration.setString("ssh-key-file", overrides.ssh_key_file.value());
+        if (overrides.ssh_key_passphrase.has_value() && !have_password_or_ssh_key)
             configuration.setString("ssh-key-passphrase", overrides.ssh_key_passphrase.value());
         if (overrides.database.has_value())
             configuration.setString("database", overrides.database.value());
@@ -321,7 +319,7 @@ void Client::initialize(Poco::Util::Application & self)
         config().setString("user", env_user);
 
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
-    if (env_password && !config().has("password"))
+    if (env_password && !config().has("password") && !config().has("ssh-key-file"))
         config().setString("password", env_password);
 
     if (env_host && !config().has("host"))
@@ -920,6 +918,9 @@ void Client::processOptions(
     }
     else
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
+
+    if (config().has("password") && config().has("ssh-key-file"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--password' and '--ssh-key-file' cannot be specified at the same time");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.contains("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
