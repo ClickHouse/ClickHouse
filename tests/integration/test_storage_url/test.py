@@ -1,22 +1,52 @@
 import pytest
 import time
+import uuid
+import os
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.mock_servers import start_mock_servers
+
+METADATA_SERVER_HOSTNAME = "node_imds"
+METADATA_SERVER_PORT = 8080
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/conf.xml", "configs/named_collections.xml"],
+    main_configs=["configs/conf.xml", "configs/named_collections.xml", "configs/query_log.xml"],
     user_configs=["configs/users.xml"],
     with_nginx=True,
 )
+node_imds = cluster.add_instance(
+    "node_imds",
+    main_configs=["configs/imds_bootstrap.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"http://adminka:secretPasswordick@{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
+    },
+    stay_alive=True,
+)
+
+
+def start_metadata_server(started_cluster):
+    script_dir = os.path.join(os.path.dirname(__file__), "metadata_servers")
+    start_mock_servers(
+        started_cluster,
+        script_dir,
+        [
+            (
+                "simple_server.py",
+                METADATA_SERVER_HOSTNAME,
+                METADATA_SERVER_PORT,
+            )
+        ],
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_node():
     try:
         cluster.start()
+        start_metadata_server(cluster)
         node1.query(
             "insert into table function url(url1) partition by column3 values (1, 2, 3), (3, 2, 1), (1, 3, 2)"
         )
@@ -53,6 +83,24 @@ def test_url_cluster():
         f"select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_3', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"
     )
     assert result.strip() == "1\t2\t3"
+
+
+def test_url_cluster_secure():
+    query_id = f"{uuid.uuid4()}"
+
+    url = f"http://adminka:secretPasswordick@{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}"
+    node1.query(
+        f"CREATE TABLE leaked_secret_test (column1 UInt32, column2 UInt32, column3 UInt32) ENGINE = URL('{url}', 'TSV')",
+        query_id=query_id
+    )
+    node1.query("SYSTEM FLUSH LOGS")
+
+    result = node1.query(
+        f"select query from clusterAllReplicas(test_cluster_one_shard_three_replicas_localhost,system.query_log) where query_id='{query_id}'"
+    )
+
+    assert 'leaked_secret_test' in result
+    assert 'secretPasswordick' not in result
 
 
 def test_url_cluster_with_named_collection():
