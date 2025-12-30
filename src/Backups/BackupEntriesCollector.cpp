@@ -806,7 +806,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
         /// Skip table data for refreshable materialized view targets.
         auto dependents = DatabaseCatalog::instance().getReferentialDependents(info.storage->getStorageID());
-        auto is_mv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
+        auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
         {
             auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
             if (!table || table->getName() != "MaterializedView")
@@ -818,18 +818,14 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
             return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
         };
 
-        for (const auto & dependent : dependents)
+        if (!dependents.empty()
+            && std::all_of(
+                dependents.begin(),
+                dependents.end(),
+                [&](const auto & dependent) { return is_rmv_targeting_table(dependent, info.storage); }))
         {
-            if (is_mv_targeting_table(dependent, info.storage))
-            {
-                LOG_TRACE(
-                    log,
-                    "Skipping table data for {} (a target of {}.{} materialized view)",
-                    name.getFullName(),
-                    dependent.database_name,
-                    dependent.table_name);
-                return false;
-            }
+            LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", name.getFullName());
+            return false;
         }
         return true;
     };
