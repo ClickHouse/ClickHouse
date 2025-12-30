@@ -593,8 +593,6 @@ FROM test_data;
         documentation_varPopStable
     });
 
-Here's the in-source documentation format for stddevSampStable:
-cpp/// stddevSampStable documentation
     FunctionDocumentation::Description description_stddevSampStable = R"(
 The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md). Unlike [stddevSamp](../reference/stddevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
