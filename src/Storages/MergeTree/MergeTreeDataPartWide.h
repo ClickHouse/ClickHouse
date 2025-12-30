@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Storages/MergeTree/IDataPartStorage.h"
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -18,6 +18,7 @@ class MergeTreeDataPartWide : public IMergeTreeDataPart
 public:
     MergeTreeDataPartWide(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -54,9 +55,9 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const;
+    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
 
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
 };
 

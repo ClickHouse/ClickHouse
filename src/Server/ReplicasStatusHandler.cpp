@@ -55,13 +55,13 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         bool ok = true;
         WriteBufferFromOwnString message;
 
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
             /// Check if database can contain replicated tables
-            if (!db.second->canContainMergeTreeTables())
+            if (db.second->isExternal())
                 continue;
 
             // Note that in case `async_load_databases = true` we do not want replica status handler to be hanging

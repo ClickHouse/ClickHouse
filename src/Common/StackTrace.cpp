@@ -1,4 +1,4 @@
-#include "StackTrace.h"
+#include <Common/StackTrace.h>
 
 #include <base/FnTraits.h>
 #include <base/constexpr_helpers.h>
@@ -30,7 +30,7 @@
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
-#include "execinfo.h"
+#include <execinfo.h>
 #endif
 
 namespace
@@ -226,13 +226,15 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #elif defined(__loongarch64)
     return reinterpret_cast<void *>(context.uc_mcontext.__pc);
+#elif defined(__e2k__)
+    return reinterpret_cast<void *>(context.uc_mcontext.cr0_hi);
 #else
     return nullptr;
 #endif
 }
 
 void StackTrace::forEachFrame(
-    const StackTrace::FramePointers & frame_pointers,
+    const FramePointers & frame_pointers,
     size_t offset,
     size_t size,
     std::function<void(const Frame &)> callback,
@@ -294,7 +296,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
             current_frame.symbol = demangle(symbol->name);
 
         for (const auto & frame : inline_frames)
@@ -381,12 +383,18 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
 }
 
+StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
+    : size(size_)
+    , offset(offset_)
+    , frame_pointers(std::move(frame_pointers_))
+{}
+
 void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)
-    size = backtrace(frame_pointers.data(), capacity);
+    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
-    size = unw_backtrace(frame_pointers.data(), capacity);
+    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
@@ -430,14 +438,14 @@ String demangleAndCollapseNames(std::optional<std::string_view> file, const char
 
 struct StackTraceRefTriple
 {
-    const StackTrace::FramePointers & pointers;
+    const FramePointers & pointers;
     size_t offset;
     size_t size;
 };
 
 struct StackTraceTriple
 {
-    StackTrace::FramePointers pointers;
+    FramePointers pointers;
     size_t offset;
     size_t size;
 };
@@ -515,7 +523,7 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers{};
+    FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
@@ -551,7 +559,7 @@ static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+static String toStringCached(const FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
 
@@ -607,7 +615,7 @@ std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offse
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers{};
+    FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     return toStringCached(frame_pointers, offset, size);

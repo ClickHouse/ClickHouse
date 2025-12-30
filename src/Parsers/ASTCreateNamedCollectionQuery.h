@@ -26,6 +26,8 @@ public:
 
     std::string getCollectionName() const;
 
+    bool hasSecretParts() const override { return true; }
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };

@@ -6,6 +6,7 @@ keywords: ['TemplateIgnoreSpaces']
 output_format: false
 slug: /interfaces/formats/TemplateIgnoreSpaces
 title: 'TemplateIgnoreSpaces'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -24,7 +25,7 @@ It's possible to read `JSON` using this format if the values of columns have the
 This format is suitable only for input.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 The following request can be used for inserting data from its output example of format [JSON](/interfaces/formats/JSON):
 
@@ -45,4 +46,4 @@ FORMAT TemplateIgnoreSpaces
 {${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

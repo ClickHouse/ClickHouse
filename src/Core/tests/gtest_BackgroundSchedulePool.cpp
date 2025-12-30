@@ -8,7 +8,7 @@ using namespace DB;
 
 TEST(BackgroundSchedulePool, Schedule)
 {
-    auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
     std::atomic<size_t> counter;
     std::mutex mutex;
@@ -16,7 +16,7 @@ TEST(BackgroundSchedulePool, Schedule)
 
     static const size_t ITERATIONS = 10;
     BackgroundSchedulePoolTaskHolder task;
-    task = pool->createTask("test", [&]
+    task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
         ++counter;
         if (counter < ITERATIONS)
@@ -30,11 +30,13 @@ TEST(BackgroundSchedulePool, Schedule)
     condvar.wait(lock, [&] { return counter == ITERATIONS; });
 
     ASSERT_EQ(counter, ITERATIONS);
+
+    pool->join();
 }
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
 {
-    auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
     std::atomic<size_t> counter;
     std::mutex mutex;
@@ -42,7 +44,7 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
 
     static const size_t ITERATIONS = 10;
     BackgroundSchedulePoolTaskHolder task;
-    task = pool->createTask("test", [&]
+    task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
         ++counter;
         if (counter < ITERATIONS)
@@ -52,10 +54,14 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    std::unique_lock lock(mutex);
-    condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    {
+        std::unique_lock lock(mutex);
+        condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    }
 
     ASSERT_EQ(counter, ITERATIONS);
+
+    pool->join();
 }
 
 /// Previously leads to UB
@@ -65,10 +71,11 @@ TEST(BackgroundSchedulePool, ActivateAfterTerminitePool)
     BackgroundSchedulePoolTaskHolder delayed_task;
 
     {
-        auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-        task = pool->createTask("test", [&] {});
-        delayed_task = pool->createTask("delayed_test", [&] {});
+        task = pool->createTask(StorageID::createEmpty(), "test", [&] {});
+        delayed_task = pool->createTask(StorageID::createEmpty(), "delayed_test", [&] {});
+        pool->join();
     }
 
     ASSERT_EQ(task->activateAndSchedule(), false);
@@ -84,13 +91,14 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
     BackgroundSchedulePoolTaskHolder delayed_task;
 
     {
-        auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-        task = pool->createTask("test", [&] {});
-        delayed_task = pool->createTask("delayed_test", [&] {});
+        task = pool->createTask(StorageID::createEmpty(), "test", [&] {});
+        delayed_task = pool->createTask(StorageID::createEmpty(), "delayed_test", [&] {});
 
         ASSERT_EQ(task->activate(), true);
         ASSERT_EQ(delayed_task->activate(), true);
+        pool->join();
     }
 
     ASSERT_EQ(task->schedule(), false);

@@ -32,8 +32,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_zstd_qat_codec;
-    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -180,14 +178,8 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
 {
     ExpressionAndSets result;
     auto ttl_string = ast->formatWithSecretsOneLine();
-    auto context_copy = Context::createCopy(context);
-    /// FIXME All code here will work with old analyzer, however for TTL
-    /// with subqueries it's possible that new analyzer will be enabled in ::read method
-    /// of underlying storage when all other parts of infra are not ready for it
-    /// (built with old analyzer).
-    context_copy->setSetting("allow_experimental_analyzer", false);
-    auto syntax_analyzer_result = TreeRewriter(context_copy).analyze(ast, columns);
-    ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context_copy);
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
+    ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
     auto dag = analyzer.getActionsDAG(false);
 
     const auto * col = &dag.findInOutputs(ast->getColumnName());
@@ -197,7 +189,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     dag.getOutputs() = {col};
     dag.removeUnusedActions();
 
-    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context_copy));
+    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
     result.sets = analyzer.getPreparedSets();
 
     return result;
@@ -354,7 +346,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs]);
         }
     }
 

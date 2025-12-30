@@ -48,19 +48,19 @@ CrashWriter::CrashWriter(Poco::Util::LayeredConfiguration & config)
     }
 }
 
-void CrashWriter::onSignal(int sig, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+void CrashWriter::onSignal(int sig, std::string_view error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
     if (instance)
         instance->sendError(Type::SIGNAL, sig, error_message, frame_pointers, offset, size);
 }
 
-void CrashWriter::onException(int code, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+void CrashWriter::onException(int code, std::string_view format_string, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
     if (instance)
-        instance->sendError(Type::EXCEPTION, code, error_message, frame_pointers, offset, size);
+        instance->sendError(Type::EXCEPTION, code, format_string, frame_pointers, offset, size);
 }
 
-void CrashWriter::sendError(Type type, int sig_or_error, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
+void CrashWriter::sendError(Type type, int sig_or_error, std::string_view error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
     auto logger = getLogger("CrashWriter");
     if (!instance)

@@ -1,4 +1,4 @@
-#include "YAMLRegExpTreeDictionarySource.h"
+#include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
 #include <cstdlib>
 #include <iterator>
@@ -8,8 +8,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <Poco/Logger.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/DataTypeArray.h"
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
 
 #if USE_YAML_CPP
 
@@ -306,14 +306,16 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 {
 }
 
-QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
+BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(parseYAMLAsRegExpTree(node, key_name, structure)));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    return io;
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const

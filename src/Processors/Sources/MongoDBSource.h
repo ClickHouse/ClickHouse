@@ -24,7 +24,7 @@ public:
         const std::string & collection_name,
         const bsoncxx::document::view_or_value & query,
         const mongocxx::options::find & options,
-        const Block & sample_block_,
+        SharedHeader sample_block_,
         const UInt64 & max_block_size_);
 
     ~MongoDBSource() override;

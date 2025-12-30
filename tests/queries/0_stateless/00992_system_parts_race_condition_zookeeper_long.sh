@@ -26,61 +26,74 @@ $CLICKHOUSE_CLIENT -q "
 function thread1()
 {
     # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
-    while true; do $CLICKHOUSE_CLIENT --query "SELECT * FROM system.parts FORMAT Null"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM system.parts FORMAT Null"
+    done
 }
 
 function thread2()
 {
-    while true; do $CLICKHOUSE_CLIENT --query "ALTER TABLE alter_table0 ADD COLUMN h String DEFAULT '0'; ALTER TABLE alter_table0 MODIFY COLUMN h UInt64; ALTER TABLE alter_table0 DROP COLUMN h;"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT --query "ALTER TABLE alter_table0 ADD COLUMN h String DEFAULT '0'; ALTER TABLE alter_table0 MODIFY COLUMN h UInt64; ALTER TABLE alter_table0 DROP COLUMN h;"
+    done
 }
 
 function thread3()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table0 SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(100000)"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table0 SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(100000)"
+    done
 }
 
 function thread4()
 {
-    while true; do $CLICKHOUSE_CLIENT --receive_timeout=1 -q "OPTIMIZE TABLE alter_table0 FINAL" | grep -Fv "Timeout exceeded while receiving data from server"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT --receive_timeout=1 -q "OPTIMIZE TABLE alter_table0 FINAL" | grep -Fv "Timeout exceeded while receiving data from server"
+    done
 }
 
 function thread5()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 DELETE WHERE cityHash64(a,b,c,d,e,g) % 1048576 < 524288"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 DELETE WHERE cityHash64(a,b,c,d,e,g) % 1048576 < 524288"
+    done
 }
-
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f thread1;
-export -f thread2;
-export -f thread3;
-export -f thread4;
-export -f thread5;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
 
 wait
 check_replication_consistency "alter_table" "count(), sum(a), sum(b), round(sum(c))"

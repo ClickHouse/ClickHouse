@@ -9,7 +9,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
-#include "Poco/String.h"
+#include <Poco/String.h>
 
 #include <fmt/format.h>
 

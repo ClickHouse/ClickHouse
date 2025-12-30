@@ -3,26 +3,30 @@ description: 'When performing queries, ClickHouse uses different caches.'
 sidebar_label: 'Caches'
 sidebar_position: 65
 slug: /operations/caches
-title: 'Cache Types'
+title: 'Cache types'
+keywords: ['cache']
+doc_type: 'reference'
 ---
 
-# Cache Types
+# Cache types
 
-When performing queries, ClickHouse uses different caches.
+When performing queries, ClickHouse uses different caches to speed up queries
+and reduce the need to read from or write to disk.
 
-Main cache types:
+The main cache types are:
 
-- `mark_cache` — Cache of marks used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
-- `uncompressed_cache` — Cache of uncompressed data used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
+- `mark_cache` — Cache of [marks](/development/architecture#merge-tree) used by table engines of the [`MergeTree`](../engines/table-engines/mergetree-family/mergetree.md) family.
+- `uncompressed_cache` — Cache of uncompressed data used by table engines of the [`MergeTree`](../engines/table-engines/mergetree-family/mergetree.md) family.
 - Operating system page cache (used indirectly, for files with actual data).
 
-Additional cache types:
+There are also a host of additional cache types:
 
 - DNS cache.
-- [Regexp](../interfaces/formats.md#data-format-regexp) cache.
+- [Regexp](/interfaces/formats/Regexp) cache.
 - Compiled expressions cache.
-- [Vector Similarity Index](../engines/table-engines/mergetree-family/annindexes.md) cache.
-- [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
+- [Vector similarity index](../engines/table-engines/mergetree-family/annindexes.md) cache.
+- [Text index](../engines/table-engines/mergetree-family/textindexes.md#caching) cache.
+- [Avro format](/interfaces/formats/Avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
@@ -31,4 +35,5 @@ Additional cache types:
 - [Query condition cache](query-condition-cache.md).
 - Format schema cache.
 
-To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md) statements.
+Should you wish to drop one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
+you can use the [`SYSTEM DROP ... CACHE`](../sql-reference/statements/system.md) statement.

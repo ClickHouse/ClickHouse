@@ -55,9 +55,9 @@ REGISTER_FUNCTION(BitNot)
     FunctionDocumentation::Description description = "Performs the bitwise NOT operation.";
     FunctionDocumentation::Syntax syntax = "bitNot(a)";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "Value for which to apply bitwise NOT operation. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)/[String](/sql-reference/data-types/string)."}
+        {"a", "Value for which to apply bitwise NOT operation.", {"(U)Int*", "Float*", "String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of `~a` i.e `a` with bits flipped.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of `~a` i.e `a` with bits flipped."};
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
 SELECT
@@ -73,7 +73,7 @@ SELECT
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitNot>(documentation);
 }

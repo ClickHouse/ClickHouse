@@ -152,7 +152,7 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         {
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(toString(change.value));
+            pair.push_back(fieldToString(change.value));
             settings_map.push_back(std::move(pair));
         }
     }
@@ -238,7 +238,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 {
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
-    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 
@@ -255,8 +255,8 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         ddl_task_status_paths.push_back(ddl_zookeeper_path / task_path / "finished");
     }
 
-    auto ddl_tasks_info = zookeeper->get(ddl_task_full_paths);
-    auto ddl_task_statuses = zookeeper->getChildren(ddl_task_status_paths);
+    auto ddl_tasks_info = zookeeper->tryGet(ddl_task_full_paths);
+    auto ddl_task_statuses = zookeeper->tryGetChildren(ddl_task_status_paths);
 
     for (size_t i = 0; i < ddl_task_paths.size(); ++i)
     {
@@ -307,7 +307,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             for (const auto & host_id_str : finished_hosts.names)
                 finished_status_paths.push_back(fs::path(task.entry_path) / "finished" / host_id_str);
 
-            auto finished_statuses = zookeeper->get(finished_status_paths);
+            auto finished_statuses = zookeeper->tryGet(finished_status_paths);
             for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
             {
                 const auto & host_id_str = finished_hosts.names[host_idx];

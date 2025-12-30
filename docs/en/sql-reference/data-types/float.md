@@ -5,6 +5,7 @@ sidebar_label: 'Float32 | Float64 | BFloat16'
 sidebar_position: 4
 slug: /sql-reference/data-types/float
 title: 'Float32 | Float64 | BFloat16 Types'
+doc_type: 'reference'
 ---
 
 :::note
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS float_vs_decimal
    my_float Float64,
    my_decimal Decimal64(3)
 )
-Engine=MergeTree
+ENGINE=MergeTree
 ORDER BY tuple();
 
 # Generate 1 000 000 random numbers with 2 decimal places and store them as a float and as a decimal
@@ -51,7 +52,7 @@ Float types in ClickHouse have the following aliases:
 
 When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 
-## Using Floating-point Numbers {#using-floating-point-numbers}
+## Using floating-point numbers {#using-floating-point-numbers}
 
 - Computations with floating-point numbers might produce a rounding error.
 
@@ -117,7 +118,7 @@ See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-refer
 It is useful for machine learning and AI applications.
 
 ClickHouse supports conversions between `Float32` and `BFloat16` which 
-can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#tofloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#tobfloat16) functions.
+can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#toFloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#toBFloat16) functions.
 
 :::note
 Most other operations are not supported.

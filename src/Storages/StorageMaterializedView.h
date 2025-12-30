@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Parsers/IAST_fwd.h>
 
 #include <Common/CurrentThread.h>
@@ -109,6 +110,15 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
+
+    std::optional<String> getCoordinationPath() const
+    {
+        if (!refresher.ptr)
+            return std::nullopt;
+        return refresher.ptr->getCoordinationPath();
+    }
+
+    bool isRefreshable() const { return refresher.ptr != nullptr; }
 
 private:
     mutable std::mutex target_table_id_mutex;

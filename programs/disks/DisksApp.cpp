@@ -1,13 +1,14 @@
-#include "DisksApp.h"
+#include <DisksApp.h>
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
-#include "Common/filesystemHelpers.h"
+#include <Common/SignalHandlers.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
-#include "DisksClient.h"
-#include "ICommand.h"
-#include "ICommand_fwd.h"
+#include <DisksClient.h>
+#include <ICommand.h>
+#include <ICommand_fwd.h>
 
 #include <cstring>
 #include <exception>
@@ -22,13 +23,15 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
-#include "Loggers/OwnFormattingChannel.h"
-#include "Loggers/OwnPatternFormatter.h"
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include "config.h"
 
-#include "Utils.h"
+#include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+
+#include <Poco/FileChannel.h>
 
 namespace DB
 {
@@ -201,7 +204,7 @@ bool DisksApp::processQueryText(const String & text)
     {
         return true;
     }
-    if (exit_strings.find(text) != exit_strings.end())
+    if (exit_strings.contains(text))
         return false;
     CommandPtr command;
 
@@ -341,17 +344,17 @@ void DisksApp::registerCommands()
 
 void DisksApp::processOptions()
 {
-    if (options.count("config-file"))
+    if (options.contains("config-file"))
         config().setString("config-file", options["config-file"].as<String>());
-    if (options.count("disk"))
+    if (options.contains("disk"))
         config().setString("disk", options["disk"].as<String>());
-    if (options.count("save-logs"))
+    if (options.contains("save-logs"))
         config().setBool("save-logs", true);
-    if (options.count("log-level"))
+    if (options.contains("log-level"))
         config().setString("log-level", options["log-level"].as<String>());
-    if (options.count("test-mode"))
+    if (options.contains("test-mode"))
         config().setBool("test-mode", true);
-    if (options.count("query"))
+    if (options.contains("query"))
         query = std::optional{options["query"].as<String>()};
 }
 
@@ -448,7 +451,7 @@ void DisksApp::init(const std::vector<String> & common_arguments)
 
     po::notify(options);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         printEntryHelpMessage();
         printAvailableCommandsHelpMessage();
@@ -539,6 +542,20 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
 
+    /// Print stacktrace in case of crash
+    {
+        HandledSignals::instance().setupTerminateHandler();
+        HandledSignals::instance().setupCommonDeadlySignalHandlers();
+
+        fatal_channel_ptr = new Poco::SplitterChannel;
+        fatal_console_channel_ptr = new Poco::ConsoleChannel;
+        fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+
+        fatal_log = createLogger("DisksApp", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+        signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
+        signal_listener_thread.start(*signal_listener);
+    }
+
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", &logger()));
 
@@ -570,6 +587,17 @@ DisksApp::~DisksApp()
     client.reset(nullptr);
     if (global_context)
         global_context->shutdown();
+
+    try
+    {
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
+        HandledSignals::instance().reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void DisksApp::runInteractiveTestMode()

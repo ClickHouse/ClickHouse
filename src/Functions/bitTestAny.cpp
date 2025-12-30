@@ -27,10 +27,10 @@ The logical OR between two bits is true if at least one of the input bits is tru
     )";
     FunctionDocumentation::Syntax syntax = "bitTestAny(a, index1[, index2, ... , indexN])";
     FunctionDocumentation::Arguments arguments = {
-        {"a", "An integer value. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
-        {"index1[, index2, ... , indexN]", "One or multiple positions of bits. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
+        {"a", "An integer value.", {"(U)Int8/16/32/64"}},
+        {"index1, ...", "One or multiple positions of bits.", {"(U)Int8/16/32/64"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the logical disjunction. [`UInt8`](../data-types/int-uint.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the logical disjunction", {"UInt8"}};
     FunctionDocumentation::Examples examples = {{"Usage example 1", "SELECT bitTestAny(43, 0, 2);",
         R"(
 ┌─bin(43)──┬─bitTestAny(43, 0, 2)─┐
@@ -45,7 +45,7 @@ The logical OR between two bits is true if at least one of the input bits is tru
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitTestAny>(documentation);
 }

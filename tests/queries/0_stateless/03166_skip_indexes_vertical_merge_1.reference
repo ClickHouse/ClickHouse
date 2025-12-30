@@ -14,6 +14,7 @@ Expression ((Project names + Projection))
             Description: minmax GRANULARITY 1
             Parts: 2/2
             Granules: 4/32
+          Ranges: 2
 200
 Expression ((Project names + Projection))
   Aggregating
@@ -30,4 +31,5 @@ Expression ((Project names + Projection))
             Description: minmax GRANULARITY 1
             Parts: 1/1
             Granules: 4/32
+          Ranges: 1
 4	1	3

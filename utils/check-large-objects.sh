@@ -13,5 +13,6 @@ if find $1 -name '*.o' | xargs wc -c | grep --regexp='\.o$' | sort -rn | awk '{ 
     | grep -v -f <(printf "%s\n" "${TU_EXCLUDES[@]}")
 then
     echo "^ It's not allowed to have so large translation units."
+    echo "  To bypass this check, configure the build with -DCHECK_LARGE_OBJECT_SIZES=0"
     exit 1
 fi

@@ -7,7 +7,7 @@ namespace DB
 class ExtremesStep : public ITransformingStep
 {
 public:
-    explicit ExtremesStep(const Header & input_header_);
+    explicit ExtremesStep(const SharedHeader & input_header_);
 
     String getName() const override { return "Extremes"; }
 

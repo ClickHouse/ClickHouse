@@ -5,7 +5,6 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Loggers/Loggers.h>
 #include <Common/Config/ConfigProcessor.h>
 
 

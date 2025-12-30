@@ -12,13 +12,15 @@ using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
 class LazilyReadStep : public ITransformingStep
 {
 public:
-    LazilyReadStep(const Header & input_header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_);
+    LazilyReadStep(const SharedHeader & input_header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_);
 
     String getName() const override { return "LazilyRead"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override;

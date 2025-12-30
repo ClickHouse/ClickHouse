@@ -4,6 +4,7 @@ sidebar_label: 'Build on Linux'
 sidebar_position: 10
 slug: /development/build
 title: 'How to Build ClickHouse on Linux'
+doc_type: 'guide'
 ---
 
 # How to Build ClickHouse on Linux
@@ -27,7 +28,7 @@ The minimum recommended Ubuntu version for development is 24.04 LTS.
 
 The tutorial assumes that you have the ClickHouse repository and all submodules locally checked out.
 
-## Install Prerequisites {#install-prerequisites}
+## Install prerequisites {#install-prerequisites}
 
 First, see the generic [prerequisites documentation](developer-instruction.md).
 
@@ -37,7 +38,7 @@ You can optionally install ccache to let the build reuse already compiled object
 
 ```bash
 sudo apt-get update
-sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
 ## Install the Clang compiler {#install-the-clang-compiler}
@@ -67,8 +68,8 @@ As with C++ dependencies, ClickHouse uses vendoring to control exactly what's in
 Although in release mode any rust modern rustup toolchain version should work with these dependencies, if you plan to enable sanitizers you must use a version that matches the exact same `std` as the one used in CI (for which we vendor the crates):
 
 ```bash
-rustup toolchain install nightly-2024-12-01
-rustup default nightly-2024-12-01
+rustup toolchain install nightly-2025-07-07
+rustup default nightly-2025-07-07
 rustup component add rust-src
 ```
 ## Build ClickHouse {#build-clickhouse}
@@ -85,8 +86,8 @@ You can have several different directories (e.g. `build_release`, `build_debug`,
 Optional: If you have multiple compiler versions installed, you can optionally specify the exact compiler to use.
 
 ```sh
-export CC=clang-19
-export CXX=clang++-19
+export CC=clang-21
+export CXX=clang++-21
 ```
 
 For development purposes, debug builds are recommended.
@@ -97,10 +98,14 @@ Also, internal exceptions of type `LOGICAL_ERROR` crash immediately instead of f
 cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
+:::note
+If you wish to use a debugger such as gdb, add `-D DEBUG_O_LEVEL="0"` to the above command to remove all compiler optimizations, which can interfere with gdb's ability to view/access variables.
+:::
+
 Run ninja to build:
 
 ```sh
-ninja clickhouse-server clickhouse-client
+ninja clickhouse
 ```
 
 If you like to build all the binaries (utilities and tests), run ninja without parameters:
@@ -139,7 +144,7 @@ If you get `Connection refused` message on macOS or FreeBSD, try specifying host
 clickhouse client --host 127.0.0.1
 ```
 
-## Advanced Options {#advanced-options}
+## Advanced options {#advanced-options}
 
 ### Minimal Build {#minimal-build}
 
@@ -206,7 +211,7 @@ cmake --build build
 You can run any build locally in an environment similar to CI using:
 
 ```bash
-python -m ci.praktika "BUILD_JOB_NAME"
+python -m ci.praktika run "BUILD_JOB_NAME"
 ```
 where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
 
@@ -215,6 +220,4 @@ and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
 
 The build output will be placed in `./ci/tmp/`.
 
-It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
-
-
+It works on both AMD and ARM architectures and requires no additional dependencies other than Python with `requests` module available and Docker.

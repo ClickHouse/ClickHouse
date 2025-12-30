@@ -35,7 +35,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -53,6 +52,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -81,14 +82,14 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
-static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
+static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
     auto match_mode = use_positions_to_match ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
 
-    auto get_converting_dag = [mode = match_mode](const Block & block_, const Block & header_)
+    auto get_converting_dag = [mode = match_mode, context](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -97,14 +98,15 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
             mode,
+            context,
             true);
     };
 
     if (use_positions_to_match)
-        pipe.addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
+        pipe.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
 
     auto convert_actions = std::make_shared<ExpressionActions>(get_converting_dag(pipe.getHeader(), header));
-    pipe.addSimpleTransform([&](const Block & cur_header, Pipe::StreamType) -> ProcessorPtr
+    pipe.addSimpleTransform([&](const SharedHeader & cur_header, Pipe::StreamType) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(cur_header, convert_actions);
     });
@@ -174,14 +176,14 @@ static String formattedAST(const ASTPtr & ast)
 
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(
-        /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
     ast->format(buf, ast_format_settings);
     return buf.str();
 }
 
 ReadFromRemote::ReadFromRemote(
     ClusterProxy::SelectStreamFactory::Shards shards_,
-    Block header_,
+    SharedHeader header_,
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
     ASTPtr table_func_ptr_,
@@ -392,7 +394,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                         /// and it should be built before sending the external tables.
 
                         auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
-                        NamesAndTypesList columns = header.getNamesAndTypesList();
+                        NamesAndTypesList columns = header->getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
@@ -474,7 +476,8 @@ static void addFilters(
     data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
 }
 
-void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
+void ReadFromRemote::addLazyPipe(
+    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -489,9 +492,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
-    std::shared_ptr<const ActionsDAG> pushed_down_filters;
-    if (filter_actions_dag)
-        pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
+    std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
     const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
     const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
@@ -508,7 +509,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             my_stage = stage, my_storage = storage,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters]() mutable
+            pushed_down_filters, parallel_marshalling_threads]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -518,6 +519,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         // In case reading from parallel replicas is allowed, lazy case is not triggered,
         // so in this case it's required to get only one connection from the pool
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        std::exception_ptr exception_ptr;
         try
         {
             if (my_table_func_ptr)
@@ -529,6 +531,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         }
         catch (const Exception & ex)
         {
+            exception_ptr = std::current_exception();
             if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "Connections to remote replicas of local shard {} failed, will use stale local replica", my_shard.shard_info.shard_num);
@@ -571,11 +574,17 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
                 auto plan = createLocalPlan(
-                    query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
         }
+
+        /// We assumed when we caught an exception during obtaining connections, that it was possible to fallback to local replica,
+        /// but it turns out to be false (likely due to manual triggering of use_delayed_remote_source failpoint),
+        /// so we need to rethrow exception here, to avoid creating connections with zero replicas
+        if (exception_ptr)
+            std::rethrow_exception(exception_ptr);
 
         std::vector<IConnectionPool::Entry> connections;
         connections.reserve(try_results.size());
@@ -596,17 +605,19 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
 
-        auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
+        auto pipe = createRemoteSourcePipe(
+            remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
         QueryPipelineBuilder builder;
         builder.init(std::move(pipe));
         return builder;
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
+    addConvertingActions(pipes.back(), *out_header, context);
 }
 
-void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
+void ReadFromRemote::addPipe(
+    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -688,8 +699,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
             pipes.emplace_back(
-                createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
+                createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
+            addConvertingActions(pipes.back(), *output_header, context);
         }
     }
     else
@@ -723,21 +734,23 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
         pipes.emplace_back(
-            createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-        addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
+            createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
+        addConvertingActions(pipes.back(), *out_header, context);
     }
 }
 
-Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header)
+Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header)
 {
     Pipes pipes;
 
     for (const auto & shard : used_shards)
     {
+        const size_t parallel_marshalling_threads
+            = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
         if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header);
+            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads);
         else
-            addPipe(pipes, shard, out_header);
+            addPipe(pipes, shard, out_header, parallel_marshalling_threads);
     }
 
     return pipes;
@@ -745,7 +758,7 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipes pipes = addPipes(shards, *output_header);
+    Pipes pipes = addPipes(shards, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -786,14 +799,14 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
             size_t num_rows = col->size();
 
             for (size_t row = 0; row < num_rows; ++row)
-                settings.out << prefix << col->getDataAt(row).toView() << '\n';
+                settings.out << prefix << col->getDataAt(row) << '\n';
         }
     }
 }
 
 void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
-    Block header{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}};
+    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
     ClusterProxy::SelectStreamFactory::Shards used_shards;
 
     for (const auto & shard : shards)
@@ -828,7 +841,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ClusterPtr cluster_,
     const StorageID & storage_id_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
-    Block header_,
+    SharedHeader header_,
     QueryProcessingStage::Enum stage_,
     ContextMutablePtr context_,
     ThrottlerPtr throttler_,
@@ -869,7 +882,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     }
 
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
-    setStepDescription(std::move(description));
+    setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
@@ -884,7 +897,7 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipes pipes = addPipes(query_ast, *output_header);
+    Pipes pipes = addPipes(query_ast, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -894,7 +907,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     pipeline.init(std::move(pipe));
 }
 
-Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & out_header)
+Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const SharedHeader & out_header)
 {
     Pipes pipes;
 
@@ -927,7 +940,9 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
             replica_info.number_of_current_replica,
             pools_to_use[i]->getAddress());
 
-        Pipe pipe = createPipeForSingeReplica(pools_to_use[i], ast, replica_info, out_header);
+        const size_t parallel_marshalling_threads
+            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+        Pipe pipe = createPipeForSingeReplica(pools_to_use[i], ast, replica_info, out_header, parallel_marshalling_threads);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));
     }
@@ -958,7 +973,8 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
 }
 
 Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
-    const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header)
+    const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
+    size_t parallel_marshalling_threads)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -989,14 +1005,14 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     remote_query_executor->setMainTable(storage_id);
 
     Pipe pipe
-        = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
-    addConvertingActions(pipe, out_header);
+        = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
+    addConvertingActions(pipe, *out_header, context);
     return pipe;
 }
 
 void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
-    Block header{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}};
+    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
     auto explain_query = makeExplain(options, query_ast);
     formatExplain(settings, addPipes(explain_query, header));

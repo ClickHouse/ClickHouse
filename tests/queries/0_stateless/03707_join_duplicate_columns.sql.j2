@@ -1,0 +1,56 @@
+SET enable_analyzer = 1;
+
+{% for join_use_nulls in ["0", "1"] -%}
+{% for join_algorithm in ["DEFAULT", "'full_sorting_merge'"] -%}
+
+SET join_use_nulls = {{ join_use_nulls }};
+SET join_algorithm = {{ join_algorithm }};
+
+SELECT * FROM (SELECT number, number, number + 1 as e, e, e FROM numbers(5)) AS t1
+INNER JOIN (SELECT number, number, number, number + 1 as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (number)
+ORDER BY ALL;
+
+SELECT count() FROM (SELECT number, number, number + 1 as e, e, e FROM numbers(5)) AS t1
+INNER JOIN (SELECT number, number, number, number + 1 as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (number)
+ORDER BY ALL;
+
+SELECT k FROM (SELECT number, number, number + 1 as e, e, e FROM numbers(5)) AS t1
+INNER JOIN (SELECT number, number, number, number + 1 as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (number)
+ORDER BY ALL;
+
+SELECT e FROM (SELECT number, number, number + 1 as e, e, e FROM numbers(5)) AS t1
+INNER JOIN (SELECT number, number, number, number + 1 as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (number)
+ORDER BY ALL;
+
+SELECT * FROM (SELECT number, number, number + 1 as k, k, k FROM numbers(5)) AS t1
+INNER JOIN (SELECT number, number, number, number + 1 as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (k)
+ORDER BY ALL;
+
+SELECT * FROM (SELECT number, number, CAST(number + 1, 'UInt32') as k, k, k FROM numbers(5)) AS t1
+LEFT JOIN (SELECT number, number, number, CAST(number + 1, 'Int32') as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (k)
+ORDER BY ALL;
+
+SELECT * FROM (SELECT number, number, CAST(number + 1, 'UInt32') as k, k, k FROM numbers(5)) AS t1
+RIGHT JOIN (SELECT number, number, number, CAST(number + 1, 'Int32') as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (k)
+ORDER BY ALL;
+
+SELECT * FROM (SELECT number, number, CAST(number + 1, 'UInt32') as k, k, k FROM numbers(5)) AS t1
+FULL JOIN (SELECT number, number, number, CAST(number + 1, 'Int32') as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (k)
+ORDER BY ALL;
+
+
+SELECT * FROM (SELECT number, number, number + 1 as k, k, k FROM numbers(5)) AS t1
+INNER JOIN (SELECT number, number, number, number + 1 as k, k, k, k FROM numbers(2, 5)) AS t2
+USING (k, number)
+ORDER BY ALL;
+
+{% endfor -%}
+{% endfor -%}

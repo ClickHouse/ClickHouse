@@ -1,5 +1,6 @@
 -- Tags: stateful, no-replicated-database, no-parallel
 -- Tag no-replicated-database: Does not support renaming of multiple tables in single query
+-- Tag: no-parallel: Changes stateful tables
 
 RENAME TABLE test.hits TO test.visits_tmp, test.visits TO test.hits, test.visits_tmp TO test.visits;
 

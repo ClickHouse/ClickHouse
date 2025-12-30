@@ -59,10 +59,12 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
+        /// Real cancellation can happen only in case of exception
+        /// In other cases the data will be read via finalizeAndGetSizes()
         if (compressed_buf)
-            compressed_buf->finalize();
+            compressed_buf->cancel();
         if (null_buf)
-            null_buf->finalize();
+            null_buf->cancel();
     }
 };
 
@@ -128,7 +130,6 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = columns[0];
@@ -164,7 +165,6 @@ public:
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t) const override
     {
         const auto & column = columns[0];
-
 
         createBuffersIfNeeded(place);
 
@@ -210,9 +210,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-        {
             ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
-        }
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }
@@ -247,7 +245,12 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
                     ErrorCodes::BAD_QUERY_PARAMETER,
                     "Multiple numeric type parameters specified for {}. Expected at most one numeric type (block_size_bytes) parameter",
                     name);
-            block_size_bytes = param.safeGet<UInt64>();
+
+            UInt64 new_block_size_bytes = param.safeGet<UInt64>();
+            if (new_block_size_bytes == 0)
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater then 0");
+
+            block_size_bytes = new_block_size_bytes;
         }
         else
         {
@@ -263,8 +266,74 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Estimates the compression ratio of a given column without compressing it.
+
+:::note
+For the examples below, the result will differ based on the default compression codec of the server.
+See [Column Compression Codecs](/sql-reference/statements/create/table#column_compression_codec).
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "Column of any type.", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage with default codec",
+        R"(
+CREATE TABLE compression_estimate_example
+(
+    `number` UInt64
+)
+ENGINE = MergeTree()
+ORDER BY number
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO compression_estimate_example
+SELECT number FROM system.numbers LIMIT 100_000;
+
+SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
+        )",
+        R"(
+┌───────────estimate─┐
+│ 1.9988506608699999 │
+└────────────────────┘
+        )"
+    },
+    {
+        "Using a specific codec",
+        R"(
+SELECT estimateCompressionRatio('T64')(number) AS estimate FROM compression_estimate_example
+        )",
+        R"(
+┌──────────estimate─┐
+│ 3.762758101688538 │
+└───────────────────┘
+        )"
+    },
+    {
+        "Using multiple codecs",
+        R"(
+SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compression_estimate_example
+        )",
+        R"(
+┌───────────estimate─┐
+│ 143.60078980434392 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}});
+        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
 }
 }

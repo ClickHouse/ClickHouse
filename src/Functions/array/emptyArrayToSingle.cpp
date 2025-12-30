@@ -236,12 +236,9 @@ namespace
                     }
                     else
                     {
-                        res_data.push_back(0);  /// An empty string, including zero at the end.
-
                         if (nullable)
                             res_null_map->push_back(1);
 
-                        ++res_string_prev_offset;
                         res_string_offsets.push_back(res_string_prev_offset);
 
                         ++res_array_prev_offset;
@@ -396,8 +393,8 @@ REGISTER_FUNCTION(EmptyArrayToSingle)
 Accepts an empty array and returns a one-element array that is equal to the default value.
     )";
     FunctionDocumentation::Syntax syntax = "emptyArrayToSingle(arr)";
-    FunctionDocumentation::Arguments arguments = {{"arr", "An empty array. [`Array(T)`](/sql-reference/data-types/array)"}};
-    FunctionDocumentation::ReturnedValue returned_value = "An array with a single value of the Array's default type.";
+    FunctionDocumentation::Arguments arguments = {{"arr", "An empty array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"An array with a single value of the Array's default type.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Basic example", R"(
 CREATE TABLE test (
   a Array(Int32),
@@ -417,7 +414,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEmptyArrayToSingle>(documentation);
 }

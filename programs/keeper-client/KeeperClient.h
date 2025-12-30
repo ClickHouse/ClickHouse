@@ -21,6 +21,11 @@ protected:
     void runInteractive();
     void runInteractiveReplxx();
     void runInteractiveInputStream();
+
+    void connectToKeeper();
+
+    bool processQueryText(const String & text, bool is_interactive);
+
     std::vector<String> getCompletions(const String & prefix) const;
 
     zkutil::ZooKeeperArgs zk_args;

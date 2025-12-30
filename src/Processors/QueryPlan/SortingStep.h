@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -47,11 +48,13 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+
+        bool operator==(const Settings & other) const = default;
     };
 
     /// Full
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         SortDescription description_,
         UInt64 limit_,
         const Settings & settings_,
@@ -59,7 +62,7 @@ public:
 
     /// Full with partitioning
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
@@ -67,7 +70,7 @@ public:
 
     /// FinishSorting
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
@@ -75,7 +78,7 @@ public:
 
     /// MergingSorted
     SortingStep(
-        const Header & input_header,
+        const SharedHeader & input_header,
         SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0,
@@ -111,13 +114,17 @@ public:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
-        bool skip_partial_sort = false);
+        bool skip_partial_sort = false,
+        TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+    void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
@@ -127,7 +134,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_);
+        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -158,6 +165,8 @@ private:
     bool always_read_till_end = false;
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
+
+    TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
 };

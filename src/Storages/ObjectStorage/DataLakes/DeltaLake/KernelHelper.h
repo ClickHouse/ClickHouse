@@ -47,7 +47,7 @@ namespace DB
 /// Depending on the type of the passed StorageObjectStorage::IConfiguration object,
 /// it would create S3KernelHelper, AzureKernelHelper, etc.
 DeltaLake::KernelHelperPtr getKernelHelper(
-    const StorageObjectStorage::ConfigurationPtr & configuration,
+    const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage);
 
 }

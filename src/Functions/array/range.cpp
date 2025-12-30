@@ -588,7 +588,7 @@ The supported types are:
         {"start", "Optional. The first element of the array. Required if `step` is used. Default value: `0`."},
         {"end", "Required. The number before which the array is constructed."},
         {"step", "Optional. Determines the incremental step between each element in the array. Default value: `1`."},};
-    FunctionDocumentation::ReturnedValue returned_value = "Array of numbers from `start` to `end - 1` by `step`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Array of numbers from `start` to `end - 1` by `step`.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);", R"(
 ┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
 │ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
@@ -596,7 +596,7 @@ The supported types are:
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRange>(documentation);
 }

@@ -39,6 +39,8 @@ namespace ErrorCodes
         UInt64 error_time_ms = 0;
         /// Message for the last error.
         std::string message;
+        // Format string of the last error.
+        std::string format_string;
         /// Stacktrace for the last error.
         FramePointers trace;
         /// Initial query id if available.
@@ -55,7 +57,7 @@ namespace ErrorCodes
     {
     public:
         ErrorPair get();
-        size_t increment(bool remote, const std::string & message, const FramePointers & trace);
+        size_t increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace);
         void extendedMessage(bool remote, size_t error_index, const std::string & new_message);
 
     private:
@@ -72,7 +74,7 @@ namespace ErrorCodes
     /// Increments the counter of errors for a specified error code, and remembers some information about the last error.
     /// The function returns the index of the passed error among other errors with the same code and the same `remote` flag
     /// since the program startup.
-    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace);
+    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace);
 
     /// Extends the error message after it was set by a call to increment().
     /// The result of that call to increment() should be passed to this function as `error_index`.

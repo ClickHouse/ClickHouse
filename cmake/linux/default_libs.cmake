@@ -3,40 +3,47 @@
 
 set (DEFAULT_LIBS "-nodefaultlibs")
 
-# We need builtins from Clang
-execute_process (COMMAND
-    ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
-    OUTPUT_VARIABLE BUILTINS_LIBRARY
-    COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-# Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
-if (SANITIZE STREQUAL undefined)
-    string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
+set (BUILTINS_LIBRARY "")
+if (USE_SYSTEM_COMPILER_RT)
+    # We need builtins from Clang
+    execute_process (COMMAND
+        ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
+        OUTPUT_VARIABLE BUILTINS_LIBRARY
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif ()
 
 if (NOT EXISTS "${BUILTINS_LIBRARY}")
-    set (BUILTINS_LIBRARY "-lgcc")
+    # In the past we used to fallback into using libgcc, which then required sysroot to include gcc libraries.
+    # Now we build the compiler-rt from source instead so we are independent of the target system's gcc.
+    include (cmake/build_clang_builtin.cmake)
+    build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
+elseif (SANITIZE STREQUAL undefined)
+    # Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
+    string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 
 if (OS_ANDROID)
     # pthread and rt are included in libc
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+message(STATUS "Builtins library: ${BUILTINS_LIBRARY}")
 
+# Link them first to have proper order for static linking.
+set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${BUILTINS_LIBRARY} -Wl,--no-whole-archive")
+
+# Other libraries go last
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
-# Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
-# Just make sure we have pthreads at all.
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
+add_library(Threads::Threads INTERFACE IMPORTED)
+set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
