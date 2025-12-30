@@ -47,6 +47,7 @@ struct DeterministicKeyTransformDag
     ExpressionActionsPtr actions;
     String output_name;
     DataTypePtr input_type;
+    String input_name;
 };
 
 /** Condition on the index.
@@ -431,14 +432,24 @@ private:
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
     /// specifies key column position / type. Besides that it produces the
-    /// chain of functions which should be executed on set, to transform it
-    /// into key column values.
-    bool canSetValuesBeWrappedByFunctions(
+    /// transformation DAG which should be executed on set elements, to
+    /// transform them into key column values.
+    bool canSetValuesBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        DeterministicKeyTransformDag & out_transform) const;
+
+    /// Same as canSetValuesBeWrappedByDeterministicFunctions(), but requires
+    /// the transformation DAG to be injective (so it doesn't relax the
+    /// condition).
+    bool canSetValuesBeWrappedByDeterministicInjectiveFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_res_column_type,
+        DeterministicKeyTransformDag & out_transform) const;
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
@@ -446,22 +457,19 @@ private:
     bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
     bool tryPrepareSetIndexForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out,
-        bool allow_constant_transformation);
+        RPNElement & out);
 
     void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation,
-        bool * out_disable_exact_set_evaluation);
+        bool & out_relaxed);
 
     /// Checks that the index can not be used.
     ///
