@@ -78,7 +78,7 @@ def test_http_commands_cli_response(started_cluster):
     assert response.status_code == 200
 
     with keeper_utils.KeeperClient.from_cluster(
-        cluster, keeper_ip=leader.ip_address, port=9182
+        cluster, keeper_ip=leader.ip_address, port=9181
     ) as client:
         assert client.get("foo") == "bar"
         client.rm("foo")
