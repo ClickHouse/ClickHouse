@@ -83,10 +83,13 @@ public:
 
     void finalizeImpl() override
     {
-        next();
-        /// Adaptive buffer: write an entry with a size that is a power of two.
-        if (offset())
-            writeDataChunk();
+        if (use_adaptive_buffer_size)
+        {
+            if (offset())
+                writeDataChunk();
+        }
+        else
+            next();
         closeFile(/* throw_if_error=*/true);
         endWritingFile();
     }
@@ -97,18 +100,21 @@ public:
 private:
     void nextImpl() override
     {
-        if (!available() && use_adaptive_buffer_size)
+        if (use_adaptive_buffer_size)
         {
-            if (memory.size() >= adaptive_max_buffer_size)
-                throw Exception(
-                    ErrorCodes::LIMIT_EXCEEDED,
-                    "Adaptive buffer size limit of {} bytes is exceeded for the file '{}'",
-                    adaptive_max_buffer_size,
-                    filename);
+            if (!available())
+            {
+                if (memory.size() == adaptive_max_buffer_size)
+                    throw Exception(
+                        ErrorCodes::LIMIT_EXCEEDED,
+                        "Adaptive buffer size limit of {} bytes is exceeded for the file '{}'",
+                        adaptive_max_buffer_size,
+                        filename);
 
-            /// Prevents overwriting the beginning of the chunk.
-            nextimpl_working_buffer_offset = offset();
-            resize(std::min(memory.size() * 2, adaptive_max_buffer_size));
+                /// Prevents overwriting the beginning of the chunk.
+                nextimpl_working_buffer_offset = offset();
+                resize(std::min(memory.size() * 2, adaptive_max_buffer_size));
+            }
             return;
         }
 

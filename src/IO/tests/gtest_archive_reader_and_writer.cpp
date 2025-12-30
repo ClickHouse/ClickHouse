@@ -683,6 +683,40 @@ TEST(TarArchiveReaderAndWriterTest, AdaptiveBufferPowerOfTwoSize)
     }
 }
 
+TEST(TarArchiveReaderAndWriterTest, AdaptiveBufferMaxCapacity)
+{
+    thread_local_rng.seed(42);
+
+    String archive_path = "archive.tar";
+    String file_path = "a.txt";
+    std::string contents = getRandomASCIIString(4096);
+    {
+        auto writer = createArchiveWriter(
+            archive_path,
+            /*archive_write_buffer_*/ nullptr,
+            /*buf_size_*/ 1024,
+            /*adaptive_buffer_max_size_*/ 4096);
+        {
+            auto out = writer->writeFile(file_path);
+            writeString(contents, *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    auto reader = createArchiveReader(archive_path);
+
+    ASSERT_TRUE(reader->fileExists(file_path));
+
+    auto file_info = reader->getFileInfo(file_path);
+    EXPECT_EQ(file_info.uncompressed_size, contents.size());
+    {
+        auto in = reader->readFile(file_path, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents);
+    }
+}
+
 TEST(SevenZipArchiveReaderTest, FileExists)
 {
     String archive_path = "archive.7z";
