@@ -74,7 +74,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (node.children.size() != 2)
         return false;
 
-    /// If right table is already prepared then runtime filter cannot be constructed
+    /// If right table is already filled and will be used for lookups directly (e.g. StorageJoin) then runtime filter cannot be constructed
     if (typeid_cast<JoinStepLogicalLookup *>(node.children[1]->step.get()))
         return false;
 
