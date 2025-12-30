@@ -8,6 +8,8 @@
 #    include <IO/WriteBufferFromFileBase.h>
 #    include <base/defines.h>
 
+#    include <mutex>
+
 
 namespace DB
 {

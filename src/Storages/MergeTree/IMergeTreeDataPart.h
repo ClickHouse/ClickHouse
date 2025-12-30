@@ -70,6 +70,8 @@ enum class DataPartRemovalState : uint8_t
 };
 
 /// Description of the data part.
+/// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
+///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
@@ -89,6 +91,7 @@ public:
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -102,7 +105,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
-    ColumnSizeByName getColumnSizes() const;
+    const ColumnSizeByName & getColumnSizes() const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -218,7 +221,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID(std::string_view token) const;
+    String getNewPartBlockID() const;
 
     /// Returns true if it's a zero level part.
     bool isZeroLevel() const { return info.min_block == info.max_block; }
@@ -470,7 +473,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -703,7 +707,7 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo();
+    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 

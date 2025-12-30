@@ -30,7 +30,6 @@ namespace
 class FunctionPrintf : public IFunction
 {
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr function_concat;
 
     struct Instruction
@@ -157,8 +156,9 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrintf>(context); }
 
-    explicit FunctionPrintf(ContextPtr context_)
-        : context(context_), function_concat(FunctionFactory::instance().get("concat", context)) { }
+    explicit FunctionPrintf(ContextPtr context)
+        : function_concat(FunctionFactory::instance().get("concat", context))
+    {}
 
     String getName() const override { return name; }
 
@@ -366,7 +366,7 @@ Literal `%` character can be escaped by `%%`.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPrintf>(documentation);
 }

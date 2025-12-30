@@ -271,6 +271,11 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
+    return getBucketForPath(path, buckets_num);
+}
+
+ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path, size_t buckets_num)
+{
     return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num);
 }
 
