@@ -34,7 +34,8 @@ public:
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
-        std::unique_ptr<MaterializedPostgreSQLSettings> settings_);
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_,
+        bool is_temporary_);
 
     String getEngineName() const override { return "MaterializedPostgreSQL"; }
 

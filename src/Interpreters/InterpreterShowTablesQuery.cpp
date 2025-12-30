@@ -239,6 +239,7 @@ BlockIO InterpreterShowTablesQuery::execute()
         query_context->setCurrentQueryId("");
         /// HACK To always show them in explicit "SHOW TABLES" queries
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        query_context->setSetting("show_others_temporary_databases_in_system_tables", true);
         return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
     }
 

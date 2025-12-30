@@ -112,11 +112,11 @@ std::string formattedAST(const ASTPtr & ast)
     return ast->formatWithSecretsOneLine();
 }
 
-void verifyTableId(const StorageID & table_id)
+void verifyTableId(const StorageID & table_id, ContextPtr context)
 {
     if (!table_id.hasUUID())
     {
-        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name, context);
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "KeeperMap cannot be used with '{}' database because it uses {} engine. Please use Atomic or Replicated database",
@@ -362,7 +362,7 @@ StorageKeeperMap::StorageKeeperMap(
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
-    verifyTableId(table_id);
+    verifyTableId(table_id, context_);
 
     setInMemoryMetadata(metadata);
 
@@ -1512,7 +1512,7 @@ Block StorageKeeperMap::getSampleBlock(const Names &) const
 
 void StorageKeeperMap::checkTableCanBeRenamed(const StorageID & new_name) const
 {
-    verifyTableId(new_name);
+    verifyTableId(new_name, Context::getGlobalContextInstance());
 }
 
 void StorageKeeperMap::rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)

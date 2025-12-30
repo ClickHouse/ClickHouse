@@ -66,7 +66,7 @@ protected:
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
-    DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
+    DatabaseWithOwnTablesBase(const String & name_, bool is_temporary_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);

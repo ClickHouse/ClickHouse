@@ -68,7 +68,7 @@ protected:
         for (; database_idx < databases->size(); ++database_idx)
         {
             database_name = databases->getDataAt(database_idx);
-            database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+            database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
 
             if (!database)
                 continue;

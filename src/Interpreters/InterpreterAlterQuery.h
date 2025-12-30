@@ -22,7 +22,7 @@ public:
 
     BlockIO execute() override;
 
-    static AccessRightsElements getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table);
+    static AccessRightsElements getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table, const ContextPtr & context);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 

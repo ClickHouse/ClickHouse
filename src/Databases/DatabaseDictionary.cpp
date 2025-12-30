@@ -56,8 +56,9 @@ namespace
     }
 }
 
-DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext())
+DatabaseDictionary::DatabaseDictionary(const String & name_, bool is_temporary_, ContextPtr context_)
+    : IDatabase(name_, is_temporary_)
+    , WithContext(context_->getGlobalContext())
     , log(getLogger("DatabaseDictionary(" + database_name + ")"))
 {
 }
@@ -145,7 +146,10 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQueryImpl() const
     String query;
     {
         WriteBufferFromString buffer(query);
-        buffer << "CREATE DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
+        buffer << "CREATE ";
+        if (isTemporary())
+            buffer << "TEMPORARY ";
+        buffer << "DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
         if (!comment.empty())
             buffer << " COMMENT " << backQuote(comment);
     }
@@ -165,6 +169,7 @@ void registerDatabaseDictionary(DatabaseFactory & factory)
     {
         return make_shared<DatabaseDictionary>(
             args.database_name,
+            args.is_temporary,
             args.context);
     };
     factory.registerDatabase("Dictionary", create_fn);

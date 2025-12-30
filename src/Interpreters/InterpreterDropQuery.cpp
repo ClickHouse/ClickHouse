@@ -4,6 +4,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/QueryLog.h>
 #include <IO/SharedThreadPools.h>
@@ -56,9 +57,10 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMerge;
 }
 
-static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
+static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists, ContextPtr context)
 {
-    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
+    const auto opts = GetDatabasesOptions{.skip_temporary_owner_check = context->isInternalQuery()};
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name, context, opts) : DatabaseCatalog::instance().getDatabase(database_name, context, opts);
 }
 
 
@@ -415,7 +417,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     const auto & database_name = query.getDatabase();
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
-    database = tryGetDatabase(database_name, query.if_exists);
+    database = tryGetDatabase(database_name, query.if_exists, getContext());
     if (!database)
         return {};
 
@@ -664,11 +666,12 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     AccessRightsElements required_access;
     const auto & drop = current_query_ptr->as<const ASTDropQuery &>();
 
+    if (requireTemporaryDatabaseAccessIfNeeded(required_access, drop.getDatabase(), getContext()))
+        return required_access;
+
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
+        if (drop.kind == ASTDropQuery::Kind::Detach || drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)

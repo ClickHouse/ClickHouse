@@ -12,7 +12,7 @@ doc_type: 'reference'
 Creates a new database.
 
 ```sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
+CREATE [TEMPORARY] DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
 ## Clauses {#clauses}
@@ -60,3 +60,24 @@ Result:
 │ db_comment │ The temporary database │
 └────────────┴────────────────────────┘
 ```
+
+### TEMPORARY {#temporary}
+Creates a temporary database that will be automatically deleted when the current session ends.
+
+Temporary databases are available to access only in the current session but may be visible to others in the system tables depending
+on the [show_others_temporary_databases_in_system_tables](/operations/settings/settings.md#show_others_temporary_databases_in_system_tables) setting.
+
+:::note
+Please note that the database name will be reserved, and you will not be able to create a new database with the same name, as with regular databases.
+:::
+
+[ON CLUSTER](#on-cluster) clause and [Replicated](../../../engines/database-engines/replicated.md) engines are not supported for temporary databases.
+
+After creation the user granted all permissions to the database.
+
+**See Also**
+
+- [allow_experimental_temporary_databases](/operations/settings/settings.md#allow_experimental_temporary_databases)
+- [show_others_temporary_databases_in_system_tables](/operations/settings/settings.md#show_others_temporary_databases_in_system_tables)
+- [temporary_databases_cleanup_async](/operations/server-configuration-parameters/settings.md/#temporary_databases_cleanup_async)
+- [temporary_databases_cleanup_interval_sec](/operations/server-configuration-parameters/settings.md/#temporary_databases_cleanup_interval_sec)

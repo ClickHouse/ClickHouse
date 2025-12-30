@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -104,8 +105,12 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
         {
             if (query.row_policy_names)
             {
+                const auto & context = getContext();
                 for (const auto & row_policy_name : query.row_policy_names->full_names)
-                    res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                {
+                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
+                        res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                }
             }
             return res;
         }

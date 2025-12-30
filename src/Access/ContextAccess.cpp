@@ -96,13 +96,18 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     {
         AccessFlags res = flags;
 
-        /// CREATE_TABLE => CREATE_VIEW, DROP_TABLE => DROP_VIEW, ALTER_TABLE => ALTER_VIEW
+        /// CREATE_DATABASE => CREATE_TEMPORARY_DATABASE, CREATE_TABLE => CREATE_VIEW, DROP_TABLE => DROP_VIEW, ALTER_TABLE => ALTER_VIEW
+        static const AccessFlags create_database = AccessType::CREATE_DATABASE;
+        static const AccessFlags create_temporary_database = AccessType::CREATE_TEMPORARY_DATABASE;
         static const AccessFlags create_table = AccessType::CREATE_TABLE;
         static const AccessFlags create_view = AccessType::CREATE_VIEW;
         static const AccessFlags drop_table = AccessType::DROP_TABLE;
         static const AccessFlags drop_view = AccessType::DROP_VIEW;
         static const AccessFlags alter_table = AccessType::ALTER_TABLE;
         static const AccessFlags alter_view = AccessType::ALTER_VIEW;
+
+        if (res & create_database)
+            res |= create_temporary_database;
 
         if (res & create_table)
             res |= create_view;
@@ -619,12 +624,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     const auto parameter_type = flags.getParameterType();
     if (parameter_type == AccessFlags::NONE)
     {
+        const auto & database_name = getDatabase(args...);
         /// Access to temporary tables is controlled in an unusual way, not like normal tables.
         /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
         /// and other grants are considered as always given.
         /// The DatabaseCatalog class won't resolve StorageID for temporary tables
         /// which shouldn't be accessed.
-        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            return access_granted();
+
+        /// Like to the temporary tables, but with temporary databases.
+        if (!database_name.empty() && context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(String(database_name))) // todo: copying here
             return access_granted();
     }
 
@@ -684,7 +694,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     struct PrecalculatedFlags
     {
-        const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
+        const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TEMPORARY_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
             | AccessType::TRUNCATE;
 
