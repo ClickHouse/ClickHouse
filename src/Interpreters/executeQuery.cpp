@@ -185,7 +185,6 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-    extern const SettingsUInt64Auto insert_quorum;
 }
 
 namespace ServerSetting
@@ -1501,7 +1500,6 @@ static BlockIO executeQueryImpl(
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
-
         bool quota_checked = false;
 
         if (async_insert)
@@ -1525,11 +1523,6 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Deduplication in dependent materialized view cannot work together with async inserts. "\
                         "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
-
-            if (settings[Setting::insert_quorum].valueOr(0) > 0)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Insert quorum cannot be used together with async inserts. " \
-                    "Please disable either `insert_quorum` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1575,13 +1568,6 @@ static BlockIO executeQueryImpl(
                 insert_query->tail = std::move(result.insert_data_buffer);
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
-        }
-
-        if (!async_insert && async_insert_enabled)
-        {
-            /// Invoke HTTP 100-Continue callback if it was not invoked yet
-            if (http_continue_callback && !internal)
-                http_continue_callback();
         }
 
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();

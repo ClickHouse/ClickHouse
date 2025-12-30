@@ -417,8 +417,6 @@ HNSW
 HSTS
 HTTPConnection
 HTTPThreads
-HTTPs
-HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
@@ -490,7 +488,6 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
-InterserverSecureThreads
 intExp
 intHash
 IntN
@@ -615,8 +612,6 @@ Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
-KeeperTCPSecureThreads
-KeeperTCPThreads
 Kerberos
 Khanna
 Kibana
@@ -974,6 +969,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+QATlib
 QBit
 QEMU
 QTCreator
@@ -1169,7 +1165,6 @@ TAVG
 TCPConnection
 TCPHandler
 TCPThreads
-TCPSecureThreads
 TDigest
 TINYINT
 TLSv
@@ -1337,6 +1332,7 @@ YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 ZCurve
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -2147,7 +2143,6 @@ gtid
 gunzip
 gzip
 gzipped
-GRPCThreads
 hackernews
 hadoop
 halfMD
@@ -2789,7 +2784,6 @@ proleptic
 prometheus
 prometheusQuery
 prometheusQueryRange
-PrometheusThreads
 proportionsZTest
 proto
 protobuf

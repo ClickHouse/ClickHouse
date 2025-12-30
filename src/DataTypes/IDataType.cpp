@@ -4,7 +4,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 
-#include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
@@ -313,8 +312,6 @@ SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) con
 
 SerializationPtr IDataType::getDefaultSerialization(SerializationPtr override_default) const
 {
-    checkStackSize();
-
     if (override_default)
         return override_default;
 

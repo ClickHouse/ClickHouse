@@ -1461,9 +1461,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
-                    projection_squashes[i].getHeader());
+                squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
             }
 
             if (squashed_chunk)
@@ -1529,9 +1527,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        auto squashed_chunk = Squashing::squash(
-            projection_squashes[i].flush(),
-            projection_squashes[i].getHeader());
+        auto squashed_chunk = Squashing::squash(projection_squashes[i].flush());
         if (squashed_chunk)
             writeTempProjectionPart(i, std::move(squashed_chunk));
     }

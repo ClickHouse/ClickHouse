@@ -26,8 +26,6 @@ public:
 
     void triggerCacheUpdate();
 
-    void truncate();
-
 private:
 
     TStorage & storage;

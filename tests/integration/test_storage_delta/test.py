@@ -72,7 +72,7 @@ S3_DATA = [
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("test_storage_delta")
+        pyspark.sql.SparkSession.builder.appName("spark_test")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog",
@@ -80,7 +80,7 @@ def get_spark():
         )
         .config(
             "spark.sql.catalog.spark_catalog.warehouse",
-            "/var/lib/clickhouse/user_files/test_storage_delta",
+            "/var/lib/clickhouse/user_files",
         )
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")

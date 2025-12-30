@@ -51,6 +51,8 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
+    /// This is a constructor which adds some steps to pipeline.
+    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
