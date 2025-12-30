@@ -43,11 +43,9 @@ DB::TLSHandler::TLSHandler(
     params.caLocation = config.getString(prefix + SSLManager::CFG_CA_LOCATION, "");
     if (params.caLocation.empty())
     {
-        LOG_ERROR(getLogger("stetsyuk"), "not found caLocation");
         auto ctx = SSLManager::instance().defaultServerContext();
         params.caLocation = ctx->getCAPaths().caLocation;
     }
-    LOG_INFO(getLogger("stetsyuk"), "found caLocation");
 
     // optional options for which we have defaults defined
     params.verificationMode = SSLManager::VAL_VER_MODE;
@@ -126,9 +124,8 @@ void DB::TLSHandler::run()
     else
     {
         ctx = SSLManager::instance().defaultServerContext();
-        LOG_ERROR(getLogger("stetsyuk"), "something is not set {} {} for {}", !params.privateKeyFile.empty(), !params.certificateFile.empty(), prefix);
     }
-    LOG_INFO(getLogger("stetsyuk"), "everything is set for {}", prefix);
+
     socket() = SecureStreamSocket::attach(socket(), ctx);
     stack_data.socket = socket();
     stack_data.certificate = params.certificateFile;
