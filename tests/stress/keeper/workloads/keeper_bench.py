@@ -245,10 +245,11 @@ class KeeperBench:
             prefix = ""
         base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(dur)}"
         cmd = f"{prefix} {base}".strip()
-        run_out = sh(self.node, cmd)
+        run_out = sh(self.node, cmd, timeout=int(hard_cap) + 5)
         out = sh(
             self.node,
             "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+            timeout=5,
         )
         st = {
             "ops": 0,
@@ -387,7 +388,7 @@ class KeeperBench:
                     wp = ""
                 wcmd = f"{wp} {self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(w)}".strip()
                 try:
-                    sh(self.node, wcmd)
+                    sh(self.node, wcmd, timeout=max(5, int(w) + 10))
                 except Exception:
                     pass
         except Exception:
@@ -498,7 +499,7 @@ class KeeperBench:
         else:
             base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(self.duration_s)}"
         cmd = f"{prefix} {base}".strip()
-        run_out = sh(self.node, cmd)
+        run_out = sh(self.node, cmd, timeout=int(hard_cap) + 5)
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 self._write_debug("keeper_bench_cmd.txt", cmd + "\n")
@@ -509,6 +510,7 @@ class KeeperBench:
         out = sh(
             self.node,
             "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+            timeout=5,
         )
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):

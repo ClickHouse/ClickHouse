@@ -22,6 +22,7 @@ def apply_step(step, nodes, leader, ctx):
         if not subs:
             return
         import threading as _th
+        import time as _t
 
         ths = []
         errs = []
@@ -32,12 +33,37 @@ def apply_step(step, nodes, leader, ctx):
             except Exception as e:
                 errs.append(e)
 
+        # Compute a soft deadline for the parallel block from child durations
+        try:
+            durs = []
+            for s in subs:
+                try:
+                    if s.get("duration_s") is not None:
+                        durs.append(int(s.get("duration_s")))
+                    elif s.get("seconds") is not None:
+                        durs.append(int(s.get("seconds")))
+                except Exception:
+                    pass
+            exp = max(durs) if durs else int(DEFAULT_FAULT_DURATION_S)
+        except Exception:
+            exp = int(DEFAULT_FAULT_DURATION_S)
+        slack = 60
+        deadline = _t.time() + max(1, int(exp) + int(slack))
+
         for sub in subs:
             t = _th.Thread(target=_run, args=(sub,), daemon=True)
             t.start()
             ths.append(t)
         for t in ths:
-            t.join()
+            rem = max(0.0, deadline - _t.time())
+            if rem <= 0:
+                break
+            t.join(timeout=rem)
+        alive = [t for t in ths if t.is_alive()]
+        if alive:
+            raise AssertionError(
+                f"parallel: exceeded deadline {int(exp)+int(slack)}s; alive_threads={len(alive)}"
+            )
         if errs:
             raise errs[0]
         return
