@@ -2463,6 +2463,15 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
 
     if (!info.key_subexpr_names.contains(expr_name))
     {
+        /// Let's check another one case.
+        /// If our storage was created with moduloLegacy in partition key,
+        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
+        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
+        ///
+        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
+        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
+        ///
+        /// Note: for negative values, we can filter more partitions then needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
         if (!info.key_subexpr_names.contains(expr_name))
