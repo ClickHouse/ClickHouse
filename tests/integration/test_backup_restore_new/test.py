@@ -1123,7 +1123,7 @@ def test_materialized_view_with_target_table():
     )
 
 
-def test_restore_materialized_view_target_using_insert_select():
+def test_skip_rmv_backup():
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("DROP DATABASE IF EXISTS restored SYNC")
     size = 100
@@ -1132,41 +1132,18 @@ def test_restore_materialized_view_target_using_insert_select():
         "CREATE TABLE test.target(x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
     )
     instance.query(
-        "CREATE MATERIALIZED VIEW test.view TO test.target AS SELECT y, x FROM test.table"
+        "CREATE MATERIALIZED VIEW test.view TO test.target REFRESH EVERY 6 HOURS AS SELECT y, x FROM test.table"
     )
 
     backup_name = new_backup_name()
-    backup_settings = {"backup_data_from_materialized_view_targets": False}
-    restore_settings = {"restore_materialized_view_targets_using_insert_select": True}
+    backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
 
     instance.query(
         f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
     )
-    instance.query(
-        f"RESTORE DATABASE test AS restored FROM {backup_name} {format_settings(restore_settings)}"
-    )
+    instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
 
     assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
-
-
-def test_restore_materialized_view_inner_target_using_insert_select():
-    instance.query("DROP DATABASE IF EXISTS test SYNC")
-    instance.query("DROP DATABASE IF EXISTS restored SYNC")
-    size = 100
-    create_and_fill_table(n=size)
-    instance.query("CREATE MATERIALIZED VIEW test.view AS SELECT y, x FROM test.table")
-    backup_name = new_backup_name()
-    backup_settings = {"backup_data_from_materialized_view_targets": False}
-    restore_settings = {"restore_materialized_view_targets_using_insert_select": True}
-
-    instance.query(
-        f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
-    )
-    instance.query(
-        f"RESTORE DATABASE test AS restored FROM {backup_name} {format_settings(restore_settings)}"
-    )
-
-    assert int(instance.query(f"SELECT count(*) FROM restored.view")) == size
 
 
 def test_temporary_table():

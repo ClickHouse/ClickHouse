@@ -799,12 +799,12 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
     auto filter_fn = [&](const auto & item) -> bool
     {
-        if (backup_settings.backup_data_from_materialized_view_targets)
+        if (backup_settings.backup_data_from_refreshable_materialized_view_targets)
             return true;
 
         const auto & [name, info] = item;
 
-        /// Skip table data for materialized view targets.
+        /// Skip table data for refreshable materialized view targets.
         auto dependents = DatabaseCatalog::instance().getReferentialDependents(info.storage->getStorageID());
         auto is_mv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
         {
@@ -813,7 +813,9 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
                 return false;
 
             const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get());
-            return mv && mv->getTargetTable() == target;
+            const auto & create_query = info.create_table_query->template as<const ASTCreateQuery &>();
+            bool append = create_query.refresh_strategy && create_query.refresh_strategy->append;
+            return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
         };
 
         for (const auto & dependent : dependents)
