@@ -81,6 +81,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
     bool read_in_order_through_join;
+    bool correlated_subqueries_use_in_memory_buffer;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
