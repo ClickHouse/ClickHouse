@@ -271,6 +271,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         if (t.isOnS3())
         {
             sfunc = tfunc->mutable_s3();
+            const ServerCredentials & sc = fc.minio_server.value();
             const S3Func_FName val = (this->allow_not_deterministic && rg.nextLargeNumber() < 11)
                 ? static_cast<S3Func_FName>(rg.randomInt<uint32_t>(2, 4))
                 : (t.isAnyS3Engine()
@@ -286,14 +287,12 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
             }
-            if (fc.minio_server.has_value())
-            {
-                sfunc->set_credential(fc.minio_server.value().named_collection);
-            }
+            sfunc->set_credential(sc.named_collection);
         }
         else if (t.isOnAzure())
         {
             afunc = tfunc->mutable_azure();
+            const ServerCredentials & sc = fc.azurite_server.value();
             const AzureBlobStorageFunc_FName val = (this->allow_not_deterministic && rg.nextLargeNumber() < 11)
                 ? static_cast<AzureBlobStorageFunc_FName>(rg.randomInt<uint32_t>(1, 3))
                 : (t.isAnyAzureEngine()
@@ -310,10 +309,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 afunc->set_fname(val);
             }
-            if (fc.azurite_server.has_value())
-            {
-                afunc->set_credential(fc.azurite_server.value().named_collection);
-            }
+            afunc->set_credential(sc.named_collection);
         }
         else if (t.isOnLocal())
         {
@@ -373,40 +369,28 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         else if (t.isRedisEngine())
         {
             RedisFunc * rfunc = tfunc->mutable_redis();
-            const bool details = rg.nextBool();
+            const ServerCredentials & sc = fc.redis_server.value();
 
+            rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_key());
             structure = rg.nextMediumNumber() < 96 ? rfunc->mutable_structure() : nullptr;
-            if (details)
+            if (rg.nextBool())
             {
                 rfunc->set_db_index(rg.randomInt<uint32_t>(0, 15));
+                rfunc->set_password(sc.password);
                 rfunc->set_pool_size(rg.randomInt<uint32_t>(0, 16));
-            }
-            if (fc.redis_server.has_value())
-            {
-                const ServerCredentials & sc = fc.redis_server.value();
-
-                rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-                if (details)
-                {
-                    rfunc->set_password(sc.password);
-                }
             }
         }
         else if (t.isMongoDBEngine())
         {
             MongoDBFunc * mfunc = tfunc->mutable_mongodb();
+            const ServerCredentials & sc = fc.mongodb_server.value();
 
+            mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+            mfunc->set_database(sc.database);
             mfunc->set_collection(t.getTableName());
-            if (fc.mongodb_server.has_value())
-            {
-                const ServerCredentials & sc = fc.mongodb_server.value();
-
-                mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-                mfunc->set_database(sc.database);
-                mfunc->set_user(sc.user);
-                mfunc->set_password(sc.password);
-            }
+            mfunc->set_user(sc.user);
+            mfunc->set_password(sc.password);
             structure = rg.nextMediumNumber() < 96 ? mfunc->mutable_structure() : nullptr;
         }
         else if (t.isDictionaryEngine())
@@ -432,7 +416,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             ArrowFlightFunc * affunc = tfunc->mutable_flight();
 
-            affunc->set_address(t.host_params.has_value() ? t.host_params.value() : "localhost");
+            affunc->set_address(t.host_params.value());
             affunc->set_dataset(t.getTablePath(rg, fc, this->allow_not_deterministic));
         }
         else
@@ -443,10 +427,11 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
         }
-        if (sfunc || afunc || lfunc)
+        if ((sfunc || afunc || lfunc) && !t.isAnyQueueEngine())
         {
-            const auto & engineSettings = allTableSettings.at(
-                t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
+            /// Queue tables don't support settings in table function counterparts
+            SettingValues * svs = nullptr;
+            const auto & engineSettings = allTableSettings.at(t.teng);
 
             if (sfunc)
             {
@@ -460,12 +445,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 setObjectStoreParams<SQLTable, LocalFunc>(rg, t, lfunc);
             }
-            if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
+            if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
             {
-                generateSettingValues(
-                    rg,
-                    engineSettings,
-                    sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values()));
+                svs = sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values());
+                generateSettingValues(rg, engineSettings, svs);
             }
         }
     }
@@ -2145,8 +2128,7 @@ void StatementGenerator::generateSelect(
         ExplainQuery * eq2 = setq->mutable_sel2();
         std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
-        setq->set_set_op(
-            recursive.has_value() ? SetQuery_SetOp::SetQuery_SetOp_UNION : static_cast<SetQuery_SetOp>(set_range(rg.generator)));
+        setq->set_set_op(recursive ? SetQuery_SetOp::SetQuery_SetOp_UNION : static_cast<SetQuery_SetOp>(set_range(rg.generator)));
         setq->set_paren1(rg.nextSmallNumber() < 9);
         setq->set_paren2(rg.nextSmallNumber() < 9);
         if (rg.nextSmallNumber() < (recursive.has_value() ? 9 : 8))

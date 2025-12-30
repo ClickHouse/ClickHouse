@@ -5,8 +5,6 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
-#include <map>
-
 namespace DB
 {
 

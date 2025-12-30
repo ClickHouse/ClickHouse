@@ -14,10 +14,11 @@ namespace BuzzHouse
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+        static const DB::Strings & choices
+            = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
-    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
+    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
@@ -267,11 +268,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_to_prewarm_caches", bytesRangeSetting},
     {"min_bytes_to_rebalance_partition_over_jbod", bytesRangeSetting},
-    {"min_columns_to_activate_adaptive_write_buffer",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
-         {"0", "1", "2", "8", "10", "100"},
-         false)},
     {"min_compress_block_size", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_fetch", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_merge", bytesRangeSetting},
@@ -738,7 +734,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
          {VersionedCollapsingMergeTree, mergeTreeTableSettings},
-         {GraphiteMergeTree, mergeTreeTableSettings},
          {File, fileTableSettings},
          {Null, {}},
          {Set, setTableSettings},
@@ -774,19 +769,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}},
-         {TimeSeries, {}},
-         {HDFS, {}},
-         {Hive, {}},
-         {JDBC, {}},
-         {Kafka, {}},
-         {NATS, {}},
-         {ODBC, {}},
-         {RabbitMQ, {}},
-         {YTsaurus, {}},
-         {Executable, {}},
-         {ExecutablePool, {}},
-         {FileLog, {}}});
+         {Alias, {}}});
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},
@@ -796,7 +779,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeColumnSettings},
          {CollapsingMergeTree, mergeTreeColumnSettings},
          {VersionedCollapsingMergeTree, mergeTreeColumnSettings},
-         {GraphiteMergeTree, mergeTreeColumnSettings},
          {File, {}},
          {Null, {}},
          {Set, {}},
@@ -832,19 +814,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}},
-         {TimeSeries, {}},
-         {HDFS, {}},
-         {Hive, {}},
-         {JDBC, {}},
-         {Kafka, {}},
-         {NATS, {}},
-         {ODBC, {}},
-         {RabbitMQ, {}},
-         {YTsaurus, {}},
-         {Executable, {}},
-         {ExecutablePool, {}},
-         {FileLog, {}}});
+         {Alias, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

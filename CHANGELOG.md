@@ -1,5 +1,3 @@
-### Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
-
 ### Table of Contents
 **[ClickHouse release v25.12, 2025-12-18](#2512)**<br/>
 **[ClickHouse release v25.11, 2025-11-27](#2511)**<br/>
@@ -24,7 +22,7 @@
 
 # 2025 Changelog
 
-### <a id="2512"></a> ClickHouse release 25.12, 2025-12-18. [Presentation](https://presentations.clickhouse.com/2025-release-25.12/), [Video](https://www.youtube.com/watch?v=UdxLygnjsRY)
+### <a id="2512"></a> ClickHouse release 25.12, 2025-12-18
 
 #### Backward Incompatible Change
 * ALTER MODIFY COLUMN now requires explicit DEFAULT when converting nullable columns to non-nullable types. Previously such ALTERs could get stuck with cannot convert null to not null errors, now NULLs are replaced with column's default expression. Resolves [#5985](https://github.com/ClickHouse/ClickHouse/issues/5985). [#84770](https://github.com/ClickHouse/ClickHouse/pull/84770) ([Vladimir Cherkasov](https://github.com/vdimir)).
@@ -285,7 +283,7 @@
 * Avoid downloading from cmake when cross-compiling. [#90506](https://github.com/ClickHouse/ClickHouse/pull/90506) ([Raúl Marín](https://github.com/Algunenano)).
 
 
-### <a id="2511"></a> ClickHouse release 25.11, 2025-11-27. [Presentation](https://presentations.clickhouse.com/2025-release-25.11/), [Video](https://www.youtube.com/watch?v=9HF2ObDX-RA)
+### <a id="2511"></a> ClickHouse release 25.11, 2025-11-27
 
 #### Backward Incompatible Change
 * Remove deprecated `Object` type. [#85718](https://github.com/ClickHouse/ClickHouse/pull/85718) ([Pavel Kruglov](https://github.com/Avogar)).
@@ -531,7 +529,7 @@
 * Use FreeBSD 13.4 sysroot. [#89617](https://github.com/ClickHouse/ClickHouse/pull/89617) ([Konstantin Bogdanov](https://github.com/thevar1able)).
 
 
-### <a id="2510"></a> ClickHouse release 25.10, 2025-10-31. [Presentation](https://presentations.clickhouse.com/2025-release-25.10/), [Video](https://www.youtube.com/watch?v=cV2hiOCzDG4)
+### <a id="2510"></a> ClickHouse release 25.10, 2025-10-31
 
 #### Backward Incompatible Change
 * Changed default `schema_inference_make_columns_nullable` setting to respect column `Nullable`-ness information from Parquet/ORC/Arrow metadata, instead of making everything Nullable. No change for text formats. [#71499](https://github.com/ClickHouse/ClickHouse/pull/71499) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -785,7 +783,7 @@
 * When ClickHouse is built with `ENABLE_LIBFIU=OFF`, failpoint-related functions become no-ops and cannot impact performance anymore. `SYSTEM ENABLE/DISABLE FAILPOINT` queries return a `SUPPORT_IS_DISABLED` error in that case. [#88184](https://github.com/ClickHouse/ClickHouse/pull/88184) ([c-end](https://github.com/c-end)).
 
 
-### <a id="259"></a> ClickHouse release 25.9, 2025-09-25. [Presentation](https://presentations.clickhouse.com/2025-release-25.9/), [Video](https://www.youtube.com/watch?v=LCHEPNXo8kQ)
+### <a id="259"></a> ClickHouse release 25.9, 2025-09-25
 
 #### Backward Incompatible Change
 * Disable nonsensical binary operations with IPv4/IPv6: Plus / minus of a IPv4/IPv6 with a non-integer type is disabled. Before it would allow operations with floating types and throw logical errors with some other types (such as DateTime). [#86336](https://github.com/ClickHouse/ClickHouse/pull/86336) ([Raúl Marín](https://github.com/Algunenano)).
@@ -972,7 +970,7 @@
 * Fix unpacking Rust crate names in `list-licenses.sh`. [#87305](https://github.com/ClickHouse/ClickHouse/pull/87305) ([Konstantin Bogdanov](https://github.com/thevar1able)).
 
 
-### <a id="258"></a> ClickHouse release 25.8 LTS, 2025-08-28. [Presentation](https://presentations.clickhouse.com/2025-release-25.8/), [Video](https://www.youtube.com/watch?v=HB_-vji9RB0)
+### <a id="258"></a> ClickHouse release 25.8 LTS, 2025-08-28
 
 #### Backward Incompatible Change
 * Infer `Array(Dynamic)` instead of unnamed `Tuple` for arrays of values with different types in JSON. To use the previous behaviour, disable setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types`. [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
@@ -1288,7 +1286,7 @@
 * Now we use less memory for caches in CI and have better tests for eviction. [#84676](https://github.com/ClickHouse/ClickHouse/pull/84676) ([alesapin](https://github.com/alesapin)).
 
 
-### <a id="257"></a> ClickHouse release 25.7, 2025-07-24. [Presentation](https://presentations.clickhouse.com/2025-release-25.7/), [Video](https://www.youtube.com/watch?v=P1TsTzktl0Q)
+### <a id="257"></a> ClickHouse release 25.7, 2025-07-24
 
 #### Backward Incompatible Change
 * Changes to `extractKeyValuePairs` function: introduce a new argument `unexpected_quoting_character_strategy` that controls what happens when a `quoting_character` is unexpectedly found when reading a non quoted key or value. The value can be one of: `invalid`, `accept` or `promote`. Invalid will discard the key and go back to waiting key state. Accept will treat it as part of the key. Promote will discard previous character and start parsing as a quoted key. In addition, after parsing a quoted value, only parse the next key if a pair delimiter is found. [#80657](https://github.com/ClickHouse/ClickHouse/pull/80657) ([Arthur Passos](https://github.com/arthurpassos)).
@@ -1535,7 +1533,7 @@
 * Added support for the `CLICKHOUSE_HOST` environment variable to specify the ClickHouse server host, aligning with existing `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD` environment variables. This allows for easier configuration without modifying client or configuration files directly. [#83659](https://github.com/ClickHouse/ClickHouse/pull/83659) ([Doron David](https://github.com/dorki)).
 
 
-### <a id="256"></a> ClickHouse release 25.6, 2025-06-26. [Presentation](https://presentations.clickhouse.com/2025-release-25.6/), [Video](https://www.youtube.com/watch?v=_9IBOM3pR4U)
+### <a id="256"></a> ClickHouse release 25.6, 2025-06-26
 
 #### Backward Incompatible Change
 * Previously, function `countMatches` would stop counting at the first empty match even if the pattern accepts it. To overcome this issue, `countMatches` now continues execution by advancing by a single character when an empty match occurs. Users who like to retain the old behavior can enable setting `count_matches_stop_at_empty_match`. [#81676](https://github.com/ClickHouse/ClickHouse/pull/81676) ([Elmi Ahmadov](https://github.com/ahmadov)).
@@ -1784,7 +1782,7 @@
 * Fix `delta-kernel-rs` requiring network access during build. Closes [#80609](https://github.com/ClickHouse/ClickHouse/issues/80609). [#81602](https://github.com/ClickHouse/ClickHouse/pull/81602) ([Konstantin Bogdanov](https://github.com/thevar1able)). Read the article [A Year of Rust in ClickHouse](https://clickhouse.com/blog/rust).
 
 
-### <a id="255"></a> ClickHouse release 25.5, 2025-05-22. [Presentation](https://presentations.clickhouse.com/2025-release-25.5/), [Video](https://www.youtube.com/watch?v=wxicecqZOuw)
+### <a id="255"></a> ClickHouse release 25.5, 2025-05-22
 
 #### Backward Incompatible Change
 * Function `geoToH3` now accepts the input in the order (lat, lon, res) (which is common for other geometric functions). Users who wish to retain the previous result order (lon, lat, res) can set setting `geotoh3_argument_order = 'lon_lat'`. [#78852](https://github.com/ClickHouse/ClickHouse/pull/78852) ([Pratima Patel](https://github.com/pratimapatel2008)).
@@ -1970,7 +1968,7 @@
 * Add unwind information for `zstd` assembly files. [#79288](https://github.com/ClickHouse/ClickHouse/pull/79288) ([Michael Kolupaev](https://github.com/al13n321)).
 
 
-### <a id="254"></a> ClickHouse release 25.4, 2025-04-22. [Presentation](https://presentations.clickhouse.com/2025-release-25.4/), [Video](https://www.youtube.com/watch?v=7wbfKTlieOo)
+### <a id="254"></a> ClickHouse release 25.4, 2025-04-22
 
 #### Backward Incompatible Change
 * Check if all columns in a materialized view match the target table when `allow_materialized_view_with_bad_select` is `false`. [#74481](https://github.com/ClickHouse/ClickHouse/pull/74481) ([Christoph Wurm](https://github.com/cwurm)).
@@ -2132,7 +2130,7 @@
 * Respect CPU target features in Rust and enable LTO in all crates. [#78590](https://github.com/ClickHouse/ClickHouse/pull/78590) ([Raúl Marín](https://github.com/Algunenano)).
 
 
-### <a id="253"></a> ClickHouse release 25.3 LTS, 2025-03-20. [Presentation](https://presentations.clickhouse.com/2025-release-25.3/), [Video](https://www.youtube.com/watch?v=iCKEzp0_Z2Q)
+### <a id="253"></a> ClickHouse release 25.3 LTS, 2025-03-20
 
 #### Backward Incompatible Change
 * Disallow truncating replicated databases. [#76651](https://github.com/ClickHouse/ClickHouse/pull/76651) ([Bharat Nallan](https://github.com/bharatnc)).
@@ -2253,7 +2251,7 @@
 * Fix Rust cross-compilation and allow disabling Rust completely. [#76921](https://github.com/ClickHouse/ClickHouse/pull/76921) ([Raúl Marín](https://github.com/Algunenano)).
 
 
-### <a id="252"></a> ClickHouse release 25.2, 2025-02-27. [Presentation](https://presentations.clickhouse.com/2025-release-25.2/), [Video](https://www.youtube.com/watch?v=1XnA9_s5YOM)
+### <a id="252"></a> ClickHouse release 25.2, 2025-02-27
 
 #### Backward Incompatible Change
 * Completely enable `async_load_databases` by default (even for those installations that do not upgrade `config.xml`). [#74772](https://github.com/ClickHouse/ClickHouse/pull/74772) ([Azat Khuzhin](https://github.com/azat)).
@@ -2416,7 +2414,7 @@
 * Disable network access for user default in the docker image. [#75259](https://github.com/ClickHouse/ClickHouse/pull/75259) ([Mikhail f. Shiryaev](https://github.com/Felixoid)). Make all clickhouse-server related actions a function, and execute them only when launching the default binary in `entrypoint.sh`. A long-postponed improvement was suggested in [#50724](https://github.com/ClickHouse/ClickHouse/issues/50724). Added switch `--users` to `clickhouse-extract-from-config` to get values from the `users.xml`. [#75643](https://github.com/ClickHouse/ClickHouse/pull/75643) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
 * Remove about 20MB of dead code from the binary. [#76226](https://github.com/ClickHouse/ClickHouse/pull/76226) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
-### <a id="251"></a> ClickHouse release 25.1, 2025-01-28. [Presentation](https://presentations.clickhouse.com/2025-release-25.1/), [Video](https://www.youtube.com/watch?v=4w7zWG7NoSY)
+### <a id="251"></a> ClickHouse release 25.1, 2025-01-28
 
 #### Backward Incompatible Change
 * `JSONEachRowWithProgress` will write the progress whenever the progress happens. In previous versions, the progress was shown only after each block of the result, which made it useless. Change the way how the progress is displayed: it will not show zero values. This closes [#70800](https://github.com/ClickHouse/ClickHouse/issues/70800). [#73834](https://github.com/ClickHouse/ClickHouse/pull/73834) ([Alexey Milovidov](https://github.com/alexey-milovidov)).

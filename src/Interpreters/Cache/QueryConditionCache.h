@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/CacheBase.h>
-#include <Common/Logger.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
 

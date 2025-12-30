@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/FramePointers.h>
 
 #include <string>
 #include <array>
@@ -37,7 +36,13 @@ public:
         std::optional<UInt64> line;
     };
 
-    using Frames = std::array<Frame, FRAMEPOINTER_CAPACITY>;
+    /* NOTE: It cannot be larger right now, since otherwise it
+     * will not fit into minimal PIPE_BUF (512) in TraceCollector.
+     */
+    static constexpr size_t capacity = 45;
+
+    using FramePointers = std::array<void *, capacity>;
+    using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
     /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace

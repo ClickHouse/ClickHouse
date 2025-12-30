@@ -2,7 +2,7 @@
 
 -- Tests that match() utilizes the text index
 
-SET enable_full_text_index = true;
+SET allow_experimental_full_text_index = true;
 
 DROP TABLE IF EXISTS tab;
 

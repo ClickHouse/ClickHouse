@@ -1,6 +1,5 @@
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <Common/StackTrace.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>

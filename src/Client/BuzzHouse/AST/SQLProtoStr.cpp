@@ -3218,12 +3218,6 @@ CONV_FN(ProjectionDef, proj_def)
     ret += " (";
     SelectToString(ret, proj_def.select());
     ret += ")";
-    if (proj_def.has_setting_values())
-    {
-        ret += " WITH SETTINGS (";
-        SettingValuesToString(ret, proj_def.setting_values());
-        ret += ")";
-    }
 }
 
 CONV_FN(ConstraintDef, const_def)
@@ -3456,8 +3450,8 @@ CONV_FN(TableEngine, te)
 
         ret += " ENGINE = ";
         if (te.has_toption()
-            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree) || teng == TableEngineValues::Set
-                || teng == TableEngineValues::Join))
+            && ((teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+                || teng == TableEngineValues::Set || teng == TableEngineValues::Join))
         {
             ret += TableEngineOption_Name(te.toption()).substr(1);
         }
@@ -3873,11 +3867,6 @@ CONV_FN(CheckTable, ct)
         ret += " SETTINGS ";
         SettingValuesToString(ret, ct.setting_values());
     }
-    if (ct.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ct.format()).substr(4);
-    }
 }
 
 CONV_FN(DescribeStatement, ds)
@@ -3904,11 +3893,6 @@ CONV_FN(DescribeStatement, ds)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ds.setting_values());
-    }
-    if (ds.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ds.format()).substr(4);
     }
 }
 
@@ -3966,11 +3950,6 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ot.setting_values());
-    }
-    if (ot.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(ot.format()).substr(4);
     }
 }
 
@@ -4407,13 +4386,13 @@ CONV_FN(ModifyColumnSetting, mcp)
     SettingValuesToString(ret, mcp.setting_values());
 }
 
-CONV_FN(SettingList, sl)
+CONV_FN(SettingList, pl)
 {
-    ret += sl.setting();
-    for (int i = 0; i < sl.other_settings_size(); i++)
+    ret += pl.setting();
+    for (int i = 0; i < pl.other_settings_size(); i++)
     {
         ret += ", ";
-        ret += sl.other_settings(i);
+        ret += pl.other_settings(i);
     }
 }
 
@@ -5494,11 +5473,6 @@ CONV_FN(ShowStatement, sh)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, sh.setting_values());
-    }
-    if (sh.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(sh.format()).substr(4);
     }
 }
 

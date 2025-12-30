@@ -5,7 +5,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
-#include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>

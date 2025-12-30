@@ -26,7 +26,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_disks")
+        pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
@@ -43,7 +43,7 @@ def get_spark():
         )
         .master("local")
     )
-    return builder.getOrCreate()
+    return builder.master("local").getOrCreate()
 
 
 def generate_cluster_def(common_path, port, azure_container):
