@@ -651,7 +651,7 @@ topK(N, load_factor, 'counts')(column)
     FunctionDocumentation::Parameters parameters_topK = {
         {"N", "The number of elements to return. Default value: 10. Maximum value of `N = 65536`.", {"UInt64"}},
         {"load_factor", "Optional. Defines, how many cells reserved for values. If `uniq(column) > N * load_factor`, result of topK function will be approximate. Default value: 3.", {"UInt64"}},
-        {"counts", "Optional. Defines whether the result should contain an approximate count and error value.", {"bool"}}
+        {"counts", "Optional. Defines whether the result should contain an approximate count and error value.", {"Bool"}}
     };
     FunctionDocumentation::Arguments arguments_topK = {
         {"column", "The name of the column for which to find the most frequent values.", {"String"}}
@@ -696,7 +696,7 @@ topKWeighted(N, load_factor, 'counts')(column, weight)
     FunctionDocumentation::Parameters parameters_topKWeighted = {
         {"N", "The number of elements to return. Default value: 10.", {"UInt64"}},
         {"load_factor", "Optional. Defines, how many cells reserved for values. If `uniq(column) > N * load_factor`, result of topK function will be approximate. Default value: 3.", {"UInt64"}},
-        {"counts", "Optional. Defines whether the result should contain an approximate count and error value.", {"bool"}}
+        {"counts", "Optional. Defines whether the result should contain an approximate count and error value.", {"Bool"}}
     };
     FunctionDocumentation::Arguments arguments_topKWeighted = {
         {"column", "The name of the column for which to find the most frequent values.", {}},
