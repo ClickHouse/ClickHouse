@@ -1,3 +1,4 @@
+#include <Poco/String.h>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -20,6 +21,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB::ErrorCodes
 {
@@ -43,13 +45,33 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
     : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_->file_path))
     , info{
-          data_manifest_file_entry_->file_path_key,
+          data_manifest_file_entry_->file_path_from_metadata,
+          data_manifest_file_entry_->file_path_from_metadata,  // absolute path
           data_manifest_file_entry_->schema_id,
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_->added_sequence_number,
           data_manifest_file_entry_->file_format,
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {}}
+{
+}
+
+IcebergDataObjectInfo::IcebergDataObjectInfo(
+    const Iceberg::ManifestFileEntry & data_manifest_file_entry_,
+    Int32 schema_id_relevant_to_iterator_,
+    ObjectStoragePtr resolved_storage_,
+    const String & resolved_key_)
+    : ObjectInfo(RelativePathWithMetadata(resolved_key_))
+    , info{
+        data_manifest_file_entry_.file_path_from_metadata,
+        data_manifest_file_entry_.file_path,  // absolute path
+        data_manifest_file_entry_.schema_id,
+        schema_id_relevant_to_iterator_,
+        data_manifest_file_entry_.added_sequence_number,
+        data_manifest_file_entry_.file_format,
+        /* position_deletes_objects */ {},
+        /* equality_deletes_objects */ {}}
+    , resolved_storage(std::move(resolved_storage_))
 {
 }
 
@@ -62,13 +84,15 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
     ObjectStoragePtr object_storage,
     const SharedHeader & header,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr context_)
+    ContextPtr context_,
+    const String & table_location,
+    SecondaryStorages & secondary_storages)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
     if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, context_);
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, context_, table_location, secondary_storages);
     else
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, context_);
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, context_, table_location, secondary_storages);
 }
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPtr position_delete_object)
@@ -98,7 +122,11 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileE
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
 {
     checkVersion(protocol_version);
-    writeStringBinary(data_object_file_path_key, out);
+    writeStringBinary(data_object_file_path_from_metadata, out);
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+    {
+        writeStringBinary(data_object_file_absolute_path, out);
+    }
     writeVarInt(underlying_format_read_schema_id, out);
     writeVarInt(schema_id_relevant_to_iterator, out);
     writeVarInt(sequence_number, out);
@@ -147,7 +175,11 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
 void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version)
 {
     checkVersion(protocol_version);
-    readStringBinary(data_object_file_path_key, in);
+    readStringBinary(data_object_file_path_from_metadata, in);
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+    {
+        readStringBinary(data_object_file_absolute_path, in);
+    }
     readVarInt(underlying_format_read_schema_id, in);
     readVarInt(schema_id_relevant_to_iterator, in);
     readVarInt(sequence_number, in);

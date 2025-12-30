@@ -112,7 +112,6 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
     if (!last_object_info)
         return {};
 
-
     auto splitter = FormatFactory::instance().getSplitter(format);
     if (splitter)
     {
@@ -126,6 +125,9 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
         }
     }
+
+    if (pending_objects_info.empty())
+        return last_object_info;
 
     auto result = pending_objects_info.front();
     pending_objects_info.pop();
