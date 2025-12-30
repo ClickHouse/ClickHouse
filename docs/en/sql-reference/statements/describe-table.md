@@ -4,7 +4,6 @@ sidebar_label: 'DESCRIBE TABLE'
 sidebar_position: 42
 slug: /sql-reference/statements/describe-table
 title: 'DESCRIBE TABLE'
-doc_type: 'reference'
 ---
 
 Returns information about table columns.

@@ -1,24 +1,24 @@
--- Tests that CREATE TABLE and ADD INDEX respect settings 'enable_full_text_index'
+-- Tests that CREATE TABLE and ADD INDEX respect settings 'allow_experimental_full_text_index'
 
 DROP TABLE IF EXISTS tab;
 
 -- Test CREATE TABLE
 
-SET enable_full_text_index = 0;
-CREATE TABLE tab1 (id UInt32, str String, INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
+SET allow_experimental_full_text_index = 0;
+CREATE TABLE tab1 (id UInt32, str String, INDEX idx str TYPE text(tokenizer = 'default')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
 
-SET enable_full_text_index = 1;
-CREATE TABLE tab1 (id UInt32, str String, INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple();
+SET allow_experimental_full_text_index = 1;
+CREATE TABLE tab1 (id UInt32, str String, INDEX idx str TYPE text(tokenizer = 'default')) ENGINE = MergeTree ORDER BY tuple();
 DROP TABLE tab1;
 
 -- Test ADD INDEX
 
-SET enable_full_text_index = 0;
+SET allow_experimental_full_text_index = 0;
 CREATE TABLE tab (id UInt32, str String) ENGINE = MergeTree ORDER BY tuple();
-ALTER TABLE tab ADD INDEX idx1 str TYPE text(tokenizer = 'splitByNonAlpha');  -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE tab ADD INDEX idx1 str TYPE text(tokenizer = 'default');  -- { serverError SUPPORT_IS_DISABLED }
 DROP TABLE tab;
 
-SET enable_full_text_index = 1;
+SET allow_experimental_full_text_index = 1;
 CREATE TABLE tab (id UInt32, str String) ENGINE = MergeTree ORDER BY tuple();
-ALTER TABLE tab ADD INDEX idx1 str TYPE text(tokenizer = 'splitByNonAlpha');
+ALTER TABLE tab ADD INDEX idx1 str TYPE text(tokenizer = 'default');
 DROP TABLE tab;

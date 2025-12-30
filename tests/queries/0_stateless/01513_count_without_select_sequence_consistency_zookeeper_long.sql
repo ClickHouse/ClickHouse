@@ -1,6 +1,5 @@
--- Tags: long, zookeeper, no-shared-merge-tree, no-async-insert
+-- Tags: long, zookeeper, no-shared-merge-tree
 -- Tag no-shared-merge-tree: no-shared-merge-tree: No quorum
--- Tag no-async-insert: async inserts are not supported with quorum inserts
 
 SET send_logs_level = 'fatal';
 
