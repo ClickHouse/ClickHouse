@@ -28,6 +28,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -1036,8 +1037,52 @@ bool applyFunctionChainToColumn(
         return false;
     }
 
-    // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    /// Fast-path: consume leading CAST(...) that are either no-op for current type
+    /// or can be applied directly to the CAST result type.
+    size_t first_func = 0;
+    while (first_func < functions.size())
+    {
+        const auto & func = functions[first_func];
+
+        if (func->getName() != "CAST")
+            break;
+
+        auto cast_result_type = removeLowCardinality(func->getResultType());
+
+        /// Avoid the round-trip. Additionally, some round trip might not be safely possible. Like String -> Dynamic -> String
+        if (result_type->equals(*cast_result_type))
+        {
+            ++first_func;
+            continue;
+        }
+
+        /// Short-circuit: if we can directly cast to the result type, do it
+        if (canBeSafelyCast(result_type, cast_result_type))
+        {
+            result_column = castColumnAccurate({result_column, result_type, ""}, cast_result_type);
+            result_column = result_column->convertToFullColumnIfLowCardinality();
+            result_type = cast_result_type;
+            ++first_func;
+            continue;
+        }
+
+        /// Otherwise keep the old behavior (it may be more permissive than direct cast).
+        break;
+    }
+
+    /// `functions` only contain one or more CASTs that were no-ops or could be applied directly
+    if (first_func == functions.size())
+    {
+        out_column = result_column;
+        out_data_type = result_type;
+        return true;
+    }
+
+    if (functions[first_func]->getArgumentTypes().empty())
+        return false;
+
+    /// And cast it to the argument type of the first function in the chain
+    auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[first_func]));
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -1066,10 +1111,30 @@ bool applyFunctionChainToColumn(
         result_type = removeNullable(in_argument_type);
     }
 
-    for (const auto & func : functions)
+    for (size_t func_pos = first_func; func_pos < functions.size(); ++func_pos)
     {
+        const auto & func = functions[func_pos];
+
         if (func->getArgumentTypes().empty())
             return false;
+
+        if (func->getName() == "CAST")
+        {
+            auto cast_result_type = removeLowCardinality(func->getResultType());
+
+            /// Avoid the round-trip. Additionally, some round trip might not be safely possible. Like String -> Dynamic -> String.
+            if (result_type->equals(*cast_result_type))
+                continue;
+
+            /// Short-circuit: if we can directly cast to the result type, do it
+            if (canBeSafelyCast(result_type, cast_result_type))
+            {
+                result_column = castColumnAccurate({result_column, result_type, ""}, cast_result_type);
+                result_column = result_column->convertToFullColumnIfLowCardinality();
+                result_type = cast_result_type;
+                continue;
+            }
+        }
 
         auto argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*func));
         if (!canBeSafelyCast(result_type, argument_type))
@@ -1573,7 +1638,8 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
         DataTypes & data_types,
         size_t & args_count,
         const BuildInfo & info,
-        bool allow_constant_transformation)
+        bool allow_constant_transformation,
+        bool * out_disable_exact_set_evaluation)
 {
     auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
     {
@@ -1590,7 +1656,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
             data_types.push_back(data_type);
             set_transforming_chains.push_back(set_transforming_chain);
         }
-        // For partition index, checking if set can be transformed to prune any partitions
+        /// For partition index, checking if set can be transformed to prune any partitions
         else if (
             single_point && allow_constant_transformation
             && canSetValuesBeWrappedByFunctions(node, info, index_mapping.key_index, data_type, set_transforming_chain))
@@ -1598,6 +1664,19 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
             set_transforming_chains.push_back(set_transforming_chain);
+        }
+        /// For non single point case, we can still benefit from deterministic functions chain of ORDER BY key columns.
+        /// For example, if a hash function is used in ORDER BY key, we can still use it to filter values in set index.
+        /// In this case, since we do not guarantee that wrapped functions are injective, we have to relax `can_be_false` of this
+        /// RPN element to avoid false negatives in `set->checkInRange`.
+        else if (
+            (out_disable_exact_set_evaluation != nullptr) && allow_constant_transformation
+            && canSetValuesBeWrappedByFunctions(node, info, index_mapping.key_index, data_type, set_transforming_chain))
+        {
+            indexes_mapping.push_back(index_mapping);
+            data_types.push_back(data_type);
+            set_transforming_chains.push_back(set_transforming_chain);
+            *out_disable_exact_set_evaluation = true;
         }
     };
 
@@ -1796,7 +1875,8 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         data_types,
         left_args_count,
         info,
-        allow_constant_transformation);
+        allow_constant_transformation,
+        nullptr);
 
     if (indexes_mapping.empty())
         return false;
@@ -1853,76 +1933,8 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     chassert(func.getFunctionName() == "has");
     chassert(func.getArgumentsSize() == 2);
 
-    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
+    /// Check if key usable
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
-
-    /// First argument of has() must be a constant array
-    Field array_value;
-    DataTypePtr array_type;
-    if (!array_arg.tryGetConstant(array_value, array_type))
-        return false;
-
-    if (array_value.getType() != Field::Types::Array)
-        return false;
-
-    const auto * array_data_type = typeid_cast<const DataTypeArray *>(array_type.get());
-    chassert(array_data_type);
-
-    const Array & values = array_value.safeGet<Array>();
-    if (values.empty())
-    {
-        /// has([], x) is always false – we can mark the condition as always false
-        out.function = RPNElement::ALWAYS_FALSE;
-        return true;
-    }
-
-    Columns set_columns;
-    DataTypes set_types;
-
-    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
-
-    if (isTuple(array_nested_type))
-    {
-        /// Array of tuples: Array(Tuple(...), Tuple(...), ...)
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*array_nested_type);
-        const auto & element_types = tuple_type.getElements();
-        size_t tuple_size = element_types.size();
-
-        MutableColumns tuple_columns;
-        tuple_columns.reserve(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            tuple_columns.emplace_back(element_types[i]->createColumn());
-
-        for (const auto & value : values)
-        {
-            chassert(value.getType() == Field::Types::Tuple);
-
-            const auto & tuple_value = value.safeGet<Tuple>();
-
-            chassert(tuple_value.size() == tuple_size);
-
-            for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i]->insert(tuple_value[i]);
-        }
-
-        auto column_tuple = ColumnTuple::create(std::move(tuple_columns));
-        set_columns.emplace_back(std::move(column_tuple));
-        set_types.push_back(array_nested_type);
-    }
-    else
-    {
-        /// Array(T)
-        MutableColumnPtr column = array_nested_type->createColumn();
-        column->reserve(values.size());
-
-        for (const auto & value : values)
-        {
-            column->insert(value);
-        }
-
-        set_columns.emplace_back(std::move(column));
-        set_types.push_back(array_nested_type);
-    }
 
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     std::vector<MonotonicFunctionsChain> set_transforming_chains;
@@ -1930,10 +1942,40 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     size_t key_args_count = 0;
 
     analyzeKeyExpressionForSetIndex(
-        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation);
+        key_arg, indexes_mapping, set_transforming_chains, data_types, key_args_count, info, allow_constant_transformation, &out.relaxed);
 
     if (indexes_mapping.empty())
         return false;
+
+    /// Check if array argument is usable
+    const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
+
+    /// First argument of has() must be a constant array
+    if (!array_arg.isConstant())
+        return false;
+
+    auto column = array_arg.getConstantColumn();
+
+    const auto * array_data_type = typeid_cast<const DataTypeArray *>(column.type.get());
+    if (!array_data_type)
+        return false;
+
+    const auto * const_column = assert_cast<const ColumnConst *>(column.column.get());
+    const auto * array_col = assert_cast<const ColumnArray *>(const_column->getDataColumnPtr().get());
+
+    const DataTypePtr & array_nested_type = array_data_type->getNestedType();
+
+    const auto array_elements = array_col->getDataPtr();
+    if (array_elements->empty())
+    {
+        /// has([], x) is always false – we can mark the condition as always false
+        out.function = RPNElement::ALWAYS_FALSE;
+        return true;
+    }
+
+    /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
+    Columns set_columns = {array_elements};
+    DataTypes set_types = {array_nested_type};
 
     bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(
