@@ -1985,6 +1985,8 @@ class ClickHouseCluster:
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
         extra_parameters=None,
+        privileged_docker=False,
+        add_loop_control_device=False,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -2118,6 +2120,8 @@ class ClickHouseCluster:
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
             extra_parameters=extra_parameters,
+            privileged_docker=privileged_docker,
+            add_loop_control_device=add_loop_control_device,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -4138,6 +4142,7 @@ services:
     {name}:
         image: {image}:{tag}
         hostname: {hostname}
+        privileged: {privileged}
         volumes:
             - {instance_config_dir}:/etc/clickhouse-server/
             - {db_dir}:/var/lib/clickhouse/
@@ -4191,6 +4196,8 @@ services:
                 {net_aliases}
                     {net_alias1}
         init: {init_flag}
+        {devices}
+            {loop_control_device}
 """
 
 
@@ -4269,6 +4276,8 @@ class ClickHouseInstance:
         use_docker_init_flag=False,
         with_dolor=False,
         extra_parameters=None,
+        privileged_docker=False,
+        add_loop_control_device=False,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4433,6 +4442,12 @@ class ClickHouseInstance:
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
         self.with_dolor = with_dolor
+        self.privileged_docker = privileged_docker
+
+        self.devices = self.loop_control_device = ""
+        if add_loop_control_device:
+            self.devices = "devices:"
+            self.loop_control_device = "- /dev/loop-control"
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5814,6 +5829,9 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    privileged=self.privileged_docker,
+                    devices=self.devices,
+                    loop_control_device=self.loop_control_device
                 )
             )
 
