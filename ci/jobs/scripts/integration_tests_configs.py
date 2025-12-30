@@ -88,6 +88,7 @@ TEST_CONFIGS = [
     TC("test_server_overload/", True, "no idea why i'm sequential"),
     # TC("test_server_reload/", True, "no idea why i'm sequential"),
     TC("test_storage_kafka/", True, "no idea why i'm sequential"),
+    TC("test_case_insensitive_disk/", True, "mount fails otherwise"),
     TC("test_storage_kerberized_kafka/", True, "no idea why i'm sequential"),
     # TC("test_storage_s3_queue/", True, "no idea why i'm sequential"),
     # TC("test_system_flush_logs/", True, "no idea why i'm sequential"),
