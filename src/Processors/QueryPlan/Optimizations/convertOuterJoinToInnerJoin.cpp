@@ -112,7 +112,8 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
                 const auto * current_node = nodes_to_process.top();
                 nodes_to_process.pop();
 
-                join_keys_interesting_side.insert(current_node->result_name);
+                if (current_node->type == ActionsDAG::ActionType::INPUT)
+                    join_keys_interesting_side.insert(current_node->result_name);
 
                 if (current_node->type == ActionsDAG::ActionType::FUNCTION && current_node->function_base->isInjective({}))
                 {
