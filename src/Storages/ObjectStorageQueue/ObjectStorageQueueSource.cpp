@@ -471,6 +471,10 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            chassert(
+                metadata->useBucketsForProcessing(),
+                fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
+
             std::lock_guard lock(mutex);
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
@@ -551,6 +555,10 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     chassert(object_info);
     if (use_buckets_for_processing)
     {
+        chassert(
+            metadata->useBucketsForProcessing(),
+            fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
+
         const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
         std::lock_guard lock(mutex);
         keys_cache_per_bucket.at(bucket)->keys.emplace_front(object_info, file_metadata);
