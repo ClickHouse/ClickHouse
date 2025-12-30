@@ -1380,6 +1380,10 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (out_value.isNull())
         return false;
 
+    /// `NaN != NaN` is true. This breaks equivalence for `notEquals` transformations. So, skip.
+    if (isNaN(out_value))
+        return false;
+
     DeterministicKeyTransformDag dag;
     auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
         expr_name,
