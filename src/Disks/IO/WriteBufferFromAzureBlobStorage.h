@@ -13,6 +13,7 @@
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 namespace Poco
@@ -36,6 +37,8 @@ public:
         size_t buf_size_,
         const WriteSettings & write_settings_,
         std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
+        const String & container_for_logging_ = {},
+        BlobStorageLogWriterPtr blob_log_ = {},
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
@@ -98,6 +101,9 @@ private:
     bool check_objects_after_upload = false;
 
     std::deque<PartData> detached_part_data;
+
+    String container_for_logging;
+    BlobStorageLogWriterPtr blob_log;
 };
 
 }
