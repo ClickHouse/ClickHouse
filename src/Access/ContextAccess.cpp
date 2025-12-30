@@ -106,6 +106,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         static const AccessFlags alter_table = AccessType::ALTER_TABLE;
         static const AccessFlags alter_view = AccessType::ALTER_VIEW;
 
+        if (res & create_database)
+            res |= create_temporary_database;
+
         if (res & create_table)
             res |= create_view;
 
@@ -114,9 +117,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (res & alter_table)
             res |= alter_view;
-
-        if (res & create_database)
-            res |= create_temporary_database;
 
         /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
         static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
