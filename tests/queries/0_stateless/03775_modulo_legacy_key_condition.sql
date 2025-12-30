@@ -2,7 +2,9 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
-DROP TABLE IF EXISTS t_modulo_legacy_primary_key;
+-- { echo }
+
+DROP TABLE IF EXISTS t_modulo_legacy_partition_key;
 
 CREATE TABLE t_modulo_legacy_partition_key
 (
@@ -10,7 +12,8 @@ CREATE TABLE t_modulo_legacy_partition_key
 )
 ENGINE = MergeTree
 PARTITION BY moduloLegacy(x, 16)
-ORDER BY x;
+ORDER BY x
+SETTINGS index_granularity = 1;
 
 INSERT INTO t_modulo_legacy_partition_key
 SELECT number
@@ -25,6 +28,15 @@ SELECT *
 FROM t_modulo_legacy_partition_key
 WHERE x % 16 = 3;
 
+SELECT *
+FROM t_modulo_legacy_partition_key
+WHERE x % 16 IN [3, 2];
+
+EXPLAIN indexes = 1
+SELECT *
+FROM t_modulo_legacy_partition_key
+WHERE x % 16 IN [3, 2];
+
 DROP TABLE IF EXISTS t_modulo_legacy_primary_key;
 
 CREATE TABLE t_modulo_legacy_primary_key
@@ -32,12 +44,12 @@ CREATE TABLE t_modulo_legacy_primary_key
     x UInt64
 )
 ENGINE = MergeTree
-ORDER BY moduloLegacy(x, 16);
+ORDER BY moduloLegacy(x, 16)
+SETTINGS index_granularity = 1;
 
 INSERT INTO t_modulo_legacy_primary_key
 SELECT number
 FROM numbers(20);
-
 
 SELECT *
 FROM t_modulo_legacy_primary_key
@@ -47,3 +59,12 @@ EXPLAIN indexes = 1
 SELECT *
 FROM t_modulo_legacy_primary_key
 WHERE x % 16 = 3;
+
+SELECT *
+FROM t_modulo_legacy_primary_key
+WHERE x % 16 IN [3, 2];
+
+EXPLAIN indexes = 1
+SELECT *
+FROM t_modulo_legacy_primary_key
+WHERE x % 16 IN [3, 2];
