@@ -1271,6 +1271,9 @@ void StorageObjectStorageQueue::alter(
         std::set<std::string> new_settings_set;
 
         const auto mode = getTableMetadata().getMode();
+        const size_t dependencies_count = getDependencies();
+        bool requires_detached_mv = false;
+
         for (auto & setting : new_settings)
         {
             LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
@@ -1301,7 +1304,6 @@ void StorageObjectStorageQueue::alter(
 
             if (requiresDetachedMV(setting.name))
             {
-                const size_t dependencies_count = getDependencies();
                 if (dependencies_count)
                 {
                     throw Exception(
@@ -1310,10 +1312,23 @@ void StorageObjectStorageQueue::alter(
                         "(dependencies count: {})",
                         setting.name, dependencies_count);
                 }
+                requires_detached_mv = true;
             }
 
             changed_settings.push_back(setting);
         }
+        if (requires_detached_mv)
+        {
+            for (auto & task : streaming_tasks)
+                task->deactivate();
+        }
+        SCOPE_EXIT({
+            if (requires_detached_mv)
+            {
+                for (auto & task : streaming_tasks)
+                    task->activateAndSchedule();
+            }
+        });
 
         LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
