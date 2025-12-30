@@ -12,6 +12,11 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -116,6 +121,23 @@ public:
         return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
     }
 
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+        {
+            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+            return b.CreateSelect(is_null, b.getInt8(0), b.getInt8(1));
+        }
+        else
+            return b.getInt8(1);
+    }
+#endif
+
 private:
     MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res) /// NOLINT
@@ -184,7 +206,7 @@ SELECT x FROM t_null WHERE isNotNull(y);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotNull>(documentation);
 }
