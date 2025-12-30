@@ -1037,7 +1037,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         }
 
         std::map<String, String> parts_postpone_reasons_map;
-        if (!parts_to_do_names.empty()) {
+        if (!parts_to_do_names.empty())
+        {
             for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
             {
                 if (part_name == PostponeReasons::ALL_PARTS_KEY)

@@ -2620,7 +2620,8 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         Names parts_in_progress = status.parts_in_progress.getParts();
 
         std::map<String, String> parts_postpone_reasons_map;
-        if (!status.is_done) {
+        if (!status.is_done)
+        {
             for (const auto & [part_name, postpone_reason] : current_parts_postpone_reasons)
             {
                 if (part_name == PostponeReasons::ALL_PARTS_KEY)

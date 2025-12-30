@@ -4239,7 +4239,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
         }
 
-        fiu_do_on(FailPoints::rmt_merge_selecting_task_no_free_threads, { max_source_part_size_for_mutation = 0; });
+        fiu_do_on(FailPoints::rmt_merge_selecting_task_no_free_threads, { max_source_part_bytes_for_mutation = 0; });
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_bytes_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
         {
@@ -4265,8 +4265,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
             for (const auto & part : data_parts)
             {
-                fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_size_for_mutation = 1; });
-                if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
+                fiu_do_on(FailPoints::rmt_merge_selecting_task_max_part_size, { max_source_part_bytes_for_mutation = 1; });
+                if (part->getBytesOnDisk() > max_source_part_bytes_for_mutation)
                 {
                     queue.addPartsPostponeReasons(part->name, PostponeReasons::EXCEED_MAX_PART_SIZE);
                     continue;
