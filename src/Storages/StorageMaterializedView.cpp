@@ -36,7 +36,6 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -44,8 +43,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/RestoreSettings.h>
 
 namespace DB
 {
@@ -848,10 +845,8 @@ bool StorageMaterializedView::supportsDynamicSubcolumns() const
 
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    auto backup_data_from_materialized_view_targets
-        = backup_entries_collector.getBackupSettings().backup_data_from_materialized_view_targets;
     /// We backup the target table's data only if it's inner.
-    if (backup_data_from_materialized_view_targets && hasInnerTable() && fixed_uuid)
+    if (hasInnerTable() && fixed_uuid)
     {
         if (auto table = tryGetTargetTable())
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);
@@ -863,39 +858,14 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    auto restore_materialized_view_targets_using_insert_select
-        = restorer.getRestoreSettings().restore_materialized_view_targets_using_insert_select;
-    if (!restore_materialized_view_targets_using_insert_select && hasInnerTable() && fixed_uuid)
+    if (hasInnerTable() && fixed_uuid)
         getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
-void StorageMaterializedView::finalizeRestoreFromBackup(const RestoreSettings & restore_settings)
+void StorageMaterializedView::finalizeRestoreFromBackup()
 {
     if (refresher)
         refresher->finalizeRestoreFromBackup();
-    else if (restore_settings.restore_materialized_view_targets_using_insert_select)
-    {
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-        auto target_table = getTargetTableId();
-        auto select = metadata_snapshot->getSelectQuery().select_query;
-        auto insert = std::make_shared<ASTInsertQuery>();
-        insert->table_id = target_table;
-        insert->select = select;
-        InterpreterInsertQuery interpreter(
-            insert,
-            getContext(),
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
-
-        auto block_io = interpreter.execute();
-        QueryPipeline & pipeline = block_io.pipeline;
-        {
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
-        }
-    }
 }
 
 bool StorageMaterializedView::supportsBackupPartition() const

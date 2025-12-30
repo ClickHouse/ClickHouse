@@ -140,10 +140,6 @@ struct RestoreSettings
     /// to the `detached` folder with names starting with `broken-from-backup'.
     bool restore_broken_parts_as_detached = false;
 
-    /// If true, restore data for materialized view targets by executing an INSERT SELECT query from the materialized view definition,
-    /// instead of restoring the target table’s data files directly from the backup.
-    bool restore_materialized_view_targets_using_insert_select = false;
-
     /// Internal, should not be specified by user.
     bool internal = false;
 

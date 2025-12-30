@@ -65,7 +65,6 @@ using DatabaseAndTableName = std::pair<String, String>;
 
 class BackupEntriesCollector;
 class RestorerFromBackup;
-struct RestoreSettings;
 
 class ConditionSelectivityEstimator;
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
@@ -269,7 +268,7 @@ public:
     /// If this data does some background work that depends on contents of other tables, this is
     /// the place to kick off that work (and it should be paused when IStorage is created with
     /// is_restore_from_backup = true in StorageFactory::Arguments).
-    virtual void finalizeRestoreFromBackup(const RestoreSettings & /*restore_settings*/) { }
+    virtual void finalizeRestoreFromBackup() { }
 
     /// Return true if there is at least one part containing lightweight deleted mask.
     virtual bool hasLightweightDeletedMask() const { return false; }

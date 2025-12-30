@@ -1269,7 +1269,7 @@ void RestorerFromBackup::finalizeTables()
     }
 
     for (const auto & storage : tables)
-        storage->finalizeRestoreFromBackup(getRestoreSettings());
+        storage->finalizeRestoreFromBackup();
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)

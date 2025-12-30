@@ -169,7 +169,6 @@ namespace
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
     M(Bool, restore_broken_parts_as_detached) \
-    M(Bool, restore_materialized_view_targets_using_insert_select) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
