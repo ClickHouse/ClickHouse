@@ -3382,12 +3382,15 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
 
         if (interpolate_list.contains(projection_names[i]))
         {
-            auto f = std::make_shared<FunctionNode>("__interpolate");
-            f->getArguments().getNodes().push_back(projection_nodes[i]);
-            f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
-            resolveOrdinaryFunctionNodeByName(*f, f->getFunctionName(), scope.context);
-            projection_nodes[i] = f;
-            scope.expression_argument_name_to_node.emplace(projection_names[i], projection_nodes[i]);
+            if (const auto * function_node = projection_nodes[i]->as<FunctionNode>(); !function_node || function_node->getFunctionName() != "__interpolate")
+            {
+                auto f = std::make_shared<FunctionNode>("__interpolate");
+                f->getArguments().getNodes().push_back(projection_nodes[i]);
+                f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
+                resolveOrdinaryFunctionNodeByName(*f, f->getFunctionName(), scope.context);
+                projection_nodes[i] = f;
+                scope.expression_argument_name_to_node.emplace(projection_names[i], projection_nodes[i]);
+            }
         }
     }
 
