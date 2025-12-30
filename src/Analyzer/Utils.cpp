@@ -1241,9 +1241,12 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             /// This complicated logic is used to avoid bugs regarding DST on remote execution, where we send
             /// the query in text format to execution node
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
-            auto decimal_type = std::make_shared<DataTypeDecimal<Decimal64>>(18, datetime64_type.getScale());
+            const auto & decimal_col = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
+            Int64 raw_value = decimal_col.getData()[row].value;
+            UInt32 scale = datetime64_type.getScale();
+
             WriteBufferFromOwnString buf;
-            decimal_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            writeText(DateTime64(raw_value), scale, buf, true /* trailing_zeros */);
             return Field(buf.str());
         }
         case TypeIndex::UInt8:
