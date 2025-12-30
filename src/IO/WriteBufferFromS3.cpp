@@ -529,7 +529,8 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         return;
     }
 
-    /// all iterators are invalidated after push_back, so we create part_tag reference after push_back
+    /// all iterators are invalidated after push_back,
+    // so we create part_tag reference after push_back as the reference will not be invalidated
     multipart_tags.push_back({});
     auto & part_tag = multipart_tags.back();
     size_t part_number = multipart_tags.size();
