@@ -140,10 +140,11 @@ private:
             if constexpr (for_like_pattern)
             {
                 size_t cur = 0;
+                const char * data = input.data();
                 size_t length = input.size();
                 String token;
 
-                while (cur < length && extractor.nextInStringLike(input.data(), length, &cur, token))
+                while (cur < length && extractor.nextInStringLike(data, length, &cur, token))
                 {
                     column_result.insertData(token.data(), token.size());
                     ++tokens_count;
@@ -268,15 +269,6 @@ public:
 
 REGISTER_FUNCTION(Tokens)
 {
-    FunctionDocumentation::Description description = R"(
-Splits a string into tokens using the given tokenizer.
-The default tokenizer uses non-alphanumeric ASCII characters as separators.
-
-In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
-To do so, pass the separators in order of descending length.
-For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
-)";
-    FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
@@ -285,27 +277,66 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
         {"stop_words", "Only relevant if argument `tokenizer` is `standard`: An optional parameter which defines the stop words. If not set explicitly, defaults to `['，', '。', '！', '？', '；', '：', '、', '“', '”', '‘', '’']`.", {"const Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Default tokenizer",
-        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
-        R"(
-['test1','test2','test3','test4']
-        )"
-    },
-    {
-        "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
-        R"(
-['abc','bc ','c d',' de','def']
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTokensOverloadResolver<false>>(documentation);
-    factory.registerFunction<FunctionTokensOverloadResolver<true>>(); /// tokensForLikePattern is mainly for debugging/testing
+    {
+        FunctionDocumentation::Description description = R"(
+            Splits a string into tokens using the given tokenizer.
+            The default tokenizer uses non-alphanumeric ASCII characters as separators.
+
+            In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+            To do so, pass the separators in order of descending length.
+            For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
+            )";
+        FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
+        FunctionDocumentation::Examples examples = {
+            {
+                "Default tokenizer",
+                R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
+                R"(
+                    ['test1','test2','test3','test4']
+                    )"
+            },
+            {
+                "Ngram tokenizer",
+                "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
+                R"(
+                    ['abc','bc ','c d',' de','def']
+                    )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionTokensOverloadResolver<false>>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+            Splits a LIKE pattern string into tokens using the specified tokenizer.
+
+            Unlike the `tokens` function, this function is aware of LIKE pattern semantics
+            (such as leading and trailing wildcard characters) and applies tokenizer-specific
+            rules to extract meaningful tokens for pattern matching.
+
+            This function is primarily intended for debugging and testing purposes,
+            and is used internally to analyze tokenization behavior for LIKE patterns.
+            )";
+        FunctionDocumentation::Syntax syntax = "tokensForLikePattern(value[, tokenizer[, ngrams[, separators]]])";
+        FunctionDocumentation::Examples examples = {
+            {
+                "Default tokenizer",
+                R"(SELECT tokensForLikePattern('%test1,test2,test3%') AS tokens;)",
+                R"(
+                    ['test2']
+                    )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionTokensOverloadResolver<true>>(documentation); /// tokensForLikePattern is mainly for debugging/testing
+    }
 }
 }
