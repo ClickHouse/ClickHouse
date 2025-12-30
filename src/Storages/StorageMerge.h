@@ -26,19 +26,25 @@ public:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const DBToTableSetMap & source_databases_and_tables_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     std::string getName() const override { return "Merge"; }
@@ -52,6 +58,9 @@ public:
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
+
+    // Would be checked for inner table during sink creation.
+    bool supportsSparseSerialization() const override { return true; }
 
     bool canMoveConditionsToPrewhere() const override;
 
@@ -94,6 +103,8 @@ public:
         const String & source_table_regexp,
         size_t max_tables_to_look);
 
+    StorageID getTableToWrite(ContextPtr query_context) const;
+
 private:
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
@@ -121,6 +132,10 @@ private:
     };
 
     DatabaseNameOrRegexp database_name_or_regexp;
+
+    std::optional<QualifiedTableName> source_table_to_write;
+    std::optional<StorageID> table_to_write;
+    bool table_to_write_auto = false;
 
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
@@ -150,6 +165,12 @@ private:
 
     template <typename F>
     std::optional<UInt64> totalRowsOrBytes(F && func) const;
+
+    void setTableToWrite(
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_);
 
     friend class ReadFromMerge;
 };
