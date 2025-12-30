@@ -35,9 +35,9 @@ def test_s3_non_deterministic_partition_by(started_cluster):
         """
     )
 
-    node.query("INSERT INTO t VALUES ('first')")
+    node.query("INSERT INTO t VALUES ('foo')")
     time.sleep(0.1)
-    node.query("INSERT INTO t VALUES ('second')")
+    node.query("INSERT INTO t VALUES ('foo')")
 
     parquet_files = [
         f.object_name
