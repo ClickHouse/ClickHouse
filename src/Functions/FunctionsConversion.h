@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool input_format_numbers_enum_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
@@ -133,6 +134,7 @@ struct FunctionConvertSettings
     const bool cast_string_to_dynamic_use_inference;
     const bool input_format_ipv4_default_on_conversion_error;
     const bool input_format_ipv6_default_on_conversion_error;
+    const bool input_format_numbers_enum_on_conversion_error;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
@@ -147,6 +149,7 @@ struct FunctionConvertSettings
         , cast_string_to_dynamic_use_inference(context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference])
         , input_format_ipv4_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error])
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
+        , input_format_numbers_enum_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_numbers_enum_on_conversion_error])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
@@ -5766,14 +5769,11 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-
-        bool input_format_numbers_enum_on_conversion_error_value = context && context->getSettingsRef().input_format_numbers_enum_on_conversion_error;
-
-        if (isNativeNumber(from_type))
+        else if (isNativeNumber(from_type))
         {
-            if (!input_format_numbers_enum_on_conversion_error_value)
+            if (!settings.input_format_numbers_enum_on_conversion_error)
             {
-                auto function = Function::create();
+                auto function = Function::createFromSettings(settings);
                 return createFunctionAdaptor(function, from_type);
             }
 
@@ -5798,18 +5798,16 @@ private:
             else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
                 return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
         }
-
-        if (isEnum(from_type))
+        else if (isEnum(from_type))
         {
             auto function = Function::createFromSettings(settings);
             return createFunctionAdaptor(function, from_type);
         }
-
-        if (cast_type == CastType::accurateOrNull)
+        else if (cast_type == CastType::accurateOrNull)
             return createToNullableColumnWrapper();
-        else
-            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                from_type->getName(), to_type->getName());
+
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+            from_type->getName(), to_type->getName());
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -5891,8 +5889,7 @@ private:
     {
         using FieldType = EnumType::FieldType;
 
-        const char * function_name = cast_name;
-        return [function_name] (
+        return [function_name = cast_name] (
             ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
         {
             const auto & first_col = arguments.front().column.get();
@@ -5900,69 +5897,53 @@ private:
 
             const ColumnNumberType * col = typeid_cast<const ColumnNumberType *>(first_col);
 
-            if (col && nullable_col && nullable_col->size() != col->size())
+            if (!col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+
+            if (nullable_col && nullable_col->size() != col->size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
 
-            if (col)
+            const auto size = col->size();
+            const auto & in_data = col->getData();
+
+            auto res = result_type.createColumn();
+            auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
+            out_data.resize(size);
+
+            const auto default_enum_value = result_type.getValues().front().second;
+
+            constexpr auto min_value = std::numeric_limits<FieldType>::min();
+            constexpr auto max_value = std::numeric_limits<FieldType>::max();
+            constexpr auto is_signed = is_signed_v<typename ColumnNumberType::ValueType>;
+
+            const NullMap * null_map = nullptr;
+            if (nullable_col)
+                null_map = &nullable_col->getNullMapData();
+
+            for (size_t i = 0; i < size; ++i)
             {
-                const auto size = col->size();
-                const auto & in_data = col->getData();
-
-                auto res = result_type.createColumn();
-                auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
-                out_data.resize(size);
-
-                auto default_enum_value = result_type.getValues().front().second;
-
-                constexpr auto min_value = std::numeric_limits<FieldType>::min();
-                constexpr auto max_value = std::numeric_limits<FieldType>::max();
-                constexpr auto is_signed = is_signed_v<typename ColumnNumberType::ValueType>;
-
-                if (nullable_col)
+                if (null_map && (*null_map)[i])
                 {
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (!nullable_col->isNullAt(i))
-                        {
-                            if constexpr (is_signed)
-                            {
-                                if (in_data[i] < min_value)
-                                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
-                            }
-
-                            if (in_data[i] > max_value)
-                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
-
-                            result_type.findByValue(static_cast<FieldType>(in_data[i]));
-                            out_data[i] = static_cast<FieldType>(in_data[i]);
-                        }
-                        else
-                            out_data[i] = default_enum_value;
-                    }
+                    out_data[i] = default_enum_value;
                 }
                 else
                 {
-                    for (size_t i = 0; i < size; ++i)
+                    if constexpr (is_signed)
                     {
-                        if constexpr (is_signed)
-                        {
-                            if (in_data[i] < min_value)
-                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
-                        }
-
-                        if (in_data[i] > max_value)
+                        if (in_data[i] < min_value)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
-
-                        result_type.findByValue(static_cast<FieldType>(in_data[i]));
-                        out_data[i] = static_cast<FieldType>(in_data[i]);
                     }
-                }
 
-                return res;
+                    if (in_data[i] > max_value)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
+
+                    result_type.findByValue(static_cast<FieldType>(in_data[i]));
+                    out_data[i] = static_cast<FieldType>(in_data[i]);
+                }
             }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
-                    first_col->getName(), function_name);
+
+            return res;
         };
     }
 

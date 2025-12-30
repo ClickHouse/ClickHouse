@@ -723,6 +723,11 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, input_format_numbers_enum_on_conversion_error, false, R"(
+Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
+
+Disabled by default.
+)", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
