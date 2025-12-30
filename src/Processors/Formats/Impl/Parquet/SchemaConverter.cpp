@@ -166,6 +166,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     std::optional<size_t> idx_in_output_block;
     size_t wrap_in_arrays = 0;
+    DataTypePtr outer_type_hint = node.type_hint;
 
     if (node.schema_context == SchemaContext::None)
     {
@@ -187,6 +188,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 node.name = sample_block->getByPosition(pos.value()).name; // match case
                 chassert(!node.type_hint);
                 node.type_hint = sample_block->getByPosition(pos.value()).type;
+                outer_type_hint = node.type_hint; // before unwrapping arrays
 
                 for (size_t i = 1; i < levels.size(); ++i)
                 {
@@ -206,7 +208,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         }
     }
 
-    DataTypePtr outer_type_hint = node.type_hint;
     size_t prev_levels_size = levels.size();
     SCOPE_EXIT(
         {
