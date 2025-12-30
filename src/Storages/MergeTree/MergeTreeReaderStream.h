@@ -133,6 +133,8 @@ struct LargePostingListReaderStream : public MergeTreeReaderStreamSingleColumnWh
     {
     }
 
+    void seek(UInt64 offset);
+
     alignas(16) UInt32 doc_buffer[128];
     alignas(16) uint8_t packed_buffer[128 * 4];
 

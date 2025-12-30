@@ -463,22 +463,30 @@ struct ReaderStreamCursor
     UInt32 remaining_count;
     UInt32 buf_size;
     UInt32 pos;
+    UInt64 offset;
+    bool do_seek;
 
     /// Disk-based c'tor
     ReaderStreamCursor(
-        LargePostingListReaderStream * s, UInt32 first_doc_id, UInt32 remaining_count_, UInt64 offset, bool do_seek, bool include_first_doc)
+        LargePostingListReaderStream * s,
+        UInt32 first_doc_id,
+        UInt32 remaining_count_,
+        UInt64 offset_,
+        bool do_seek_,
+        bool include_first_doc)
         : stream(s)
         , doc_buffer(stream->doc_buffer)
         , last_doc_id(first_doc_id)
         , remaining_count(remaining_count_)
         , buf_size(1)
         , pos(0)
+        , offset(offset_)
+        , do_seek(do_seek_)
     {
+        chassert(stream);
         chassert(doc_buffer);
 
-        if (do_seek)
-            static_cast<MergeTreeReaderStream &>(*stream).seekToMark({offset, 0});
-        else
+        if (!do_seek)
             chassert(static_cast<UInt64>(stream->getPosition()) == offset);
 
         if (include_first_doc)
@@ -501,6 +509,8 @@ struct ReaderStreamCursor
         , remaining_count(0)
         , buf_size(buf_size_)
         , pos(0)
+        , offset(0)
+        , do_seek(false)
     {
         chassert(doc_buffer);
     }
@@ -569,6 +579,12 @@ private:
     {
         if (remaining_count == 0)
             return;
+
+        if (do_seek)
+        {
+            stream->seek(offset);
+            do_seek = false;
+        }
 
         auto & data_buf = *stream->getDataBuffer();
         UInt32 bytes;
