@@ -89,9 +89,9 @@ curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ### Storage API {#storage-api}
 
 - **Base Path**: `/api/v1/storage`
-- **Description**: RESTful API for ZooKeeper-compatible storage operations
+- **Description**: REST API for Keeper storage operations
 
-The Storage API follows RESTful conventions where HTTP methods indicate the operation type:
+The Storage API follows REST conventions where HTTP methods indicate the operation type:
 
 | Operation | Path                                       | Method | Status Code | Description          |
 |-----------|--------------------------------------------|--------|-------------|----------------------|
