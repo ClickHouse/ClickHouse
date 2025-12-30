@@ -115,7 +115,7 @@ Chunk ValuesBlockInputFormat::read()
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     size_t rows_in_block = 0;
-    for (; rows_in_block < params.max_block_size; ++rows_in_block)
+    for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
         try
         {
