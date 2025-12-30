@@ -307,6 +307,7 @@ bool IDisk::isCaseInsensitive()
         createFile(path);
         is_case_insensitive = existsFile(boost::to_upper_copy(path));
         is_case_sensitivity_checked = true;
+        removeFile(path);
     }
     catch (Exception & e)
     {
