@@ -571,16 +571,15 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
         input_nodes_by_name[input_node->result_name] = input_node;
 
     auto & outputs = before_limit_by_actions->dag.getOutputs();
-    for (size_t i = 0; i < outputs.size(); ++i)
+    for (auto & output_node : outputs)
     {
-        const auto * output_node = outputs[i];
         /// If the output is a constant and there's a corresponding input with the same name,
         /// replace the constant output with the input to ensure the column is required from previous step
         if (output_node->type == ActionsDAG::ActionType::COLUMN)
         {
             auto it = input_nodes_by_name.find(output_node->result_name);
             if (it != input_nodes_by_name.end())
-                outputs[i] = it->second;
+                output_node = it->second;
         }
     }
 
