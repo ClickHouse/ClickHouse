@@ -189,10 +189,10 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
 
-                        if (write_settings.object_storage_write_if_none_match.empty())
+                        if (!write_settings.object_storage_write_if_none_match.empty())
                             options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
 
-                        if (write_settings.object_storage_write_if_match.empty())
+                        if (!write_settings.object_storage_write_if_match.empty())
                             options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
                         block_blob_client.Upload(
