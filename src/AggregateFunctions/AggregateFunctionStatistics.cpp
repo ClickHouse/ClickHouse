@@ -637,7 +637,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
-    }, {}, documentation_stddevSampStable);
+    }, {}, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
@@ -683,7 +683,7 @@ FROM test_data;
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
-    }, {}, documentation_stddevPopStable);
+    }, {}, documentation_stddevPopStable});
 
     FunctionDocumentation::Description covarSampStable_description = R"(
 Calculates the sample covariance:
