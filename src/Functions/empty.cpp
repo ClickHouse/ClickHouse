@@ -191,8 +191,8 @@ The function also works for Strings or UUIDs.
     FunctionDocumentation::Examples examples_not_empty = {{"Usage example", "SELECT notEmpty([1,2]);", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_empty = {description_empty, syntax_empty, arguments, returned_value_empty, examples_empty, introduced_in, category};
-    FunctionDocumentation documentation_not_empty = {description_not_empty, syntax_not_empty, arguments, returned_value_not_empty, examples_not_empty, introduced_in, category};
+    FunctionDocumentation documentation_empty = {description_empty, syntax_empty, arguments, {}, returned_value_empty, examples_empty, introduced_in, category};
+    FunctionDocumentation documentation_not_empty = {description_not_empty, syntax_not_empty, arguments, {}, returned_value_not_empty, examples_not_empty, introduced_in, category};
 
     // String function documentation
     FunctionDocumentation::Description description_empty_string = R"(
@@ -233,8 +233,8 @@ The function is also available for [arrays](/sql-reference/functions/array-funct
     }
     };
     FunctionDocumentation::Category category_string = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
-    FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
+    FunctionDocumentation documentation_empty_string = {description_empty_string, syntax_empty_string, arguments_string, {}, returned_value_empty_string, examples_empty_string, introduced_in, category_string};
+    FunctionDocumentation documentation_not_empty_string = {description_not_empty_string, syntax_not_empty_string, arguments_string, {}, returned_value_not_empty_string, examples_not_empty_string, introduced_in, category_string};
 
     factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>(documentation_not_empty);
     factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>(documentation_empty);

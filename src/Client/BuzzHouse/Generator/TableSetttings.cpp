@@ -14,11 +14,10 @@ namespace BuzzHouse
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices
-            = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+        static const DB::Strings & choices = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
-    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
+    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
@@ -250,6 +249,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 8.0)); }, {}, false)},
     {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", trueOrFalseSetting},
     {"merge_selector_enable_heuristic_to_remove_small_parts_at_right", trueOrFalseSetting},
+    {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"merge_selector_window_size", rowsRangeSetting},
     {"merge_total_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"min_age_to_force_merge_on_partition_only", trueOrFalseSetting},
@@ -263,6 +267,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_to_prewarm_caches", bytesRangeSetting},
     {"min_bytes_to_rebalance_partition_over_jbod", bytesRangeSetting},
+    {"min_columns_to_activate_adaptive_write_buffer",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"min_compress_block_size", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_fetch", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_merge", bytesRangeSetting},
@@ -729,6 +738,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
          {VersionedCollapsingMergeTree, mergeTreeTableSettings},
+         {GraphiteMergeTree, mergeTreeTableSettings},
          {File, fileTableSettings},
          {Null, {}},
          {Set, setTableSettings},
@@ -764,7 +774,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}}});
+         {Alias, {}},
+         {TimeSeries, {}},
+         {HDFS, {}},
+         {Hive, {}},
+         {JDBC, {}},
+         {Kafka, {}},
+         {NATS, {}},
+         {ODBC, {}},
+         {RabbitMQ, {}},
+         {YTsaurus, {}},
+         {Executable, {}},
+         {ExecutablePool, {}},
+         {FileLog, {}}});
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},
@@ -774,6 +796,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeColumnSettings},
          {CollapsingMergeTree, mergeTreeColumnSettings},
          {VersionedCollapsingMergeTree, mergeTreeColumnSettings},
+         {GraphiteMergeTree, mergeTreeColumnSettings},
          {File, {}},
          {Null, {}},
          {Set, {}},
@@ -809,7 +832,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}}});
+         {Alias, {}},
+         {TimeSeries, {}},
+         {HDFS, {}},
+         {Hive, {}},
+         {JDBC, {}},
+         {Kafka, {}},
+         {NATS, {}},
+         {ODBC, {}},
+         {RabbitMQ, {}},
+         {YTsaurus, {}},
+         {Executable, {}},
+         {ExecutablePool, {}},
+         {FileLog, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

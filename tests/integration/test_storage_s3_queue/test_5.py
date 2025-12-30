@@ -75,6 +75,7 @@ def started_cluster():
                 "configs/keeper_retries.xml",
             ],
             stay_alive=True,
+            cpu_limit=8
         )
         cluster.add_instance(
             "instance2",
@@ -793,9 +794,9 @@ def test_shutdown_order(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
-            "polling_max_timeout_ms": 0,
-            "polling_min_timeout_ms": 0,
+            "s3queue_processing_threads_num": 5,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
         },
     )
 
@@ -806,7 +807,7 @@ def test_shutdown_order(started_cluster):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
             s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
             node.query(
-                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(5000000)"
+                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(50000)"
             )
 
     insert()
@@ -823,6 +824,8 @@ def test_shutdown_order(started_cluster):
 
     node.restart_clickhouse()
 
+    node.query(f"SYSTEM FLUSH LOGS system.text_log")
+
     def check_in_text_log(message, logger_name):
         return int(
             node.query(
@@ -833,6 +836,9 @@ def test_shutdown_order(started_cluster):
     assert 0 == check_in_text_log(
         "Failed to process data", f"StorageS3Queue(default.{table_name})"
     )
+
+    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+
     assert 0 == int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
