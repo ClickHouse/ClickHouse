@@ -236,9 +236,10 @@ void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     if (setErrorResponseForZKCode(error, response))
         return;
 
-    response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_CREATED, "Created");
     response.setContentType("text/plain");
-    *response.send() << "OK\n";
+    response.set("Location", storage_path);
+    *response.send() << "Created\n";
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
@@ -248,7 +249,7 @@ void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
     if (!maybe_request_version.has_value())
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Version parameter is not set or invalid.");
-        *response.send() << "Version parameter is not set or invalid for remove request.\n";
+        *response.send() << "Version parameter is not set or invalid for DELETE request.\n";
         return;
     }
 
@@ -257,9 +258,41 @@ void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
     if (setErrorResponseForZKCode(error, response))
         return;
 
-    response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-    response.setContentType("text/plain");
-    *response.send() << "OK\n";
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NO_CONTENT, "No Content");
+    response.send();
+}
+
+std::optional<Coordination::OpNum> KeeperHTTPStorageHandler::getOperationFromRequest(
+    const HTTPServerRequest & request, HTTPServerResponse & response)
+{
+    const auto & method = request.getMethod();
+
+    if (method == Poco::Net::HTTPRequest::HTTP_GET)
+    {
+        /// Check for ?children=true query parameter
+        Poco::URI uri(request.getURI());
+        const auto query_params = uri.getQueryParameters();
+        const auto children_param = std::ranges::find_if(
+            query_params, [](const auto & param) { return param.first == "children"; });
+
+        if (children_param != query_params.end() && children_param->second == "true")
+            return Coordination::OpNum::List;
+
+        return Coordination::OpNum::Get;
+    }
+    if (method == Poco::Net::HTTPRequest::HTTP_HEAD)
+        return Coordination::OpNum::Exists;
+    if (method == Poco::Net::HTTPRequest::HTTP_POST)
+        return Coordination::OpNum::Create;
+    if (method == Poco::Net::HTTPRequest::HTTP_PUT)
+        return Coordination::OpNum::Set;
+    if (method == Poco::Net::HTTPRequest::HTTP_DELETE)
+        return Coordination::OpNum::Remove;
+
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED, "Method not allowed.");
+    *response.send() << "HTTP method '" << method << "' is not supported. "
+                     << "Use GET, HEAD, POST, PUT, or DELETE.\n";
+    return std::nullopt;
 }
 
 void KeeperHTTPStorageHandler::handleRequest(
@@ -267,14 +300,6 @@ void KeeperHTTPStorageHandler::handleRequest(
 try
 {
     static constexpr auto uri_segments_prefix_length = 3;  /// /api/v1/storage
-    static const std::unordered_map<std::string, Coordination::OpNum> supported_storage_operations = {
-        {"exists", Coordination::OpNum::Exists},
-        {"list", Coordination::OpNum::List},
-        {"get", Coordination::OpNum::Get},
-        {"set", Coordination::OpNum::Set},
-        {"create", Coordination::OpNum::Create},
-        {"remove", Coordination::OpNum::Remove},
-    };
 
     std::vector<std::string> uri_segments;
     try
@@ -289,25 +314,14 @@ try
         return;
     }
 
-    // non-strict path "/api/v1/storage" filter is already attached
-    if (uri_segments.size() <= uri_segments_prefix_length)
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid storage request path.");
-        *response.send() << "Invalid storage request path.\n";
+    const auto maybe_opnum = getOperationFromRequest(request, response);
+    if (!maybe_opnum.has_value())
         return;
-    }
+    const auto opnum = maybe_opnum.value();
 
-    const auto & operation_name = uri_segments[uri_segments_prefix_length];
-    if (!supported_storage_operations.contains(operation_name))
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Storage operation is not supported.");
-        *response.send() << "Storage operation is not supported.\n";
-        return;
-    }
-    const auto opnum = supported_storage_operations.at(operation_name);
-
+    /// Build storage path from URL segments after /api/v1/storage
     std::string storage_path;
-    for (size_t i = uri_segments_prefix_length + 1; i < uri_segments.size(); ++i)
+    for (size_t i = uri_segments_prefix_length; i < uri_segments.size(); ++i)
         storage_path += "/" + uri_segments[i];
     if (storage_path.empty())
         storage_path = "/";
@@ -320,7 +334,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Error when executing Keeper storage operation: " + operation_name);
+        tryLogCurrentException(log, "Error when executing Keeper storage operation");
         response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         *response.send() << getCurrentExceptionMessage(false) << '\n';
     }

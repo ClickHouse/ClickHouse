@@ -89,13 +89,15 @@ curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
 ### Storage API {#storage-api}
 
 - **Base Path**: `/api/v1/storage`
-- **Description**: REST API for ZooKeeper-compatible storage operations
+- **Description**: RESTful API for ZooKeeper-compatible storage operations
 
-| Operation | Path                                        | Method | Description          |
-|-----------|---------------------------------------------|--------|----------------------|
-| List      | `/api/v1/storage/list/{path}`               | GET    | List child nodes     |
-| Get       | `/api/v1/storage/get/{path}`                | GET    | Get node data        |
-| Exists    | `/api/v1/storage/exists/{path}`             | GET    | Check if node exists |
-| Create    | `/api/v1/storage/create/{path}`             | POST   | Create new node      |
-| Set       | `/api/v1/storage/set/{path}?version={v}`    | POST   | Update node data     |
-| Remove    | `/api/v1/storage/remove/{path}?version={v}` | POST   | Delete node          |
+The Storage API follows RESTful conventions where HTTP methods indicate the operation type:
+
+| Operation | Path                                       | Method | Status Code | Description          |
+|-----------|--------------------------------------------|--------|-------------|----------------------|
+| Get       | `/api/v1/storage/{path}`                   | GET    | 200         | Get node data        |
+| List      | `/api/v1/storage/{path}?children=true`     | GET    | 200         | List child nodes     |
+| Exists    | `/api/v1/storage/{path}`                   | HEAD   | 200         | Check if node exists |
+| Create    | `/api/v1/storage/{path}`                   | POST   | 201         | Create new node      |
+| Update    | `/api/v1/storage/{path}?version={v}`       | PUT    | 200         | Update node data     |
+| Delete    | `/api/v1/storage/{path}?version={v}`       | DELETE | 204         | Delete node          |

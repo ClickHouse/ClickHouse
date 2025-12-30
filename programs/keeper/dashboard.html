@@ -837,7 +837,8 @@
 
         async reload() {
             const server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/list${this.currentPath}`;
+            server_url.pathname = `/api/v1/storage${this.currentPath}`;
+            server_url.search = "?children=true";
 
             try {
                 const res = await fetch(server_url.toString());
@@ -860,7 +861,8 @@
 
                 if (this.parentPath !== null) {
                     const parentUrl = new URL(window.location);
-                    parentUrl.pathname = `/api/v1/storage/list${this.parentPath || "/"}`;
+                    parentUrl.pathname = `/api/v1/storage${this.parentPath || "/"}`;
+                    parentUrl.search = "?children=true";
                     try {
                         const parentRes = await fetch(parentUrl.toString());
                         if (parentRes.ok) {
@@ -875,7 +877,8 @@
                 const childPromises = data.child_node_names.map(async (name) => {
                     const childPath = this.getChildPath(name);
                     const childUrl = new URL(window.location);
-                    childUrl.pathname = `/api/v1/storage/list${childPath}`;
+                    childUrl.pathname = `/api/v1/storage${childPath}`;
+                    childUrl.search = "?children=true";
                     try {
                         const childRes = await fetch(childUrl.toString());
                         if (childRes.ok) {
@@ -915,7 +918,7 @@
 
             if (this.parentStat?.dataLength > 0) {
                 const server_url = new URL(window.location);
-                server_url.pathname = `/api/v1/storage/get${this.parentPath || "/"}`;
+                server_url.pathname = `/api/v1/storage${this.parentPath || "/"}`;
                 try {
                     const res = await fetch(server_url.toString());
                     if (res.ok) {
@@ -930,7 +933,7 @@
         async loadCurrentDirData() {
             if (this.currentStat?.dataLength > 0) {
                 const server_url = new URL(window.location);
-                server_url.pathname = `/api/v1/storage/get${this.currentPath}`;
+                server_url.pathname = `/api/v1/storage${this.currentPath}`;
                 try {
                     const res = await fetch(server_url.toString());
                     if (res.ok) {
@@ -953,7 +956,7 @@
             if (this.selectedStat?.dataLength > 0) {
                 const path = this.getChildPath(name);
                 const server_url = new URL(window.location);
-                server_url.pathname = `/api/v1/storage/get${path}`;
+                server_url.pathname = `/api/v1/storage${path}`;
                 try {
                     const res = await fetch(server_url.toString());
                     if (res.ok) {
@@ -1190,11 +1193,11 @@
         async doCreateNode(name) {
             const path = this.getChildPath(name);
             const server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/create${path}`;
+            server_url.pathname = `/api/v1/storage${path}`;
 
             try {
                 const res = await fetch(server_url.toString(), { method: "POST" });
-                if (!res.ok) {
+                if (!res.ok && res.status !== 201) {
                     renderError(`Failed to create node: ${res.statusText}`);
                     return;
                 }
@@ -1212,12 +1215,12 @@
 
             const path = this.getChildPath(this.selectedName);
             const server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/remove${path}`;
+            server_url.pathname = `/api/v1/storage${path}`;
             server_url.search = `?version=${this.selectedStat.version}`;
 
             try {
-                const res = await fetch(server_url.toString(), { method: "POST" });
-                if (!res.ok) {
+                const res = await fetch(server_url.toString(), { method: "DELETE" });
+                if (!res.ok && res.status !== 204) {
                     renderError(`Failed to delete node: ${res.statusText}`);
                     return;
                 }
@@ -1240,12 +1243,12 @@
             const encoder = new TextEncoder();
 
             const server_url = new URL(window.location);
-            server_url.pathname = `/api/v1/storage/set${path}`;
+            server_url.pathname = `/api/v1/storage${path}`;
             server_url.search = `?version=${stat.version}`;
 
             try {
                 const res = await fetch(server_url.toString(), {
-                    method: "POST",
+                    method: "PUT",
                     body: encoder.encode(data)
                 });
                 if (!res.ok) {

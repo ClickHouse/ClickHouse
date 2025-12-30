@@ -108,12 +108,12 @@ void addCommandsHandlersToFactory(
     auto creator = [keeper_dispatcher, keeper_client]() -> std::unique_ptr<KeeperHTTPCommandsHandler>
     { return std::make_unique<KeeperHTTPCommandsHandler>(keeper_dispatcher, keeper_client); };
 
-    auto commads_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPCommandsHandler>>(std::move(creator));
-    commads_handler->attachNonStrictPath("/api/v1/commands");
-    commads_handler->allowGetHeadAndPostRequest();
+    auto commands_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPCommandsHandler>>(std::move(creator));
+    commands_handler->attachNonStrictPath("/api/v1/commands");
+    commands_handler->allowRESTMethods();
 
     factory.addPathToHints("/api/v1/commands");
-    factory.addHandler(commads_handler);
+    factory.addHandler(commands_handler);
 }
 
 void addStorageHandlersToFactory(
@@ -128,7 +128,7 @@ void addStorageHandlersToFactory(
 
     auto storage_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPStorageHandler>>(std::move(creator));
     storage_handler->attachNonStrictPath("/api/v1/storage");
-    storage_handler->allowGetHeadAndPostRequest();
+    storage_handler->allowRESTMethods();
 
     factory.addPathToHints("/api/v1/storage");
     factory.addHandler(storage_handler);

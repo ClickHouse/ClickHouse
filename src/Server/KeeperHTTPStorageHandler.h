@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include "config.h"
 
 #if USE_NURAFT
@@ -51,6 +52,9 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
+    static std::optional<Coordination::OpNum> getOperationFromRequest(
+        const HTTPServerRequest & request, HTTPServerResponse & response);
+
     void performZooKeeperRequest(
         Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
 

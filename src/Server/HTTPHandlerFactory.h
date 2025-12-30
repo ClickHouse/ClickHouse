@@ -113,6 +113,18 @@ public:
         });
     }
 
+    void allowRESTMethods()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE;
+        });
+    }
+
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
     {
         return filter(request) ? creator() : nullptr;
