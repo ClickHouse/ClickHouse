@@ -885,7 +885,11 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flush(query.tables);
+            std::vector<StorageID> tables;
+            for (const auto & [database, table]: query.tables)
+                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+
+            queue->flush(tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

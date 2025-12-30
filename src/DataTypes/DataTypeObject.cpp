@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include "config.h"
 
@@ -195,7 +196,11 @@ String DataTypeObject::doGetName() const
     for (const auto & path : sorted_typed_paths)
     {
         write_separator();
-        out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
+        /// We must quote path "SKIP" to avoid its confusion with SKIP keyword.
+        if (boost::to_upper_copy(path) == "SKIP")
+            out << backQuote(path) << " " << typed_paths.at(path)->getName();
+        else
+            out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
     }
 
     std::vector<String> sorted_skip_paths;
@@ -515,20 +520,20 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         }
         else if (object_type_argument->path_with_type)
         {
-            const auto * path_with_type = object_type_argument->path_with_type->as<ASTNameTypePair>();
+            const auto * path_with_type = object_type_argument->path_with_type->as<ASTObjectTypedPathArgument>();
             auto data_type = DataTypeFactory::instance().get(path_with_type->type);
-            if (typed_paths.contains(path_with_type->name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->name);
+            if (typed_paths.contains(path_with_type->path))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->path);
 
             for (const auto & [path, _] : typed_paths)
             {
-                if (path.starts_with(path_with_type->name + ".") || path_with_type->name.starts_with(path + "."))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found incompatible typed paths: {} and {}. One of them is a prefix of the other", path, path_with_type->name);
+                if (path.starts_with(path_with_type->path + ".") || path_with_type->path.starts_with(path + "."))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found incompatible typed paths: {} and {}. One of them is a prefix of the other", path, path_with_type->path);
             }
 
             if (typed_paths.size() >= DataTypeObject::MAX_TYPED_PATHS)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many typed paths. The maximum is: {}", DataTypeObject::MAX_TYPED_PATHS);
-            typed_paths.emplace(path_with_type->name, data_type);
+            typed_paths.emplace(path_with_type->path, data_type);
         }
         else if (object_type_argument->skip_path)
         {
