@@ -428,7 +428,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     bool all_partition_columns_are_equal = true;
     for (const auto & element : partition_key_names_and_types)
     {
-        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
+        partition_columns.emplace_back(block_copy.getColumnOrSubcolumnByName(element.name).column.get());
         if (!partition_columns.back()->hasEqualValues())
             all_partition_columns_are_equal = false;
     }
