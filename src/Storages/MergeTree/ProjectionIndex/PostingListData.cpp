@@ -572,6 +572,19 @@ struct ReaderStreamCursor
         }
     }
 
+    PostingListPtr materializeIntoBitmap()
+    {
+        auto bitmap = std::make_shared<PostingList>();
+        while (!empty())
+        {
+            chassert(pos == 0);
+            bitmap->addMany(buf_size, doc_buffer);
+            pos = buf_size;
+            loadNextBlock();
+        }
+        return bitmap;
+    }
+
     bool ALWAYS_INLINE operator<(const ReaderStreamCursor & rhs) const { return current() < rhs.current(); }
 
 private:
@@ -676,10 +689,7 @@ PostingListPtr ReaderStreamEntry::materializeLargeBlockIntoBitmap(
     LargePostingListReaderStream & stream, UInt32 last_doc_id, UInt32 block_doc_count, UInt64 offset, bool include_first_doc)
 {
     ReaderStreamCursor cursor(&stream, last_doc_id, block_doc_count, offset, true /* do_seek */, include_first_doc);
-    auto bitmap = std::make_shared<PostingList>();
-    roaring::BulkContext ctx;
-    cursor.emitAll([&](UInt32 doc_id) { bitmap->addBulk(ctx, doc_id); });
-    return bitmap;
+    return cursor.materializeIntoBitmap();
 }
 
 std::string LargePostingBlockMeta::toString() const
