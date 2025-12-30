@@ -110,8 +110,8 @@ private:
         if (!type_parser.parse(pos, type, expected))
             return false;
 
-        auto name_and_type = std::make_shared<ASTNameTypePair>();
-        name_and_type->name = getIdentifierName(identifier);
+        auto name_and_type = std::make_shared<ASTObjectTypedPathArgument>();
+        name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
         name_and_type->children.push_back(name_and_type->type);
         argument->path_with_type = name_and_type;
