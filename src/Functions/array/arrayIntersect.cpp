@@ -52,6 +52,11 @@ struct ArrayModeSymmetricDifference
     static constexpr auto name = "arraySymmetricDifference";
 };
 
+struct ArrayModeExcept
+{
+    static constexpr auto name = "arrayExcept";
+};
+
 template <typename Mode>
 class FunctionArrayIntersect : public IFunction
 {
@@ -584,6 +589,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
         size_t null_count = 0;
+        bool first_array_has_null = false;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
@@ -634,7 +640,11 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             if (!current_has_nullable)
                 all_has_nullable = false;
             else
+            {
                 null_count++;
+                if (arg_num == 0)
+                    first_array_has_null = true;
+            }
 
         }
 
@@ -681,6 +691,42 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 result_data.insertDefault();
                 null_map.push_back(1);
                 null_added = true;
+            }
+        }
+        else if constexpr (std::is_same_v<Mode, ArrayModeExcept>)
+        {
+            use_null_map = has_nullable;
+
+            // Only iterate through first array (arg 0)
+            for (auto i : collections::range(prev_off[0], off))
+            {
+                typename Map::LookupResult pair = nullptr;
+
+                if (arg.null_map && (*arg.null_map)[i])
+                {
+                    // Handle NULL: only include if NULL appears in first array and not in other arrays
+                    if (first_array_has_null && null_count == 1 && !null_added)
+                    {
+                        ++result_offset;
+                        result_data.insertDefault();
+                        null_map.push_back(1);
+                        null_added = true;
+                    }
+                    continue;
+                }
+                else if constexpr (is_numeric_column)
+                    pair = map.find(columns[0]->getElement(i));
+                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                    pair = map.find(columns[0]->getDataAt(i));
+                else
+                {
+                    const char * data = nullptr;
+                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data));
+                }
+
+                // Add element only if it appears in first array (count == 1) but not in others
+                if (pair && pair->getMapped() == 1)
+                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
             }
         }
         else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
@@ -766,6 +812,7 @@ using ArrayIntersect = FunctionArrayIntersect<ArrayModeIntersect>;
 using ArrayUnion = FunctionArrayIntersect<ArrayModeUnion>;
 using ArraySymmetricDifference = FunctionArrayIntersect<ArrayModeSymmetricDifference>;
 
+#ifndef ARRAY_EXCEPT_CPP_INCLUDE
 REGISTER_FUNCTION(ArrayIntersect)
 {
     FunctionDocumentation::Description intersect_description = "Takes multiple arrays and returns an array with elements which are present in all source arrays. The result contains only unique values.";
@@ -829,5 +876,7 @@ arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_differen
 
     factory.registerFunction<ArraySymmetricDifference>(symdiff_documentation);
 }
+
+#endif // ARRAY_EXCEPT_CPP_INCLUDE
 
 }
