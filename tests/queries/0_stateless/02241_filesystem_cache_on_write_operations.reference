@@ -1,6 +1,6 @@
 Using storage policy: s3_cache
 DROP TABLE IF EXISTS test_02241
-CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='default'
+CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'
 SYSTEM STOP MERGES test_02241
 SYSTEM DROP FILESYSTEM CACHE
 SELECT file_segment_range_begin, file_segment_range_end, size, state
@@ -110,7 +110,7 @@ SELECT count() FROM test_02241 WHERE value LIKE '%010%'
 18816
 Using storage policy: local_cache
 DROP TABLE IF EXISTS test_02241
-CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='local_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='default'
+CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='local_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'
 SYSTEM STOP MERGES test_02241
 SYSTEM DROP FILESYSTEM CACHE
 SELECT file_segment_range_begin, file_segment_range_end, size, state
@@ -220,7 +220,7 @@ SELECT count() FROM test_02241 WHERE value LIKE '%010%'
 18816
 Using storage policy: azure_cache
 DROP TABLE IF EXISTS test_02241
-CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='azure_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='default'
+CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='azure_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'
 SYSTEM STOP MERGES test_02241
 SYSTEM DROP FILESYSTEM CACHE
 SELECT file_segment_range_begin, file_segment_range_end, size, state

@@ -294,10 +294,10 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const String model_name = model_name_column->getDataAt(i).toString();
+            const String model_name{model_name_column->getDataAt(i)};
             validateModelName(model_name);
 
-            const String input_text = input_text_column->getDataAt(i).toString();
+            const String input_text{input_text_column->getDataAt(i)};
             validateInputText(input_text, model_name);
 
             UInt32 predicted_class = std::visit([&](const auto & model) { return model.classify(input_text); }, models.at(model_name));
@@ -352,7 +352,7 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 
           Result 0 might represent English, while 1 could indicate French - class meanings depend on your training data.
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
 
     FunctionDocumentation function_documentation

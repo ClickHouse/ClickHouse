@@ -240,6 +240,8 @@ static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
 
         const auto & data = column_ptr->getData();
         size_t num_rows = data.size();
+        if (num_rows == 0)
+            return true;
         UInt64 max_position = 0;
         for (size_t i = 0; i < num_rows; ++i)
             max_position = std::max<UInt64>(max_position, data[i]);
@@ -274,22 +276,18 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnLowCardinality::serializeValueIntoArena(
+    size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin, settings);
 }
 
-StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
-char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
-}
-
-void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
     chassert(is_null == nullptr);
@@ -303,33 +301,19 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
 
     PaddedPODArray<UInt64> dict_sizes;
-    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr);
+    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr, settings);
     idx.collectSerializedValueSizes(sizes, dict_sizes);
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * pos)
+void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(pos, new_pos));
-
-    return new_pos;
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
 {
-    compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(pos, new_pos));
-
-    return new_pos;
-}
-
-const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
-{
-    return getDictionary().skipSerializedInArena(pos);
+    getDictionary().skipSerializedInArena(in);
 }
 
 WeakHash32 ColumnLowCardinality::getWeakHash32() const

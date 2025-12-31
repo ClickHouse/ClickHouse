@@ -1,5 +1,3 @@
-<!---AI changelog entry and formatting assistance: true-->
-
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature

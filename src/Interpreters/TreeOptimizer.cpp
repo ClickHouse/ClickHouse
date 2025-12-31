@@ -60,7 +60,6 @@ namespace Setting
     extern const SettingsBool optimize_redundant_functions_in_order_by;
     extern const SettingsBool optimize_rewrite_array_exists_to_has;
     extern const SettingsBool optimize_or_like_chain;
-    extern const SettingsBool optimize_injective_functions_in_group_by;
 }
 
 namespace ErrorCodes
@@ -133,12 +132,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
     {
         if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
-            if (!settings[Setting::optimize_injective_functions_in_group_by])
-            {
-                ++i;
-                continue;
-            }
-
             /// assert function is injective
             if (possibly_injective_function_names.contains(function->name))
             {
@@ -522,7 +515,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     for (const auto & expression : expression_list)
     {
         auto expression_name = expression->getAliasOrColumnName();
-        if (expressions_names.find(expression_name) == expressions_names.end())
+        if (!expressions_names.contains(expression_name))
         {
             uniq_expressions_list.push_back(expression);
             expressions_names.insert(expression_name);

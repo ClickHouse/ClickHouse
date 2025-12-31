@@ -1,0 +1,22 @@
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: -config test/config/pebble-config.json -strict -dnsserver 10.5.11.3:8053
+    environment:
+      - PEBBLE_WFE_NONCEREJECT=0
+    ports:
+      - ${LE_PEBBLE_EXTERNAL_API_PORT:-14000}:${LE_PEBBLE_INTERNAL_API_PORT:-14000}
+      - ${LE_PEBBLE_EXTERNAL_MANAGEMENT_PORT:-15000}:${LE_PEBBLE_INTERNAL_MANAGEMENT_PORT:-15000}
+    stop_grace_period: 5s
+    networks:
+      default:
+        ipv4_address: 10.5.11.2
+  challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    command: -defaultIPv6 "" -defaultIPv4 10.5.11.3
+    ports:
+      - ${LE_PEBBLE_CHALSRV_EXTERNAL_API_PORT:-8055}:${LE_PEBBLE_CHALSRV_INTERNAL_API_PORT:-8055}
+    stop_grace_period: 5s
+    networks:
+      default:
+        ipv4_address: 10.5.11.3

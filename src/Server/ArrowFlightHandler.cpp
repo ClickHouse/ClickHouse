@@ -409,11 +409,11 @@ public:
         info->block = block;
         info->ch_to_arrow_converter = ch_to_arrow_converter;
         std::lock_guard lock{mutex};
-        bool inserted = tickets.try_emplace(ticket, info).second;
+        bool inserted = tickets.try_emplace(ticket, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Flight tickets are unique.
         if (expiration_time)
         {
-            inserted = tickets_by_expiration_time.emplace(*expiration_time, ticket).second;
+            inserted = tickets_by_expiration_time.emplace(*expiration_time, ticket).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(inserted); /// Flight tickets are unique.
             updateNextExpirationTime();
         }
@@ -509,13 +509,13 @@ public:
         info->expiration_time = expiration_time;
         info->ch_to_arrow_converter = poll_session->getCHToArrowConverter();
         std::lock_guard lock{mutex};
-        bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;
+        bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Poll descriptors are unique.
-        inserted = poll_sessions.try_emplace(poll_descriptor, std::move(poll_session)).second;
+        inserted = poll_sessions.try_emplace(poll_descriptor, std::move(poll_session)).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Poll descriptors are unique.
         if (expiration_time)
         {
-            inserted = poll_descriptors_by_expiration_time.emplace(*expiration_time, poll_descriptor).second;
+            inserted = poll_descriptors_by_expiration_time.emplace(*expiration_time, poll_descriptor).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(inserted); /// Poll descriptors are unique.
             updateNextExpirationTime();
         }
@@ -848,7 +848,7 @@ void ArrowFlightHandler::start()
     {
         try
         {
-            setThreadName("ArrowFlightSrv");
+            DB::setThreadName(ThreadName::ARROW_FLIGHT_SERVER);
             if (stopped)
                 return;
             auto serve_status = Serve();
@@ -867,7 +867,7 @@ void ArrowFlightHandler::start()
         {
             try
             {
-                setThreadName("ArrowFlightExpr");
+                DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
                 while (!stopped)
                 {
                     calls_data->waitNextExpirationTime();
@@ -1194,7 +1194,7 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
         return *info->status;
     }
 
-    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), "ArrowFlight"};
+    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
     auto ch_to_arrow_converter = poll_session->getCHToArrowConverter();
     bool last = false;
 
@@ -1381,7 +1381,7 @@ arrow::Status ArrowFlightHandler::DoPut(
 
 arrow::Status ArrowFlightHandler::tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const
 {
-    setThreadName("ArrowFlight");
+    DB::setThreadName(ThreadName::ARROW_FLIGHT);
     ThreadStatus thread_status;
     try
     {
