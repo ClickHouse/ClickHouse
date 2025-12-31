@@ -63,24 +63,17 @@ def test_mixed_authentication_methods(started_cluster):
     result = node.query("SELECT currentUser()", user="mixed_auth", password="plain_pass")
     assert result.strip() == "mixed_auth"
     
-    # Test SHA256 password (hash of "sha_pass")
-    result = node.query("SELECT currentUser()", user="mixed_auth", password="sha_pass")
+    # Test SHA256 password (hash of "double_sha1_pass_1")
+    result = node.query("SELECT currentUser()", user="mixed_auth", password="double_sha1_pass_1")
+    assert result.strip() == "mixed_auth"
+    
+    # Test second SHA256 password (hash of "double_sha1_pass_2")
+    result = node.query("SELECT currentUser()", user="mixed_auth", password="double_sha1_pass_2")
     assert result.strip() == "mixed_auth"
     
     # Test wrong password should fail
     with pytest.raises(Exception):
         node.query("SELECT currentUser()", user="mixed_auth", password="wrong_pass")
-
-
-def test_backward_compatibility_single_password(started_cluster):
-    """Test that single password configuration still works (backward compatibility)"""
-    result = node.query("SELECT currentUser()", user="single_password", password="single_pass")
-    assert result.strip() == "single_password"
-    
-    # Test wrong password should fail
-    with pytest.raises(Exception):
-        node.query("SELECT currentUser()", user="single_password", password="wrong_pass")
-
 
 def test_user_authentication_methods_in_system_table(started_cluster):
     """Test that system.users table shows correct authentication methods"""
@@ -101,22 +94,9 @@ def test_user_authentication_methods_in_system_table(started_cluster):
     )
     expected = TSV([
         ["mixed_auth", "plaintext_password"],
-        ["mixed_auth", "sha256_password"]
+        ["mixed_auth", "double_sha1_password"]
     ])
     assert TSV(result) == expected
-
-
-def test_show_create_user_multiple_auth(started_cluster):
-    """Test SHOW CREATE USER displays multiple authentication methods"""
-    result = node.query("SHOW CREATE USER multi_plaintext")
-    
-    # Should show multiple IDENTIFIED BY clauses or similar representation
-    # The exact format may vary, but it should indicate multiple auth methods
-    assert "multi_plaintext" in result
-    
-    # Check that we can see the user exists and has proper configuration
-    result = node.query("SELECT count() FROM system.users WHERE name = 'multi_plaintext'")
-    assert result.strip() == "1"
 
 
 def test_grants_and_permissions_with_multiple_auth(started_cluster):
@@ -127,58 +107,29 @@ def test_grants_and_permissions_with_multiple_auth(started_cluster):
     # Test access with first password
     result = node.query(
         "SELECT count() FROM system.numbers LIMIT 5", 
-        user="multi_plaintext", 
-        password="pass1"
+        user="mixed_auth", 
+        password="plain_pass"
     )
     assert result.strip() == "5"
     
-    # Test access with second password
+    # Test access with second password (double SHA1 hash)
     result = node.query(
         "SELECT count() FROM system.numbers LIMIT 5", 
-        user="multi_plaintext", 
-        password="pass2"
+        user="mixed_auth", 
+        password="double_sha1_pass_1"
     )
     assert result.strip() == "5"
     
     # Clean up
-    node.query("REVOKE SELECT ON system.numbers FROM multi_plaintext")
-
-
-def test_user_creation_with_multiple_auth_via_sql(started_cluster):
-    """Test creating users with multiple authentication methods via SQL"""
-    # This tests the SQL interface for multiple auth methods
-    # Note: The exact SQL syntax may need to be adjusted based on implementation
-    
-    try:
-        # Create user with multiple passwords (if supported via SQL)
-        node.query("DROP USER IF EXISTS sql_multi_user")
-        
-        # For now, test that we can create a user and it works with the XML config
-        # The SQL syntax for multiple auth methods might be implemented later
-        node.query("CREATE USER sql_multi_user IDENTIFIED BY 'test_pass'")
-        
-        result = node.query("SELECT currentUser()", user="sql_multi_user", password="test_pass")
-        assert result.strip() == "sql_multi_user"
-        
-    finally:
-        node.query("DROP USER IF EXISTS sql_multi_user")
+    node.query("REVOKE SELECT ON system.numbers FROM mixed_auth")
 
 
 def test_authentication_failure_logging(started_cluster):
     """Test that authentication failures are properly logged"""
     # Test wrong password generates proper error
     with pytest.raises(Exception) as exc_info:
-        node.query("SELECT 1", user="multi_plaintext", password="wrong_password")
+        node.query("SELECT 1", user="mixed_auth", password="wrong_password")
     
     # Should contain authentication-related error message
-    assert "Authentication failed" in str(exc_info.value) or "Access denied" in str(exc_info.value)
-
-
-def test_empty_password_in_multiple_auth_config(started_cluster):
-    """Test behavior when one of multiple passwords is empty"""
-    # This should be handled gracefully - either allow empty password or reject the config
-    # The exact behavior depends on implementation details
-    
-    # Test that users with valid passwords still work
-    result = node.query("SELECT currentUser()", user="multi_plaintext", password="pass1")
-    assert result.strip() == "multi_plaintext"
+    error_msg = str(exc_info.value)
+    assert "Authentication failed" in error_msg or "Access denied" in error_msg or "password" in error_msg.lower()

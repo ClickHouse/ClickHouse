@@ -33,10 +33,12 @@
         <!-- User with mixed authentication methods (plaintext + SHA256) -->
         <mixed_auth>
             <password>plain_pass</password>
-            <password_sha256_hex>
-                <!-- Hash of "sha_pass": 8d23cf6c86e834a7aa6eded54c26ce2bb2e74903538c61bdd5d2197997ab2f72 -->
-                <hash1>8d23cf6c86e834a7aa6eded54c26ce2bb2e74903538c61bdd5d2197997ab2f72</hash1>
-            </password_sha256_hex>
+            <password_double_sha1_hex>
+                <!-- Hash of "double_sha1_pass_1" -->
+                <hash1>eafbd9c4b3c8b40d509308e767b41671ee5bac68</hash1>
+                <!-- Hash of "double_sha1_pass_2" -->
+                <hash2>7e4ca4bb0df85c1106f39516a0753013b79b32ff</hash2>
+            </password_double_sha1_hex>
             <networks>
                 <ip>::/0</ip>
             </networks>
@@ -54,12 +56,12 @@
             <quota>default</quota>
         </single_password>
 
-        <!-- User with multiple double SHA1 passwords -->
         <multi_double_sha1>
             <password_double_sha1_hex>
-                <!-- These are example hashes - in real usage they should be proper double SHA1 -->
-                <hash1>e9d94f22c21e57a5f44c5b4cc3b4a5b6c5b4c5b4c5b4c5b4c5b4c5b4c5b4c5b4</hash1>
-                <hash2>f1e2d3c4b5a69788776655443322110099887766554433221100998877665544</hash2>
+                <!-- Hash of "double_sha1_pass_1" -->
+                <hash1>eafbd9c4b3c8b40d509308e767b41671ee5bac68</hash1>
+                <!-- Hash of "double_sha1_pass_2" -->
+                <hash2>7e4ca4bb0df85c1106f39516a0753013b79b32ff</hash2>
             </password_double_sha1_hex>
             <networks>
                 <ip>::/0</ip>
@@ -67,57 +69,5 @@
             <profile>default</profile>
             <quota>default</quota>
         </multi_double_sha1>
-
-        <!-- User with multiple LDAP servers (if LDAP is available) -->
-        <!--
-        <multi_ldap>
-            <ldap>
-                <server>
-                    <server1>ldap_server_1</server1>
-                    <server2>ldap_server_2</server2>
-                </server>
-            </ldap>
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </multi_ldap>
-        -->
-
-        <!-- User with multiple Kerberos realms (if Kerberos is available) -->
-        <!--
-        <multi_kerberos>
-            <kerberos>
-                <realm>
-                    <realm1>EXAMPLE.COM</realm1>
-                    <realm2>TEST.ORG</realm2>
-                </realm>
-            </kerberos>
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </multi_kerberos>
-        -->
-
-        <!-- User with multiple HTTP authentication servers (if HTTP auth is available) -->
-        <!--
-        <multi_http_auth>
-            <http_authentication>
-                <server>
-                    <server1>http_auth_server_1</server1>
-                    <server2>http_auth_server_2</server2>
-                </server>
-                <scheme>basic</scheme>
-            </http_authentication>
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </multi_http_auth>
-        -->
     </users>
 </clickhouse>
