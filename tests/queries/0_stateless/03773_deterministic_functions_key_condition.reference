@@ -236,6 +236,13 @@ Expression ((Project names + Projection))
             Granules: 2/2
             Search Algorithm: generic exclusion search
           Ranges: 2
+SELECT count()
+FROM events e
+WHERE person_id IN ('017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
+1
+SELECT count()
+FROM events e
+WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id); -- { serverError NO_COMMON_TYPE}
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
     pod String
@@ -860,6 +867,13 @@ Expression ((Projection + Before ORDER BY))
             Granules: 2/2
             Search Algorithm: generic exclusion search
           Ranges: 2
+SELECT count()
+FROM events e
+WHERE person_id IN ('017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
+1
+SELECT count()
+FROM events e
+WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id); -- { serverError NO_COMMON_TYPE}
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
     pod String

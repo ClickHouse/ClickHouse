@@ -102,6 +102,13 @@ SELECT count()
 FROM events e
 WHERE NOT has([toUUID('017adbc0-98b5-0000-3f74-619a368fe65d'), toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id);
 
+SELECT count()
+FROM events e
+WHERE person_id IN ('017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e'));
+
+SELECT count()
+FROM events e
+WHERE has(['017adbc0-98b5-0000-3f74-619a368fe65d', toUUID('017adbc0-98b5-0000-3f74-619a368fe65e')], person_id); -- { serverError NO_COMMON_TYPE}
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
