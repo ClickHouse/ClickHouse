@@ -1,5 +1,5 @@
 #include <iostream>
-#include <Processors/Transforms/LazilyMaterializingTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Block LazilyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
+Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
 {
     auto pos = main_header.getPositionByName("__global_row_index");
     ColumnsWithTypeAndName columns = main_header.getColumnsWithTypeAndName();
@@ -28,7 +28,7 @@ Block LazilyMaterializingTransform::transformHeader(const Block & main_header, c
     return Block(std::move(columns));
 }
 
-LazilyMaterializingTransform::LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
@@ -37,7 +37,7 @@ LazilyMaterializingTransform::LazilyMaterializingTransform(SharedHeader main_hea
 {
 }
 
-LazilyMaterializingTransform::Status LazilyMaterializingTransform::prepare()
+LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
 {
     auto & output = outputs.front();
     auto & main_input = inputs.front();
@@ -101,7 +101,7 @@ LazilyMaterializingTransform::Status LazilyMaterializingTransform::prepare()
     return Status::Finished;
 }
 
-void LazilyMaterializingTransform::work()
+void LazyMaterializingTransform::work()
 {
     if (!result_chunk)
         prepareMainChunk();
@@ -217,11 +217,11 @@ void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64>
         total_marks += part.getMarksCount();
     }
 
-    LOG_TRACE(getLogger("LazilyMaterializingTransform"), "Lazily reading {} rows from {} parts, {} ranges, {} marks",
+    LOG_TRACE(getLogger("LazyMaterializingTransform"), "Lazily reading {} rows from {} parts, {} ranges, {} marks",
         sorted_indexes.size(), ranges_in_data_parts.size(), total_ranges, total_marks);
 }
 
-void LazilyMaterializingTransform::prepareMainChunk()
+void LazyMaterializingTransform::prepareMainChunk()
 {
     UInt64 squash_ms;
     UInt64 sort_ms;
@@ -304,11 +304,11 @@ void LazilyMaterializingTransform::prepareMainChunk()
 
     /// Do not spam too much in logs
     if (total_ms >= 100)
-        LOG_TRACE(getLogger("LazilyMaterializingTransform"), "Preparing chunk {} ms, squashing {} ms, sorting {} ms, permute {} ms, prepare offsets {} ms, filter intervals {} ms",
+        LOG_TRACE(getLogger("LazyMaterializingTransform"), "Preparing chunk {} ms, squashing {} ms, sorting {} ms, permute {} ms, prepare offsets {} ms, filter intervals {} ms",
             total_ms, squash_ms, sort_ms, permute_ms, prepare_offsets_ms, filter_intervals_ms);
 }
 
-void LazilyMaterializingTransform::prepareLazyChunk()
+void LazyMaterializingTransform::prepareLazyChunk()
 {
     UInt64 squash_ms;
     UInt64 reverse_permutation_ms = 0;
@@ -316,7 +316,7 @@ void LazilyMaterializingTransform::prepareLazyChunk()
 
     Stopwatch total_watch;
 
-    // std::cerr << "LazilyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
+    // std::cerr << "LazyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
     // for (auto & chunk : chunks)
     //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
 
@@ -333,7 +333,7 @@ void LazilyMaterializingTransform::prepareLazyChunk()
 
     if (chunk.getNumRows() != offsets.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "LazilyMaterializingTransform: Number of rows in lazy chunk {} does not match number of offsets {}",
+            "LazyMaterializingTransform: Number of rows in lazy chunk {} does not match number of offsets {}",
             chunk.getNumRows(), offsets.size());
 
     IColumn::Permutation inverted_permutation;
@@ -376,7 +376,7 @@ void LazilyMaterializingTransform::prepareLazyChunk()
 
     auto total_ms = total_watch.elapsedMilliseconds();
     if (total_ms >= 100)
-        LOG_TRACE(getLogger("LazilyMaterializingTransform"),
+        LOG_TRACE(getLogger("LazyMaterializingTransform"),
         "Preparing lazy chunk {} ms, squashing {} ms, reversing permutations {} ms, permuting {} ms", total_ms, squash_ms, reverse_permutation_ms, permute_ms);
 }
 
