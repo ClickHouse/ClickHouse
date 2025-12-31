@@ -134,6 +134,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
             hive_partitioning_columns="date Date, city String",
         )
         create_mv(node, table_name, dst_table_name, virtual_columns="date Date, city String")
+        time.sleep(5)
 
     def compare_data(data, expected_data, buckets):
         data = data.strip().split("\n")
@@ -144,9 +145,11 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
             for expected_line in expected_data:
                 assert expected_line in data, f"Expected: {expected_data} as subset, got: {data}"
 
-    def wait_for_data(node, dst_table_name, expected_count):
-        for _ in range(100):
-            count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    def wait_for_data(dst_table_name, expected_count):
+        for i in range(10):
+            count = 0
+            for node in instances:
+                count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
             print(f"{count}/{expected_count}")
             if count >= expected_count:
                 break
@@ -160,7 +163,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         '3,1,1,"2025-01-03","Amsterdam"',
         '3,1,3,"2025-01-03","Amsterdam"',
     ]
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, len(expected_data))
 
     data = ""
     for node in instances:
@@ -188,7 +191,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "3,1,3",
         "3,1,4",
     ]
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, len(expected_data))
 
     # With buckets we can get some files from the middle, if those files are last in bucket, but not global last.
     # It depends of hashes of file paths.
@@ -213,7 +216,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "2,1,2",
     ]
     expected_data.sort()
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, len(expected_data))
 
     if buckets > 1:
         time.sleep(10)
@@ -243,7 +246,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "2,1,3",
     ]
     expected_data.sort()
-    wait_for_data(instances[0], dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, len(expected_data))
 
     if buckets > 1:
         time.sleep(10)
