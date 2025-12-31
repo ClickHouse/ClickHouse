@@ -1470,9 +1470,8 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (out_value.isNull())
         return false;
 
-    /// `NaN != NaN` is true. This breaks equivalence for `notEquals` transformations. So, skip.
-    if (isNaN(out_value))
-        return false;
+    /// NaN should not be present here because it is handled earlier by caller.
+    chassert(!out_value.isNaN());
 
     DeterministicKeyTransformDag dag;
     auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
@@ -1624,9 +1623,8 @@ bool KeyCondition::canConstantBeWrappedByDeterministicInjectiveFunctions(
     if (out_value.isNull())
         return false;
 
-    /// `NaN != NaN` is true. This breaks equivalence for `notEquals` transformations. So, skip.
-    if (isNaN(out_value))
-        return false;
+    /// NaN should not be present here because it is handled earlier by caller.
+    chassert(!out_value.isNaN());
 
     DeterministicKeyTransformDag dag;
     auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
@@ -2698,14 +2696,35 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return true;
             }
 
+            size_t key_arg_pos = 1 - const_arg_pos;
+            auto key_arg = func.getArgumentAt(key_arg_pos);
+
             if (const_value.isNaN())
             {
-                /// Comparisons with NaN are unreliable, cannot use index
+                /// Comparisons with NaN are special:
+                ///  - `x = NaN` is always false for non-NULL x (including NaN itself).
+                ///  - `x != NaN` is always true for non-NULL x.
+                ///
+                /// For Nullable keys we must not fold to ALWAYS_TRUE/ALWAYS_FALSE because `NULL <op> NaN` is NULL
+                if (key_arg.isNullable())
+                    return false;
+
+                if (func_name == "notEquals")
+                {
+                    out.function = RPNElement::ALWAYS_TRUE;
+                    return true;
+                }
+
+                if (func_name == "equals")
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
+                /// For other comparison operators, skip building the atom
                 return false;
             }
 
-            size_t key_arg_pos = 1 - const_arg_pos;
-            auto key_arg = func.getArgumentAt(key_arg_pos);
             bool condition_is_relaxed = false;
 
             if (isKeyPossiblyWrappedByMonotonicFunctions(
