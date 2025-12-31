@@ -2001,13 +2001,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         /// Check sub columns limit
         size_t max_subcolumns = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_subcolumns]);
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-        NamesAndTypesList columns = properties.columns.get(get_column_options);
-
-        size_t subcolumn_count = 0;
-        for (const auto & column : columns)
-            if (column.isSubcolumn())
-                subcolumn_count++;
+        size_t subcolumn_count = properties.columns.getNumberOfSubcoumns();
 
         if (subcolumn_count > max_subcolumns)
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
