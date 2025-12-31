@@ -19,21 +19,21 @@ INSERT INTO t_modulo_legacy_partition_key
 SELECT number
 FROM numbers(20);
 
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_partition_key
 WHERE x % 16 = 3;
 
 EXPLAIN indexes = 1
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_partition_key
 WHERE x % 16 = 3;
 
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_partition_key
 WHERE x % 16 IN [3, 2];
 
 EXPLAIN indexes = 1
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_partition_key
 WHERE x % 16 IN [3, 2];
 
@@ -51,20 +51,20 @@ INSERT INTO t_modulo_legacy_primary_key
 SELECT number
 FROM numbers(20);
 
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_primary_key
 WHERE x % 16 = 3;
 
 EXPLAIN indexes = 1
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_primary_key
 WHERE x % 16 = 3;
 
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_primary_key
 WHERE x % 16 IN [3, 2];
 
 EXPLAIN indexes = 1
-SELECT *
+SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_primary_key
 WHERE x % 16 IN [3, 2];
