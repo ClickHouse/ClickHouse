@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
             {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
+            {"kill_throw_if_noop", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -146,7 +147,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
             {"delta_lake_log_metadata", false, false, "New setting."},
-            {"kill_throw_if_noop", false, true, "New setting"},
             {"distributed_cache_prefer_bigger_buffer_size", false, false, "New setting."},
             {"allow_experimental_qbit_type", false, false, "New experimental setting"},
             {"optimize_qbit_distance_function_reads", true, true, "New setting"},
