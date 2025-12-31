@@ -107,6 +107,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool allow_experimental_skip_index_part_aggregation;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -1489,6 +1490,19 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             /// that will be changed after one more merge/OPTIMIZE.
             if (!part->isEmpty())
                 global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+        }
+
+        /// Merge skip index part-level aggregations if enabled
+        if ((*global_ctx->data_settings)[MergeTreeSetting::allow_experimental_skip_index_part_aggregation])
+        {
+            if (!global_ctx->new_data_part->skip_index_part_aggs)
+                global_ctx->new_data_part->skip_index_part_aggs = std::make_shared<IMergeTreeDataPart::SkipIndexPartAggregations>();
+
+            for (const auto & part : global_ctx->future_part->parts)
+            {
+                if (!part->isEmpty() && part->skip_index_part_aggs && part->skip_index_part_aggs->initialized)
+                    global_ctx->new_data_part->skip_index_part_aggs->merge(*part->skip_index_part_aggs);
+            }
         }
     }
 

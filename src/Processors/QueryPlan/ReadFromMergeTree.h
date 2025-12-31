@@ -97,6 +97,7 @@ public:
     {
         None,
         MinMax,
+        SkipIndexPartAgg,
         Partition,
         PrimaryKey,
         Skip,

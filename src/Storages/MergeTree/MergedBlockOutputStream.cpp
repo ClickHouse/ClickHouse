@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -17,6 +18,7 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool allow_experimental_skip_index_part_aggregation;
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -315,6 +317,33 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             else if (rows_count)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
+            }
+
+            /// Store skip index part aggregations files if enabled
+            if ((*storage_settings)[MergeTreeSetting::allow_experimental_skip_index_part_aggregation])
+            {
+                /// First try to get from writer, for normal insert path
+                IMergeTreeDataPart::SkipIndexPartAggregationsPtr skip_index_aggs;
+                if (auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get()))
+                    skip_index_aggs = writer_on_disk->getSkipIndexPartAggregations();
+
+                /// If not from writer, use the part's existing aggregations, for merge path
+                if (!skip_index_aggs || !skip_index_aggs->initialized)
+                    skip_index_aggs = new_part->skip_index_part_aggs;
+
+                if (skip_index_aggs && skip_index_aggs->initialized)
+                {
+                    auto skip_indices = metadata_snapshot->getSecondaryIndices();
+                    MergeTreeIndices indices;
+                    for (const auto & index : skip_indices)
+                        indices.push_back(MergeTreeIndexFactory::instance().get(index));
+
+                    auto files = skip_index_aggs->store(new_part->getDataPartStorage(), checksums, indices);
+                    for (auto & file : files)
+                        written_files.emplace_back(std::move(file));
+
+                    new_part->skip_index_part_aggs = skip_index_aggs;
+                }
             }
 
             const auto & source_parts = new_part->getSourcePartsSet();

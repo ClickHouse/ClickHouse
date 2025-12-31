@@ -35,6 +35,30 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 };
 
 
+class MergeTreeIndexPartAggregateMinMax final : public IMergeTreeIndexPartAggregate
+{
+public:
+    explicit MergeTreeIndexPartAggregateMinMax(const Block & index_sample_block_);
+
+    bool initialized() const override { return is_initialized; }
+
+    void serializeBinary(WriteBuffer & ostr) const override;
+    void deserializeBinary(ReadBuffer & istr) override;
+    void merge(const IMergeTreeIndexPartAggregate & other) override;
+    void update(const MergeTreeIndexGranulePtr & granule) override;
+
+    size_t memoryUsageBytes() const override;
+
+    std::vector<Range> hyperrectangle;
+
+private:
+    const Block & index_sample_block;
+    Serializations serializations;
+    FormatSettings format_settings;
+    bool is_initialized = false;
+};
+
+
 struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
@@ -62,6 +86,8 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
+    bool mayBeTrueOnPartAggregate(const MergeTreeIndexPartAggregatePtr & part_aggregate) const override;
+
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;
@@ -86,6 +112,11 @@ public:
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
+
+    bool supportsPartLevelAggregation() const override { return true; }
+    MergeTreeIndexPartAggregatePtr createPartAggregate() const override;
+
+    const Block & getSampleBlock() const;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

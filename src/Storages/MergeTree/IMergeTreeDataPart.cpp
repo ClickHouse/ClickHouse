@@ -84,6 +84,7 @@ namespace DB
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_experimental_skip_index_part_aggregation;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsBool fsync_part_directory;
@@ -291,6 +292,198 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
         return hash;
     return stream_name;
 }
+
+
+void IMergeTreeDataPart::SkipIndexPartAggregations::load(
+    const IMergeTreeDataPart & part, const MergeTreeIndices & indices, bool settings_enabled)
+{
+    if (!settings_enabled)
+        return;
+
+    aggregates.clear();
+
+    /// Track which indices have files and which need fallback computation
+    std::vector<MergeTreeIndexPtr> indices_needing_fallback;
+
+    for (const auto & skip_idx : indices)
+    {
+        if (!skip_idx->supportsPartLevelAggregation())
+            continue;
+
+        String file_name = skip_idx->getFileName() + PART_AGG_FILE_EXTENSION;
+
+        if (!part.checksums.files.contains(file_name))
+        {
+            /// No file, will need to compute from granules
+            indices_needing_fallback.push_back(skip_idx);
+            continue;
+        }
+
+        auto aggregate = skip_idx->createPartAggregate();
+        if (!aggregate)
+            continue;
+
+        auto file = part.readFile(file_name);
+        aggregate->deserializeBinary(*file);
+
+        aggregates[skip_idx->index.name] = std::move(aggregate);
+    }
+
+    /// For indices without .pidx files, compute from granule-level index files
+    if (!indices_needing_fallback.empty())
+        computeFromGranules(part, indices_needing_fallback);
+
+    initialized = !aggregates.empty();
+}
+
+IMergeTreeDataPart::SkipIndexPartAggregations::WrittenFiles IMergeTreeDataPart::SkipIndexPartAggregations::store(
+    IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeIndices & indices) const
+{
+    WrittenFiles written_files;
+
+    for (const auto & skip_idx : indices)
+    {
+        if (!skip_idx->supportsPartLevelAggregation())
+            continue;
+
+        const String & idx_name = skip_idx->index.name;
+        if (!hasIndex(idx_name))
+            continue;
+
+        auto aggregate = getAggregate(idx_name);
+        if (!aggregate || !aggregate->initialized())
+            continue;
+
+        String file_name = skip_idx->getFileName() + PART_AGG_FILE_EXTENSION;
+
+        auto out = part_storage.writeFile(file_name, 4096, {});
+        HashingWriteBuffer out_hashing(*out);
+        aggregate->serializeBinary(out_hashing);
+        out_hashing.finalize();
+
+        out_checksums.files[file_name].file_size = out_hashing.count();
+        out_checksums.files[file_name].file_hash = out_hashing.getHash();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
+
+    return written_files;
+}
+
+void IMergeTreeDataPart::SkipIndexPartAggregations::merge(const SkipIndexPartAggregations & other)
+{
+    if (!other.initialized)
+        return;
+
+    for (const auto & [agg_name, other_agg] : other.aggregates)
+    {
+        if (!other.hasIndex(agg_name))
+            continue;
+
+        if (!hasIndex(agg_name))
+            continue;
+
+        aggregates[agg_name]->merge(*other_agg);
+    }
+
+    initialized = true;
+}
+
+void IMergeTreeDataPart::SkipIndexPartAggregations::computeFromGranules(
+    const IMergeTreeDataPart & part, const MergeTreeIndices & indices)
+{
+    /// Compute part-level aggregations from granule-level index files.
+    /// This is used as a fallback when .pidx files don't exist (old parts).
+    /// The result is kept in memory only, not written to disk.
+    if (part.isEmpty())
+        return;
+
+    for (const auto & skip_idx : indices)
+    {
+        if (!skip_idx->supportsPartLevelAggregation())
+            continue;
+
+        auto format = skip_idx->getDeserializedFormat(part.checksums, skip_idx->getFileName());
+        if (format.substreams.empty())
+            continue;
+
+        String idx_file_name;
+        bool is_compressed = false;
+        for (const auto & substream : format.substreams)
+        {
+            if (substream.type == MergeTreeIndexSubstream::Type::Regular)
+            {
+                idx_file_name = skip_idx->getFileName() + substream.extension;
+                is_compressed = MergeTreeIndexSubstream::isCompressed(substream.type);
+                break;
+            }
+        }
+
+        if (idx_file_name.empty() || !part.checksums.files.contains(idx_file_name))
+            continue;
+
+        auto part_agg = skip_idx->createPartAggregate();
+        if (!part_agg)
+            continue;
+
+        try
+        {
+            auto raw_file = part.getDataPartStorage().readFile(idx_file_name, ReadSettings(), std::nullopt);
+            std::unique_ptr<ReadBuffer> file;
+            if (is_compressed)
+                file = std::make_unique<CompressedReadBufferFromFile>(std::move(raw_file));
+            else
+                file = std::move(raw_file);
+
+            while (!file->eof())
+            {
+                auto granule = skip_idx->createIndexGranule();
+                granule->deserializeBinary(*file, format.version);
+                part_agg->update(granule);
+            }
+
+            if (part_agg->initialized())
+                aggregates[skip_idx->index.name] = std::move(part_agg);
+        }
+        catch (...)
+        {
+            /// If reading fails (e.g., corrupted file), skip this index
+            tryLogCurrentException(__PRETTY_FUNCTION__,
+                fmt::format("Failed to compute part-level aggregation from granules for index '{}' in part '{}'",
+                    skip_idx->index.name, part.name));
+        }
+    }
+
+    /// Update initialized flag based on whether we have any aggregates
+    initialized = !aggregates.empty();
+}
+
+bool IMergeTreeDataPart::SkipIndexPartAggregations::hasIndex(const String & index_name) const
+{
+    auto it = aggregates.find(index_name);
+    return it != aggregates.end() && it->second && it->second->initialized();
+}
+
+MergeTreeIndexPartAggregatePtr IMergeTreeDataPart::SkipIndexPartAggregations::getAggregate(const String & index_name) const
+{
+    auto it = aggregates.find(index_name);
+    if (it != aggregates.end())
+        return it->second;
+    return nullptr;
+}
+
+size_t IMergeTreeDataPart::SkipIndexPartAggregations::memoryUsageBytes() const
+{
+    size_t total = sizeof(*this);
+    for (const auto & [agg_name, agg] : aggregates)
+    {
+        total += agg_name.size();
+        if (agg)
+            total += agg->memoryUsageBytes();
+    }
+    return total;
+}
+
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
@@ -1460,6 +1653,24 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
         if (!isEmpty())
             minmax_idx->load(*this);
+
+        /// Load skip index part aggregations if enabled
+        auto settings = storage.getSettings();
+        bool setting_enabled = settings && (*settings)[MergeTreeSetting::allow_experimental_skip_index_part_aggregation];
+
+        if (!isEmpty() && setting_enabled)
+        {
+            auto skip_indices = metadata_snaphost->getSecondaryIndices();
+            if (!skip_indices.empty())
+            {
+                MergeTreeIndices indices;
+                for (const auto & skip_idx_desc : skip_indices)
+                    indices.push_back(MergeTreeIndexFactory::instance().get(skip_idx_desc));
+
+                skip_index_part_aggs = std::make_shared<SkipIndexPartAggregations>();
+                skip_index_part_aggs->load(*this, indices, true);
+            }
+        }
     }
 
     String calculated_partition_id;

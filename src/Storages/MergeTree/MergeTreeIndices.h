@@ -13,6 +13,7 @@
 #include <vector>
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
+constexpr auto PART_AGG_FILE_EXTENSION = ".pidx";
 
 namespace DB
 {
@@ -79,12 +80,36 @@ struct MergeTreeDataPartChecksums;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct IMergeTreeIndexGranule;
+using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
+
+/// Part-level aggregation for skip indexes.
+/// Stores aggregated index information for the entire data part,
+/// enabling early part pruning before reading granule-level index files.
+struct IMergeTreeIndexPartAggregate
+{
+    virtual ~IMergeTreeIndexPartAggregate() = default;
+
+    virtual bool initialized() const = 0;
+
+    virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+
+    virtual void deserializeBinary(ReadBuffer & istr) = 0;
+
+    virtual void merge(const IMergeTreeIndexPartAggregate & other) = 0;
+
+    virtual void update(const MergeTreeIndexGranulePtr & granule) = 0;
+
+    virtual size_t memoryUsageBytes() const = 0;
+};
+
+using MergeTreeIndexPartAggregatePtr = std::shared_ptr<IMergeTreeIndexPartAggregate>;
 
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
@@ -165,6 +190,9 @@ public:
 
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
+
+    /// Part-level pruning: check if condition may be true on entire part aggregate.
+    virtual bool mayBeTrueOnPartAggregate(const MergeTreeIndexPartAggregatePtr & /*part_aggregate*/) const { return true; }
 
     using FilteredGranules = std::vector<size_t>;
     virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
@@ -258,6 +286,10 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
     virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
 
+    /// Part-level pruning: check if condition may be true on entire part aggregates.
+    using MergeTreeIndexPartAggregates = std::vector<MergeTreeIndexPartAggregatePtr>;
+    virtual bool mayBeTrueOnPartAggregates(const MergeTreeIndexPartAggregates & /*part_aggregates*/) const { return true; }
+
 protected:
     const size_t granularity;
 };
@@ -319,6 +351,10 @@ struct IMergeTreeIndex
 
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
+
+    /// Part-level aggregation support for early part pruning.
+    virtual bool supportsPartLevelAggregation() const { return false; }
+    virtual MergeTreeIndexPartAggregatePtr createPartAggregate() const { return nullptr; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const

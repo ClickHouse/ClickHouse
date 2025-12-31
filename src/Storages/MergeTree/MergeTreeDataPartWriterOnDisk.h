@@ -11,6 +11,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -75,6 +76,9 @@ public:
     const Block & getColumnsSample() const override { return block_sample; }
     const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
+    /// Get part-level aggregations computed from skip indices
+    IMergeTreeDataPart::SkipIndexPartAggregationsPtr getSkipIndexPartAggregations() const { return skip_index_part_aggregations; }
+
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
@@ -129,6 +133,9 @@ protected:
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+
+    /// Part-level aggregations for skip indices
+    IMergeTreeDataPart::SkipIndexPartAggregationsPtr skip_index_part_aggregations;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;

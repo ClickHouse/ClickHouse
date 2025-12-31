@@ -1003,6 +1003,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
+            {"allow_experimental_skip_index_part_aggregation", false, false, "New setting for part-level skip index aggregation"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {

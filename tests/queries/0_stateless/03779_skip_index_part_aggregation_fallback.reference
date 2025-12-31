@@ -1,0 +1,124 @@
+--Part count before enabling setting
+3
+--Fallback: Skip all parts
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 0/3
+Granules: 0/75
+PrimaryKey
+Condition: true
+Parts: 0/0
+Granules: 0/0
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 0/0
+Granules: 0/0
+Ranges: 0
+0
+--Fallback: Match one part
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 1/3
+Granules: 25/75
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 4/25
+Ranges: 1
+11
+--Fallback: Read all parts
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 3/3
+Granules: 75/75
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 3/3
+Granules: 75/75
+Ranges: 3
+300
+--Mixed: Old parts (fallback) + New part (.pidx)
+4
+--Mixed: Skip all parts
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 0/4
+Granules: 0/100
+PrimaryKey
+Condition: true
+Parts: 0/0
+Granules: 0/0
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 0/0
+Granules: 0/0
+Ranges: 0
+0
+--Mixed: Match new part only
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 1/4
+Granules: 25/100
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 4/25
+Ranges: 1
+11
+--After merge
+1
+--Merged: Skip part
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 0/1
+Granules: 0/100
+PrimaryKey
+Condition: true
+Parts: 0/0
+Granules: 0/0
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 0/0
+Granules: 0/0
+Ranges: 0
+0
+--Merged: Use part
+ReadFromMergeTree (default.test_fallback)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 100/100
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 28/100
+Ranges: 1
+101

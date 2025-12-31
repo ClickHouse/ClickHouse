@@ -1909,6 +1909,14 @@ namespace ErrorCodes
 
     **Default Value:** false
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_skip_index_part_aggregation, false, R"(
+    Enable part-level aggregation for skip indexes (minmax, hypothesis) to allow
+    early part pruning before reading primary index and granule-level skip index
+    files. When enabled, part-level aggregation information is stored in `.pidx`
+    files and used for query optimization.
+
+    **Default Value:** false
+    )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \

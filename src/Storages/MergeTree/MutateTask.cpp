@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -69,6 +70,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_experimental_skip_index_part_aggregation;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
@@ -883,6 +885,9 @@ static NameSet collectFilesToSkip(
             files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
             files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
         }
+        /// Also skip part-level aggregation file if index supports it
+        if (index->supportsPartLevelAggregation())
+            files_to_skip.insert(index->getFileName() + PART_AGG_FILE_EXTENSION);
     };
 
     for (const auto & index : indices_to_recalc)
@@ -1188,6 +1193,17 @@ void finalizeMutatedPart(
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
     new_data_part->minmax_idx = source_part->minmax_idx;
+    /// Merge skip index part aggregations if enabled
+    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::allow_experimental_skip_index_part_aggregation])
+    {
+        if (source_part->skip_index_part_aggs)
+        {
+            if (new_data_part->skip_index_part_aggs)
+                new_data_part->skip_index_part_aggs->merge(*source_part->skip_index_part_aggs);
+            else
+                new_data_part->skip_index_part_aggs = source_part->skip_index_part_aggs;
+        }
+    }
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
