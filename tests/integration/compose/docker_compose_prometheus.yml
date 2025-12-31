@@ -42,6 +42,7 @@ services:
         source: ${PROMETHEUS_WRITER_LOGS:-}
         target: /var/log/prometheus
     stop_grace_period: 5s
+    cpus: 3
   # Service "prometheus_reader" runs a prometheus server which scrapes nothing and can request data via the RemoteRead protocol
   # from ClickHouse by url ${PROMETHEUS_REMOTE_READ_HANDLER}.
   prometheus_reader:
@@ -79,6 +80,7 @@ services:
         source: ${PROMETHEUS_READER_LOGS:-}
         target: /var/log/prometheus
     stop_grace_period: 5s
+    cpus: 3
   # Service "prometheus_receiver" runs a prometheus server which accepts data sent by the RemoteWrite protocol to Prometheus to api/v1/write.
   prometheus_receiver:
     image: prom/prometheus:v3.5.0
@@ -114,3 +116,4 @@ services:
         source: ${PROMETHEUS_RECEIVER_LOGS:-}
         target: /var/log/prometheus
     stop_grace_period: 5s
+    cpus: 3
