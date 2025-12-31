@@ -51,6 +51,9 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -450,7 +453,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
         String format;
         switch (copy_query->format)
         {
@@ -465,6 +467,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             break;
         }
 
+        const Settings & settings = query_context->getSettingsRef();
+
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();
         while (true)
@@ -477,7 +481,21 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
                 ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
+                auto format_ptr = FormatFactory::instance().getInput(
+                    format,
+                    buf,
+                    io.pipeline.getHeader(),
+                    query_context,
+                    settings[Setting::max_insert_block_size],
+                    std::nullopt,
+                    nullptr,
+                    nullptr,
+                    false,
+                    CompressionMethod::None,
+                    false,
+                    settings[Setting::max_insert_block_size_bytes],
+                    settings[Setting::min_insert_block_size_rows],
+                    settings[Setting::min_insert_block_size_bytes]);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();

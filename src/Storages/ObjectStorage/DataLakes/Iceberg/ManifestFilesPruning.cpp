@@ -146,11 +146,11 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
+PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr & entry) const
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry.partition_key_value;
+        const auto & partition_value = entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -178,8 +178,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
             continue;
         }
 
-        auto it = entry.columns_infos.find(column_id);
-        if (it == entry.columns_infos.end())
+        auto it = entry->columns_infos.find(column_id);
+        if (it == entry->columns_infos.end())
         {
             continue;
         }
