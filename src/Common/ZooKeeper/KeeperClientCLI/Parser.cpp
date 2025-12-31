@@ -1,5 +1,5 @@
-#include <Parser.h>
-#include <KeeperClient.h>
+#include <Common/ZooKeeper/KeeperClientCLI/Parser.h>
+#include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -39,7 +39,7 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto query = std::make_shared<ASTKeeperQuery>();
 
-    for (const auto & pair : KeeperClient::commands)
+    for (const auto & pair : KeeperClientBase::commands)
         expected.add(pos, pair.first.data());
 
     for (const auto & four_letter_word_command : four_letter_word_commands)
@@ -51,8 +51,8 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String command_name(pos->begin, pos->end);
     Command command;
 
-    auto iter = KeeperClient::commands.find(command_name);
-    if (iter == KeeperClient::commands.end())
+    auto iter = KeeperClientBase::commands.find(command_name);
+    if (iter == KeeperClientBase::commands.end())
     {
         if (command_name.size() == 4)
         {
