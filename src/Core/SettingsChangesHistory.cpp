@@ -91,6 +91,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_allow_materialized_views", false, true, "Allow usage of materialized views with parallel replicas"},
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
+            {"use_parquet_metadata_cache", true, true, "Enables cache of parquet file metadata."},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
             {"enable_full_text_index", false, false, "Text index was moved to Beta."},
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
