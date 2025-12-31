@@ -694,6 +694,7 @@ try
 
     if (!table_name.empty())
     {
+        // Set option to false for hidden query to prevent double-printing time
         bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
         getClientConfiguration().setBool("print-time-to-stderr", false);
 
