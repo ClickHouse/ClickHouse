@@ -64,39 +64,39 @@ public:
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         new (place) GroupFormatData;
-        auto & data = this->data(place);
-        data.columns.reserve(argument_types.size());
+        auto & state = data(place);
+        state.columns.reserve(argument_types.size());
         for (const auto & type : argument_types)
-            data.columns.emplace_back(type->createColumn());
+            state.columns.emplace_back(type->createColumn());
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        auto & data = this->data(place);
-        for (size_t i = 0; i < data.columns.size(); ++i)
-            data.columns[i]->insertFrom(*columns[i], row_num);
+        auto & state = data(place);
+        for (size_t i = 0; i < state.columns.size(); ++i)
+            state.columns[i]->insertFrom(*columns[i], row_num);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto & data = this->data(place);
-        const auto & rhs_data = this->data(rhs);
-        for (size_t i = 0; i < data.columns.size(); ++i)
-            data.columns[i]->insertRangeFrom(*rhs_data.columns[i], 0, rhs_data.columns[i]->size());
+        auto & state = data(place);
+        const auto & rhs_state = data(rhs);
+        for (size_t i = 0; i < state.columns.size(); ++i)
+            state.columns[i]->insertRangeFrom(*rhs_state.columns[i], 0, rhs_state.columns[i]->size());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        const auto & data = this->data(place);
-        UInt64 num_columns = data.columns.size();
-        UInt64 num_rows = num_columns ? data.columns.front()->size() : 0;
+        const auto & state = data(place);
+        UInt64 num_columns = state.columns.size();
+        UInt64 num_rows = num_columns ? state.columns.front()->size() : 0;
 
         writeVarUInt(num_columns, buf);
         writeVarUInt(num_rows, buf);
 
         for (size_t i = 0; i < num_columns; ++i)
         {
-            const auto & column = data.columns[i];
+            const auto & column = state.columns[i];
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
             NativeWriter::writeData(*serialization, column->getPtr(), buf, std::nullopt, 0, num_rows, DBMS_TCP_PROTOCOL_VERSION);
@@ -105,7 +105,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        auto & data = this->data(place);
+        auto & state = data(place);
         UInt64 num_columns = 0;
         UInt64 num_rows = 0;
         readVarUInt(num_columns, buf);
@@ -119,8 +119,8 @@ public:
                 num_columns,
                 argument_types.size());
 
-        data.columns.clear();
-        data.columns.reserve(num_columns);
+        state.columns.clear();
+        state.columns.reserve(num_columns);
 
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -128,23 +128,23 @@ public:
             auto serialization = type->getDefaultSerialization();
             ColumnPtr column = type->createColumn();
             NativeReader::readData(*serialization, column, buf, nullptr, num_rows, nullptr, nullptr);
-            data.columns.emplace_back(column->assumeMutable());
+            state.columns.emplace_back(column->assumeMutable());
         }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & data = this->data(place);
+        auto & state = data(place);
         auto & column_string = assert_cast<ColumnString &>(to);
 
         WriteBufferFromOwnString buffer;
         auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, context, format_settings);
 
-        if (!data.columns.empty())
+        if (!state.columns.empty())
         {
             Columns columns;
-            columns.reserve(data.columns.size());
-            for (const auto & column : data.columns)
+            columns.reserve(state.columns.size());
+            for (const auto & column : state.columns)
                 columns.emplace_back(column->getPtr());
             auto block = header.cloneWithColumns(columns);
             if (block.rows())
