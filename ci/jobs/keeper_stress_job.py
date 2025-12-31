@@ -161,8 +161,8 @@ def main():
     install_cmd = (
         # Ensure deterministic pytest stack compatible with --report-log
         "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
-        "&& PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir 'pytest<9' pytest-xdist pytest-timeout pytest-reportlog "
-        "|| PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir pyyaml requests 'pytest<9' pytest-timeout pytest-xdist pytest-reportlog"
+        "&& PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir 'pytest<9' pytest-xdist pytest-timeout pytest-reportlog boto3 PyGithub unidiff "
+        "|| PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir pyyaml requests 'pytest<9' pytest-timeout pytest-xdist pytest-reportlog boto3 PyGithub unidiff"
     )
     results.append(
         Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
@@ -312,11 +312,20 @@ def main():
         need = (not env.get("COMMIT_SHA")) or env.get("COMMIT_SHA") in ("", "local")
         if need:
             sha = (
-                env.get("GITHUB_SHA")
-                or env.get("GITHUB_HEAD_SHA")
-                or env.get("SHA")
+                os.environ.get("GITHUB_SHA")
+                or os.environ.get("GITHUB_HEAD_SHA")
+                or os.environ.get("SHA")
                 or ""
             )
+            # Try to resolve via PRInfo if GH envs are not present
+            if not sha:
+                try:
+                    from tests.ci.pr_info import PRInfo  # type: ignore
+
+                    pr = PRInfo()
+                    sha = getattr(pr, "sha", "") or sha
+                except Exception:
+                    pass
             if not sha:
                 try:
                     out = subprocess.check_output(
@@ -329,6 +338,31 @@ def main():
                 except Exception:
                     sha = ""
             env["COMMIT_SHA"] = sha if sha else "local"
+        # Also pass it explicitly to pytest to ensure run_meta tagging
+        try:
+            if env.get("COMMIT_SHA") and "--commit-sha=" not in cmd:
+                cmd = f"{cmd} --commit-sha={env['COMMIT_SHA']}"
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Light preflight to aid debugging: echo has_ci_sink and COMMIT_SHA
+    try:
+        pre_cmd = (
+            "python3 - <<'PY'\n"
+            "import os,sys\n"
+            f"sys.path.insert(0, '{repo_dir}')\n"
+            f"sys.path.insert(0, '{repo_dir}/ci')\n"
+            "try:\n"
+            "    from tests.stress.keeper.framework.io.sink import has_ci_sink\n"
+            "    print('keeper_preflight has_ci_sink=', has_ci_sink())\n"
+            "except Exception as e:\n"
+            "    print('keeper_preflight has_ci_sink=error', e)\n"
+            "print('keeper_preflight COMMIT_SHA=', os.environ.get('COMMIT_SHA'))\n"
+            "print('keeper_preflight GITHUB_SHA=', os.environ.get('GITHUB_SHA',''))\n"
+            "PY\n"
+        )
+        results.append(Result.from_commands_run(name="Keeper CIDB preflight", command=pre_cmd))
     except Exception:
         pass
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
@@ -489,18 +523,92 @@ def main():
                 if sha and sha != "local":
                     q = (
                         "SELECT count() FROM default.checks "
-                        f"WHERE check_name LIKE 'keeper_stress:%' AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                        f"WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
                         "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 else:
                     q = (
                         "SELECT count() FROM default.checks "
-                        "WHERE check_name LIKE 'keeper_stress:%' "
+                        "WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') "
                         "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
                 t3 = (r.text or "").strip()
                 checks_rows = int(float(t3.splitlines()[0])) if t3 else 0
+            except Exception:
+                pass
+            # Best-effort: capture small samples to aid triage when counts are zero
+            try:
+                cidb_samples = f"{temp_dir}/keeper_cidb_sample.txt"
+                lines = []
+                # Metrics sample (recent rows)
+                try:
+                    if sha and sha != "local":
+                        filt = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
+                    else:
+                        filt = "ts > now() - INTERVAL 2 DAY"
+                    q = (
+                        "SELECT ts, run_id, backend, scenario, node, stage, source, name, value "
+                        "FROM keeper_stress_tests.keeper_metrics_ts "
+                        f"WHERE {filt} ORDER BY ts DESC LIMIT 30 FORMAT TabSeparated"
+                    )
+                    r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                    mtxt = (r.text or "").strip()
+                except Exception:
+                    mtxt = ""
+                lines.append("[metrics_sample]")
+                if mtxt:
+                    for l in mtxt.splitlines():
+                        lines.append(l)
+                else:
+                    lines.append("<empty>")
+                # Checks sample (recent rows)
+                try:
+                    if sha and sha != "local":
+                        q = (
+                            "SELECT started_at, check_name, check_status, test_name "
+                            "FROM default.checks "
+                            f"WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                            "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
+                        )
+                    else:
+                        q = (
+                            "SELECT started_at, check_name, check_status, test_name "
+                            "FROM default.checks "
+                            "WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') "
+                            "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
+                        )
+                    r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                    ctxt = (r.text or "").strip()
+                except Exception:
+                    ctxt = ""
+                lines.append("")
+                lines.append("[checks_sample]")
+                if ctxt:
+                    for l in ctxt.splitlines():
+                        lines.append(l)
+                else:
+                    lines.append("<empty>")
+                # Write and attach
+                try:
+                    with open(cidb_samples, "w", encoding="utf-8") as sf:
+                        sf.write("\n".join(lines) + "\n")
+                    files_to_attach.append(cidb_samples)
+                    # Also print a short preview to job log for quick triage
+                    try:
+                        results.append(
+                            Result.from_commands_run(
+                                name="CIDB Sample Preview",
+                                command=(
+                                    "bash -lc \"echo '==== CIDB recent metrics/checks sample ===='; "
+                                    f"sed -n '1,200p' '{cidb_samples}'\""
+                                ),
+                            )
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
             except Exception:
                 pass
         present = ",".join(sorted(k for k in backends_counts.keys())) if backends_counts else ""

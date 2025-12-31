@@ -1,4 +1,5 @@
 import threading
+import json
 import time
 
 from ..core.settings import SAMPLER_FLUSH_EVERY, SAMPLER_ROW_FLUSH_THRESHOLD
@@ -201,8 +202,18 @@ class MetricsSampler:
             self._th = None
 
     def flush(self):
-        if not self.sink_url:
+        if not self._metrics_ts_rows:
             return
-        if self._metrics_ts_rows:
+        try:
+            print("[keeper][push-metrics] begin")
+            for r in self._metrics_ts_rows:
+                try:
+                    print(json.dumps(r, ensure_ascii=False))
+                except Exception:
+                    pass
+            print("[keeper][push-metrics] end")
+        except Exception:
+            pass
+        if self.sink_url:
             sink_clickhouse(self.sink_url, "keeper_metrics_ts", self._metrics_ts_rows)
-            self._metrics_ts_rows = []
+        self._metrics_ts_rows = []
