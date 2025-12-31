@@ -4,11 +4,11 @@
 
 #if USE_SIMDCOMP
 
-#include <Storages/MergeTree/IPostingListCodec.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <roaring/roaring.hh>
 
 extern "C"
@@ -46,8 +46,9 @@ class PostingListCodecImpl
     struct Header
     {
         Header() = default;
-        explicit Header(size_t bytes_, uint32_t cardinality_, uint32_t base_value_)
-            : bytes(bytes_)
+        explicit Header(uint16_t codec_type_, size_t bytes_, uint32_t cardinality_, uint32_t base_value_)
+            : codec_type(codec_type_)
+            , bytes(bytes_)
             , cardinality(cardinality_)
             , base_value(base_value_)
         {
@@ -55,6 +56,7 @@ class PostingListCodecImpl
 
         void write(WriteBuffer & out) const
         {
+            writeVarUInt(codec_type, out);
             writeVarUInt(bytes, out);
             writeVarUInt(cardinality, out);
             writeVarUInt(base_value, out);
@@ -63,6 +65,9 @@ class PostingListCodecImpl
         void read(ReadBuffer & in)
         {
             UInt64 v = 0;
+            readVarUInt(v, in);
+            codec_type = static_cast<uint16_t>(v);
+
             readVarUInt(v, in);
             bytes = static_cast<size_t>(v);
 
@@ -73,6 +78,7 @@ class PostingListCodecImpl
             base_value = static_cast<uint32_t>(v);
         }
 
+        uint8_t codec_type = 0;
         size_t bytes = 0;
         uint32_t cardinality = 0;
         uint32_t base_value = 0;
@@ -263,11 +269,14 @@ private:
 
     /// Total number of postings added across all segments.
     size_t cardinality = 0;
+    /// Used as the globally unique identifier for a codec, and it is defined in IPostingListCodec.
+    IPostingListCodec::Type codec_type = IPostingListCodec::Type::Simpcomp;
 };
 
 /// Codec for serializing/deserializing a single postings list to/from a binary stream.
 struct SIMDCompCodec : public  IPostingListCodec
 {
+    SIMDCompCodec();
     static const char * getName() { return "simdcomp"; }
     /// Serializes a postings list into a `Write buffer`.
     /// Serialization is segment-oriented and controlled by `posting_list_block_size`:

@@ -66,6 +66,9 @@ void PostingListCodecImpl::deserialize(ReadBuffer & in, PostingList & out)
 {
     Header header;
     header.read(in);
+    if (header.codec_type != static_cast<uint8_t>(codec_type))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected codec type {}, but got {}", codec_type, header.codec_type);
+
     prev_value = header.base_value;
 
     uint32_t tail_block_size = header.cardinality % BLOCK_SIZE;
@@ -98,7 +101,7 @@ void PostingListCodecImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & in
     {
         info.offsets.emplace_back(out.count());
         info.ranges.emplace_back(desc.row_offset_begin, desc.row_offset_end);
-        Header header(desc.compressed_data_size, desc.cardinality, desc.row_offset_begin);
+        Header header(static_cast<uint8_t>(codec_type), desc.compressed_data_size, desc.cardinality, desc.row_offset_begin);
         header.write(out);
         out.write(compressed_data.data() + desc.compressed_data_offset, desc.compressed_data_size);
     }
@@ -145,6 +148,11 @@ void PostingListCodecImpl::decodeOneBlock(std::span<const std::byte> & in, size_
     /// Restore the original array from the decompressed delta values.
     std::inclusive_scan(current.begin(), current.end(), current.begin(), std::plus<uint32_t>{}, prev_value);
     prev_value = current.empty() ? prev_value : current.back();
+}
+
+SIMDCompCodec::SIMDCompCodec()
+    : IPostingListCodec(Type::Simpcomp)
+{
 }
 
 void SIMDCompCodec::decode(ReadBuffer & in, PostingList & postings) const
