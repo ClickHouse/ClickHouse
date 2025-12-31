@@ -2698,6 +2698,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return true;
             }
 
+            if (const_value.isNaN())
+            {
+                /// Comparisons with NaN are unreliable, cannot use index
+                return false;
+            }
+
             size_t key_arg_pos = 1 - const_arg_pos;
             auto key_arg = func.getArgumentAt(key_arg_pos);
             bool condition_is_relaxed = false;
