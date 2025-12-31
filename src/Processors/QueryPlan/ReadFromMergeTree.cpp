@@ -35,7 +35,6 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -349,7 +348,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::optional<size_t> number_of_current_replica_)
     : SourceStepWithFilter(std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
-        {},
         query_info_.row_level_filter,
         query_info_.prewhere_info)), all_column_names_, query_info_, storage_snapshot_, context_)
     , data_settings(std::move(data_settings_))
@@ -479,7 +477,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             std::move(algorithm),
             query_info.row_level_filter,
             query_info.prewhere_info,
-            lazily_read_info,
             index_read_tasks,
             actions_settings,
             reader_settings,
@@ -589,7 +586,6 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(algorithm),
             query_info.row_level_filter,
             query_info.prewhere_info,
-            lazily_read_info,
             index_read_tasks,
             actions_settings,
             reader_settings,
@@ -671,7 +667,7 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context,
-            nullptr);
+            dataflow_cache_updater);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
@@ -707,7 +703,6 @@ Pipe ReadFromMergeTree::readInOrder(
             std::move(algorithm),
             query_info.row_level_filter,
             query_info.prewhere_info,
-            lazily_read_info,
             index_read_tasks,
             actions_settings,
             reader_settings,
@@ -943,7 +938,6 @@ Pipe ReadFromMergeTree::readByLayers(
             {
                 auto header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
                     storage_snapshot->getSampleBlockForColumns(in_order_column_names_to_read),
-                    lazily_read_info,
                     query_info.row_level_filter,
                     query_info.prewhere_info));
                 pipe = Pipe(std::make_shared<NullSource>(header));
@@ -1059,7 +1053,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         data.merging_params.is_deleted_column.empty() &&
         !query_info.row_level_filter &&
         !query_info.prewhere_info &&
-        !lazily_read_info &&
         !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
         !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
     {
@@ -2410,45 +2403,10 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
         query_info.row_level_filter,
         prewhere_info_value));
 
     updateSortDescription();
-}
-
-void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value)
-{
-    lazily_read_info = lazily_read_info_value;
-
-    NameSet names_set;
-
-    for (const auto & column : lazily_read_info->lazily_read_columns)
-    {
-        names_set.insert(column.name);
-    }
-    std::erase_if(all_column_names, [&names_set] (const String & column_name)
-    {
-        return names_set.contains(column_name);
-    });
-
-    if (std::find_if(all_column_names.begin(), all_column_names.end(), [] (const String & column_name)
-        { return column_name == "_part_offset"; }) == all_column_names.end())
-    {
-        lazily_read_info->remove_part_offset_column = true;
-        all_column_names.emplace_back("_part_offset");
-    }
-
-    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
-        query_info.row_level_filter,
-        query_info.prewhere_info));
-
-    /// if analysis has already been done (like in optimization for projections),
-    /// then update columns to read in analysis result
-    if (analyzed_result_ptr)
-        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
@@ -2459,7 +2417,6 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
         query_info.row_level_filter,
         query_info.prewhere_info));
 
@@ -2747,7 +2704,6 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
     auto lazy_reading_header = std::make_shared<const Block>(
         MergeTreeSelectProcessor::transformHeader(
             storage_snapshot->getSampleBlockForColumns(columns_to_remove),
-            nullptr,
             nullptr, //query_info.row_level_filter,
             nullptr) //query_info.prewhere_info)
     );
@@ -2768,7 +2724,6 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
         query_info.row_level_filter,
         query_info.prewhere_info));
 
@@ -2808,7 +2763,6 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
         query_info.row_level_filter,
         query_info.prewhere_info));
 
@@ -2936,7 +2890,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             /// Recreate output_header without the deferred filters since they will be applied after FINAL
             output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
                 storage_snapshot->getSampleBlockForColumns(all_column_names),
-                lazily_read_info,
                 defer_row_policy ? nullptr : query_info.row_level_filter,
                 defer_prewhere ? nullptr : query_info.prewhere_info));
 
@@ -3025,16 +2978,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
     std::optional<ActionsDAG> result_projection;
-
-    if (lazily_read_info)
-    {
-        for (const auto & ranges_in_data_part : result.parts_with_ranges)
-        {
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext());
-            auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges_in_data_part.data_part, std::move(alter_conversions));
-            lazily_read_info->data_part_infos->emplace(ranges_in_data_part.part_index_in_query, std::move(part_info));
-        }
-    }
 
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
@@ -3702,7 +3645,6 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     {
         output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
             storage_snapshot->getSampleBlockForColumns(all_column_names),
-            lazily_read_info,
             query_info.row_level_filter,
             query_info.prewhere_info));
     }

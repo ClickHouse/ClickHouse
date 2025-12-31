@@ -721,9 +721,7 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
             column_name = args[1]->as<ASTIdentifier>()->name();
         }
         else
-        {
             column_name = args[0]->as<ASTIdentifier>()->name();
-        }
 
         if (!clickhouse_name_to_iceberg.contains(clickhouse_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
@@ -741,7 +739,14 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
         return parse_function(object);
     }
 
-    auto function_desc = object->children[0]->children[i]->children[0];
+    chassert(!object->children.empty());
+    chassert(object->children[0]->as<ASTExpressionList>());
+    auto function_desc = object->children[0]->children[i];
+    if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
+        return {"identity", identifier->name()};
+
+    chassert(!function_desc->children.empty());
+    function_desc = function_desc->children[0];
     if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
         return {"identity", identifier->name()};
 
