@@ -469,12 +469,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         ObjectInfoPtr object_info;
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
 
+        chassert(
+            use_buckets_for_processing == metadata->useBucketsForProcessing(),
+            fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
+
         if (use_buckets_for_processing)
         {
-            chassert(
-                metadata->useBucketsForProcessing(),
-                fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
-
             std::lock_guard lock(mutex);
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
@@ -553,12 +553,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata)
 {
     chassert(object_info);
+    chassert(
+        use_buckets_for_processing == metadata->useBucketsForProcessing(),
+        fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
+
     if (use_buckets_for_processing)
     {
-        chassert(
-            metadata->useBucketsForProcessing(),
-            fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
-
         const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
         std::lock_guard lock(mutex);
         keys_cache_per_bucket.at(bucket)->keys.emplace_front(object_info, file_metadata);
