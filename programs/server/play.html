@@ -1118,6 +1118,9 @@ async function loadTables(server_address, user, password, database, container) {
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
+    // Use natural order for table names
+    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
+
     for (let elem of json.data) {
         let table = document.createElement('div');
         table.className = 'table';
