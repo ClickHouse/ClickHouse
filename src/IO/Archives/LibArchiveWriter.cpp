@@ -58,7 +58,7 @@ public:
         size_t adaptive_buffer_max_size_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
         , use_adaptive_buffer_size(use_adaptive_buffer_size_)
-        , adaptive_max_buffer_size(std::max(adaptive_buffer_max_size_, buf_size_))
+        , adaptive_max_buffer_size(adaptive_buffer_max_size_)
         , archive_writer(archive_writer_)
         , filename(filename_)
         , size(size_)
@@ -206,7 +206,7 @@ LibArchiveWriter::LibArchiveWriter(
     const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_, size_t buf_size_, size_t adaptive_buffer_max_size_)
     : path_to_archive(path_to_archive_)
     , buf_size(buf_size_)
-    , adaptive_buffer_max_size(adaptive_buffer_max_size_)
+    , adaptive_buffer_max_size(std::max(adaptive_buffer_max_size_, buf_size_))
 {
     if (archive_write_buffer_)
         stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));

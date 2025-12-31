@@ -20,6 +20,7 @@ class LibArchiveWriter : public IArchiveWriter
 {
 public:
     /// Constructs an archive that will be written as a file in the local filesystem.
+    /// The constructor sets adaptive_buffer_max_size to be greater than or equal to buf_size.
     explicit LibArchiveWriter(
         const String & path_to_archive_,
         std::unique_ptr<WriteBuffer> archive_write_buffer_,
