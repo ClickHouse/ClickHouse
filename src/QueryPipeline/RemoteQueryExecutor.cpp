@@ -788,8 +788,12 @@ void RemoteQueryExecutor::finish()
     if (!isQueryPending() || hasThrownException())
         return;
 
-    /// To make sure finish is only called once
-    SCOPE_EXIT({ finished = true; });
+    /// Mark connection as broken in case of any exceptions (the most common is timeout), to make subsequent finish() no-op
+    /// It is possible for RemoteSource to call it twice, due to a race between onUpdatePorts() and work()
+    SCOPE_EXIT({
+        if (!finished)
+            got_exception_from_replica = true;
+    });
 
     /** If you have not read all the data yet, but they are no longer needed.
       * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
