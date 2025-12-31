@@ -13,7 +13,8 @@ enum class ColumnSpecial
     SIGN = 1,
     IS_DELETED = 2,
     VERSION = 3,
-    TTL_COL = 4
+    TTL_COL = 4,
+    ID_COL = 5
 };
 
 enum class DetachStatus
