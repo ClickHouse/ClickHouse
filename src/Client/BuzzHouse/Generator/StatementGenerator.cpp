@@ -1615,8 +1615,8 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const uint32_t column_remove_property = 2;
         const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
         const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
-        const uint32_t table_modify_setting = 2;
-        const uint32_t table_remove_setting = 2;
+        const uint32_t table_modify_setting = 15;
+        const uint32_t table_remove_setting = 5;
         const uint32_t add_projection = 2 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily());
         const uint32_t remove_projection
             = 2 * static_cast<uint32_t>(no_oracle && t.isMergeTreeFamily() && !t.projs.empty() && t.can_run_merges);
@@ -2501,7 +2501,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
 void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_parallel, Alter * at)
 {
     const uint32_t alter_view = 5 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
-    const uint32_t alter_table = 15 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t alter_table = 25 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t alter_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t prob_space2 = alter_view + alter_table + alter_database;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
@@ -2753,8 +2753,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_distributed_table_func));
     const uint32_t has_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(attached_tables));
 
-    const uint32_t reload_embedded_dictionaries = 1;
-    const uint32_t reload_dictionaries = 3;
+    const uint32_t reload_embedded_dictionaries = 0;
+    const uint32_t reload_dictionaries = 0;
     const uint32_t reload_models = 0;
     const uint32_t reload_functions = 3;
     const uint32_t reload_function = 0 * static_cast<uint32_t>(!functions.empty());
@@ -2791,7 +2791,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t restore_replica = 8 * has_merge_tree;
     const uint32_t restart_replicas = 3;
     const uint32_t drop_filesystem_cache = 3;
-    const uint32_t sync_file_cache = 1;
+    const uint32_t sync_file_cache = 0;
     const uint32_t load_pks = 3;
     const uint32_t load_pk = 8 * has_table;
     const uint32_t unload_pks = 3;
@@ -2818,7 +2818,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t sync_filesystem_cache = 3;
     const uint32_t drop_vector_similarity_index_cache = 3;
     /// for dictionaries
-    const uint32_t reload_dictionary = 8 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
+    const uint32_t reload_dictionary = 0 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     /// for distributed tables
     const uint32_t flush_distributed = 8 * has_distributed_table;
     const uint32_t stop_distributed_sends = 8 * has_distributed_table;
@@ -4253,7 +4253,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     const uint32_t backup_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t backup_dictionary = 10 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries));
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
-    const uint32_t everything = 3;
+    const uint32_t everything = 1;
     const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_dictionary + backup_database + everything;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -4567,7 +4567,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
                               && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                                   || collectionCount<SQLDictionary>(attached_dictionaries) > 3
                                   || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3));
-    const uint32_t insert = 60 * static_cast<uint32_t>(has_tables);
+    const uint32_t insert = 50 * static_cast<uint32_t>(has_tables);
     const uint32_t light_delete = 6 * static_cast<uint32_t>(has_mergeable_mt);
     const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
     const uint32_t optimize_table = 2 * static_cast<uint32_t>(has_tables);
@@ -4577,7 +4577,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
                                     || collectionCount<SQLDictionary>(attached_dictionaries) > 1));
-    const uint32_t alter = 10 * static_cast<uint32_t>(has_tables || has_views || has_databases);
+    const uint32_t alter = 15 * static_cast<uint32_t>(has_tables || has_views || has_databases);
     const uint32_t set_values = 10;
     const uint32_t attach = 2
         * static_cast<uint32_t>(!in_parallel
@@ -4598,7 +4598,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
         * static_cast<uint32_t>(!in_parallel
                                 && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
     const uint32_t light_update = 6 * static_cast<uint32_t>(has_mergeable_mt);
-    const uint32_t select_query = 1000 * static_cast<uint32_t>(!in_parallel);
+    const uint32_t select_query = 300 * static_cast<uint32_t>(!in_parallel);
     const uint32_t kill = 2;
     const uint32_t show_stmt = 1;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
