@@ -924,6 +924,8 @@ def get_tests_execution_time(info: any, job_options: str) -> dict[str, int]:
     if hasattr(info, "updated_at") and info.updated_at:
         start_time_filter = f"parseDateTimeBestEffort('{info.updated_at}')"
 
+    build = job_options.split(',', 1)[0]
+
     query = f"""
         SELECT
             file,
@@ -934,8 +936,8 @@ def get_tests_execution_time(info: any, job_options: str) -> dict[str, int]:
                 splitByString('::', test_name)[1] AS file,
                 median(test_duration_ms) AS test_duration_ms
             FROM checks
-            WHERE (check_name LIKE 'Integration%')
-                AND (check_name LIKE '%{job_options}%')
+            WHERE (check_name LIKE 'Integration tests%')
+                AND (check_name LIKE '%{build}%')
                 AND (check_start_time >= ({start_time_filter} - toIntervalDay(20)))
                 AND (check_start_time <= ({start_time_filter} - toIntervalHour(5)))
                 AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
