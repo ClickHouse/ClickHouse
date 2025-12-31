@@ -145,6 +145,13 @@ constexpr std::array<T, exponent_count> generatePowersOf10()
 template<>
 struct ALPFloatTraits<Float64>
 {
+    /**
+     * Float64 scaling is limited to 10^17 and inputs are clamped to ±922337203685477478.
+     * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to int64”.
+     * Around ~1e18 Float64 becomes too sparse, so after decimal scaling most values no longer map stably to an integer and the result differ between x86 and ARM.
+     * The reference implementation use ~10x wider bounds, which led to cross-arch divergence encoded output.
+     * These conservative limits keep encoding bit-identical across platforms.
+     */
     static constexpr UInt8 EXPONENT_COUNT = 18;
 
     static constexpr std::array<Float64, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float64, EXPONENT_COUNT, false>();
