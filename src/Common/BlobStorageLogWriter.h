@@ -10,7 +10,7 @@ using BlobStorageLogPtr = std::shared_ptr<BlobStorageLog>;
 class BlobStorageLogWriter;
 using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 
-/// Helper class tp write events to BlobStorageLog
+/// Helper class to write events to BlobStorageLog
 /// Can additionally hold some context information
 class BlobStorageLogWriter : private boost::noncopyable
 {
