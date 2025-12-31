@@ -1,4 +1,8 @@
 -- Test cases for optimization for like using text index
+-- When a text function appears in both the SELECT list and the WHERE clause,
+-- during the optimization phase the text function in the WHERE clause is replaced with a virtual column to leverage the text index.
+-- After this replacement, the reference to the text function in the SELECT clause can become missing,
+-- so we need to add an alias to avoid query errors.
 
 SET allow_experimental_full_text_index = 1;
 SET allow_experimental_analyzer = 1;

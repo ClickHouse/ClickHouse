@@ -196,7 +196,7 @@ public:
                 for (const auto & [index_name, column_name] : replaced->added_virtual_columns)
                     result.added_columns[index_name].emplace_back(column_name, std::make_shared<DataTypeUInt8>());
                 if (actions_dag.tryFindInOutputs(origin_result_name) != nullptr)
-                    add_aliases.push_back({replaced->node->result_name, origin_result_name});
+                    required_aliases.push_back({replaced->node->result_name, origin_result_name});
             }
         }
 
@@ -211,8 +211,8 @@ public:
             if (is_filter_node)
                 filter_node = output;
         }
-        if (!add_aliases.empty())
-            actions_dag.addAliases(add_aliases);
+        if (!required_aliases.empty())
+            actions_dag.addAliases(required_aliases);
 
         result.filter_node = filter_node;
         actions_dag.removeUnusedActions();
