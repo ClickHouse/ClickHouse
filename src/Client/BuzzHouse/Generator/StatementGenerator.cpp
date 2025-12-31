@@ -888,6 +888,8 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     }
 }
 
+/// Returns true if URL table function is used
+/// Sets entries list without clearing
 bool StatementGenerator::tableOrFunctionRef(
     RandomGenerator & rg, const SQLTable & t, const bool allow_remote_cluster, TableOrFunction * tof)
 {
@@ -978,7 +980,6 @@ bool StatementGenerator::tableOrFunctionRef(
     {
         UNREACHABLE();
     }
-    this->entries.clear();
     return is_url;
 }
 
@@ -998,6 +999,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     {
         const auto is_url = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), true, dt->mutable_tof());
         UNUSED(is_url);
+        this->entries.clear();
     }
     else if (desc_view && nopt < (desc_table + desc_view + 1))
     {
@@ -1083,17 +1085,20 @@ void StatementGenerator::generateInsertToTable(
     std::uniform_int_distribution<uint64_t> string_length_dist(fc.min_string_length, fc.max_string_length);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
     const bool is_url = tableOrFunctionRef(rg, t, !rows.has_value(), ins->mutable_tof());
-    const bool allCols = rg.nextMediumNumber() < 4;
     const uint64_t nrows = rows.has_value() ? rows.value() : rows_dist(rg.generator);
 
-    flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
-    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
+    chassert(!this->entries.empty());
     if (!is_url)
     {
         for (const auto & entry : this->entries)
         {
             columnPathRef(entry, ins->add_cols());
         }
+    }
+    if (rg.nextLargeNumber() < 6)
+    {
+        /// Shuffle again for chaos
+        std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     }
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
