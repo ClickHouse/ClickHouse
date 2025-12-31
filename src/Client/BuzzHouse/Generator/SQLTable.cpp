@@ -2235,7 +2235,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(URL);
         }
-        if (fc.kafka_server.has_value() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
+        if (connections.hasDolorConnection() && fc.kafka_server.has_value() && !b.is_deterministic && (fc.engine_mask & allow_kafka) != 0)
         {
             this->ids.emplace_back(Kafka);
         }
