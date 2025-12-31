@@ -1040,9 +1040,25 @@ def get_optimal_test_batch(
     p_known, p_unknown = groups_with_durations(parallel_groups)
     s_known, s_unknown = groups_with_durations(sequential_groups)
 
+    # Sequential batches: start from scaled parallel weights to account for worker concurrency
+    sequential_batches: list[list[str]] = [[] for _ in range(total_batches)]
+    sequential_weights: list[int] = [0] * total_batches
+
+    # LPT assign known-duration sequential groups
+    for prefix, dur in s_known:
+        idx = min(range(total_batches), key=lambda i: (sequential_weights[i], i))
+        # prefix, dur sorted in s_known starting with longest duration - keep the order in batches to decrease tail latency
+        sequential_batches[idx].extend(sequential_groups[prefix])
+        sequential_weights[idx] += dur
+
+    # Round-robin assign unknown-duration sequential groups
+    for i, prefix in enumerate(s_unknown):
+        idx = i % total_batches
+        sequential_batches[idx].extend(sequential_groups[prefix])
+
     # Prepare batch containers and weights
     parallel_batches: list[list[str]] = [[] for _ in range(total_batches)]
-    parallel_weights: list[int] = [0] * total_batches
+    parallel_weights: list[int] = [w * num_workers for w in sequential_weights]
 
     # LPT assign known-duration parallel groups
     for prefix, dur in p_known:
@@ -1060,22 +1076,6 @@ def get_optimal_test_batch(
     for i, prefix in enumerate(p_unknown):
         idx = i % total_batches
         parallel_batches[idx].extend(parallel_groups[prefix])
-
-    # Sequential batches: start from scaled parallel weights to account for worker concurrency
-    sequential_batches: list[list[str]] = [[] for _ in range(total_batches)]
-    sequential_weights: list[int] = [0] * total_batches
-
-    # LPT assign known-duration sequential groups
-    for prefix, dur in s_known:
-        idx = min(range(total_batches), key=lambda i: (sequential_weights[i], i))
-        # prefix, dur sorted in s_known starting with longest duration - keep the order in batches to decrease tail latency
-        sequential_batches[idx].extend(sequential_groups[prefix])
-        sequential_weights[idx] += dur
-
-    # Round-robin assign unknown-duration sequential groups
-    for i, prefix in enumerate(s_unknown):
-        idx = i % total_batches
-        sequential_batches[idx].extend(sequential_groups[prefix])
 
     print(
         f"Batches parallel weights: [{[weight // num_workers // 1000 for weight in parallel_weights]}]"
