@@ -98,8 +98,12 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                     node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
         }
 
+        /// Collect information about what columns are used in the query.
         traverseQueryTree(node_to_visit,
-            [&](const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
+            [&subqueries_nodes_to_visit, &node_to_used_columns](
+                const QueryTreeNodePtr & /*parent*/,
+                const QueryTreeNodePtr & child
+            )
             {
                 if (isQueryOrUnionNode(child))
                 {
@@ -121,7 +125,7 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                 }
                 return true;
             },
-            [&](const QueryTreeNodePtr & node)
+            [&node_to_used_columns](const QueryTreeNodePtr & node)
             {
                 const auto node_type = node->getNodeType();
                 if (node_type != QueryTreeNodeType::COLUMN)
@@ -143,6 +147,7 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                 }
             });
 
+        /// Pass information about used columns to subqueries and remove unused projection columns
         for (auto & [query_or_union_node, used_columns] : node_to_used_columns)
         {
             /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql
