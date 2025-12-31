@@ -15,10 +15,10 @@ static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
         static const DB::Strings & choices
-            = {"''", "'none'", "'SNAPPY'", "'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+            = {"''", "'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
-    {"''", "'none'", "'SNAPPY'", "'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
+    {"''", "'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
@@ -658,7 +658,15 @@ static std::unordered_map<String, CHSetting> kafkaTableSettings
             false)},
        {"kafka_commit_on_select", trueOrFalseSetting},
        {"kafka_max_rows_per_message", CHSetting(rowsRange, {}, false)},
-       {"kafka_compression_codec", compressSetting},
+       {"kafka_compression_codec",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings & choices = {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"};
+                return rg.pickRandomly(choices);
+            },
+            {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"},
+            false)},
        {"kafka_compression_level",
         CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-1, 12)); }, {}, false)}};
 
@@ -707,7 +715,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                     static const DB::Strings & choices = {"'keep'", "'delete'", "'move'", "'tag'"};
                     return rg.pickRandomly(choices);
                 },
-                {},
+                {"'keep'", "'delete'", "'move'", "'tag'"},
                 false)},
            {"commit_on_select", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
