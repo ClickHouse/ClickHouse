@@ -68,3 +68,27 @@ EXPLAIN indexes = 1
 SELECT count(), sum(isNaN(p))
 FROM test_nan_ne_nan
 WHERE p != toFloat64('nan');
+
+DROP TABLE IF EXISTS test_normal_less_nan;
+
+CREATE TABLE test_normal_less_nan
+(
+    x Float64
+)
+ENGINE = MergeTree
+ORDER BY x
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_normal_less_nan
+SELECT toFloat64(number)
+FROM numbers(20);
+
+SELECT count() FROM test_normal_less_nan WHERE x < toFloat64('nan');
+
+EXPLAIN indexes = 1
+SELECT count() FROM test_normal_less_nan WHERE x < toFloat64('nan');
+
+SELECT count() FROM test_normal_less_nan WHERE NOT (x < toFloat64('nan'));
+
+EXPLAIN indexes = 1
+SELECT count() FROM test_normal_less_nan WHERE NOT (x < toFloat64('nan'));
