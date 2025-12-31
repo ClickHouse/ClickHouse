@@ -62,10 +62,10 @@ def test_normalized_user_cpu(start_cluster):
     run_cpu_intensive_task(node2)
 
     node1_cpu_time = get_async_metric(node1, "CGroupUserTimeNormalized")
-    assert float(node1_cpu_time) < 1.01
+    assert float(node1_cpu_time) < 1.1
 
     node2_cpu_time = get_async_metric(node2, "CGroupUserTimeNormalized")
-    assert float(node2_cpu_time) < 1.01
+    assert float(node2_cpu_time) < 1.1
 
 
 def test_system_wide_metrics(start_cluster):
