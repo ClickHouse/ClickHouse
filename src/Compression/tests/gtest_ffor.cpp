@@ -46,6 +46,16 @@ void runFFORPackUnpackTest(UInt16 bits)
 
 class FFORTest : public ::testing::TestWithParam<UInt16> { };
 
+TEST_P(FFORTest, UInt16PackUnpack1024Values)
+{
+    runFFORPackUnpackTest<UInt16, 1024>(GetParam());
+}
+
+TEST_P(FFORTest, UInt16PackUnpack2048Values)
+{
+    runFFORPackUnpackTest<UInt16, 2048>(GetParam());
+}
+
 TEST_P(FFORTest, UInt32PackUnpack1024Values)
 {
     runFFORPackUnpackTest<UInt32, 1024>(GetParam());
