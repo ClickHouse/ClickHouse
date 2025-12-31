@@ -51,7 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
             {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
-            {"max_subcolumns", -1, 10000, "Limit on the number of subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negatve value disables check."},
+            {"max_subcolumns", -1, 10000, "Limit on the number of subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negative value disables check."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
