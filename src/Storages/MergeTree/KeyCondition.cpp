@@ -147,35 +147,14 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     return fixed_prefix;
 }
 
-namespace
-{
-bool isNaN(const Field & field)
-{
-    if (field.getType() != Field::Types::Float64)
-        return false;
-
-    const double value = field.safeGet<Float64>();
-    return std::isnan(value);
-}
-}
-
 const KeyCondition::AtomMap KeyCondition::atom_map
 {
         {
             "notEquals",
             [] (RPNElement & out, const Field & value)
             {
-                if (isNaN(value))
-                {
-                    /// Convert data <> NaN -> data IN [-INF, INF]
-                    out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range::createWholeUniverse();
-                }
-                else
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                    out.range = Range(value);
-                }
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(value);
                 return true;
             }
         },
@@ -184,15 +163,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field & value)
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                if (isNaN(value))
-                {
-                    /// Convert data = NaN -> data IN (INF, -INF)
-                    out.range = Range(POSITIVE_INFINITY, false, NEGATIVE_INFINITY, false);
-                }
-                else
-                {
-                    out.range = Range(value);
-                }
+                out.range = Range(value);
                 return true;
             }
         },
@@ -3802,7 +3773,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
             /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-            if (unlikely(isNaN(key_range.left) || isNaN(key_range.right)))
+            if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
                 contains = false;
 
             rpn_stack.emplace_back(intersects, !contains);
@@ -3952,7 +3923,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
             Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
 
-            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
                 rpn_stack.emplace_back(true, true);
                 continue;
