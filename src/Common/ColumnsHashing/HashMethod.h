@@ -220,7 +220,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         for (size_t i = 0; i < rows; ++i)
         {
             auto str = column_string.getDataAt(i);
-            if (str.size() == 0)
+            if (str.empty())
                 data[i] = 0;
             else if (str.size() <= std::numeric_limits<UInt32>::max())
                 data[i] = StringViewHash()(str);
