@@ -21,7 +21,10 @@ from ..framework.io.probes import (
     ch_metrics,
     is_leader,
     mntr,
+    lgif,
     prom_metrics,
+    srvr_kv,
+    dirs,
 )
 from ..framework.io.prom_parse import parse_prometheus_text
 from ..framework.io.sink import has_ci_sink, sink_clickhouse
@@ -42,8 +45,6 @@ def _apply_gate(gate, nodes, leader, ctx, summary):
 
 
 def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_id=""):
-    if not sink_url:
-        return
     metrics_ts_rows = []
     # For fail stage, only snapshot leader to reduce volume
     snap_nodes = nodes
@@ -155,7 +156,18 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
         except Exception:
             pass
     if metrics_ts_rows:
-        sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
+        try:
+            print("[keeper][push-metrics] begin")
+            for r in metrics_ts_rows:
+                try:
+                    print(json.dumps(r, ensure_ascii=False))
+                except Exception:
+                    pass
+            print("[keeper][push-metrics] end")
+        except Exception:
+            pass
+        if sink_url:
+            sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
 
 
 def _push_ci_check_result(check_name, check_status, check_duration, check_start_time):
@@ -179,9 +191,102 @@ def _push_ci_check_result(check_name, check_status, check_duration, check_start_
             "",
             str(check_name),
         )
+        try:
+            print("[keeper][push-checks] begin")
+            for e in events:
+                try:
+                    print(json.dumps(e, ensure_ascii=False))
+                except Exception:
+                    pass
+            print("[keeper][push-checks] end")
+        except Exception:
+            pass
         helper.insert_events_into("default", "checks", events, safe=True)
     except Exception:
         return
+
+
+def _print_local_metrics(nodes, run_id, scenario_id, topo, run_meta, ctx, bench_summary):
+    try:
+        kp = os.environ.get("KEEPER_PRINT_LOCAL_METRICS", "")
+        do_print = parse_bool(kp) if kp != "" else (
+            str(os.environ.get("CI", "")).lower() not in ("true", "1")
+            and str(os.environ.get("GITHUB_ACTIONS", "")).lower() not in ("true", "1")
+        )
+    except Exception:
+        do_print = False
+    if not do_print:
+        return
+    try:
+        lines = []
+        lines.append(
+            f"[keeper][local] run={run_id} sha={run_meta.get('commit_sha','local')} backend={run_meta.get('backend','default')} scenario={scenario_id} topo={topo}"
+        )
+        cache = (ctx or {}).get("_metrics_cache") or {}
+        for n in nodes:
+            entry = dict(cache.get(getattr(n, "name", "")) or {})
+            # Fallback to direct probes if sampler cache is absent (typical for local runs)
+            try:
+                srvr = entry.get("srvr") or srvr_kv(n)
+            except Exception:
+                srvr = entry.get("srvr") or {}
+            try:
+                mn = entry.get("mntr") or mntr(n)
+            except Exception:
+                mn = entry.get("mntr") or {}
+            try:
+                lg = entry.get("lgif") or lgif(n)
+            except Exception:
+                lg = entry.get("lgif") or {}
+            try:
+                d_txt = dirs(n)
+                dl = entry.get("dirs_lines", None)
+                db = entry.get("dirs_bytes", None)
+                if dl is None:
+                    dl = len(d_txt.splitlines()) if d_txt else 0
+                if db is None:
+                    db = len((d_txt or "").encode("utf-8"))
+            except Exception:
+                dl = entry.get("dirs_lines", 0)
+                db = entry.get("dirs_bytes", 0)
+            try:
+                if "prom_rows" in entry:
+                    prc = len(entry.get("prom_rows") or [])
+                else:
+                    txt = prom_metrics(n)
+                    prc = len(parse_prometheus_text(txt) or [])
+            except Exception:
+                prc = len(entry.get("prom_rows") or [])
+            srvr_keys = {k: v for k, v in srvr.items() if k in ("connections", "outstanding", "received", "sent")}
+            mn_keys = {k: mn.get(k) for k in (
+                "zk_server_state",
+                "zk_znode_count",
+                "zk_watch_count",
+                "zk_ephemerals_count",
+                "zk_packets_sent",
+                "zk_packets_received",
+            ) if k in mn}
+            lg_keys = {k: lg.get(k) for k in ("term", "leader", "last_zxid", "commit_index") if k in lg}
+            lines.append(
+                f"[keeper][local] node={getattr(n,'name','')} srvr={srvr_keys} mntr={mn_keys} lgif={lg_keys} dirs_lines={dl} dirs_bytes={db} prom_rows={prc}"
+            )
+        s = bench_summary or {}
+        if s:
+            try:
+                dur = float(s.get("duration_s") or 0)
+            except Exception:
+                dur = 0.0
+            try:
+                ops = float(s.get("ops") or 0)
+            except Exception:
+                ops = 0.0
+            rps = (ops / dur) if (dur and dur > 0) else 0.0
+            lines.append(
+                f"[keeper][local] bench ops={ops} errors={float(s.get('errors') or 0)} p99_ms={float(s.get('p99_ms') or 0)} rps={rps:.2f}"
+            )
+        print("\n".join(lines))
+    except Exception:
+        pass
 
 
 @pytest.mark.timeout(int(_os.environ.get("KEEPER_PYTEST_TIMEOUT", "2400") or 2400))
@@ -468,54 +573,64 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             summary = ctx.get("bench_summary") or {}
         # Sink keeper-bench summary to CIDB as scalar metrics tagged to this run
         try:
-            if sink_url:
-                s = summary or {}
-                if s:
-                    # Compute rps if possible
+            s = summary or {}
+            if s:
+                # Compute rps if possible
+                try:
+                    dur = float(s.get("duration_s") or 0)
+                except Exception:
+                    dur = 0.0
+                try:
+                    ops = float(s.get("ops") or 0)
+                except Exception:
+                    ops = 0.0
+                rps = (ops / dur) if (dur and dur > 0) else 0.0
+                names_vals = {
+                    "ops": ops,
+                    "errors": float(s.get("errors") or 0),
+                    "p50_ms": float(s.get("p50_ms") or 0),
+                    "p95_ms": float(s.get("p95_ms") or 0),
+                    "p99_ms": float(s.get("p99_ms") or 0),
+                    "reads": float(s.get("reads") or 0),
+                    "writes": float(s.get("writes") or 0),
+                    "read_ratio": float(s.get("read_ratio") or 0),
+                    "write_ratio": float(s.get("write_ratio") or 0),
+                    "duration_s": dur,
+                    "rps": float(rps),
+                }
+                rows = []
+                for nm, val in names_vals.items():
                     try:
-                        dur = float(s.get("duration_s") or 0)
+                        valf = float(val)
                     except Exception:
-                        dur = 0.0
+                        continue
+                    rows.append(
+                        {
+                            "run_id": run_id,
+                            "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                            "backend": run_meta_eff.get("backend", "default"),
+                            "scenario": scenario.get("id", ""),
+                            "topology": topo,
+                            "node": "bench",
+                            "stage": "summary",
+                            "source": "bench",
+                            "name": nm,
+                            "value": valf,
+                            "labels_json": "{}",
+                        }
+                    )
+                if rows:
                     try:
-                        ops = float(s.get("ops") or 0)
+                        print("[keeper][push-metrics] begin")
+                        for rr in rows:
+                            try:
+                                print(json.dumps(rr, ensure_ascii=False))
+                            except Exception:
+                                pass
+                        print("[keeper][push-metrics] end")
                     except Exception:
-                        ops = 0.0
-                    rps = (ops / dur) if (dur and dur > 0) else 0.0
-                    names_vals = {
-                        "ops": ops,
-                        "errors": float(s.get("errors") or 0),
-                        "p50_ms": float(s.get("p50_ms") or 0),
-                        "p95_ms": float(s.get("p95_ms") or 0),
-                        "p99_ms": float(s.get("p99_ms") or 0),
-                        "reads": float(s.get("reads") or 0),
-                        "writes": float(s.get("writes") or 0),
-                        "read_ratio": float(s.get("read_ratio") or 0),
-                        "write_ratio": float(s.get("write_ratio") or 0),
-                        "duration_s": dur,
-                        "rps": float(rps),
-                    }
-                    rows = []
-                    for nm, val in names_vals.items():
-                        try:
-                            valf = float(val)
-                        except Exception:
-                            continue
-                        rows.append(
-                            {
-                                "run_id": run_id,
-                                "commit_sha": run_meta_eff.get("commit_sha", "local"),
-                                "backend": run_meta_eff.get("backend", "default"),
-                                "scenario": scenario.get("id", ""),
-                                "topology": topo,
-                                "node": "bench",
-                                "stage": "summary",
-                                "source": "bench",
-                                "name": nm,
-                                "value": valf,
-                                "labels_json": "{}",
-                            }
-                        )
-                    if rows:
+                        pass
+                    if sink_url:
                         sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
         except Exception:
             pass
@@ -576,6 +691,10 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             if "sampler" in locals() and sampler:
                 sampler.stop()
                 sampler.flush()
+        except Exception:
+            pass
+        try:
+            _print_local_metrics(nodes, run_id, scenario.get("id", ""), topo, run_meta_eff, ctx, summary)
         except Exception:
             pass
         # Close any pooled KeeperClient resources
