@@ -172,6 +172,8 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
+    extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
@@ -2127,36 +2129,53 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t parts_before_pk = 0;
     bool add_index_stat_row_for_pk_expand = false;
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
+        parts,
+        indexes->partition_pruner,
+        indexes->minmax_idx_condition,
+        indexes->part_values,
+        metadata_snapshot,
+        data,
+        context_,
+        max_block_numbers_to_read.get(),
+        log,
+        result.index_stats);
+
+    result.sampling = MergeTreeDataSelectExecutor::getSampling(
+        query_info_,
+        metadata_snapshot->getColumns().getAllPhysical(),
+        res_parts,
+        indexes->key_condition,
+        data,
+        metadata_snapshot,
+        context_,
+        log);
+
+    if (result.sampling.read_nothing)
+        return std::make_shared<AnalysisResult>(std::move(result));
+
+    for (const auto & part : res_parts)
+        total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
+    parts_before_pk = res_parts.size();
+
+
+    /// Check if we have projections, as that can determine whether we fail during reading parts
+    /// or analyze projection candidates to see if we can serve the query more efficiently
+    bool projection_parts_exist = std::any_of(res_parts.begin(), res_parts.end(), [](const auto & part) { return part.data_part->isProjectionPart(); });
+    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
+    bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
+
+    if (context_->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
+        /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
+        && !support_projection_optimization)
     {
-        res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
-            parts,
-            indexes->partition_pruner,
-            indexes->minmax_idx_condition,
-            indexes->part_values,
-            metadata_snapshot,
-            data,
-            context_,
-            max_block_numbers_to_read.get(),
-            log,
-            result.index_stats);
-
-        result.sampling = MergeTreeDataSelectExecutor::getSampling(
-            query_info_,
-            metadata_snapshot->getColumns().getAllPhysical(),
-            res_parts,
-            indexes->key_condition,
-            data,
-            metadata_snapshot,
-            context_,
-            log);
-
-        if (result.sampling.read_nothing)
-            return std::make_shared<AnalysisResult>(std::move(result));
-
-        for (const auto & part : res_parts)
-            total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        parts_before_pk = res_parts.size();
-
+        // Skip index analysis and return parts with all marks
+        // The coordinator will choose ranges to read for workers based on index analysis on its side
+        result.parts_with_ranges = std::move(res_parts);
+    }
+    else
+    {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
@@ -2185,6 +2204,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 find_exact_ranges,
                 query_info_.isFinal(),
                 is_parallel_reading_from_replicas_,
+                has_projections,
                 result);
         };
 

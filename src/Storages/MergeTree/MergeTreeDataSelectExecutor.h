@@ -241,6 +241,7 @@ public:
         bool find_exact_ranges,
         bool is_final_query,
         bool is_parallel_reading_from_replicas,
+        bool has_projections,
         ReadFromMergeTree::AnalysisResult & result);
 
     /// Filter parts using query condition cache.

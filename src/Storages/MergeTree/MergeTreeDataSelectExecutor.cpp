@@ -89,10 +89,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
-    extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsUInt64 max_rows_to_read_leaf;
@@ -692,32 +689,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool find_exact_ranges,
     bool is_final_query,
     bool is_parallel_reading_from_replicas,
+    bool has_projections,
     ReadFromMergeTree::AnalysisResult & result)
 {
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
-
-    /// Check if we have projections, as that can determine whether we fail during reading parts
-    /// or analyze projection candidates to see if we can serve the query more efficiently
-    bool projection_parts_exist = !parts_with_ranges.empty() && std::any_of(
-        parts_with_ranges.begin(),
-        parts_with_ranges.end(),
-        [](const auto & part) { return part.data_part->isProjectionPart(); });
-
-    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
-
-    bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection]
-        && (has_projections || find_exact_ranges);
-
-    if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
-    {
-        /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
-        if (!support_projection_optimization)
-            // Skip index analysis and return parts with all marks
-            // The coordinator will choose ranges to read for workers based on index analysis on its side
-            return parts_with_ranges;
-    }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {

@@ -212,6 +212,7 @@ protected:
             /* find_exact_ranges= */ false,
             /* is_final_query= */ false,
             /* is_parallel_reading_from_replicas= */ false,
+            /* has_projections= */ false,
             analysis_result);
     }
 
