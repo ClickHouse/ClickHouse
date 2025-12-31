@@ -1547,7 +1547,7 @@ SELECT toMacAddress(112589990684126);
     };
     FunctionDocumentation::IntroducedIn introduced_in_toMacAddress = {25, 1};
     FunctionDocumentation::Category category_toMacAddress = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toMacAddress = {description_toMacAddress, syntax_toMacAddress, arguments_toMacAddress, returned_value_toMacAddress, examples_toMacAddress, introduced_in_toMacAddress, category_toMacAddress};
+    FunctionDocumentation documentation_toMacAddress = {description_toMacAddress, syntax_toMacAddress, arguments_toMacAddress, {}, returned_value_toMacAddress, examples_toMacAddress, introduced_in_toMacAddress, category_toMacAddress};
 
     factory.registerFunction<detail::FunctionToMacAddress>(documentation_toMacAddress);
 
@@ -2844,7 +2844,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toMacAddressOrZero = {25, 1};
     FunctionDocumentation::Category category_toMacAddressOrZero = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toMacAddressOrZero = {description_toMacAddressOrZero, syntax_toMacAddressOrZero, arguments_toMacAddressOrZero, returned_value_toMacAddressOrZero, examples_toMacAddressOrZero, introduced_in_toMacAddressOrZero, category_toMacAddressOrZero};
+    FunctionDocumentation documentation_toMacAddressOrZero = {description_toMacAddressOrZero, syntax_toMacAddressOrZero, arguments_toMacAddressOrZero, {}, returned_value_toMacAddressOrZero, examples_toMacAddressOrZero, introduced_in_toMacAddressOrZero, category_toMacAddressOrZero};
 
     factory.registerFunction<detail::FunctionToMacAddressOrZero>(documentation_toMacAddressOrZero);
 
@@ -4128,7 +4128,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_toMacAddressOrNull = {25, 1};
     FunctionDocumentation::Category category_toMacAddressOrNull = FunctionDocumentation::Category::IPAddress;
-    FunctionDocumentation documentation_toMacAddressOrNull = {description_toMacAddressOrNull, syntax_toMacAddressOrNull, arguments_toMacAddressOrNull, returned_value_toMacAddressOrNull, examples_toMacAddressOrNull, introduced_in_toMacAddressOrNull, category_toMacAddressOrNull};
+    FunctionDocumentation documentation_toMacAddressOrNull = {description_toMacAddressOrNull, syntax_toMacAddressOrNull, arguments_toMacAddressOrNull, {}, returned_value_toMacAddressOrNull, examples_toMacAddressOrNull, introduced_in_toMacAddressOrNull, category_toMacAddressOrNull};
 
     factory.registerFunction<detail::FunctionToMacAddressOrNull>(documentation_toMacAddressOrNull);
 
