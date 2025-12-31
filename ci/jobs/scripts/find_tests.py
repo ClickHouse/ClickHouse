@@ -64,8 +64,16 @@ class Targeting:
         # TODO: add support for integration tests
         result = set()
         if self.info.is_local_run:
+            # Determine base branch and ensure the remote ref exists locally
+            base_branch = Settings.MAIN_BRANCH or "master"
+            Shell.check(
+                f"git rev-parse --verify --quiet origin/{base_branch} || "
+                f"git fetch --no-tags --prune --no-recurse-submodules --filter=tree:0 origin {base_branch}",
+                verbose=True,
+            )
             changed_files = Shell.get_output(
-                "git diff --name-only $(git merge-base master HEAD)"
+                f"git diff --name-only $(git merge-base origin/{base_branch} HEAD)",
+                verbose=True,
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()
