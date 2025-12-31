@@ -971,62 +971,81 @@ void StorageObjectStorageQueue::commit(
         source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
     ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
 
-    if (requests.empty())
+    size_t retry_count = 0;
+    constexpr size_t retry_limit = 5;
+
+    do
     {
-        LOG_TEST(log, "Nothing to commit");
-        return;
-    }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
-
-    if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
-    {
-        postProcess(successful_objects);
-    }
-
-    auto context = getContext();
-    const auto & settings = context->getSettingsRef();
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-
-    std::optional<Coordination::Error> code;
-    Coordination::Responses responses;
-    size_t try_num = 0;
-    zk_retry.retryLoop([&]
-    {
-        if (zk_retry.isRetry())
+        if (requests.empty())
         {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
+            LOG_TEST(log, "Nothing to commit");
+            return;
         }
-        ++try_num;
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
+
+        if (!successful_objects.empty()
+            && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+        {
+            postProcess(successful_objects);
+        }
+
+        auto context = getContext();
+        const auto & settings = context->getSettingsRef();
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
+        std::optional<Coordination::Error> code;
+        Coordination::Responses responses;
+        size_t try_num = 0;
+        zk_retry.retryLoop([&]
+        {
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+
+            auto zk_client = getZooKeeper();
+            code = zk_client->tryMulti(requests, responses);
         });
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-        });
 
-        auto zk_client = getZooKeeper();
-        code = zk_client->tryMulti(requests, responses);
-    });
+        if (!code.has_value())
+        {
+            throw Exception(
+                ErrorCodes::KEEPER_EXCEPTION,
+                "Failed to commit files with {} retries, last error message: {}",
+                settings[Setting::keeper_max_retries].value,
+                zk_retry.getLastKeeperErrorMessage());
+        }
 
-    if (!code.has_value())
-    {
-        throw Exception(
-            ErrorCodes::KEEPER_EXCEPTION,
-            "Failed to commit files with {} retries, last error message: {}",
-            settings[Setting::keeper_max_retries].value,
-            zk_retry.getLastKeeperErrorMessage());
+        if (code.value() == Coordination::Error::ZBADVERSION && retry_count < retry_limit)
+        {
+            ++retry_count;
+            LOG_INFO(log, "Keeper Bad Version error, other node wrote something, retry {}", retry_count);
+            /// Need to recreate requests list based on new keeper state
+            requests.clear();
+            for (auto & source : sources)
+                source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+            ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+            continue;
+        }
+
+        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+        if (code.value() != Coordination::Error::ZOK)
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+            throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        }
     }
-
-    chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-    if (code.value() != Coordination::Error::ZOK)
-    {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        throw zkutil::KeeperMultiException(code.value(), requests, responses);
-    }
+    while (false);
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
