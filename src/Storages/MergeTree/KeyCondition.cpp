@@ -1345,7 +1345,9 @@ bool applyDeterministicDagToColumn(
             if (!output_node)
                 return false;
 
-            /// Only handle a single CAST directly applied to the input.
+            /// Only handles a single CAST directly applied to the input.
+            /// Currently, only supports CAST function (e.g. `col::String`, `col::Int32`) but will not work for other
+            /// conversion functions like `toString(col)`, `toInt32(col)`, etc.
             if (output_node->type != ActionsDAG::ActionType::FUNCTION || !output_node->function_base
                 || output_node->function_base->getName() != "CAST" || output_node->children.empty())
                 return false;
@@ -1503,6 +1505,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     return true;
 }
 
+/// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
+/// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
+/// May not catch all cases, but should be sufficient for most practical cases
+/// For example, ORDER BY (intDiv(x, 2), x % 2) is injective w.r.t. x, but this function will return false
+/// because both children of tuple are not injective individually
 static bool isDeterministicTransformInjective(const ActionsDAG & dag, const String & input_name, const String & output_name)
 {
     const ActionsDAG::Node * output_node = nullptr;
@@ -1524,6 +1531,7 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
         bool injective = false;
     };
 
+    /// Memoization to avoid re-computation
     std::unordered_map<const ActionsDAG::Node *, InjectiveInfo> memo;
     memo.reserve(dag.getNodes().size());
 
@@ -2625,7 +2633,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
-        bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -2693,7 +2700,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             size_t key_arg_pos = 1 - const_arg_pos;
             auto key_arg = func.getArgumentAt(key_arg_pos);
-            bool is_constant_transformed = false;
+            bool condition_is_relaxed = false;
 
             if (isKeyPossiblyWrappedByMonotonicFunctions(
                     key_arg,
@@ -2706,11 +2713,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
             }
             else if (
-                allow_constant_transformation
+                !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
                     key_arg, info, key_column_num, key_expr_type, const_value, const_type))
             {
-                is_constant_transformed = true;
+                condition_is_relaxed = true;
             }
             else if (
                 (func_name == "equals" || func_name == "notEquals")
@@ -2722,7 +2729,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 (func_name == "equals" || func_name == "notEquals")
                 && canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
             {
-                is_constant_transformed = true;
+                condition_is_relaxed = true;
             }
             else
                 return false;
@@ -2770,7 +2777,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                     if (const_value.isNull())
                         return false;
-                    // No need to set is_constant_transformed because we're doing exact conversion
+                    /// No need to set condition_is_relaxed because we're doing exact conversion
                 }
                 else
                 {
@@ -2787,9 +2794,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                         const_value = converted;
 
-                        // Need to set is_constant_transformed unless we're doing exact conversion
+                        /// Need to set condition_is_relaxed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
-                            is_constant_transformed = true;
+                            condition_is_relaxed = true;
                     }
                     if (!key_expr_type_not_null->equals(*common_type))
                     {
@@ -2807,8 +2814,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 }
             }
 
-            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
-            if (is_constant_transformed)
+            /// Relaxed condition must weaken strict inequalities, for example "x > 5" must weaken to "round(x) >= 5"
+            if (condition_is_relaxed)
             {
                 if (func_name == "less")
                     func_name = "lessOrEquals";
