@@ -17,90 +17,6 @@ namespace DB
 namespace
 {
 
-class CollectUsedColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectUsedColumnsVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitorWithContext<CollectUsedColumnsVisitor>;
-    using Base::Base;
-
-    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
-    {
-        if (isQueryOrUnionNode(child))
-        {
-            subqueries_nodes_to_visit.insert(child);
-            return false;
-        }
-
-        return true;
-    }
-
-    void enterImpl(QueryTreeNodePtr & node)
-    {
-        auto node_type = node->getNodeType();
-
-        if (node_type == QueryTreeNodeType::QUERY)
-        {
-            auto & query_node = node->as<QueryNode &>();
-            auto table_expressions = extractTableExpressions(query_node.getJoinTree());
-            for (const auto & table_expression : table_expressions)
-                if (isQueryOrUnionNode(table_expression))
-                    query_or_union_node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
-
-            return;
-        }
-
-        if (node_type == QueryTreeNodeType::FUNCTION)
-        {
-            auto & function_node = node->as<FunctionNode &>();
-
-            if (function_node.getFunctionName() != "exists")
-                return;
-
-            const auto & subquery_argument = function_node.getArguments().getNodes().front();
-            auto * query_node = subquery_argument->as<QueryNode>();
-            auto * union_node = subquery_argument->as<UnionNode>();
-
-            const auto & correlated_columns = query_node != nullptr ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
-            for (const auto & correlated_column : correlated_columns)
-            {
-                auto * column_node = correlated_column->as<ColumnNode>();
-                auto column_source_node = column_node->getColumnSource();
-                auto column_source_node_type = column_source_node->getNodeType();
-                if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
-                    query_or_union_node_to_used_columns[column_source_node].insert(column_node->getColumnName());
-            }
-            return;
-        }
-
-        if (node_type != QueryTreeNodeType::COLUMN)
-            return;
-
-        auto & column_node = node->as<ColumnNode &>();
-        if (column_node.getColumnName() == "__grouping_set")
-            return;
-
-        auto column_source_node = column_node.getColumnSource();
-
-        auto it = query_or_union_node_to_used_columns.find(column_source_node);
-        /// If the source node is not found in the map then:
-        /// 1. Tt's either not a Query or Union node.
-        /// 2. It's a correlated column and it comes from the outer scope.
-        if (it != query_or_union_node_to_used_columns.end())
-        {
-            it->second.insert(column_node.getColumnName());
-        }
-    }
-
-    void reset()
-    {
-        subqueries_nodes_to_visit.clear();
-        query_or_union_node_to_used_columns.clear();
-    }
-
-    std::unordered_set<QueryTreeNodePtr> subqueries_nodes_to_visit;
-    std::unordered_map<QueryTreeNodePtr, std::unordered_set<std::string>> query_or_union_node_to_used_columns;
-};
-
 std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, const std::unordered_set<std::string> & used_column_names)
 {
     std::unordered_set<size_t> result;
@@ -159,23 +75,130 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
     }
 }
 
+template <typename ShouldVisitPredicate, typename Func>
+void traverseQueryTree(const QueryTreeNodePtr & node, ShouldVisitPredicate should_visit_predicate, Func func)
+{
+    QueryTreeNodes nodes_to_process = { node };
+
+    while (!nodes_to_process.empty())
+    {
+        auto current_node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        // LOG_DEBUG(getLogger(__func__), "Processing Node:\n{}", current_node->dumpTree());
+
+        func(current_node);
+
+        if (auto * table_function_node = current_node->as<TableFunctionNode>())
+        {
+            for (const auto & child : current_node->getChildren())
+            {
+                if (!child)
+                    continue;
+
+                if (child == table_function_node->getArgumentsNode())
+                {
+                    const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
+                    const auto & arguments_nodes = table_function_node->getArguments().getNodes();
+
+                    for (size_t index = 0; index < arguments_nodes.size(); ++index)
+                    {
+                        const auto & argument_node = arguments_nodes[index];
+                        if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), index) == unresolved_indexes.end())
+                        {
+                            nodes_to_process.push_back(argument_node);
+                        }
+                    }
+                }
+                else
+                {
+                    if (should_visit_predicate(current_node, child))
+                        nodes_to_process.push_back(child);
+                }
+            }
+        }
+        else
+        {
+            for (const auto & child : current_node->getChildren())
+            {
+                if (!child)
+                    continue;
+
+                if (should_visit_predicate(current_node, child))
+                    nodes_to_process.push_back(child);
+            }
+        }
+    }
 }
 
-void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
-{
-    std::vector<QueryTreeNodePtr> nodes_to_visit;
-    nodes_to_visit.push_back(query_tree_node);
+}
 
-    CollectUsedColumnsVisitor visitor(std::move(context));
+void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr /*context*/)
+{
+    QueryTreeNodes nodes_to_visit = { query_tree_node };
 
     while (!nodes_to_visit.empty())
     {
         auto node_to_visit = std::move(nodes_to_visit.back());
         nodes_to_visit.pop_back();
 
-        visitor.visit(node_to_visit);
+        std::unordered_set<QueryTreeNodePtr> subqueries_nodes_to_visit;
+        std::unordered_map<QueryTreeNodePtr, std::unordered_set<std::string>> node_to_used_columns;
 
-        for (auto & [query_or_union_node, used_columns] : visitor.query_or_union_node_to_used_columns)
+        /// Initialize map with query and union nodes in the FROM clause
+        if (auto * query_node = node_to_visit->as<QueryNode>())
+        {
+            for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree()))
+                if (isQueryOrUnionNode(table_expression))
+                    node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
+        }
+
+        traverseQueryTree(node_to_visit,
+            [&](const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
+            {
+                if (isQueryOrUnionNode(child))
+                {
+                    subqueries_nodes_to_visit.insert(child);
+
+                    auto * query_node = child->as<QueryNode>();
+                    auto * union_node = child->as<UnionNode>();
+
+                    const auto & correlated_columns = query_node != nullptr ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
+                    for (const auto & correlated_column : correlated_columns)
+                    {
+                        auto * column_node = correlated_column->as<ColumnNode>();
+                        auto column_source_node = column_node->getColumnSource();
+                        auto column_source_node_type = column_source_node->getNodeType();
+                        if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
+                            node_to_used_columns[column_source_node].insert(column_node->getColumnName());
+                    }
+                    return false;
+                }
+                return true;
+            },
+            [&](const QueryTreeNodePtr & node)
+            {
+                const auto node_type = node->getNodeType();
+                if (node_type != QueryTreeNodeType::COLUMN)
+                    return;
+
+                auto & column_node = node->as<ColumnNode &>();
+                if (column_node.getColumnName() == "__grouping_set")
+                    return;
+
+                auto column_source_node = column_node.getColumnSource();
+
+                auto it = node_to_used_columns.find(column_source_node);
+                /// If the source node is not found in the map then:
+                /// 1. Tt's either not a Query or Union node.
+                /// 2. It's a correlated column and it comes from the outer scope.
+                if (it != node_to_used_columns.end())
+                {
+                    it->second.insert(column_node.getColumnName());
+                }
+            });
+
+        for (auto & [query_or_union_node, used_columns] : node_to_used_columns)
         {
             /// can't remove columns from distinct, see example - 03023_remove_unused_column_distinct.sql
             if (auto * query_node = query_or_union_node->as<QueryNode>())
@@ -197,10 +220,8 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                 query_node->removeUnusedProjectionColumns(used_projection_indexes);
         }
 
-        for (const auto & subquery_node_to_visit : visitor.subqueries_nodes_to_visit)
+        for (const auto & subquery_node_to_visit : subqueries_nodes_to_visit)
             nodes_to_visit.push_back(subquery_node_to_visit);
-
-        visitor.reset();
     }
 }
 
