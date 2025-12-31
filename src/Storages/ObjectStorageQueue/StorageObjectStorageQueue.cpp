@@ -974,7 +974,7 @@ void StorageObjectStorageQueue::commit(
     size_t retry_count = 0;
     constexpr size_t retry_limit = 5;
 
-    do
+    while (true)
     {
         if (requests.empty())
         {
@@ -1044,8 +1044,9 @@ void StorageObjectStorageQueue::commit(
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
             throw zkutil::KeeperMultiException(code.value(), requests, responses);
         }
+
+        break;
     }
-    while (false);
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
