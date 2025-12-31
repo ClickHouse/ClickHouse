@@ -5,11 +5,12 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+
+#include <Analyzer/traverseQueryTree.h>
 
 namespace DB
 {
@@ -72,62 +73,6 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
         const auto & projection_node = projection_nodes[i];
         if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
-    }
-}
-
-template <typename ShouldVisitPredicate, typename Func>
-void traverseQueryTree(const QueryTreeNodePtr & node, ShouldVisitPredicate should_visit_predicate, Func func)
-{
-    QueryTreeNodes nodes_to_process = { node };
-
-    while (!nodes_to_process.empty())
-    {
-        auto current_node = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        // LOG_DEBUG(getLogger(__func__), "Processing Node:\n{}", current_node->dumpTree());
-
-        func(current_node);
-
-        if (auto * table_function_node = current_node->as<TableFunctionNode>())
-        {
-            for (const auto & child : current_node->getChildren())
-            {
-                if (!child)
-                    continue;
-
-                if (child == table_function_node->getArgumentsNode())
-                {
-                    const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
-                    const auto & arguments_nodes = table_function_node->getArguments().getNodes();
-
-                    for (size_t index = 0; index < arguments_nodes.size(); ++index)
-                    {
-                        const auto & argument_node = arguments_nodes[index];
-                        if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), index) == unresolved_indexes.end())
-                        {
-                            nodes_to_process.push_back(argument_node);
-                        }
-                    }
-                }
-                else
-                {
-                    if (should_visit_predicate(current_node, child))
-                        nodes_to_process.push_back(child);
-                }
-            }
-        }
-        else
-        {
-            for (const auto & child : current_node->getChildren())
-            {
-                if (!child)
-                    continue;
-
-                if (should_visit_predicate(current_node, child))
-                    nodes_to_process.push_back(child);
-            }
-        }
     }
 }
 
