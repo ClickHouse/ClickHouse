@@ -70,7 +70,7 @@ SELECT
 FROM remote('127.{1,2}', currentDatabase(), tab_local)
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
-SETTINGS log_comment='direct-query-on-remote'
+SETTINGS log_comment='direct-query-on-remote', serialize_query_plan=0
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
