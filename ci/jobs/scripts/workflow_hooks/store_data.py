@@ -40,11 +40,20 @@ if __name__ == "__main__":
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
+        # Ensure the base branch ref exists in the checkout (PR merge checkouts may not fetch it)
+        base_branch = info.base_branch or "master"
+        # If origin/<base_branch> is missing, fetch it (without fetching the whole tree history)
+        Shell.check(
+            f"git rev-parse --verify --quiet origin/{base_branch} || "
+            f"git fetch --no-tags --prune --no-recurse-submodules --filter=tree:0 origin {base_branch}",
+            verbose=True,
+        )
+
         file_diff = {}
         for file in changed_files:
             if file.startswith("tests/integration/test") and file.endswith(".py"):
                 file_diff[file] = Shell.get_output(
-                    f"git diff $(git merge-base master HEAD)..HEAD -- {file}",
+                    f"git diff $(git merge-base origin/{base_branch} HEAD)..HEAD -- {file}",
                     verbose=True,
                 )
         info.store_kv_data("file_diff", file_diff)
