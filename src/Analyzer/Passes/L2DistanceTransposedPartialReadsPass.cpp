@@ -4,6 +4,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/L2DistanceTransposedPartialReadsPass.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <Functions/FunctionFactory.h>
@@ -94,8 +95,33 @@ public:
 
         /// Add dimension as penultimate argument and reference vector as last argument
         auto dimension_constant = std::make_shared<ConstantNode>(qbit->getDimension());
+
+        /// If the precision node was nullable, the result needs to be nullable too. As this pass removes precision_node, we force
+        /// the nullability on the dimension constant (if former was the case) to preserve the nullability of the result
+        if (precision_node->getResultType()->isNullable() || precision_node->getResultType()->isLowCardinalityNullable())
+            dimension_constant->convertToNullable();
+
         new_args.push_back(dimension_constant);
-        new_args.push_back(ref_vec_node);
+
+        /// Cast reference vector to match QBit type. This is the only information about the type of the QBit after this pass is applied
+        auto expected_ref_vec_type = std::make_shared<DataTypeArray>(qbit->getElementType());
+
+        if (ref_vec_node->getResultType()->equals(*expected_ref_vec_type))
+        {
+            new_args.push_back(ref_vec_node);
+        }
+        else
+        {
+            auto cast_type_constant = std::make_shared<ConstantNode>(expected_ref_vec_type->getName());
+            auto cast_function = std::make_shared<FunctionNode>("_CAST");
+            cast_function->getArguments().getNodes().push_back(ref_vec_node);
+            cast_function->getArguments().getNodes().push_back(cast_type_constant);
+
+            auto cast_function_builder = FunctionFactory::instance().get("_CAST", getContext());
+            cast_function->resolveAsFunction(cast_function_builder->build(cast_function->getArgumentColumns()));
+
+            new_args.push_back(cast_function);
+        }
 
         auto original_result_type = function_node->getResultType();
 
@@ -107,8 +133,11 @@ public:
         if (!function_node->getResultType()->equals(*original_result_type))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "{} query tree node does not have valid source node after running L2DistanceTransposedPartialReadsPass",
-                node->getNodeTypeName());
+                "{} query tree node does not have a valid source node after running L2DistanceTransposedPartialReadsPass. Before: {}, "
+                "after: {}",
+                node->getNodeTypeName(),
+                original_result_type->getName(),
+                function_node->getResultType()->getName());
     }
 };
 

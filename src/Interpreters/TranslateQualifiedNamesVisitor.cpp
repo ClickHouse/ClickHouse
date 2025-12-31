@@ -20,6 +20,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Storages/StorageView.h>
 #include <Common/re2.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 
 namespace DB
@@ -144,17 +145,54 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
 }
 
 /// As special case, treat count(*) as count(), not as count(list of all columns).
+/// This also applies to count functions with combinators like countIf(*, condition).
 void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, Data &)
 {
     ASTPtr & func_arguments = node.arguments;
 
     if (!func_arguments) return;
 
-    String func_name_lowercase = Poco::toLower(node.name);
-    if ((func_name_lowercase == "count" || func_name_lowercase == "countstate") &&
-        func_arguments->children.size() == 1 &&
-        func_arguments->children[0]->as<ASTAsterisk>())
-        func_arguments->children.clear();
+    /// Check if this is a count function (possibly with combinators)
+    /// We need to strip combinators to get the base function name
+    String func_name = node.name;
+    String base_func_name = func_name;
+    bool safe_to_remove_asterisk = true;
+
+    /// Strip combinators from the function name to get the base function
+    /// We use the same logic as in AggregateFunctionFactory
+    while (auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_func_name))
+    {
+        /// If this combinator transforms argument types (like Merge, Array, ForEach, Map),
+        /// the asterisk refers to an actual column, not the special "count all rows" meaning
+        if (combinator->transformsArgumentTypes())
+        {
+            safe_to_remove_asterisk = false;
+            break;
+        }
+
+        base_func_name = base_func_name.substr(0, base_func_name.size() - combinator->getName().size());
+    }
+
+    String base_func_name_lowercase = Poco::toLower(base_func_name);
+    String func_name_lowercase = Poco::toLower(func_name);
+
+    /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
+    /// not for other functions like "countDistinct" which is a separate function
+    /// countDistinct gets transformed to uniqExact and requires arguments
+    bool is_count_function = (base_func_name_lowercase == "count" || base_func_name_lowercase == "countstate");
+    bool is_count_variant = is_count_function && func_name_lowercase.starts_with(base_func_name_lowercase);
+    bool is_not_count_distinct = func_name_lowercase != "countdistinct";
+
+    if (safe_to_remove_asterisk && is_count_variant && is_not_count_distinct && !func_arguments->children.empty())
+    {
+        /// Remove all asterisk arguments
+        /// For count() and countState(), asterisk means "count all rows"
+        /// For countIf(*, condition), we remove the asterisk but keep the condition
+        func_arguments->children.erase(
+            std::remove_if(func_arguments->children.begin(), func_arguments->children.end(),
+                [](const ASTPtr & arg) { return arg->as<ASTAsterisk>() != nullptr; }),
+            func_arguments->children.end());
+    }
 }
 
 void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)

@@ -568,20 +568,28 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             auto transpose_bits = [&]<typename Word, typename FloatType>()
             {
-                /// Read field values into contiguous memory. Use padded_dimension as we want all memory used for transposition to be initialised
-                std::vector<FloatType> value_floats(padded_dimension);
-                for (size_t i = 0; i < dst_dimension; ++i)
-                    value_floats[i] = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
-
-                /// Transpose the data
-                std::vector<char> transposed_bytes(bytes_per_fixedstring * dst_element_size);
-
-                SerializationQBit::transposeBits<Word>(
-                    reinterpret_cast<const Word *>(value_floats.data()), reinterpret_cast<Word *>(transposed_bytes.data()), padded_dimension);
-
-                /// Extract the transposed data into result tuple
+                /// Prepare output tuple buffers
+                std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
+                std::vector<char *> plane(dst_element_size);
                 for (size_t i = 0; i < dst_element_size; ++i)
-                    res[i] = Field(String(transposed_bytes.data() + i * bytes_per_fixedstring, bytes_per_fixedstring));
+                    plane[i] = reinterpret_cast<char *>(out[i].data());
+
+                /// Transpose
+                for (size_t i = 0; i < padded_dimension; ++i)
+                {
+                    Word w = 0;
+                    if (i < dst_dimension)
+                    {
+                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                        std::memcpy(&w, &v, sizeof(Word));
+                    }
+
+                    SerializationQBit::transposeBits<Word>(w, i, padded_dimension, plane.data());
+                }
+
+                /// Move into Fields
+                for (size_t i = 0; i < dst_element_size; ++i)
+                    res[i] = Field(std::move(out[i]));
             };
 
             if (dst_element_size == 16)
@@ -653,50 +661,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
-    }
-    else if (isObjectDeprecated(type))
-    {
-        if (src.getType() == Field::Types::Object)
-            return src; /// Already in needed type.
-
-        const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
-        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->hasExplicitNames())
-        {
-            const auto & names = from_type_tuple->getElementNames();
-            const auto & tuple = src.safeGet<Tuple>();
-
-            if (names.size() != tuple.size())
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Bad size of tuple in IN or VALUES section (while converting to Object). Expected size: {}, actual size: {}",
-                    names.size(),
-                    tuple.size());
-
-            Object object;
-            for (size_t i = 0; i < names.size(); ++i)
-                object[names[i]] = tuple[i];
-
-            return object;
-        }
-
-        if (src.getType() == Field::Types::Map)
-        {
-            Object object;
-            const auto & map = src.safeGet<Map>();
-            for (const auto & element : map)
-            {
-                const auto & map_entry = element.safeGet<Tuple>();
-                const auto & key = map_entry[0];
-                const auto & value = map_entry[1];
-
-                if (key.getType() != Field::Types::String)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert from Map with key of type {} to Object", key.getTypeName());
-
-                object[key.safeGet<String>()] = value;
-            }
-
-            return object;
-        }
     }
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
@@ -824,7 +788,7 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot convert value '{}'{}: it cannot be represented as {}",
-            toString(from_value),
+            fieldToString(from_value),
             from_type_hint ? " from " + from_type_hint->getName() : "",
             to_type.getName());
 

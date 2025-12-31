@@ -36,7 +36,7 @@ SHOW TABLES SETTINGS use_query_cache = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- CHECK
-CHECK TABLE eligible_test SETTINGS use_query_cache = true;
+CHECK TABLE eligible_test SETTINGS use_query_cache = true, check_query_single_value_result = 1;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- DESCRIBE

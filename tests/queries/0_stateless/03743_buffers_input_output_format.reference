@@ -1,0 +1,57 @@
+Simple Table
+62a8c4dbc0018c44b25de3417cac6ad7
+1	10	0.5
+2	-20	-1.25
+3	0	42
+62a8c4dbc0018c44b25de3417cac6ad7
+1	10	0.5
+2	-20	-1.25
+3	0	42
+Simple table with many blocks
+1000000	499999500000	999999
+999995	2
+999996	0
+999997	1
+999998	2
+999999	0
+Complex types
+499999500000	1000000	333332666667	5888890	2000000
+499999500000	5888890
+Empty table
+0
+Constant columns
+45	['x','x','x','x','x','x','x','x','x','x']
+Buffers via file() source and INSERT
+0	name_0
+1	name_1
+2	name_2
+3	name_3
+4	name_4
+5	name_5
+6	name_6
+7	name_7
+8	name_8
+9	name_9
+JSON, Variant, Dynamic
+eb7dcb1cf18f876189baf7dd7954aca6
+{"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2025-01-01"}	42	42
+{"a":{"b":0},"d":"2025-01-02","f":"Hello"}	Hello, World!	Hello, World!
+{"a":{"b":43,"g":43.43},"c":[4,5,6]}	[1,2,3]	[1,2,3]
+eb7dcb1cf18f876189baf7dd7954aca6
+{"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2025-01-01"}	42	42
+{"a":{"b":0},"d":"2025-01-02","f":"Hello"}	Hello, World!	Hello, World!
+{"a":{"b":43,"g":43.43},"c":[4,5,6]}	[1,2,3]	[1,2,3]
+3	85	6	2	42	6	['Array(UInt64)','String','UInt64']	42	6	['Array(Int64)','Int64','String']	[{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))'},{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))','d':'Date'},{'a.b':'UInt32','d':'Date','f':'String'}]
+3	85	6	2	42	6	['Array(UInt64)','String','UInt64']	42	6	['Array(Int64)','Int64','String']	[{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))'},{'a.b':'UInt32','a.g':'Float64','c':'Array(Nullable(Int64))','d':'Date'},{'a.b':'UInt32','d':'Date','f':'String'}]
+LowCardinality / Nullable / Array
+fae661fe9b092474922100b7e0fb43d0
+fae661fe9b092474922100b7e0fb43d0
+3	['a','b']	1	[['a','c'],['b','c'],['a','b']]
+Decimal / Date / DateTime64
+36a884b74399ccc46a7b3888e6fbd1d2
+36a884b74399ccc46a7b3888e6fbd1d2
+3	115.956	43.424244	2025-01-01	2025-01-03	2025-01-01 00:00:00.123	2025-01-03 23:59:59.000
+Nested / Map-like
+c34deb3b4b3883257dde108350eb4b60
+c34deb3b4b3883257dde108350eb4b60
+2	[[1,2],[3]]	[['a','b'],['c']]	10	25	7

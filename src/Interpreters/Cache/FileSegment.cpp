@@ -677,8 +677,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     if (!force_shrink_to_downloaded_size)
     {
         size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
-        if (aligned_downloaded_size <= range().size())
-            result_size = aligned_downloaded_size;
+        result_size = std::min(aligned_downloaded_size, range().size());
     }
 
     chassert(result_size <= range().size());
@@ -689,6 +688,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         /// Nothing to resize;
         return;
     }
+
+    LOG_TEST(log, "Shrinking file segment {} -> {} (downloaded size: {})",
+             range().size(), result_size, downloaded_size.load());
 
     if (downloaded_size == result_size)
         setDownloadState(State::DOWNLOADED, lock);
@@ -778,8 +780,8 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
     });
 
     LOG_TEST(
-        log, "Complete based on current state (is_last_holder: {}, {})",
-        is_last_holder, getInfoForLogUnlocked(segment_lock));
+        log, "Complete based on current state (is_last_holder: {}, force shrink: {}, {})",
+        is_last_holder, force_shrink_to_downloaded_size, getInfoForLogUnlocked(segment_lock));
 
     if (is_downloader)
     {
@@ -908,7 +910,8 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     info << "current write offset: " << getCurrentWriteOffset() << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "kind: " << toString(segment_kind) << ", ";
-    info << "unbound: " << is_unbound;
+    info << "unbound: " << is_unbound << ", ";
+    info << "background download: " << background_download_enabled;
 
     return info.str();
 }
