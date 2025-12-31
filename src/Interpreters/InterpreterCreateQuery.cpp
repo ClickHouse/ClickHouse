@@ -2003,7 +2003,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         size_t max_subcolumns = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_subcolumns]);
         size_t subcolumn_count = properties.columns.getNumberOfSubcoumns();
 
-        if (subcolumn_count > max_subcolumns)
+        if (max_subcolumns >= 0 && subcolumn_count > max_subcolumns)
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
                                     "Too many subcolumns. The limit is set to {}, the number of subcolumns in the table is {}",
                                     max_subcolumns, subcolumn_count);
