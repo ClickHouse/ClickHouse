@@ -55,7 +55,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     for (auto & cur_pipeline : pipelines)
     {
-#if !defined(NDEBUG)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
 #endif
         /// Headers for union must be equal.
