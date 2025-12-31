@@ -1500,7 +1500,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// It's possible that both mutation and transaction are already finished,
             /// because that part should not be mutated because it was not visible for that transaction.
             if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
+            {
+                current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
+            }
 
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
@@ -1518,6 +1521,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 LOG_DEBUG(log, "Cannot mutate part {} because it's not visible (outdated, being created or removed "
                           "in an active transaction) to mutation {}.",
                           part->name, mutations_begin_it->second.file_name);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
                 continue;
             }
         }
