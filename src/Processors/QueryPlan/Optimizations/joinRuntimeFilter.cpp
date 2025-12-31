@@ -78,6 +78,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (typeid_cast<JoinStepLogicalLookup *>(node.children[1]->step.get()))
         return false;
 
+    /// There are cases when either or both joined tables are replaced with const data at optimization time, e.g. when they are (SELECT 1 AS col).
+    /// In such cases a header can be empty and all the const data is in the ActionsDAG in the Join step. There is no need (and no way) to build
+    /// runtime filter in this scenario.
+    if (node.children[0]->step->getOutputHeader()->empty() ||
+        node.children[1]->step->getOutputHeader()->empty())
+        return false;
+
     /// Check if join can do runtime filtering on left table
     const auto & join_operator = join_step->getJoinOperator();
     auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
