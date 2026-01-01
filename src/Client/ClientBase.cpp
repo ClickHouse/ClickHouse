@@ -535,17 +535,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
 
-    /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
-    {
-        std::unique_lock lock(tty_mutex);
-        progress_indication.clearProgressOutput(*tty_buf, lock);
-    }
-    if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
-    {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
-    }
+    const auto * write_buffer = output_format->getWriteBufferPtr();
+    const size_t bytes_before = write_buffer->count();
 
     try
     {
@@ -572,7 +563,25 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Received data block is immediately displayed to the user.
     output_format->flush();
 
-    /// Restore progress bar and progress table after data block.
+    const size_t bytes_after = write_buffer->count();
+    const bool data_was_written = (bytes_after > bytes_before);
+
+    /// Restore progress bar and progress table after non-empty data block.
+    if (data_was_written)
+    {
+        /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+        if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_indication.clearProgressOutput(*tty_buf, lock);
+        }
+        if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.clearTableOutput(*tty_buf, lock);
+        }
+    }
+
     if (need_render_progress && tty_buf)
     {
         if (select_into_file && !select_into_file_and_stdout)
