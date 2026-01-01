@@ -47,6 +47,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"trace_profile_events_list", "", "", "New setting"},
             {"query_plan_reuse_storage_ordering_for_window_functions", true, false, "Disable this logic by default."},
             {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
+            {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},
+            {"max_insert_block_size_bytes", 0, 0, "New setting that allows to control the size of blocks in bytes during parsing of data in Row Input Format."},
+            {"max_insert_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "An alias for max_insert_block_size."},
+            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
+            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
+            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -1009,6 +1015,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
             {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
+            {"object_serialization_version", "v2", "v3", "Enable v3 serialization version for JSON by default to use advanced shared data serialization"},
+            {"dynamic_serialization_version", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"},
+            {"object_shared_data_serialization_version", "map", "advanced", "Enable advanced shared data serialization version by default"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map_with_buckets", "Enable map_with_buckets shared data serialization version for zero level parts by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
