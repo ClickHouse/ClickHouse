@@ -1,0 +1,30 @@
+-- Tags: no-fasttest, no-random-merge-tree-settings, no-random-settings, no-parallel
+-- no-parallel - due to usage of fail points
+-- A lot of stars need to align for the issue to reproduce. Thus all the overridden settings are explicitly specified within the test and on top of that settings randomization is disabled.
+
+SET max_insert_threads=2, group_by_two_level_threshold=94218, group_by_two_level_threshold_bytes=12678590, distributed_aggregation_memory_efficient=1, fsync_metadata=0, output_format_parallel_formatting=1, input_format_parallel_parsing=1, min_chunk_bytes_for_parallel_parsing=19408425, max_read_buffer_size=740278, prefer_localhost_replica=0, max_block_size=9777, max_joined_block_size_rows=61084, joined_block_split_single_row=1, join_output_by_rowlist_perkey_rows_threshold=982, max_threads=3, optimize_append_index=0, use_hedged_requests=0, optimize_if_chain_to_multiif=0, optimize_if_transform_strings_to_enum=0, optimize_read_in_order=1, optimize_or_like_chain=1, optimize_substitute_columns=1, enable_multiple_prewhere_read_steps=0, read_in_order_two_level_merge_threshold=72, optimize_aggregation_in_order=1, aggregation_in_order_max_block_bytes=14627641, use_uncompressed_cache=0, min_bytes_to_use_direct_io=7726182779, min_bytes_to_use_mmap_io=10737418240, local_filesystem_read_method='read', remote_filesystem_read_method='threadpool', local_filesystem_read_prefetch=0, filesystem_cache_segments_batch_size=1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0, throw_on_error_from_cache_on_write_operations=1, remote_filesystem_read_prefetch=0, allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_max_memory_usage='128Mi', filesystem_prefetches_limit=10, filesystem_prefetch_min_bytes_for_single_read_task='8Mi', filesystem_prefetch_step_marks=50, filesystem_prefetch_step_bytes='100Mi', compile_expressions=1, compile_aggregate_expressions=0, compile_sort_description=1, merge_tree_coarse_index_granularity=16, optimize_distinct_in_order=1, max_bytes_before_remerge_sort=615312931, min_compress_block_size=396667, max_compress_block_size=1465735, merge_tree_compact_parts_min_granules_to_multibuffer_read=109, optimize_sorting_by_input_stream_properties=1, http_response_buffer_size=7378705, http_wait_end_of_query='True', enable_memory_bound_merging_of_aggregation_results=1, min_count_to_compile_expression=3, min_count_to_compile_aggregate_expression=0, min_count_to_compile_sort_description=0, session_timezone='Africa/Khartoum', use_page_cache_for_disks_without_file_cache='False', page_cache_inject_eviction='False', merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.69, prefer_external_sort_block_bytes=0, cross_join_min_rows_to_compress=100000000, cross_join_min_bytes_to_compress=100000000, min_external_table_block_size_bytes=0, max_parsing_threads=10, optimize_functions_to_subcolumns=0, parallel_replicas_local_plan=1, query_plan_join_swap_table='auto', enable_vertical_final=0, optimize_extract_common_expressions=1, use_async_executor_for_materialized_views=1, use_query_condition_cache=0, secondary_indices_enable_bulk_filtering=1, use_skip_indexes_if_final=1, use_skip_indexes_on_data_read=0, optimize_rewrite_like_perfect_affix=0, input_format_parquet_use_native_reader_v3=0, enable_lazy_columns_replication=0, allow_special_serialization_kinds_in_output_formats=0, max_bytes_before_external_sort=0, max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_sort=0, max_bytes_ratio_before_external_group_by=0, use_skip_indexes_if_final_exact_mode=1;
+
+CREATE TABLE t(a UInt64, s String) ENGINE = MergeTree ORDER BY a SETTINGS ratio_of_defaults_for_sparse_serialization=1.0, prefer_fetch_merged_part_size_threshold=4900758417, vertical_merge_algorithm_min_rows_to_activate=380389, vertical_merge_algorithm_min_columns_to_activate=76, allow_vertical_merges_from_compact_to_wide_parts=1, min_merge_bytes_to_use_direct_io=9937308181, index_granularity_bytes=5843975, merge_max_block_size=15847, index_granularity=60662, marks_compress_block_size=98783, primary_key_compress_block_size=79758, replace_long_file_name_to_hash=1, max_file_name_length=0, min_bytes_for_full_part_storage=536870912, compact_parts_max_bytes_to_buffer=349746021, compact_parts_max_granules_to_buffer=256, compact_parts_merge_max_bytes_to_prefetch_part=16703512, cache_populated_by_fetch=0, concurrent_part_removal_threshold=93, old_parts_lifetime=10, prewarm_mark_cache=0, use_const_adaptive_granularity=0, enable_index_granularity_compression=0, enable_block_number_column=1, enable_block_offset_column=0, use_primary_key_cache=1, prewarm_primary_key_cache=0, object_serialization_version='v3', object_shared_data_serialization_version='advanced', object_shared_data_serialization_version_for_zero_level_parts='advanced', object_shared_data_buckets_for_compact_part=25, object_shared_data_buckets_for_wide_part=13, dynamic_serialization_version='v2', auto_statistics_types='tdigest,uniq', serialization_info_version='basic', string_serialization_version='with_size_stream', enable_shared_storage_snapshot_in_query=0, storage_policy = 's3_cache', min_rows_for_wide_part = 10000, min_bytes_for_wide_part = 0;
+
+INSERT INTO t SELECT *, randomString(100) FROM numbers_mt(3_000_000);
+
+SET enable_analyzer = 1;
+
+SET max_threads = 3, merge_tree_min_read_task_size = 1;
+
+SET enable_parallel_replicas = 2, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'parallel_replicas';
+
+SYSTEM ENABLE FAILPOINT parallel_replicas_reading_response_timeout;
+
+SELECT * FROM t FORMAT Null; -- { serverError SOCKET_TIMEOUT }
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
+
+SYSTEM ENABLE FAILPOINT parallel_replicas_reading_response_timeout;
+
+SET max_threads = 3, merge_tree_min_read_task_size = 1000;
+
+SELECT * FROM t ORDER BY a FORMAT Null; -- { serverError SOCKET_TIMEOUT }
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
+

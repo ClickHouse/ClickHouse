@@ -1776,7 +1776,7 @@ def test_consumption_of_show_clusters():
 def test_consumption_of_show_processlist():
     instance.query("SHOW PROCESSLIST")
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N.*",
         instance.query("SHOW QUOTA"),
     )
 

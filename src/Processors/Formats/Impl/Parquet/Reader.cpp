@@ -15,6 +15,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <mutex>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
 
@@ -292,7 +293,7 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
-void Reader::prefilterAndInitRowGroups()
+void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -363,6 +364,7 @@ void Reader::prefilterAndInitRowGroups()
 
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
+        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
         row_group.row_group_idx = row_group_idx;
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
@@ -1058,8 +1060,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
             RowSubgroup & row_subgroup = row_group.subgroups.emplace_back();
             row_subgroup.start_row_idx = substart;
-            row_subgroup.filter.rows_pass = subend - substart;
-            row_subgroup.filter.rows_total = row_subgroup.filter.rows_pass;
+            row_subgroup.filter.rows_pass = row_group.need_to_process ? subend - substart : 0;
+            row_subgroup.filter.rows_total = subend - substart;
 
             row_subgroup.columns.resize(primitive_columns.size());
             row_subgroup.output.resize(extended_sample_block.columns());
@@ -1067,7 +1069,6 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 row_subgroup.block_missing_values.init(sample_block->columns());
         }
     }
-
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
@@ -1996,7 +1997,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     return res;
 }
 
-void Reader::applyPrewhere(RowSubgroup & row_subgroup)
+void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group)
 {
     for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
     {
@@ -2032,7 +2033,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup)
         chassert(filter.size() == row_subgroup.filter.rows_pass);
 
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
-        if (rows_pass == 0)
+        if (rows_pass == 0 || !row_group.need_to_process)
         {
             /// Whole row group was filtered out.
             row_subgroup.filter.rows_pass = 0;

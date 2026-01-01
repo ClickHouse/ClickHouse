@@ -67,7 +67,7 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
         Field setting_value;
         if constexpr (mode == ErrorHandlingMode::Exception)
             setting_value = getContext()->getSettingsRef().get(setting_name);
@@ -118,7 +118,7 @@ SELECT getSetting('enable_analyzer');
     };
     FunctionDocumentation::IntroducedIn introduced_in_getSetting = {20, 7};
     FunctionDocumentation::Category category_getSetting = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getSetting = {description_getSetting, syntax_getSetting, arguments_getSetting, returned_value_getSetting, examples_getSetting, introduced_in_getSetting, category_getSetting};
+    FunctionDocumentation documentation_getSetting = {description_getSetting, syntax_getSetting, arguments_getSetting, {}, returned_value_getSetting, examples_getSetting, introduced_in_getSetting, category_getSetting};
 
     factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Exception>>(documentation_getSetting, FunctionFactory::Case::Sensitive);
     FunctionDocumentation::Description description_getSettingOrDefault = R"(
@@ -147,7 +147,7 @@ NULL
     };
     FunctionDocumentation::IntroducedIn introduced_in_getSettingOrDefault = {24, 10};
     FunctionDocumentation::Category category_getSettingOrDefault = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getSettingOrDefault = {description_getSettingOrDefault, syntax_getSettingOrDefault, arguments_getSettingOrDefault, returned_value_getSettingOrDefault, examples_getSettingOrDefault, introduced_in_getSettingOrDefault, category_getSettingOrDefault};
+    FunctionDocumentation documentation_getSettingOrDefault = {description_getSettingOrDefault, syntax_getSettingOrDefault, arguments_getSettingOrDefault, {}, returned_value_getSettingOrDefault, examples_getSettingOrDefault, introduced_in_getSettingOrDefault, category_getSettingOrDefault};
 
     factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>(documentation_getSettingOrDefault, FunctionFactory::Case::Sensitive);
 }

@@ -24,16 +24,21 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Columns/ColumnDynamic.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -44,11 +49,25 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace Setting
+{
+extern const SettingsUInt64 input_format_binary_max_type_complexity;
+}
+
 namespace
 {
 /// Max array size that is allowed for any nested elements during data type decoding.
 /// It prevents from allocating too large arrays if the data is corrupted.
 constexpr size_t MAX_ARRAY_SIZE = 1000000;
+
+/// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. getMaxTypeDecodingComplexity() prevents
+/// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
+inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
+{
+    if (auto query_context = CurrentThread::getQueryContext())
+        return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
+    return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
+}
 
 enum class BinaryTypeIndex : uint8_t
 {
@@ -605,8 +624,15 @@ String encodeDataType(const DataTypePtr & type)
     return buf.str();
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf)
+DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
 {
+    ++complexity;
+    size_t max_complexity = getMaxTypeDecodingComplexity();
+    if (max_complexity > 0 && complexity > max_complexity)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
+    if (complexity % 128 == 0)
+        checkStackSize();
+
     UInt8 type;
     readBinary(type, buf);
     switch (BinaryTypeIndex(type))
@@ -702,7 +728,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         case BinaryTypeIndex::UUID:
             return getDataTypesCache().getType("UUID");
         case BinaryTypeIndex::Array:
-            return std::make_shared<DataTypeArray>(decodeDataType(buf));
+            return std::make_shared<DataTypeArray>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size;
@@ -718,7 +744,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataType(buf));
+                elements.push_back(decodeDataType(buf, complexity));
             }
 
             return std::make_shared<DataTypeTuple>(elements, names);
@@ -733,12 +759,12 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                elements.push_back(decodeDataType(buf));
+                elements.push_back(decodeDataType(buf, complexity));
             return std::make_shared<DataTypeTuple>(elements);
         }
         case BinaryTypeIndex::QBit:
         {
-            auto element_type = decodeDataType(buf);
+            auto element_type = decodeDataType(buf, complexity);
             size_t dimension;
             readVarUInt(dimension, buf);
             return std::make_shared<DataTypeQBit>(element_type, dimension);
@@ -752,7 +778,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeInterval>(IntervalKind(IntervalKind::Kind(kind)));
         }
         case BinaryTypeIndex::Nullable:
-            return std::make_shared<DataTypeNullable>(decodeDataType(buf));
+            return std::make_shared<DataTypeNullable>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::Function:
         {
             size_t arguments_size;
@@ -763,16 +789,16 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
-                arguments.push_back(decodeDataType(buf));
-            auto return_type = decodeDataType(buf);
+                arguments.push_back(decodeDataType(buf, complexity));
+            auto return_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeFunction>(arguments, return_type);
         }
         case BinaryTypeIndex::LowCardinality:
-            return std::make_shared<DataTypeLowCardinality>(decodeDataType(buf));
+            return std::make_shared<DataTypeLowCardinality>(decodeDataType(buf, complexity));
         case BinaryTypeIndex::Map:
         {
-            auto key_type = decodeDataType(buf);
-            auto value_type = decodeDataType(buf);
+            auto key_type = decodeDataType(buf, complexity);
+            auto value_type = decodeDataType(buf, complexity);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case BinaryTypeIndex::IPv4:
@@ -789,7 +815,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                variants.push_back(decodeDataType(buf));
+                variants.push_back(decodeDataType(buf, complexity));
             return std::make_shared<DataTypeVariant>(variants);
         }
         case BinaryTypeIndex::Dynamic:
@@ -825,7 +851,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataType(buf));
+                elements.push_back(decodeDataType(buf, complexity));
             }
 
             return createNested(elements, names);
@@ -844,19 +870,25 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
             size_t max_dynamic_paths;
             readVarUInt(max_dynamic_paths, buf);
+            if (max_dynamic_paths > DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'max_dynamic_paths' for JSON type is too large: {}. The maximum is {}", max_dynamic_paths, DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT);
+
             UInt8 max_dynamic_types;
             readBinary(max_dynamic_types, buf);
+            if (max_dynamic_types > ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'max_dynamic_types' for JSON type is too large: {}. The maximum is {}", UInt32(max_dynamic_types), ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT);
+
             size_t typed_paths_size;
             readVarUInt(typed_paths_size, buf);
-            if (typed_paths_size > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, MAX_ARRAY_SIZE);
+            if (typed_paths_size > DataTypeObject::MAX_TYPED_PATHS)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, DataTypeObject::MAX_TYPED_PATHS);
 
             std::unordered_map<String, DataTypePtr> typed_paths;
             for (size_t i = 0; i != typed_paths_size; ++i)
             {
                 String path;
                 readStringBinary(path, buf);
-                typed_paths[path] = decodeDataType(buf);
+                typed_paths[path] = decodeDataType(buf, complexity);
             }
             size_t paths_to_skip_size;
             readVarUInt(paths_to_skip_size, buf);
@@ -898,7 +930,19 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type code: {0:#04x}", UInt64(type));
 }
 
+DataTypePtr decodeDataType(ReadBuffer & buf)
+{
+    size_t complexity = 0;
+    return decodeDataType(buf, complexity);
+}
+
 DataTypePtr decodeDataType(const String & data)
+{
+    ReadBufferFromString buf(data);
+    return decodeDataType(buf);
+}
+
+DataTypePtr decodeDataType(std::string_view data)
 {
     ReadBufferFromString buf(data);
     return decodeDataType(buf);

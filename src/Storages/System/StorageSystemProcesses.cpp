@@ -21,6 +21,8 @@ namespace DB
 
 ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     auto description = ColumnsDescription
     {
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether this query comes directly from user or was issues by ClickHouse server in a scope of distributed query execution."},
@@ -68,10 +70,13 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"query_kind", std::make_shared<DataTypeString>(), "The type of the query - SELECT, INSERT, etc."},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identifiers of all threads which participated in this query."},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
-        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "The list of modified user-level settings."},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
+        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string), "The list of modified user-level settings."},
 
         {"current_database", std::make_shared<DataTypeString>(), "The name of the current database."},
+
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 
     description.setAliases({
@@ -144,6 +149,8 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[i++]->insert(threads_array);
         }
 
+        res_columns[i++]->insert(process.peak_threads_usage);
+
         {
             IColumn * column = res_columns[i++].get();
 
@@ -167,6 +174,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         res_columns[i++]->insert(process.current_database);
+        res_columns[i++]->insert(process.is_internal);
     }
 }
 
