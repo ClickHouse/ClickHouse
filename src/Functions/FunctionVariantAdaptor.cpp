@@ -302,37 +302,39 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// and use it to create a set of filtered arguments for each variant.
     /// Then we will execute our function over all these arguments and construct the resulting column
     /// from all results based on created selector.
-    IColumn::Selector selector;
-    selector.reserve(variant_column.size());
-    std::vector<ColumnWithTypeAndName> variants;
-    /// We need to determine the selector index for rows with NULL values.
-    /// We allocate 0 index for rows with NULL values.
-    variants.emplace_back();
-    /// Remember indexes in selector for each variant type.
-    std::unordered_map<ColumnVariant::Discriminator, size_t> variant_indexes;
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & offsets = variant_column.getOffsets();
+    size_t num_variants = variant_types.size();
 
-    for (size_t i = 0; i != local_discriminators.size(); ++i)
+    /// We use an array where index is the global discriminator.
+    /// Variants that don't appear in the data will have null column pointers.
+    /// Index num_variants is reserved for NULL values.
+    std::vector<ColumnWithTypeAndName> variants;
+    variants.resize(num_variants + 1);
+
+    /// Create selector using global discriminators as indexes.
+    /// Populate variants array only for discriminators that appear in the data.
+    IColumn::Selector selector;
+    selector.reserve(variant_column.size());
+    for (char8_t local_discr : local_discriminators)
     {
-        auto local_discr = local_discriminators[i];
         if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
         {
-            selector.push_back(0);
+            selector.push_back(num_variants);
         }
         else
         {
             auto global_discr = variant_column.globalDiscriminatorByLocal(local_discr);
-            /// Check if we already allocated selector index for this variant type.
-            /// If not, append it to list of variants and remember its index.
-            auto it = variant_indexes.find(global_discr);
-            if (it == variant_indexes.end())
+            /// Add this variant to the array if not already present.
+            if (!variants[global_discr].column)
             {
-                it = variant_indexes.emplace(global_discr, variants.size()).first;
-                variants.emplace_back(variant_column.getVariantPtrByLocalDiscriminator(local_discr), variant_types[global_discr], "");
+                variants[global_discr] = ColumnWithTypeAndName{
+                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr),
+                    variant_types[global_discr],
+                    ""
+                };
             }
-
-            selector.push_back(it->second);
+            selector.push_back(global_discr);
         }
     }
 
@@ -343,8 +345,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     {
         if (i == variant_argument_index)
         {
-            for (size_t j = 1; j != variants_arguments.size(); ++j)
-                variants_arguments[j].push_back(variants[j]);
+            /// Add variant arguments for variants that exist in the data (0 to num_variants-1).
+            for (size_t j = 0; j < num_variants; ++j)
+            {
+                if (variants[j].column)
+                    variants_arguments[j].push_back(variants[j]);
+            }
         }
         else
         {
@@ -357,15 +363,17 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Execute function over all created sets of arguments and remember all results.
     std::vector<ColumnPtr> variants_results;
     std::vector<DataTypePtr> variants_result_types;
-    variants_results.reserve(variants.size());
-    variants_result_types.reserve(variants.size());
-    /// 0 index is allocated for rows with NULL values, it doesn't have any result,
+    variants_results.resize(variants.size());
+    variants_result_types.resize(variants.size());
+    /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
     /// we will insert NULL values in these rows.
-    variants_results.emplace_back();
-    variants_result_types.emplace_back();
 
-    for (size_t i = 1; i != variants_arguments.size(); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
     {
+        /// Skip variants that don't exist in the data.
+        if (!variants[i].column)
+            continue;
+
         try
         {
             auto func_base = function_overload_resolver->build(variants_arguments[i]);
@@ -374,12 +382,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
                       ->convertToFullColumnIfConst();
 
-            variants_result_types.push_back(nested_result_type);
+            variants_result_types[i] = nested_result_type;
 
-            /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
+            /// Set nullptr in case of only NULL values, we will insert NULL for rows of this selector.
             if (nested_result_type->onlyNull())
             {
-                variants_results.emplace_back();
+                variants_results[i] = nullptr;
             }
             /// If the result of the function is not Variant, it means that this function returns the same
             /// type for all argument types (or similar types like FixedString or String).
@@ -391,8 +399,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 {
                     try
                     {
-                        variants_results.push_back(castColumn(
-                            ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
+                        variants_results[i] = castColumn(
+                            ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
                     }
                     catch (const Exception & e)
                     {
@@ -407,13 +415,13 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 else
                 {
-                    variants_results.push_back(makeNullableSafe(nested_result));
+                    variants_results[i] = makeNullableSafe(nested_result);
                 }
             }
             /// Result is Variant - keep the individual result columns, we'll build Variant manually
             else
             {
-                variants_results.push_back(nested_result);
+                variants_results[i] = nested_result;
             }
         }
         catch (const Exception & e)
@@ -424,8 +432,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
 
-            variants_result_types.push_back(nullptr);
-            variants_results.emplace_back();
+            variants_result_types[i] = nullptr;
+            variants_results[i] = nullptr;
         }
     }
 
@@ -437,7 +445,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         result->reserve(variant_column.size());
         for (size_t i = 0; i != selector.size(); ++i)
         {
-            if (selector[i] == 0 || !variants_results[selector[i]])
+            if (selector[i] == num_variants || !variants_results[selector[i]])
                 result->insertDefault();
             else
                 result->insertFrom(*variants_results[selector[i]], offsets[i]);
@@ -454,9 +462,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Map each variant result to its discriminator in the result Variant
     std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
 
-    for (size_t i = 1; i < variants_results.size(); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
     {
-        if (!variants_results[i])
+        /// Skip variants that don't exist in the data or have no result.
+        if (!variants[i].column || !variants_results[i])
             continue;
 
         const auto & variant_result_type = variants_result_types[i];
@@ -492,9 +501,9 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Set variant columns in the result
-    for (size_t i = 1; i < variants_results.size(); ++i)
+    for (size_t i = 0; i < num_variants; ++i)
     {
-        if (variants_results[i] && result_discriminators[i])
+        if (variants[i].column && variants_results[i] && result_discriminators[i])
         {
             auto global_discr = *result_discriminators[i];
             auto local_discr = result_variant.localDiscriminatorByGlobal(global_discr);
@@ -510,7 +519,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     for (size_t i = 0; i != selector.size(); ++i)
     {
-        if (selector[i] == 0 || !variants_results[selector[i]])
+        if (selector[i] == num_variants || !variants_results[selector[i]])
         {
             result_discriminators_col.push_back(ColumnVariant::NULL_DISCRIMINATOR);
             result_offsets.emplace_back();
