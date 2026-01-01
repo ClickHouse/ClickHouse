@@ -7,14 +7,48 @@ import time
 _SEEDED = False
 
 
-def has_ci_sink():
-    """Return True if CI ClickHouse test-stat credentials are available."""
+def _get_helper():
     try:
         from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-        _ = ClickHouseHelper()
-        return True
     except Exception:
-        return False
+        return None
+
+    url = (
+        os.environ.get("CI_DB_URL")
+        or os.environ.get("CLICKHOUSE_TEST_STAT_URL")
+        or None
+    )
+    user = (
+        os.environ.get("CI_DB_USER")
+        or os.environ.get("CLICKHOUSE_TEST_STAT_LOGIN")
+        or None
+    )
+    password = (
+        os.environ.get("CI_DB_PASSWORD")
+        or os.environ.get("CLICKHOUSE_TEST_STAT_PASSWORD")
+        or None
+    )
+    if url and user and password:
+        try:
+            return ClickHouseHelper(
+                url=url,
+                auth={
+                    "X-ClickHouse-User": user,
+                    "X-ClickHouse-Key": password,
+                },
+            )
+        except Exception:
+            pass
+
+    try:
+        return ClickHouseHelper()
+    except Exception:
+        return None
+
+
+def has_ci_sink():
+    """Return True if CI ClickHouse test-stat credentials are available."""
+    return _get_helper() is not None
 
 
 def ensure_sink_schema(_url_ignored=None):
@@ -28,11 +62,12 @@ def ensure_sink_schema(_url_ignored=None):
         return
     try:
         import requests
-        from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
     except Exception:
         return
 
-    helper = ClickHouseHelper()
+    helper = _get_helper()
+    if helper is None:
+        return
     url = helper.url
     auth = helper.auth
     db = (
@@ -79,18 +114,15 @@ def sink_clickhouse(_url_ignored, table, rows):
     """
     if not rows:
         return
-    try:
-        from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-    except Exception:
+    helper = _get_helper()
+    if helper is None:
         return
-
     ensure_sink_schema()
     db = (
         os.environ.get("KEEPER_METRICS_DB", "keeper_stress_tests").strip()
         or "keeper_stress_tests"
     )
     t = table if "." in table else f"{db}.{table}"
-    helper = ClickHouseHelper()
     # Chunk rows to reduce request size and improve retry behavior
     chunk_size = 1000
     for i in range(0, len(rows), chunk_size):
@@ -98,5 +130,4 @@ def sink_clickhouse(_url_ignored, table, rows):
         body = "\n".join(json.dumps(r, ensure_ascii=False) for r in chunk)
         # ClickHouseHelper handles retries internally
         from tests.ci.clickhouse_helper import ClickHouseHelper as _CH  # type: ignore
-
         _CH.insert_json_str(helper.url, helper.auth, db, t, body)

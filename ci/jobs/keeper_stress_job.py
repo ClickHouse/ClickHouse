@@ -520,16 +520,21 @@ def main():
             except Exception:
                 pass
             try:
+                # Use case-insensitive matching on check_name to cover 'Keeper Stress' and 'Keeper Stress (PR)'
+                name_filter = (
+                    "(lowerUTF8(check_name) LIKE 'keeper stress:%' OR lowerUTF8(check_name) LIKE 'keeper stress%' OR "
+                    "lowerUTF8(check_name) LIKE 'keeper_stress:%' OR lowerUTF8(check_name) LIKE 'keeper_stress%')"
+                )
                 if sha and sha != "local":
                     q = (
                         "SELECT count() FROM default.checks "
-                        f"WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                        f"WHERE {name_filter} AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
                         "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 else:
                     q = (
                         "SELECT count() FROM default.checks "
-                        "WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') "
+                        f"WHERE {name_filter} "
                         "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
@@ -568,14 +573,14 @@ def main():
                         q = (
                             "SELECT started_at, check_name, check_status, test_name "
                             "FROM default.checks "
-                            f"WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                            f"WHERE {name_filter} AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
                             "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
                         )
                     else:
                         q = (
                             "SELECT started_at, check_name, check_status, test_name "
                             "FROM default.checks "
-                            "WHERE (check_name LIKE 'keeper_stress:%' OR check_name LIKE 'keeper_stress%') "
+                            f"WHERE {name_filter} "
                             "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
                         )
                     r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
