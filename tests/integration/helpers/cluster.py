@@ -1821,14 +1821,11 @@ class ClickHouseCluster:
     def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ytsaurus = True
         env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
-        # Provide an internal listen port pool to avoid dynamic collisions inside container
-        try:
-            start_port = self.port_pool.get_port()
-            end_port = start_port + 200
-            env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = f"{start_port}-{end_port}"
-        except Exception:
-            # Fallback to a sane default range
-            env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = "30050-30250"
+        # Provide an internal port range start and size; avoid overlap with proxy port
+        start_port = int(self.ytsaurus_port) + 1000
+        size = 200
+        env_variables["YTSAURUS_INTERNAL_PORTS_START"] = str(start_port)
+        env_variables["YTSAURUS_INTERNAL_PORTS_SIZE"] = str(size)
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
@@ -2781,7 +2778,8 @@ class ClickHouseCluster:
         try:
             container_id = self.get_container_id("ytsaurus_backend1")
             start = time.time()
-            while time.time() - start < 120:
+            # Prefer in-container readiness via yt CLI; allow up to 8 minutes as YTsaurus may initialize slowly
+            while time.time() - start < 480:
                 try:
                     self.exec_in_container(
                         container_id,
@@ -2790,6 +2788,10 @@ class ClickHouseCluster:
                             "-lc",
                             "yt list // >/dev/null 2>&1",
                         ],
+                        environment={
+                            "YT_PROXY": f"ytsaurus_backend1:{self.ytsaurus_port}",
+                            "YT_TOKEN": "password",
+                        },
                     )
                     return
                 except Exception:
@@ -2799,11 +2801,13 @@ class ClickHouseCluster:
 
         try:
             ip = self.get_instance_ip("ytsaurus_backend1")
-            self.wait_for_url(url=f"http://{ip}:{self.ytsaurus_port}/ping", timeout=600)
+            # Shorter fallback HTTP readiness on container IP
+            self.wait_for_url(url=f"http://{ip}:{self.ytsaurus_port}/ping", timeout=120)
             return
         except Exception:
             pass
-        self.wait_for_url(url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=600)
+        # Final short fallback on localhost-mapped port
+        self.wait_for_url(url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=120)
 
     def wait_letsencrypt_pebble_to_start(self):
         self.wait_for_url(
