@@ -1337,8 +1337,9 @@ void StorageObjectStorageQueue::alter(
         });
 
         LOG_TRACE(
-            log, "New settings changes: {} (requires_detached_mv: {}, changed settings: {})",
-            new_metadata.settings_changes->formatForLogging(), requires_detached_mv, changed_settings.size());
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            new_metadata.settings_changes->formatForLogging(),
+            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
