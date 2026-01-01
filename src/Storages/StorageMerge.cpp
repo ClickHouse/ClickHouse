@@ -1515,7 +1515,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
             query_tree->setAlias(alias.name);
-            query_tree->setResultType(alias.type);
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
