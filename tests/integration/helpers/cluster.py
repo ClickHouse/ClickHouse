@@ -2778,9 +2778,32 @@ class ClickHouseCluster:
         raise Exception("Cannot wait MySQL container")
 
     def wait_ytsaurus_to_start(self):
-        self.wait_for_url(
-            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=600
-        )
+        try:
+            container_id = self.get_container_id("ytsaurus_backend1")
+            start = time.time()
+            while time.time() - start < 120:
+                try:
+                    self.exec_in_container(
+                        container_id,
+                        [
+                            "bash",
+                            "-lc",
+                            "yt list // >/dev/null 2>&1",
+                        ],
+                    )
+                    return
+                except Exception:
+                    time.sleep(1)
+        except Exception:
+            pass
+
+        try:
+            ip = self.get_instance_ip("ytsaurus_backend1")
+            self.wait_for_url(url=f"http://{ip}:{self.ytsaurus_port}/ping", timeout=600)
+            return
+        except Exception:
+            pass
+        self.wait_for_url(url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=600)
 
     def wait_letsencrypt_pebble_to_start(self):
         self.wait_for_url(
@@ -3806,6 +3829,11 @@ class ClickHouseCluster:
 
                 logging.error(f'Trying to connect to Arrowflight...')
                 self.wait_arrowflight_to_start()
+
+            # Ensure Dremio bind mount source exists when enabled
+            if self.with_dremio26:
+                os.makedirs(self.dremio26_logs_dir, exist_ok=True)
+                os.chmod(self.dremio26_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
