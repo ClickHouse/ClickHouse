@@ -10,6 +10,7 @@ namespace DB
 
 class SerializationObjectDynamicPath;
 class SerializationSubObject;
+class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of an Object type (currently only JSON).
 class SerializationObject : public ISerialization
@@ -116,6 +117,7 @@ public:
 private:
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
+    friend SerializationObjectDistinctPaths;
 
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState

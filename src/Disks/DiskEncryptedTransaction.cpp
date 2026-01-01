@@ -115,7 +115,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
         ? delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings)
         : delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
 
-    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
+    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size, settings.use_adaptive_write_buffer, settings.adaptive_write_buffer_initial_size);
 }
 
 }

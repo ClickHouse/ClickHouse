@@ -159,6 +159,7 @@ public:
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     virtual bool isCompilable() const { return false; }
 
@@ -550,6 +551,7 @@ public:
 
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 
