@@ -45,6 +45,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"query_plan_reuse_storage_ordering_for_window_functions", true, false, "Disable this logic by default."},
+            {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -117,8 +119,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
-            {"query_plan_reuse_storage_ordering_for_window_functions", true, false, "Disable this logic by default."},
-            {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
