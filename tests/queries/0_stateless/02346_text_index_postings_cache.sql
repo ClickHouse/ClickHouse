@@ -4,7 +4,7 @@
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_postings_cache = 1;
@@ -24,6 +24,7 @@ SETTINGS index_granularity = 128;
 
 INSERT INTO tab SELECT number, 'text_pl_1' FROM numbers(64);
 INSERT INTO tab SELECT number, 'text_pl_2' FROM numbers(64);
+INSERT INTO tab SELECT number, 'text_pl_3' FROM numbers(64);
 
 DROP VIEW IF EXISTS text_index_cache_stats;
 CREATE VIEW text_index_cache_stats AS (
@@ -61,17 +62,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_2');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_pl_2');
-
-SELECT '--- no profile events when cache is disabled.';
-
-SET use_text_index_postings_cache = 0;
-
-SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
-
-SET use_text_index_postings_cache = 1;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT * FROM text_index_cache_stats(filter = 'text_pl_1');
 
 SELECT 'Clear text index postings cache';
 

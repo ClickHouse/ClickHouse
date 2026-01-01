@@ -47,7 +47,7 @@ def test_backward_compatability(start_cluster):
             order by (a)
         """
         )
-        node.query("insert into t select number % 100000 from numbers_mt(1000000)")
+        node.query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
         node.query("optimize table t final")
 
     # all we want is the query to run without errors

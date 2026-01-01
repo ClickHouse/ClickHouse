@@ -138,7 +138,7 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
-      pipeline_status: ${{{{ steps.run.outputs.pipeline_status }}}}
+      pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -152,6 +152,9 @@ jobs:
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
+          cat > {WORKFLOW_JOB_FILE} << 'EOF'
+          ${{{{ toJson(job) }}}}
+          EOF
           cat > {WORKFLOW_STATUS_FILE} << 'EOF'
           ${{{{ toJson(needs) }}}}
           EOF
@@ -160,7 +163,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . {ENV_SETUP_SCRIPT}
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -350,6 +352,7 @@ class PullRequestPushYamlGen:
                 UPLOADS_GITHUB="\n".join(uploads_github),
                 RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
+                WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
                 UNIQUE_WORK_DIRS=" ".join(

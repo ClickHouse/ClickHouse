@@ -65,9 +65,9 @@ namespace
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception)
+    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context)
 {
-    return std::make_unique<EnginePredicate>(filter, exception);
+    return std::make_unique<EnginePredicate>(filter, exception, context);
 }
 
 /// Contains state for EngineIterator
@@ -386,7 +386,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                             /* from */std::move(left_column),
                             /* to */column_node->result_type,
                             DB::CastType::nonAccurate,
-                            std::move(diagnostic));
+                            std::move(diagnostic),
+                            iterator_data.predicate.getContext());
 
                         DB::ActionsDAG::NodeRawConstPtrs children = { left_arg, right_arg };
                         literal_node = &dag.addFunction(func_base_cast, std::move(children), {});

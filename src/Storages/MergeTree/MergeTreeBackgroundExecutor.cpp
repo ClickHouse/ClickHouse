@@ -41,7 +41,7 @@ void PriorityRuntimeQueue::updatePolicy(std::string_view)
 
 template <class Queue>
 MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
-    String name_,
+    ThreadName name_,
     size_t threads_count_,
     size_t max_tasks_count_,
     CurrentMetrics::Metric metric_,
@@ -341,8 +341,8 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
             if (watch_on_completed.elapsedMilliseconds() > 1000)
             {
-                LOG_WARNING(log, "Execution of callback took {} ms for thread {} in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
-                    watch_on_completed.elapsedMilliseconds(), CurrentThread::get().thread_id, __PRETTY_FUNCTION__, StackTrace().toString());
+                LOG_WARNING(log, "Execution of callback took {} ms in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
+                    watch_on_completed.elapsedMilliseconds(), __PRETTY_FUNCTION__, StackTrace().toString());
             }
         }
 
@@ -397,7 +397,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
-    setThreadName(name.c_str());
+    setThreadName(name);
 
     current_thread->flushUntrackedMemory();
 

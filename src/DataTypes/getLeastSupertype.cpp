@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -632,6 +634,53 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             return types[max_scale_date_time_index];
+        }
+    }
+
+    {
+        size_t have_time = type_ids.count(TypeIndex::Time);
+        size_t have_time64 = type_ids.count(TypeIndex::Time64);
+
+        if (have_time || have_time64)
+        {
+            bool all_time_or_time64 = type_ids.size() == (have_time + have_time64);
+
+            if (!all_time_or_time64)
+                return throwOrReturn<on_error>(types,
+                    "because some of them are Time/Time64 and some of them are not",
+                    ErrorCodes::NO_COMMON_TYPE);
+
+            if (have_time && !have_time64)
+            {
+                return std::make_shared<DataTypeTime>();
+            }
+
+            /// find the maximum scale
+            UInt8 max_scale = 0;
+            size_t max_scale_time64_index = 0;
+
+            for (size_t i = 0; i < types.size(); ++i)
+            {
+                const auto & type = types[i];
+
+                if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
+                {
+                    const auto scale = time64_type->getScale();
+
+                    if (scale >= max_scale)
+                    {
+                        max_scale_time64_index = i;
+                        max_scale = scale;
+                    }
+                }
+            }
+
+            if (have_time && have_time64)
+            {
+                return std::make_shared<DataTypeTime64>(max_scale);
+            }
+
+            return types[max_scale_time64_index];
         }
     }
 

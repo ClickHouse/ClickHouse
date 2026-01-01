@@ -178,7 +178,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);", "[('a', 5), ('b', 2), ('c', 1)]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, argument, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionArrayZip<false>>(documentation);
 
@@ -189,7 +189,7 @@ REGISTER_FUNCTION(ArrayZip)
     FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a', 1),(NULL, 2),(NULL, 3)]"}};
     FunctionDocumentation::IntroducedIn introduced_in_unaligned = {20, 1};
     FunctionDocumentation::Category category_unaligned = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
+    FunctionDocumentation documentation_unaligned = {description_unaligned, syntax_unaligned, argument_unaligned, {}, returned_value_unaligned, example_unaligned, introduced_in_unaligned, category_unaligned};
 
     factory.registerFunction<FunctionArrayZip<true>>(documentation_unaligned);
 }
