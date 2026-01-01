@@ -31,7 +31,7 @@ class ReplicatedMergeTreeLocalMergePredicate;
 class ReplicatedMergeTreeZooKeeperMergePredicate;
 class ReplicatedMergeTreeMergeStrategyPicker;
 
-using PartitionIdsHint = std::unordered_set<String>;
+using PartitionIdsHint = PartitionIds;
 
 class ReplicatedMergeTreeQueue
 {
