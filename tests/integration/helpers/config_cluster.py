@@ -3,7 +3,7 @@ mysql_user = "root"
 mysql_pass = "ClickHouse_MySQL_P@ssw0rd"
 
 # Dremio CREDENTIALS
-dremio_user = "user"
+dremio_user = "dremio"
 dremio_pass = "ClickHouse_Dremio_P@ssw0rd"
 
 # POSTGRES CREDENTIALS
