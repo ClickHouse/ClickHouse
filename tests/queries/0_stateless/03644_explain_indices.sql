@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS test_indexed
 ) ENGINE = MergeTree()
     ORDER BY id;
 
-INSERT INTO test_indexed VALUES
-                             (1,'a'),(5,'b'),(10,'c'),(15,'d'),(20,'e');
+INSERT INTO test_indexed
+VALUES (1,'a'),(5,'b'),(10,'c'),(15,'d'),(20,'e');
 
 EXPLAIN indices = 1
 SELECT *
