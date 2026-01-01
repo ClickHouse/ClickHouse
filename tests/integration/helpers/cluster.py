@@ -3850,6 +3850,16 @@ class ClickHouseCluster:
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
+            if self.with_dremio26:
+                try:
+                    self.wait_for_url(
+                        url=f"http://{self.dremio26_host}:{self.dremio26_rest_port}/",
+                        timeout=300,
+                    )
+                except Exception:
+                    run_and_check(["docker", "ps", "--all"])
+                    raise
+
             # Copy binaries and start ClickHouse for dolor instances
             for instance in self.instances.values():
                 if instance.with_dolor:
@@ -5083,12 +5093,16 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(
+                '[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l || echo 0'.format(
                     substring
                 ),
-            ]
+            ],
+            nothrow=True,
         )
-        return result
+        try:
+            return result if result and result.strip() else "0"
+        except Exception:
+            return "0"
 
     def count_log_lines(self):
         """Return total number of lines in clickhouse-server.log inside the container."""
@@ -5392,11 +5406,11 @@ class ClickHouseInstance:
         def has_new_rows_in_log():
             nonlocal prev_rows_in_log
             try:
-                rows_in_log = int(self.count_in_log(".*").strip())
+                rows_in_log = int(self.count_log_lines())
                 res = rows_in_log > prev_rows_in_log
                 prev_rows_in_log = rows_in_log
                 return res
-            except ValueError:
+            except Exception:
                 return False
 
         while True:
