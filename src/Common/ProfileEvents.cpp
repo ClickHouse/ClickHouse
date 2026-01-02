@@ -482,6 +482,8 @@
     M(RegexpWithMultipleNeedlesGlobalCacheMiss, "Number of times we failed to fetch compiled regular expression with multiple needles (VectorScan library) from the global cache.", ValueType::Number) \
     M(RegexpLocalCacheHit, "Number of times we fetched compiled regular expression from a local cache.", ValueType::Number) \
     M(RegexpLocalCacheMiss, "Number of times we failed to fetch compiled regular expression from a local cache.", ValueType::Number) \
+    M(AhoCorasickCacheHit, "Number of times compiled Aho-Corasick automaton was fetched from thread-local cache.", ValueType::Number) \
+    M(AhoCorasickCacheMiss, "Number of times compiled Aho-Corasick automaton was not found in thread-local cache.", ValueType::Number) \
     \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
