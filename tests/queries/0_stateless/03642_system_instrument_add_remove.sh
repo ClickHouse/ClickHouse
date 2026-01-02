@@ -21,15 +21,15 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM system.instrumentation;
 
     SELECT '-- Add one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'my log in finishQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' LOG ENTRY 'my log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Adding the same one again';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'another log in finishQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' LOG ENTRY 'another log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Add another one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'my log in startQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'my log in startQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 "
 
@@ -41,8 +41,8 @@ $CLICKHOUSE_CLIENT -q "
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Add 2 more';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'my other in startQuery';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG EXIT 'my other in finishQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'my other in startQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' LOG EXIT 'my other in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Remove the entries with entry_type = Exit';

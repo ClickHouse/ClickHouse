@@ -797,14 +797,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 break;
             }
 
-            res->instrumentation_point_id = temporary_identifier->as<ASTLiteral>()->value.safeGet<UInt64>();
+            res->instrumentation_point_id = temporary_identifier->as<ASTLiteral &>().value.safeGet<UInt64>();
             break;
         }
         case Type::INSTRUMENT_ADD:
         {
             ASTPtr temporary_identifier;
-            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-                res->instrumentation_function_name = temporary_identifier->as<ASTIdentifier &>().name();
+            if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
+                res->instrumentation_function_name = temporary_identifier->as<ASTLiteral &>().value.safeGet<String>();
             else
                 return false;
 

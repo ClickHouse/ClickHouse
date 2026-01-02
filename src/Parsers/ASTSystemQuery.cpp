@@ -501,8 +501,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (!instrumentation_function_name.empty())
             {
-                ostr << ' ';
-                print_identifier(instrumentation_function_name);
+                ostr << ' ' << quoteString(instrumentation_function_name);
             }
 
             if (!instrumentation_handler_name.empty())
