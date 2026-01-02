@@ -153,7 +153,8 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     /// Lazy load the XRay instrumentation map only once we need to set up a handler
     ensureInitialization();
 
-    struct Function {
+    struct Function
+    {
         Int32 function_id;
         String symbol;
     };
