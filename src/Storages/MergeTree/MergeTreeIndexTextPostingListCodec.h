@@ -39,14 +39,10 @@ struct PostingListBuilder;
 class PostingListCodecImpl
 {
     /// Per-segment header written before each segment payload.
-    ///
-    /// - bytes: number of compressed bytes following this header (segment payload size)
-    /// - cardinality: number of postings (row ids) in this segment
-    /// - base_value: the first row id in the segment (also used to restore deltas)
     struct Header
     {
         Header() = default;
-        explicit Header(uint16_t codec_type_, size_t bytes_, uint32_t cardinality_, uint32_t base_value_)
+        Header(uint16_t codec_type_, size_t bytes_, uint32_t cardinality_, uint32_t base_value_)
             : codec_type(codec_type_)
             , bytes(bytes_)
             , cardinality(cardinality_)
@@ -78,25 +74,28 @@ class PostingListCodecImpl
             base_value = static_cast<uint32_t>(v);
         }
 
+        /// The codec type (None, Bitpacking, ...)
         uint8_t codec_type = 0;
+        /// Number of compressed bytes following this header (segment payload size)
         size_t bytes = 0;
+        /// Number of postings (row ids) in this segment
         uint32_t cardinality = 0;
+        /// The first row id in the segment (also used to restore deltas)
         uint32_t base_value = 0;
     };
 
     /// In-memory descriptor of one segment inside `compressed_data`.
-    ///
-    /// - cardinality: number of postings in this segment
-    /// - compressed_data_offset: start offset in `compressed_data`
-    /// - compressed_data_size: payload size in bytes (excluding Header)
-    /// - min/max: rowid range covered by this segment.
     struct SegmentDescriptor
     {
+        /// Number of postings in this segment
         uint32_t cardinality = 0;
+        /// Start offset in `compressed_data`
         size_t compressed_data_offset = 0;
+        /// Payload size in bytes (excluding Header)
         size_t compressed_data_size = 0;
-        uint32_t row_offset_begin = 0;
-        uint32_t row_offset_end = 0;
+        /// Row range covered by this segment.
+        uint32_t row_begin = 0;
+        uint32_t row_end = 0;
 
         SegmentDescriptor() = default;
     };
@@ -109,7 +108,7 @@ class PostingListCodecImpl
 
         /// Returns {compressed_bytes, bits} where bits is the max bit-width required
         /// to represent all values in [0..n).
-        ALWAYS_INLINE static std::pair<size_t, size_t> evaluateSizeAndMaxBits(std::span<uint32_t> & data)
+        static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data)
         {
             size_t n = data.size();
             auto bits = maxbits_length(data.data(), n);
@@ -117,23 +116,23 @@ class PostingListCodecImpl
             return {bytes, bits};
         }
 
-        ALWAYS_INLINE static uint32_t encode(std::span<uint32_t> & in, uint32_t bits, std::span<char> & out)
+        static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
         {
             /// simdcomp expects __m128i* output pointer; we compute consumed bytes
             /// from the returned end pointer (in units of 16-byte vectors).
             auto * m128_out = reinterpret_cast<__m128i *>(out.data());
-            auto * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, bits);
+            auto * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
             auto used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
             out = out.subspan(used);
             return used;
         }
 
-        ALWAYS_INLINE static std::size_t decode(std::span<const std::byte> & in, std::size_t n, uint32_t bits, std::span<uint32_t> & out)
+        static std::size_t decode(std::span<const std::byte> & in, std::size_t n, uint32_t max_bits, std::span<uint32_t> & out)
         {
             /// simdcomp expects __m128i* input pointer; we compute consumed bytes
             /// from the returned end pointer (in units of 16-byte vectors).
             auto * m128i_in = reinterpret_cast<const __m128i *>(in.data());
-            auto * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), bits);
+            auto * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
             auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
             in = in.subspan(used);
             return used;
@@ -151,28 +150,29 @@ public:
         : posting_list_block_size((postings_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1))
     {
         compressed_data.reserve(BLOCK_SIZE);
-        current.reserve(BLOCK_SIZE);
+        current_segment.reserve(BLOCK_SIZE);
     }
 
-    size_t size() const { return cardinality; }
+    size_t size() const { return total_rows; }
     bool empty() const { return size(); }
 
+    size_t getSizeInBytes() const { return compressed_data.size(); }
 
     /// Add a single increasing row id.
     ///
-    /// Internally we store deltas (gaps) in `current` until reaching BLOCK_SIZE,
+    /// Internally we store deltas (gaps) in `current_segment` until reaching BLOCK_SIZE,
     /// then compress the full block into `compressed_data`.
     /// When the segment reaches `posting_list_block_size`, flush it.
-    void insert(uint32_t value);
+    void insert(uint32_t row);
 
-    /// Add exactly one full block of BLOCK_SIZE values.
+    /// Add exactly one full block of BLOCK_SIZE-many rows.
     ///
-    /// This path assumes:
-    /// - values.size() == BLOCK_SIZE
+    /// Assumes:
+    /// - rows.size() == BLOCK_SIZE
     /// - total is aligned by BLOCK_SIZE
     ///
     /// It computes deltas in-place using adjacent_difference for better throughput.
-    void insert(std::span<uint32_t> values);
+    void insert(std::span<uint32_t> rows);
 
     /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
     ///
@@ -180,8 +180,8 @@ public:
     /// followed by the segment payload bytes.
     void serialize(WriteBuffer & out, TokenPostingsInfo & info)
     {
-        if (!current.empty())
-            compressBlock(current);
+        if (!current_segment.empty())
+            compressBlock(current_segment);
 
         serializeTo(out, info);
     }
@@ -194,38 +194,42 @@ public:
     /// Decompression restores delta values and then performs an inclusive scan
     /// to reconstruct absolute row ids.
     void deserialize(ReadBuffer & in, PostingList & out);
+
     void clear()
     {
-        reset();
-        cardinality = 0;
+        resetCurrentSegment();
+
+        total_rows = 0;
         compressed_data.clear();
-        segments.clear();
+        segment_descriptors.clear();
     }
-    size_t getSizeInBytes() const { return compressed_data.size(); }
+
 private:
-    void reset()
+    void resetCurrentSegment()
     {
-        current.clear();
-        total_in_current_segment = 0;
-        prev_value = {};
+        current_segment.clear();
+        rows_in_current_segment = 0;
+        prev_row = 0;
     }
 
     /// Flush current segment:
     /// - compress pending partial block
     /// - reset block state so a new segment can start
-    void flushSegment()
+    void flushCurrentSegment()
     {
-       chassert(total_in_current_segment <= posting_list_block_size);
-       if (!current.empty())
-           compressBlock(current);
+       chassert(rows_in_current_segment <= posting_list_block_size);
 
-        reset();
+       if (!current_segment.empty())
+           compressBlock(current_segment);
+
+        resetCurrentSegment();
     }
 
     /// Write all segments to output and fill TokenPostingsInfo:
     /// - offsets: byte offsets in output where each segment begins
-    /// - ranges: [row_offset_begin,row_offset_end] rowid range for each segment
+    /// - ranges: [row_begin, row_end] row range for each segment
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
+
     /// Compress one block of delta values and append it to `compressed_data`.
     ///
     /// Block layout:
@@ -237,38 +241,23 @@ private:
     /// Also updates current segment metadata (count, max, payload size).
     void compressBlock(std::span<uint32_t> segment);
 
-    /// Decode one compressed block into `current` and reconstruct absolute row ids.
+    /// Decode one compressed block into `current_segment` and reconstruct absolute row ids.
     ///
     /// - Reads bits-width byte
-    /// - Codec::decode fills `current` with delta values
-    /// - inclusive_scan converts deltas -> row ids using `prev_value` as initial prefix
-    /// - Updates prev_value to the last decoded row id
-    static void decodeOneBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_value, std::vector<uint32_t> & current);
-
-    ALWAYS_INLINE static void encodeU8(uint8_t x, std::span<char> & out)
-    {
-        out[0] = static_cast<char>(x);
-        out = out.subspan(1);
-    }
-
-    ALWAYS_INLINE static uint8_t decodeU8(std::span<const std::byte> & in)
-    {
-        auto v = static_cast<uint8_t>(in[0]);
-        in = in.subspan(1);
-        return v;
-    }
+    /// - Codec::decode fills `current_segment` with delta values
+    /// - inclusive_scan converts deltas -> row ids using `prev_row` as initial prefix
+    /// - Updates prev_row to the last decoded row id
+    static void decodeOneBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row, std::vector<uint32_t> & current_segment);
 
     std::string compressed_data;
-    uint32_t prev_value = {};
-
+    uint32_t prev_row = 0;
     /// Number of values added in the current segment.
-    size_t total_in_current_segment = 0;
-    std::vector<uint32_t> current;
+    size_t rows_in_current_segment = 0;
+    std::vector<uint32_t> current_segment;
     size_t posting_list_block_size = 1024 * 1024;
-    std::vector<SegmentDescriptor> segments;
-
+    std::vector<SegmentDescriptor> segment_descriptors;
     /// Total number of postings added across all segments.
-    size_t cardinality = 0;
+    size_t total_rows = 0;
     /// Used as the globally unique identifier for a codec, and it is defined in IPostingListCodec.
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
 };
