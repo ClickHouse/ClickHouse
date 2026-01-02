@@ -4,6 +4,7 @@ import sys
 import argparse
 import subprocess
 import time
+import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import requests
@@ -446,6 +447,58 @@ def main():
         )
     except Exception:
         pass
+    # Post-run: push keeper metrics from pytest stdout using CI DB creds like integration does
+    try:
+        pushed_rows = 0
+        helper = None
+        try:
+            from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
+            from tests.stress.keeper.framework.io.sink import ensure_sink_schema  # type: ignore
+
+            helper = ClickHouseHelper()
+            ensure_sink_schema()
+        except Exception:
+            helper = None
+        if helper is not None and Path(pytest_log_file).exists():
+            rows = []
+            inside = False
+            with open(pytest_log_file, "r", encoding="utf-8", errors="ignore") as lf:
+                for line in lf:
+                    s = line.strip()
+                    if s == "[keeper][push-metrics] begin":
+                        inside = True
+                        continue
+                    if s == "[keeper][push-metrics] end":
+                        inside = False
+                        continue
+                    if not inside:
+                        continue
+                    if not s or s[0] != "{" or "value" not in s:
+                        continue
+                    try:
+                        # validate JSON and required keys
+                        obj = json.loads(s)
+                        if all(k in obj for k in ("run_id", "commit_sha", "backend", "scenario", "node", "stage", "source", "name", "value")):
+                            rows.append(s)
+                    except Exception:
+                        pass
+                    if len(rows) >= 1000:
+                        body = "\n".join(rows)
+                        ClickHouseHelper.insert_json_str(helper.url, helper.auth, "keeper_stress_tests", "keeper_metrics_ts", body)
+                        pushed_rows += len(rows)
+                        rows = []
+            if rows:
+                body = "\n".join(rows)
+                ClickHouseHelper.insert_json_str(helper.url, helper.auth, "keeper_stress_tests", "keeper_metrics_ts", body)
+                pushed_rows += len(rows)
+        results.append(
+            Result.from_commands_run(
+                name=f"CIDB Push (post-run): keeper_metrics rows={pushed_rows}",
+                command=["true"],
+            )
+        )
+    except Exception:
+        pass
     try:
         for p in [pytest_log_file, report_file, junit_file]:
             try:
@@ -501,14 +554,38 @@ def main():
         backends_counts = {}
         bench_rows = 0
         checks_rows = 0
-        helper = None
-        try:
-            from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
+        # Resolve CIDB URL/auth from environment first, fall back to ClickHouseHelper (SSM)
+        cidb_url = (
+            env.get("CI_DB_URL") or env.get("CLICKHOUSE_TEST_STAT_URL") or ""
+        )
+        cidb_user = (
+            env.get("CI_DB_USER") or env.get("CLICKHOUSE_TEST_STAT_LOGIN") or ""
+        )
+        cidb_pass = (
+            env.get("CI_DB_PASSWORD")
+            or env.get("CLICKHOUSE_TEST_STAT_PASSWORD")
+            or ""
+        )
+        auth = (
+            {"X-ClickHouse-User": cidb_user, "X-ClickHouse-Key": cidb_pass}
+            if cidb_user and cidb_pass
+            else None
+        )
+        if not (cidb_url and auth):
+            try:
+                from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
 
-            helper = ClickHouseHelper()
-        except Exception:
-            helper = None
-        if helper is not None:
+                _h = ClickHouseHelper()
+                cidb_url = getattr(_h, "url", "") or cidb_url
+                if not auth and isinstance(getattr(_h, "auth", None), dict):
+                    auth = {
+                        "X-ClickHouse-User": _h.auth.get("X-ClickHouse-User", ""),
+                        "X-ClickHouse-Key": _h.auth.get("X-ClickHouse-Key", ""),
+                    }
+            except Exception:
+                pass
+        have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
+        if have_cidb:
             try:
                 if sha and sha != "local":
                     filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
@@ -520,7 +597,7 @@ def main():
                     f"WHERE {filt_metrics} "
                     "GROUP BY backend ORDER BY backend FORMAT TabSeparated"
                 )
-                r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                 txt = (r.text or "").strip()
                 for line in txt.splitlines():
                     parts = line.split("\t")
@@ -537,7 +614,7 @@ def main():
                     "SELECT count() FROM keeper_stress_tests.keeper_metrics_ts "
                     f"WHERE {filt_bench} FORMAT TabSeparated"
                 )
-                r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                 t2 = (r.text or "").strip()
                 bench_rows = int(float(t2.splitlines()[0])) if t2 else 0
             except Exception:
@@ -560,7 +637,7 @@ def main():
                         f"WHERE {name_filter} "
                         "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
-                r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                 t3 = (r.text or "").strip()
                 checks_rows = int(float(t3.splitlines()[0])) if t3 else 0
             except Exception:
@@ -580,7 +657,7 @@ def main():
                         "FROM keeper_stress_tests.keeper_metrics_ts "
                         f"WHERE {filt} ORDER BY ts DESC LIMIT 30 FORMAT TabSeparated"
                     )
-                    r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                    r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                     mtxt = (r.text or "").strip()
                 except Exception:
                     mtxt = ""
@@ -606,7 +683,7 @@ def main():
                             f"WHERE {name_filter} "
                             "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
                         )
-                    r = requests.get(helper.url, params={"query": q}, headers=helper.auth, timeout=30)
+                    r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                     ctxt = (r.text or "").strip()
                 except Exception:
                     ctxt = ""
@@ -656,7 +733,7 @@ def main():
         except Exception:
             pass
         try:
-            if helper is not None and sha and sha != "local":
+            if have_cidb and sha and sha != "local":
                 gate_cmd = (
                     "bash -lc \"" \
                     f"echo 'CIDB Sanity Gate: sha={sha} bench_rows={bench_rows} checks_rows={checks_rows}'; " \
@@ -669,14 +746,15 @@ def main():
                         with_info_on_failure=True,
                     )
                 )
-            elif sha and sha != "local" and helper is None:
+            elif sha and sha != "local" and not have_cidb:
+                # Non-blocking: record a warning but don't fail the job as integration post-run will push results
                 results.append(
                     Result.from_commands_run(
                         name="CIDB Sanity Gate (missing credentials)",
                         command=[
-                            "bash -lc 'echo missing CI DB credentials/helper; exit 1'"
+                            "bash -lc 'echo missing CI DB credentials/helper; echo will not block; true'"
                         ],
-                        with_info_on_failure=True,
+                        with_info=True,
                     )
                 )
         except Exception:
