@@ -26,23 +26,23 @@ struct PostingListBuilder;
 
 /// PostingListCodecImpl
 ///
-/// A serializer/deserializer for a postings list (sorted docIDs) stored in a compact
+/// A serializer/deserializer for a postings list (sorted row ids) stored in a compact
 /// block-compressed format.
 ///
 /// High-level idea:
-/// - Input docIDs are strictly increasing.
+/// - Input row ids are strictly increasing.
 /// - Values are encoded as deltas (gaps) and compressed in fixed-size blocks (BLOCK_SIZE).
 /// - Each compressed block is stored as: [1 byte bits-width][bitpacked payload].
 /// - A posting list may be split into "segments" (logical chunks, controlled by postings_list_block_size)
-///   to simplify metadata and to support multiple ranges per token (min/max docID per segment).
+///   to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
 class PostingListCodecImpl
 {
     /// Per-segment header written before each segment payload.
     ///
     /// - bytes: number of compressed bytes following this header (segment payload size)
-    /// - cardinality: number of postings (docIDs) in this segment
-    /// - base_value: the first docID in the segment (also used to restore deltas)
+    /// - cardinality: number of postings (row ids) in this segment
+    /// - base_value: the first row id in the segment (also used to restore deltas)
     struct Header
     {
         Header() = default;
@@ -158,7 +158,7 @@ public:
     bool empty() const { return size(); }
 
 
-    /// Add a single increasing docID.
+    /// Add a single increasing row id.
     ///
     /// Internally we store deltas (gaps) in `current` until reaching BLOCK_SIZE,
     /// then compress the full block into `compressed_data`.
@@ -192,7 +192,7 @@ public:
     ///   Header + [compressed bytes]
     ///
     /// Decompression restores delta values and then performs an inclusive scan
-    /// to reconstruct absolute docIDs.
+    /// to reconstruct absolute row ids.
     void deserialize(ReadBuffer & in, PostingList & out);
     void clear()
     {
@@ -237,12 +237,12 @@ private:
     /// Also updates current segment metadata (count, max, payload size).
     void compressBlock(std::span<uint32_t> segment);
 
-    /// Decode one compressed block into `current` and reconstruct absolute docIDs.
+    /// Decode one compressed block into `current` and reconstruct absolute row ids.
     ///
     /// - Reads bits-width byte
     /// - Codec::decode fills `current` with delta values
-    /// - inclusive_scan converts deltas -> docIDs using `prev_value` as initial prefix
-    /// - Updates prev_value to the last decoded docID
+    /// - inclusive_scan converts deltas -> row ids using `prev_value` as initial prefix
+    /// - Updates prev_value to the last decoded row id
     static void decodeOneBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_value, std::vector<uint32_t> & current);
 
     ALWAYS_INLINE static void encodeU8(uint8_t x, std::span<char> & out)
@@ -280,8 +280,8 @@ struct PostingListCodecSIMDComp : public  IPostingListCodec
 
     PostingListCodecSIMDComp();
 
-    void encode(const PostingListBuilder & builder, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & wb) const override;
-    void decode(ReadBuffer & rb, PostingList & posting_list) const override;
+    void encode(const PostingListBuilder & builder, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void decode(ReadBuffer & in, PostingList & posting_list) const override;
 };
 
 }
