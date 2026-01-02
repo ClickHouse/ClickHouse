@@ -2485,10 +2485,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     {
         ct->set_uuid(rg.nextUUID());
     }
-    if (next.cluster.has_value())
-    {
-        ct->mutable_cluster()->set_cluster(next.cluster.value());
-    }
+    setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
         || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96)
         || (next.projs.empty() && next.idxs.empty() && next.constrs.empty() && rg.nextMediumNumber() < 11))
@@ -2721,10 +2718,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
 
     setClusterInfo(rg, next);
-    if (next.cluster.has_value())
-    {
-        cd->mutable_cluster()->set_cluster(next.cluster.value());
-    }
+    setClusterClause(rg, next.cluster, cd->mutable_cluster());
 
     layout->set_layout(dl);
     /*

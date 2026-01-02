@@ -284,6 +284,17 @@ void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) 
     store->set_storage_name(rg.pickRandomly(fc.disks));
 }
 
+void StatementGenerator::setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu) const
+{
+    if (cluster.has_value() || !fc.clusters.empty())
+    {
+        clu->set_cluster(
+            (cluster.has_value() && (!this->allow_not_deterministic || fc.clusters.empty() || rg.nextSmallNumber() < 7))
+                ? cluster.value()
+                : rg.pickRandomly(fc.clusters));
+    }
+}
+
 void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, const bool create, SettingValues * vals)
 {
     std::uniform_int_distribution<size_t> settings_range(1, fc.hot_table_settings.size());
@@ -643,10 +654,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         cv->set_uuid(rg.nextUUID());
     }
     setClusterInfo(rg, next);
-    if (next.cluster.has_value())
-    {
-        cv->mutable_cluster()->set_cluster(next.cluster.value());
-    }
+    setClusterClause(rg, next.cluster, cv->mutable_cluster());
     sparen->set_paren(rg.nextSmallNumber() < 9);
     this->levels[this->current_level] = QueryLevel(this->current_level);
     this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
@@ -730,10 +738,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     {
         UNREACHABLE();
     }
-    if (cluster.has_value())
-    {
-        dp->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, dp->mutable_cluster());
     if (dp->sobject() != SQLObject::FUNCTION)
     {
         dp->set_sync(rg.nextSmallNumber() < 3);
@@ -775,8 +780,6 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
 
 void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
-    const std::optional<String> & cluster = t.getCluster();
-
     t.setName(ot->mutable_est(), false);
     if (rg.nextBool())
     {
@@ -806,10 +809,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
             dde->set_ded_star(true);
         }
     }
-    if (cluster.has_value())
-    {
-        ot->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, t.getCluster(), ot->mutable_cluster());
     ot->set_final(
         t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4));
@@ -944,10 +944,10 @@ bool StatementGenerator::tableOrFunctionRef(
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
-        if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
+        if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-            ufunc->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+            setClusterClause(rg, cluster, ufunc->mutable_cluster());
         }
         else
         {
@@ -1397,13 +1397,8 @@ void StatementGenerator::generateNextDelete(RandomGenerator & rg, const SQLTable
 template <typename T>
 void StatementGenerator::generateNextUpdateOrDeleteOnTable(RandomGenerator & rg, const SQLTable & t, T * st)
 {
-    const std::optional<String> & cluster = t.getCluster();
-
     t.setName(st->mutable_est(), false);
-    if (cluster.has_value())
-    {
-        st->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, t.getCluster(), st->mutable_cluster());
     if constexpr (std::is_same_v<T, LightDelete>)
     {
         generateNextDelete(rg, t, st->mutable_del());
@@ -1465,10 +1460,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     {
         UNREACHABLE();
     }
-    if (cluster.has_value())
-    {
-        trunc->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, trunc->mutable_cluster());
     trunc->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
@@ -2593,10 +2585,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
     {
         UNREACHABLE();
     }
-    if (cluster.has_value())
-    {
-        at->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, at->mutable_cluster());
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, at->mutable_setting_values());
@@ -2655,10 +2644,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     {
         att->set_uuid(rg.nextUUID());
     }
-    if (cluster.has_value())
-    {
-        att->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, att->mutable_cluster());
     if (att->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 3)
     {
         att->set_as_replicated(rg.nextBool());
@@ -2717,10 +2703,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     {
         UNREACHABLE();
     }
-    if (cluster.has_value())
-    {
-        det->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, det->mutable_cluster());
     det->set_permanently(det->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 4);
     det->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
@@ -3800,14 +3783,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     }
 
     /// Set cluster option when that's the case
-    if (cluster.has_value())
-    {
-        sc->mutable_cluster()->set_cluster(cluster.value());
-    }
-    else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
-    {
-        sc->mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
-    }
+    setClusterClause(rg, cluster, sc->mutable_cluster());
 }
 
 void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowStatement * st)
@@ -4311,10 +4287,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     {
         UNREACHABLE();
     }
-    if (cluster.has_value())
-    {
-        br->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, br->mutable_cluster());
     setBackupDestination(rg, br);
 
     if (rg.nextBool())
@@ -4392,10 +4365,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         }
     }
 
-    if (cluster.has_value())
-    {
-        br->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, br->mutable_cluster());
     br->set_out(backup.outf);
     br->mutable_params()->CopyFrom(backup.out_params);
     if (backup.out_format.has_value())
@@ -4520,10 +4490,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
             d->setName(db);
         }
     }
-    if (cluster.has_value())
-    {
-        ren->mutable_cluster()->set_cluster(cluster.value());
-    }
+    setClusterClause(rg, cluster, ren->mutable_cluster());
     if (rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, ren->mutable_setting_values());

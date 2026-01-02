@@ -1762,7 +1762,7 @@ message Function {
 }
 
 message Cluster {
-    required string cluster = 1;
+    optional string cluster = 1;
 }
 
 message Storage {
