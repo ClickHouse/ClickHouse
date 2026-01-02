@@ -19,7 +19,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & indices_to_recalc,
-    const PartLevelStatistics & part_level_statistics_,
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
@@ -28,7 +27,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
           metadata_snapshot_,
-          part_level_statistics_,
           columns_list_,
           /*reset_columns=*/true)
 {
@@ -78,7 +76,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 
     writer->write(block, nullptr);
     new_serialization_infos.add(block);
-    part_level_statistics.update(block, metadata_snapshot);
 }
 
 MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & all_gathered_data)
@@ -90,9 +87,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const auto & filename : checksums_to_remove)
         all_gathered_data.checksums.files.erase(filename);
-
-    if (part_level_statistics.build_statistics)
-        all_gathered_data.part_level_statistics.statistics.replace(part_level_statistics.statistics);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
     {

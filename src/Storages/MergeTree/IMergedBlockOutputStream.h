@@ -16,13 +16,7 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct PartLevelStatistics
 {
     ColumnsStatistics statistics;
-    bool build_statistics = false;
-
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
-    bool build_minmax_idx = false;
-
-    void addStatistics(ColumnsStatistics stats, bool need_build);
-    void addMinMaxIndex(IMergeTreeDataPart::MinMaxIndexPtr idx, bool need_build);
 
     void update(const Block & block, const StorageMetadataPtr & metadata_snapshot);
 };
@@ -34,7 +28,6 @@ public:
         MergeTreeSettingsPtr storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const PartLevelStatistics & part_level_statistics_,
         const NamesAndTypesList & columns_list,
         bool reset_columns_);
 
@@ -46,7 +39,7 @@ public:
     {
         MergeTreeData::DataPart::Checksums checksums;
         ColumnsSubstreams columns_substreams;
-        PartLevelStatistics part_level_statistics;
+        PartLevelStatistics part_statistics;
     };
 
     virtual void write(const Block & block) = 0;
@@ -89,7 +82,6 @@ protected:
 
     MutableDataPartStoragePtr data_part_storage;
     MergeTreeDataPartWriterPtr writer;
-    PartLevelStatistics part_level_statistics;
 
     bool reset_columns = false;
     SerializationInfo::Settings info_settings;

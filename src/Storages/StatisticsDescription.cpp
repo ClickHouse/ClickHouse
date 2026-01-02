@@ -85,7 +85,7 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const
 {
-    return types_to_desc == other.types_to_desc;
+    return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
 bool ColumnStatisticsDescription::empty() const

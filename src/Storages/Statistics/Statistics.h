@@ -122,7 +122,6 @@ public:
     // void deserialize(ReadBuffer & buf);
     void build(const Block & block);
     void merge(const ColumnsStatistics & other);
-    void replace(const ColumnsStatistics & other);
     Estimates getEstimates() const;
 
     static String getStatisticName(const String & column_name) { return STATS_FILE_PREFIX + column_name; }

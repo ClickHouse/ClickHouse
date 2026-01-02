@@ -391,18 +391,6 @@ void ColumnsStatistics::merge(const ColumnsStatistics & other)
     }
 }
 
-void ColumnsStatistics::replace(const ColumnsStatistics & other)
-{
-    for (const auto & [column_name, stat] : other)
-    {
-        auto it = find(column_name);
-        if (it == end())
-            emplace(column_name, stat);
-        else
-            it->second = stat;
-    }
-}
-
 Estimates ColumnsStatistics::getEstimates() const
 {
     Estimates estimates;

@@ -20,26 +20,14 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
-void PartLevelStatistics::addStatistics(ColumnsStatistics stats, bool need_build)
-{
-    statistics = need_build ? stats.cloneEmpty() : std::move(stats);
-    build_statistics = need_build;
-}
-
-void PartLevelStatistics::addMinMaxIndex(IMergeTreeDataPart::MinMaxIndexPtr idx, bool need_build)
-{
-    minmax_idx = need_build ? std::make_shared<IMergeTreeDataPart::MinMaxIndex>() : std::move(idx);
-    build_minmax_idx = need_build;
-}
-
 void PartLevelStatistics::update(const Block & block, const StorageMetadataPtr & metadata_snapshot)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
 
-    if (build_statistics)
+    if (!statistics.empty())
         statistics.build(block);
 
-    if (minmax_idx && build_minmax_idx)
+    if (minmax_idx)
         minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 }
 
@@ -47,13 +35,11 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const PartLevelStatistics & part_level_statistics_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
     : storage_settings(std::move(storage_settings_))
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(std::move(data_part_storage_))
-    , part_level_statistics(part_level_statistics_)
     , reset_columns(reset_columns_)
     , info_settings
     {

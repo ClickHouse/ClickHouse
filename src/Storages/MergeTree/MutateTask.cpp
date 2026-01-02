@@ -1135,7 +1135,7 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_serialization));
     }
 
-    if (!all_gathered_data.part_level_statistics.statistics.empty())
+    if (!all_gathered_data.part_statistics.statistics.empty())
     {
         /// TODO: write statistics...
     }
@@ -1920,19 +1920,12 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
-        PartLevelStatistics part_level_statistics;
-        part_level_statistics.addStatistics(stats_to_rewrite, true);
-
-        auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        part_level_statistics.addMinMaxIndex(minmax_idx, true);
-
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->data->getSettings(),
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
-            part_level_statistics,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
@@ -1958,7 +1951,7 @@ private:
         ctx->mutating_pipeline.reset();
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
-        out_mut->finalizePart(ctx->new_data_part, ctx->need_sync, nullptr, &ctx->all_gathered_data);
+        out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, nullptr);
         ctx->out.reset();
     }
 
@@ -2137,7 +2130,7 @@ private:
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
         ctx->all_gathered_data.checksums = ctx->source_part->checksums;
-        ctx->all_gathered_data.part_level_statistics.addStatistics(ctx->source_part->loadStatistics(), false);
+        ctx->all_gathered_data.part_statistics.statistics = ctx->source_part->loadStatistics();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         /// We weed to remove checksums for dropped indices
@@ -2183,16 +2176,12 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-            PartLevelStatistics part_level_statistics;
-            part_level_statistics.addStatistics(ctx->stats_to_recalc, true);
-
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->data->getSettings(),
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                part_level_statistics,
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk());

@@ -20,7 +20,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        const PartLevelStatistics & part_level_statistics_,
         CompressionCodecPtr default_codec_,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
@@ -62,15 +61,15 @@ public:
     /// If part is new and contains projections, they should be added before invoking this method.
     Finalizer finalizePartAsync(
         const MergeTreeMutableDataPartPtr & new_part,
+        const GatheredData & gathered_data,
         bool sync,
-        const NamesAndTypesList * total_columns_list = nullptr,
-        const GatheredData * gathered_data = nullptr);
+        const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
+        const GatheredData & gathered_data,
         bool sync,
-        const NamesAndTypesList * total_columns_list = nullptr,
-        const GatheredData * gathered_data = nullptr);
+        const NamesAndTypesList * total_columns_list = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -82,7 +81,7 @@ private:
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
         MergeTreeData::DataPart::Checksums & checksums,
-        const ColumnsSubstreams & additional_columns_substreams);
+        const GatheredData & gathered_data);
 
     NamesAndTypesList columns_list;
     size_t rows_count = 0;

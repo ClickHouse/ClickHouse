@@ -21,7 +21,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & indices_to_recalc,
-        const PartLevelStatistics & part_level_statistics_,
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         size_t part_uncompressed_bytes,

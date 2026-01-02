@@ -226,19 +226,6 @@ private:
     size_t final_size = 0;
 };
 
-static std::pair<ColumnsStatistics, bool> getMergedStatistics(const MergeTreeData::DataPartsVector & parts)
-{
-    ColumnsStatistics merged_statistics;
-
-    for (const auto & part : parts)
-    {
-        auto part_statistics = part->loadStatistics();
-        merged_statistics.merge(part_statistics);
-    }
-
-    return {merged_statistics, true};
-}
-
 static void addMissedColumnsToSerializationInfos(
     size_t num_rows_in_parts,
     const Names & part_columns,
@@ -639,40 +626,38 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
-    ColumnsStatistics source_statistics;
-    bool need_rebuild_statistics = false;
+    global_ctx->gathered_data.part_statistics.minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+    global_ctx->gathered_data.part_statistics.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
 
-    if (global_ctx->merge_may_reduce_rows)
+    if (!global_ctx->merge_may_reduce_rows)
     {
-        source_statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
-        need_rebuild_statistics = true;
-    }
-    else
-    {
-        std::tie(source_statistics, need_rebuild_statistics) = getMergedStatistics(global_ctx->future_part->parts);
-    }
-
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
-    bool need_rebuild_minmax_idx = false;
-
-    if (!global_ctx->new_data_part->isProjectionPart())
-    {
-        minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-
-        if (global_ctx->merge_may_reduce_rows)
+        for (const auto & part : global_ctx->future_part->parts)
         {
-            need_rebuild_minmax_idx = true;
-        }
-        else
-        {
-            for (const auto & part : global_ctx->future_part->parts)
+            /// Skip empty parts,
+            /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
+            /// since they can incorrectly set min,
+            /// that will be changed after one more merge/OPTIMIZE.
+            if (part->isEmpty())
+                continue;
+
+            global_ctx->gathered_data.part_statistics.minmax_idx->merge(*part->minmax_idx);
+            auto part_statistics = part->loadStatistics();
+            const auto & result_statistics = global_ctx->gathered_data.part_statistics.statistics;
+
+            for (const auto & [column_name, column_stats] : result_statistics)
             {
-                /// Skip empty parts,
-                /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
-                /// since they can incorrectly set min,
-                /// that will be changed after one more merge/OPTIMIZE.
-                if (!part->isEmpty())
-                    minmax_idx->merge(*part->minmax_idx);
+                auto it = part_statistics.find(column_name);
+                const auto & stat_desc = column_stats->getDescription();
+
+                if (it == part_statistics.end() || column_stats->getDescription() != it->second->getDescription())
+                {
+                    auto new_stat_ptr = std::make_shared<ColumnStatistics>(stat_desc, stat_desc.data_type);
+                    global_ctx->statistics_to_build_by_part[part->name].emplace(column_name, std::move(new_stat_ptr));
+                }
+                else
+                {
+                    column_stats->merge(it->second);
+                }
             }
         }
     }
@@ -801,18 +786,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     NameSet merged_columns_set = global_ctx->merging_columns.getNameSet();
 
-    for (const auto & [column_name, statistics] : source_statistics)
-    {
-        if (merged_columns_set.contains(column_name))
-            global_ctx->merging_statistics.emplace(column_name, statistics);
-        else
-            global_ctx->gathering_statistics.emplace(column_name, statistics);
-    }
-
-    PartLevelStatistics part_level_statistics;
-    part_level_statistics.addStatistics(global_ctx->merging_statistics, need_rebuild_statistics);
-    part_level_statistics.addMinMaxIndex(std::move(minmax_idx), need_rebuild_minmax_idx);
-
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
         ctx->sum_uncompressed_bytes_upper_bound,
@@ -826,7 +799,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
-        part_level_statistics,
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
@@ -1445,16 +1417,12 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
     auto statistics_for_columns = getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot);
 
-    PartLevelStatistics part_level_statistics;
-    part_level_statistics.addStatistics(std::move(statistics_for_columns), true);
-
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->data_settings,
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
-        part_level_statistics,
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
@@ -1542,7 +1510,7 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 }
 
 
-bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() const
+bool MergeTask::MergeProjectionsStage::mergeStatisticsAndPrepareProjections() const
 {
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
@@ -1651,9 +1619,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, nullptr, &global_ctx->gathered_data);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->gathered_data);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
