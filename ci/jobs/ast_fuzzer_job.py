@@ -78,7 +78,14 @@ def run_fuzz_job(check_name: str):
         f.write("\n".join(changed_files))
 
     Shell.check(command=run_command, verbose=True)
-    subprocess.check_call(f"chmod 777 {temp_dir}", shell=True)
+    
+    # Fix file ownership after running docker as root
+    logging.info("Fixing file ownership after running docker as root")
+    uid = os.getuid()
+    gid = os.getgid()
+    chown_cmd = f"docker run --rm --user root --volume {cwd}:{cwd} --workdir={cwd} {docker_image} sh -c 'find {temp_dir} -user root -exec chown {uid}:{gid} {{}} +'"
+    logging.info("Run ownership fix command: %s", chown_cmd)
+    Shell.check(chown_cmd, verbose=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"
