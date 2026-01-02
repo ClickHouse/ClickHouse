@@ -259,7 +259,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -322,7 +322,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
@@ -7108,10 +7108,10 @@ bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
 
-    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
+    if (!settings_ref[Setting::enable_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
         return false;
 
-    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+    return settings_ref[Setting::enable_parallel_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && settings_ref[Setting::max_parallel_replicas] > 1;
 }
@@ -7131,7 +7131,7 @@ bool Context::canUseParallelReplicasCustomKey() const
     const auto & settings_ref = getSettingsRef();
 
     const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
-    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
+    const bool parallel_replicas_enabled = settings_ref[Setting::enable_parallel_replicas] > 0;
     const bool is_parallel_replicas_with_custom_key =
         settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
         settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
@@ -7154,7 +7154,7 @@ bool Context::canUseOffsetParallelReplicas() const
      * We combine them together into one group for convenience.
      */
     const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
-    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
+    const bool parallel_replicas_enabled = settings_ref[Setting::enable_parallel_replicas] > 0;
     const bool is_parallel_replicas_with_custom_key_or_native_sampling_key =
         settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY ||
         settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||

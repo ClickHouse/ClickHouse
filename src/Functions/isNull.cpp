@@ -15,12 +15,12 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 FunctionPtr FunctionIsNull::create(ContextPtr context)
 {
-    return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+    return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::enable_analyzer]);
 }
 
 ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const

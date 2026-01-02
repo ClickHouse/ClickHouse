@@ -61,7 +61,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -1264,7 +1264,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 
     try
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef()[Setting::enable_analyzer])
             return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block);
         else
         {

@@ -48,7 +48,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace
@@ -482,7 +482,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto context = getContext();
     BlockIO io;
     std::optional<InterpreterSelectQuery> interpreter_holder;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
         io = interpreter.execute();

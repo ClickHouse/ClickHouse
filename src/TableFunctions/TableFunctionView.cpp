@@ -15,7 +15,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -56,7 +56,7 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
 
     SharedHeader sample_block;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
     else
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);

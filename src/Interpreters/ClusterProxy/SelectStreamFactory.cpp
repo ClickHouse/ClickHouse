@@ -38,7 +38,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
@@ -77,7 +77,7 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (!context->getSettingsRef()[Setting::enable_analyzer])
     {
         if (table_function_ptr)
             select_query.addTableFunction(table_function_ptr);
@@ -175,7 +175,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        if (settings[Setting::enable_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
                 query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
@@ -184,7 +184,7 @@ void SelectStreamFactory::createForShardImpl(
         }
         else
         {
-            if (settings[Setting::allow_experimental_analyzer])
+            if (settings[Setting::enable_analyzer])
                 std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
             else
                 shard_header = header;

@@ -20,7 +20,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -29,7 +29,7 @@ extern const int UNSUPPORTED_METHOD;
 }
 
 ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
-    : use_analyzer(context_->getSettingsRef()[Setting::allow_experimental_analyzer])
+    : use_analyzer(context_->getSettingsRef()[Setting::enable_analyzer])
 {
 }
 
