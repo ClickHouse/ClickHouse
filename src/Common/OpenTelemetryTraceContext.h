@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/OpenTelemetryTracingContext.h>
+#include <base/types.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>
 
@@ -44,6 +45,13 @@ enum class SpanKind : uint8_t
     CONSUMER = 4
 };
 
+enum class SpanStatus : uint8_t
+{
+    UNSET = 0,
+    OK = 1,
+    ERROR = 2
+};
+
 struct Span
 {
     UUID trace_id = {};
@@ -53,7 +61,9 @@ struct Span
     UInt64 start_time_us = 0;
     UInt64 finish_time_us = 0;
     SpanKind kind = SpanKind::INTERNAL;
-    Map attributes;
+    SpanStatus status_code = SpanStatus::UNSET;
+    String status_message = {};
+    std::unordered_map<String, String> attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
@@ -72,6 +82,18 @@ struct Span
         return trace_id != UUID();
     }
 
+    void start()
+    {
+        start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    void finish()
+    {
+        finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
 private:
     template <class T>
     bool addAttributeImpl(std::string_view name, T value) noexcept
@@ -79,9 +101,9 @@ private:
         try
         {
             if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, String> || std::is_same_v<T, const char *>)
-                this->attributes.push_back(Tuple{name, std::move(value)});
+                this->attributes[String(name)] = String(value);
             else
-                this->attributes.push_back(Tuple{name, toString(value)});
+                this->attributes[String(name)] = toString(value);
         }
         catch (...)
         {
@@ -110,6 +132,8 @@ struct TracingContextOnThread : TracingContext
 
 /// Get tracing context on current thread
 const TracingContextOnThread& CurrentContext();
+
+void SetTraceFlagInCurrentContext(UInt8 flag, bool enable);
 
 /// Holder of tracing context.
 /// It should be initialized at the beginning of each thread execution.
@@ -175,11 +199,15 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 struct SpanHolder : public Span
 {
     explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
+    SpanHolder(std::string_view, SpanKind _kind, std::unordered_map<String, String> _attributes);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
     void finish(std::chrono::system_clock::time_point time) noexcept;
+
+    /// All changes made to the current tracing context while the scope is active need to be restored.
+    UInt8 old_trace_flags;
 };
 
 }
