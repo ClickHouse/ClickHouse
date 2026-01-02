@@ -17,6 +17,8 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
+FilesType = List[Union[str, Path]]
+
 
 @dataclasses.dataclass
 class Result(MetaClasses.Serializable):
@@ -64,10 +66,22 @@ class Result(MetaClasses.Serializable):
     start_time: Optional[float] = None
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
-    files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
+    files: FilesType = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    @staticmethod
+    def _convert_to_relative_path(files: FilesType) -> FilesType:
+        for i, file_path in enumerate(files):
+            t = type(file_path)
+            file_path = Path(file_path)
+            if file_path.is_absolute():
+                files[i] = t(Path(file_path).relative_to(Path.cwd()))
+        return files
+
+    def __post_init__(self):
+        self.files = self._convert_to_relative_path(self.files)
 
     @staticmethod
     def create_from(
@@ -216,7 +230,7 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def set_files(self, files) -> "Result":
+    def set_files(self, files: FilesType) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]
         for file in files:
@@ -231,7 +245,7 @@ class Result(MetaClasses.Serializable):
                     f"WARNING: File [{file}] is already present in Result [{self.name}] - skip"
                 )
                 files.remove(file)
-        self.files += files
+        self.files += self._convert_to_relative_path(files)
         self.dump()
         return self
 
