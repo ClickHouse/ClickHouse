@@ -498,7 +498,7 @@ When a function that doesn't explicitly handle Variant types receives a Variant 
 
 This allows you to use regular functions with Variant columns without special handling.
 
-### Example
+**Example:**
 
 ```sql
 CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
@@ -516,21 +516,21 @@ SELECT toString(v) FROM test;
 
 The function `toString` is automatically called on `UInt32` and `String` variants separately, and results are combined into `Nullable(String)`.
 
-### Result type behavior
+**Result type behavior:**
 
 The result type depends on what the function returns for each variant:
 
-- **Same result type for all variants** → `Nullable(T)`
+- **Same result type for all variants**: `Nullable(T)`
   ```sql
   SELECT toString(v) FROM test; -- All variants return String → Nullable(String)
   ```
 
-- **Different result types** → `Variant(T1, T2, ...)`
+- **Different result types**: `Variant(T1, T2, ...)`
   ```sql
   SELECT toUInt32OrNull(v) FROM test; -- May return Variant of different types
   ```
 
-- **Type incompatibility** → `NULL` for incompatible variants
+- **Type incompatibility**: `NULL` for incompatible variants
   ```sql
   CREATE TABLE test2 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
   INSERT INTO test2 VALUES ([1,2,3]), (42);
