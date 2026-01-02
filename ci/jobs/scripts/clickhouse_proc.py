@@ -696,6 +696,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    @staticmethod
+    def _chmod(files):
+        for file in files:
+            try:
+                os.chmod(file, 0o666)
+            except Exception as ex:
+                print(f"WARNING: Failed to chmod {file}: {ex}")
+
     def prepare_logs(self, info, all=False):
         res = []
         try:
@@ -719,6 +727,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 if Path(self.CH_LOCAL_LOG).exists():
                     res.append(self.CH_LOCAL_LOG)
             self.logs = res
+            self._chmod(self.logs)
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
