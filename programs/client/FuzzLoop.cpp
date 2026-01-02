@@ -21,6 +21,8 @@
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
+#include <unordered_set>
+
 #if USE_BUZZHOUSE
 #    include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #    include <Client/BuzzHouse/Generator/FuzzConfig.h>
@@ -619,7 +621,10 @@ bool Client::buzzHouse()
         const uint32_t max_initial_databases = std::min(UINT32_C(3), fuzz_config->max_databases);
         uint32_t nsuccessfull_create_table = 0;
         uint32_t total_create_table_tries = 0;
-        const uint32_t max_initial_tables = std::min(UINT32_C(10), fuzz_config->max_tables);
+        const uint32_t max_initial_tables
+            = std::min(fuzz_config->settings_oracle_only ? fuzz_config->max_tables : UINT32_C(10), fuzz_config->max_tables);
+        bool tables_populated_for_settings_oracle = false;
+        std::unordered_set<uint32_t> populated_tables_for_settings_oracle;
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -672,6 +677,116 @@ bool Client::buzzHouse()
             }
             else
             {
+                if (fuzz_config->settings_oracle_only)
+                {
+                    if (!tables_populated_for_settings_oracle)
+                    {
+                        /// Ensure we have non-empty MergeTree tables, otherwise primary key pruning will not be exercised.
+                        const auto tables_to_populate = gen.filterCollection<BuzzHouse::SQLTable>(
+                            [](BuzzHouse::SQLTable & t)
+                            { return t.isAttached() && t.isMergeTreeFamily() && !t.is_temp && !t.random_engine; });
+
+                        if (!tables_to_populate.empty())
+                        {
+                            for (const auto & tref : tables_to_populate)
+                            {
+                                BuzzHouse::SQLTable & t = tref.get();
+                                if (populated_tables_for_settings_oracle.contains(t.tname))
+                                {
+                                    continue;
+                                }
+                                BuzzHouse::SQLQuery sq_pop;
+
+                                sq_pop.Clear();
+                                full_query.resize(0);
+                                gen.generateInsertToTable(
+                                    rg,
+                                    t,
+                                    /*in_parallel=*/false,
+                                    std::make_optional<uint64_t>(
+                                        rg.randomInt<uint64_t>(fuzz_config->min_insert_rows, fuzz_config->max_insert_rows)),
+                                    sq_pop.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert());
+                                BuzzHouse::SQLQueryToString(full_query, sq_pop);
+                                fuzz_config->outf << full_query << std::endl;
+                                server_up &= processBuzzHouseQuery(full_query);
+                                gen.updateGenerator(sq_pop, *external_integrations, !have_error);
+                                if (!have_error)
+                                {
+                                    populated_tables_for_settings_oracle.emplace(t.tname);
+                                }
+                            }
+                            tables_populated_for_settings_oracle = populated_tables_for_settings_oracle.size() >= tables_to_populate.size();
+                        }
+                    }
+                    else if (rg.nextSmallNumber() < 4)
+                    {
+                        /// Create additional parts sometimes to exercise pruning across parts/marks.
+                        const auto tables_to_populate = gen.filterCollection<BuzzHouse::SQLTable>(
+                            [](BuzzHouse::SQLTable & t)
+                            { return t.isAttached() && t.isMergeTreeFamily() && !t.is_temp && !t.random_engine; });
+
+                        if (!tables_to_populate.empty())
+                        {
+                            BuzzHouse::SQLTable & t = rg.pickRandomly(tables_to_populate).get();
+                            BuzzHouse::SQLQuery sq_pop;
+
+                            sq_pop.Clear();
+                            full_query.resize(0);
+                            gen.generateInsertToTable(
+                                rg,
+                                t,
+                                /*in_parallel=*/false,
+                                std::make_optional<uint64_t>(
+                                    rg.randomInt<uint64_t>(fuzz_config->min_insert_rows, fuzz_config->max_insert_rows)),
+                                sq_pop.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert());
+                            BuzzHouse::SQLQueryToString(full_query, sq_pop);
+                            fuzz_config->outf << full_query << std::endl;
+                            server_up &= processBuzzHouseQuery(full_query);
+                            gen.updateGenerator(sq_pop, *external_integrations, !have_error);
+                        }
+                    }
+
+                    qo.resetOracleValues();
+
+                    /// Test running query with different settings, without SYSTEM commands.
+                    const bool use_settings = qo.generateFirstSetting(rg, sq1);
+
+                    if (use_settings)
+                    {
+                        /// Run query only when something was generated
+                        BuzzHouse::SQLQueryToString(full_query, sq1);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
+                        qo.setIntermediateStepSuccess(!have_error);
+                    }
+
+                    sq2.Clear();
+                    full_query.resize(0);
+                    qo.generateOracleSelectQuery(rg, BuzzHouse::PeerQuery::None, gen, sq2);
+                    BuzzHouse::SQLQueryToString(full_query, sq2);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                    sq3.Clear();
+                    full_query.resize(0);
+                    qo.generateSecondSetting(rg, gen, use_settings, sq1, sq3);
+                    BuzzHouse::SQLQueryToString(full_query, sq3);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.setIntermediateStepSuccess(!have_error);
+
+                    sq4.Clear();
+                    full_query.resize(0);
+                    qo.maybeUpdateOracleSelectQuery(rg, gen, sq2, sq4);
+                    BuzzHouse::SQLQueryToString(full_query, sq4);
+                    fuzz_config->outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processSecondOracleQueryResult(error_code, *external_integrations, "Multi setting query");
+
+                    continue;
+                }
+
                 const uint32_t correctness_oracle = 20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles);
                 const uint32_t settings_oracle = 20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles);
                 const uint32_t dump_oracle = 10

@@ -899,6 +899,17 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
+    buzz_correctness_use_primary_key_indexes_job = Job.Config(
+        name=JobNames.BUZZHOUSE_CORRECTNESS_PRIMARY_KEY_ANALYSIS,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/buzzhouse_correctness_use_primary_key_indexes_job.py",
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+    )
     performance_comparison_with_master_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],

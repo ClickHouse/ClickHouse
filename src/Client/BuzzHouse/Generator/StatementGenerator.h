@@ -357,7 +357,6 @@ private:
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
-    void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
     void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
     void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
@@ -684,6 +683,7 @@ public:
 
     void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
+    void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);

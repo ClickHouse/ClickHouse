@@ -2235,7 +2235,9 @@ void StatementGenerator::generateSelect(
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
         }
-        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextSmallNumber() < 5)
+
+        const bool force_where = this->fc.settings_oracle_only && !this->fc.settings_oracle_settings.empty();
+        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && (force_where || rg.nextSmallNumber() < 5))
         {
             generateWherePredicate(rg, ssc->mutable_where()->mutable_expr()->mutable_expr());
         }
