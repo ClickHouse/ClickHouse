@@ -217,9 +217,13 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     String current_database = context->getCurrentDatabase();
     bool is_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
 
-    if (is_datalake && context->hasSessionContext())
+    if (is_datalake)
     {
-        table_prefix = context->getSessionContext()->getCurrentTablePrefix();
+        /// Try to get table prefix from session context first, then from current context
+        if (context->hasSessionContext())
+            table_prefix = context->getSessionContext()->getCurrentTablePrefix();
+        if (table_prefix.empty())
+            table_prefix = context->getCurrentTablePrefix();
     }
 
     /// Single part: table name, possibly with prefix

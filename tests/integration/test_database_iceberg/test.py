@@ -680,7 +680,7 @@ def test_three_part_identifier(started_cluster):
     """
     node = started_cluster.instances["node1"]
 
-    test_ref = f"test_three_part_identifier_{uuid.uuid4()}"
+    test_ref = f"test_three_part_identifier_{uuid.uuid4().hex[:8]}"
     table_name = f"{test_ref}_table"
     namespace = f"{test_ref}_ns"  # Single-level namespace
 
