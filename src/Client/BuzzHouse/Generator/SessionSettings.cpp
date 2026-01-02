@@ -268,6 +268,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_for_top_k", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
+       {"use_primary_key_indexes", trueOrFalseSetting},
        {"use_statistics_cache", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
