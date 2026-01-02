@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 #include <queue>
+#include <sstream>
+#include <fstream>
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -13,12 +15,17 @@
 #include <Poco/PatternFormatter.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/DOMWriter.h>
+#include <Poco/DOM/Node.h>
+#include <Poco/XML/XMLWriter.h>
 
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
+#include <Common/XMLUtils.h>
 
 namespace DB
 {
@@ -40,6 +47,37 @@ static void setupLogging(const std::string & log_level)
     Poco::Logger::root().setLevel(log_level);
 }
 
+static std::string getXMLSubTreeAsString(DB::XMLDocumentPtr config_xml, const std::string& key)
+{
+    Poco::XML::DOMWriter writer;
+    writer.setNewLine("\n");
+    writer.setIndent("    ");
+    writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
+
+    std::ostringstream oss;
+
+    Poco::XML::Node * node = DB::XMLUtils::getRootNode(config_xml.get())->getNodeByPath(key);
+    if (!node)
+        return "";
+
+    if (key.empty())
+    {
+        // Write the entire tree
+        writer.writeNode(oss, node);
+    }
+    else
+    {
+        // Write the node's children
+        Poco::XML::Node * child = node->firstChild();
+        while (child)
+        {
+            writer.writeNode(oss, child);
+            child = child->nextSibling();
+        }
+    }
+
+    return oss.str();
+}
 
 static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool ignore_errors)
 {
@@ -61,7 +99,7 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
         Poco::Util::AbstractConfiguration::Keys keys;
         configuration->keys(node, keys);
 
-        /// This is a leave
+        /// This is a leaf
         if (keys.empty())
         {
             if (!re2::RE2::FullMatch(node, *matcher))
@@ -90,7 +128,7 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
 }
 
 
-static DB::ConfigurationPtr get_configuration(const std::string & config_path, bool process_zk_includes, bool throw_on_bad_include_from)
+static DB::XMLDocumentPtr getXMLconfiguration(const std::string & config_path, bool process_zk_includes, bool throw_on_bad_include_from)
 {
     DB::ConfigProcessor processor(config_path,
         /* throw_on_bad_incl = */ false,
@@ -111,28 +149,41 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }
-    return DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(config_xml));
+    return config_xml;
 }
 
+static DB::XMLDocumentPtr getUsersXMLConfiguration(DB::XMLDocumentPtr configuration_xml, const std::string & config_path, bool ignore_errors)
+{
+    DB::ConfigurationPtr configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
+    bool has_user_directories = configuration->has("user_directories");
+    if (!has_user_directories && !ignore_errors)
+        throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
+
+    std::string users_config_path = configuration->getString("user_directories.users_xml.path");
+    const auto config_dir = fs::path{config_path}.remove_filename().string();
+    if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+        users_config_path = fs::path(config_dir) / users_config_path;
+    return getXMLconfiguration(users_config_path, false, !ignore_errors);
+}
 
 static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users)
 {
-    DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes, !ignore_errors);
 
+    DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes, !ignore_errors);
     if (get_users)
-    {
-        bool has_user_directories = configuration->has("user_directories");
-        if (!has_user_directories && !ignore_errors)
-            throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
+        configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, ignore_errors);
+    DB::ConfigurationPtr configuration = DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(configuration_xml));
 
-        std::string users_config_path = configuration->getString("user_directories.users_xml.path");
-        const auto config_dir = fs::path{config_path}.remove_filename().string();
-        if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
-            users_config_path = fs::path(config_dir) / users_config_path;
-        configuration = get_configuration(users_config_path, process_zk_includes, !ignore_errors);
+    // Check if this key has a non-scalar value by looking for subkeys
+    Poco::Util::XMLConfiguration::Keys keys;
+    configuration->keys(key, keys);
+    if (!keys.empty())
+    {
+        // Non-scalar object, Output XML node
+        return {getXMLSubTreeAsString(configuration_xml, key)};
     }
 
-    /// Check if a key has globs.
+    // Check if a key has globs.
     if (key.find_first_of("*?{") != std::string::npos)
         return extactFromConfigAccordingToGlobs(configuration, key, ignore_errors);
 
@@ -154,6 +205,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
     std::string log_level;
     std::string config_path;
     std::string key;
+    std::string output_file;
 
     namespace po = boost::program_options;
 
@@ -167,7 +219,8 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("users", po::bool_switch(&get_users), "Return values from users.xml config")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
-        ("key,k", po::value<std::string>(&key)->required(), "key to get value for");
+        ("key,k", po::value<std::string>(&key)->default_value(""), "key to get value for")
+        ("output,o", po::value<std::string>(&output_file), "output file path");
 
     po::positional_options_description positional_desc;
     positional_desc.add("config-file", 1);
@@ -191,8 +244,35 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users))
-            std::cout << value << std::endl;
+
+        std::ostream* output_stream = &std::cout;
+        std::unique_ptr<std::ofstream> file_stream;
+
+        // If output file is provided, use it as the output stream
+        if (!output_file.empty())
+        {
+            file_stream = std::make_unique<std::ofstream>(output_file);
+            if (!file_stream->is_open())
+                throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Cannot open output file: {}", output_file);
+            output_stream = file_stream.get();
+        }
+
+        if (key.empty())
+        {
+            // If no key provided, print the entire configuration tree
+            DB::XMLDocumentPtr configuration_xml = getXMLconfiguration(config_path, process_zk_includes, !ignore_errors);
+            if (get_users)
+                configuration_xml = getUsersXMLConfiguration(configuration_xml, config_path, ignore_errors);
+            *output_stream << getXMLSubTreeAsString(configuration_xml, "") << std::endl;
+        }
+        else
+        {
+            for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users))
+                *output_stream << value << std::endl;
+        }
+
+        if (file_stream)
+            file_stream->close();
     }
     catch (...)
     {
