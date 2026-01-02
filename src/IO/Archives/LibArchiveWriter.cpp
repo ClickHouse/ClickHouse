@@ -108,7 +108,7 @@ private:
                     throw Exception(
                         ErrorCodes::LIMIT_EXCEEDED,
                         "Adaptive buffer size limit of {} bytes is exceeded for the file '{}'. "
-                        "Consider using ZIP format for files of unknown size",
+                        "Consider using ZIP format or increase archive_adaptive_buffer_max_size_bytes",
                         adaptive_max_buffer_size,
                         filename);
 
