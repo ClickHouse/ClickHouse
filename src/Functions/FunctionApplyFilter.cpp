@@ -64,14 +64,22 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * filter_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-        if (!filter_name_column)
+        String filter_name;
+        if (const auto * filter_name_const_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+        {
+            filter_name = filter_name_const_column->getValue<String>();
+        }
+        else if (const auto * filter_name_column = dynamic_cast<const ColumnString *>(arguments[0].column.get()))
+        {
+            if (filter_name_column->size() == 1)
+                filter_name = filter_name_column->getDataAt(0);
+        }
+
+        if (filter_name.empty())
             throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "First argument of function '{}' must be a String filter name",
                     getName());
-
-        String filter_name = filter_name_column->getValue<String>();
 
         /// Query context contains filter lookup where per-query filters are stored
         auto query_context = CurrentThread::get().getQueryContext();
