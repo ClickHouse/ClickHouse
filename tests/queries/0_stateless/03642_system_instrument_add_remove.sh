@@ -52,6 +52,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT '-- Remove with wrong arguments fails';
     SYSTEM INSTRUMENT REMOVE (SELECT id, function_id FROM system.instrumentation); -- { serverError BAD_ARGUMENTS }
     SYSTEM INSTRUMENT REMOVE (SELECT handler FROM system.instrumentation); -- { serverError BAD_ARGUMENTS }
+    SYSTEM INSTRUMENT REMOVE 3.2; -- { clientError SYNTAX_ERROR }
 
     SELECT '-- Remove everything';
     SYSTEM INSTRUMENT REMOVE ALL;
@@ -62,6 +63,11 @@ $CLICKHOUSE_CLIENT -q "
     SELECT '-- Add several functions that match';
     SYSTEM INSTRUMENT ADD 'executeQuery' LOG ENTRY 'my log in executeQuery';
     SELECT count() > 10, function_name, handler, entry_type FROM system.instrumentation WHERE symbol ILIKE '%executeQuery%' GROUP BY function_name, handler, entry_type;
+
+    SELECT '-- Remove functions that match';
+    SYSTEM INSTRUMENT REMOVE 'unknown'; -- { serverError BAD_ARGUMENTS }
+    SYSTEM INSTRUMENT REMOVE 'executeQuery';
+    SELECT count() FROM system.instrumentation;
 
     SELECT '-- Remove everything';
     SYSTEM INSTRUMENT REMOVE ALL;
