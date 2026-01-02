@@ -1,5 +1,4 @@
 #include <cstdint>
-#include <type_traits>
 
 #include <Common/checkStackSize.h>
 
