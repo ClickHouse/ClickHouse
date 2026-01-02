@@ -275,6 +275,7 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     JSONExtractInsertSettings insert_settings;
     insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
     insert_settings.skip_invalid_typed_paths = settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
     if (!json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
 }

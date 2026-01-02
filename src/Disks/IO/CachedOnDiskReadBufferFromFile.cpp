@@ -27,6 +27,7 @@ extern const Event FileSegmentPredownloadMicroseconds;
 extern const Event FileSegmentUsedBytes;
 
 extern const Event CachedReadBufferReadFromSourceMicroseconds;
+extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
@@ -619,7 +620,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 watch.stop();
                 auto elapsed = watch.elapsedMicroseconds();
                 current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceMicroseconds, elapsed);
             }
 
             if (!bytes_to_predownload || !has_more_data)

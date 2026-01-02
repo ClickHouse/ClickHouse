@@ -24,7 +24,7 @@ public:
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
-        const MergeSizes & max_merge_sizes,
+        const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;
 
 protected:
@@ -45,8 +45,8 @@ private:
     bool needToPostponePartition(const std::string & partition_id) const;
 
     std::vector<CenterPosition> findCenters(const PartsRanges & parts_ranges) const;
-    PartsIterator findLeftRangeBorder(const CenterPosition & center_position, size_t & usable_memory, DisjointPartsRangesSet & disjoint_set) const;
-    PartsIterator findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, DisjointPartsRangesSet & disjoint_set) const;
+    PartsIterator findLeftRangeBorder(const CenterPosition & center_position, size_t & usable_memory, size_t & usable_rows, DisjointPartsRangesSet & disjoint_set) const;
+    PartsIterator findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, size_t & usable_rows, DisjointPartsRangesSet & disjoint_set) const;
 
     const time_t current_time;
     const PartitionIdToTTLs * merge_due_times;

@@ -55,7 +55,7 @@ do
     SELECT count() FROM test_table WHERE ip = '127.0.0.1';
     -- If we try to modify the column to a type incompatible with the index it should always throw an error and forbid the ALTER,
     -- independently of the alter_column_secondary_index_mode setting.
-    ALTER TABLE test_table MODIFY COLUMN ip IPv4; -- { serverError INCORRECT_QUERY }
+    ALTER TABLE test_table MODIFY COLUMN ip IPv4; -- { serverError BAD_ARGUMENTS }
 
     SELECT 'STRING TO UInt64 tests';
     EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';
