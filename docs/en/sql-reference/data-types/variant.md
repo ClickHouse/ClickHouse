@@ -486,3 +486,61 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 │ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
+
+## Functions with Variant arguments {#functions-with-variant-arguments}
+
+Most functions in ClickHouse automatically support `Variant` type arguments through a **default implementation for Variant**. 
+When a function that doesn't explicitly handle Variant types receives a Variant column, ClickHouse:
+
+1. Extracts each variant type from the Variant column
+2. Executes the function separately for each variant type
+3. Combines results appropriately based on result types
+
+This allows you to use regular functions with Variant columns without special handling.
+
+### Example
+
+```sql
+CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
+INSERT INTO test VALUES (42), ('hello'), (NULL);
+SELECT toString(v) FROM test;
+```
+
+```text
+┌─toString(v)─┐
+│ 42          │
+│ hello       │
+│ ᴺᵁᴸᴸ        │
+└─────────────┘
+```
+
+The function `toString` is automatically called on `UInt32` and `String` variants separately, and results are combined into `Nullable(String)`.
+
+### Result type behavior
+
+The result type depends on what the function returns for each variant:
+
+- **Same result type for all variants** → `Nullable(T)`
+  ```sql
+  SELECT toString(v) FROM test; -- All variants return String → Nullable(String)
+  ```
+
+- **Different result types** → `Variant(T1, T2, ...)`
+  ```sql
+  SELECT toUInt32OrNull(v) FROM test; -- May return Variant of different types
+  ```
+
+- **Type incompatibility** → `NULL` for incompatible variants
+  ```sql
+  CREATE TABLE test2 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+  INSERT INTO test2 VALUES ([1,2,3]), (42);
+  SELECT v + 10 FROM test2;
+  -- Array(UInt32) cannot be added to number → NULL
+  -- UInt32 can be added → 52
+  ```
+
+:::note
+**Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT, 
+TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like 
+division by zero or out of memory are raised normally to prevent silently hiding real problems.
+:::
