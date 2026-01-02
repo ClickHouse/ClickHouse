@@ -150,7 +150,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
         "hdfs",
-        [](const std::string & /* name */,
+        [](const std::string & name,
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
@@ -164,7 +164,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
-            return std::make_shared<HDFSObjectStorage>(uri, std::move(settings), config, /* lazy_initialize */false);
+            return std::make_shared<HDFSObjectStorage>(uri, std::move(settings), config, /* lazy_initialize */false, name);
         });
 }
 #endif
@@ -252,7 +252,7 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         fs::create_directories(object_key_prefix);
 
         bool read_only = config.getBool(config_prefix + ".readonly", false);
-        LocalObjectStorageSettings settings(object_key_prefix, read_only);
+        LocalObjectStorageSettings settings(name, object_key_prefix, read_only);
 
         return std::make_shared<LocalObjectStorage>(settings);
     };
