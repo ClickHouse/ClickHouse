@@ -119,7 +119,10 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                         auto column_source_node = column_node->getColumnSource();
                         auto column_source_node_type = column_source_node->getNodeType();
                         if (column_source_node_type == QueryTreeNodeType::QUERY || column_source_node_type == QueryTreeNodeType::UNION)
-                            node_to_used_columns[column_source_node].insert(column_node->getColumnName());
+                        {
+                            if (auto it = node_to_used_columns.find(column_source_node); it != node_to_used_columns.end())
+                                it->second.insert(column_node->getColumnName());
+                        }
                     }
                     return false;
                 }
