@@ -832,7 +832,7 @@ void StatementGenerator::colRefOrExpression(
 void StatementGenerator::generateTableKey(
     RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const bool allow_asc_desc, TableKey * tkey)
 {
-    if (!entries.empty() && rg.nextSmallNumber() < 7)
+    if (!entries.empty() && rg.nextSmallNumber() < 8)
     {
         if (rg.nextSmallNumber() < 3)
         {
@@ -974,7 +974,7 @@ void StatementGenerator::randomEngineParams(RandomGenerator & rg, std::optional<
 void StatementGenerator::generateMergeTreeEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
-    if (rg.nextSmallNumber() < 6)
+    if (rg.nextSmallNumber() < 9)
     {
         generateTableKey(rg, rel, b, b.peer_table != PeerTableDatabase::ClickHouse, te->mutable_order());
     }
