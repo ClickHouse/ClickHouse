@@ -1897,8 +1897,13 @@ static void buildIndexes(
                 = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
             if (inserted)
             {
-                skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                if (inserted)
+                {
+                    skip_indexes.merged_indices.emplace_back();
+                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot, context);
+                }
+
+                skip_indexes.merged_indices[it->second].addIndex(index_helper);
             }
 
             skip_indexes.merged_indices[it->second].addIndex(index_helper);

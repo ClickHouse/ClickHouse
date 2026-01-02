@@ -2,6 +2,7 @@
 
 #include <Analyzer/Passes/CNFAtomicFormula.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
+#include <Interpreters/ActionsDAGCNF.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Parsers/IASTHash.h>
 
@@ -72,12 +73,14 @@ public:
     public:
         const QueryTreeNodes & getConstraints() const;
         const std::vector<std::vector<Analyzer::CNFAtomicFormula>> & getConstraintData() const;
+        const std::vector<Analyzer::CNFAtomicFormula> & getAtomicConstraintData() const;
         std::optional<AtomIds> getAtomIds(const QueryTreeNodePtrWithHash & node_with_hash) const;
         std::vector<Analyzer::CNFAtomicFormula> getAtomsById(const AtomIds & ids) const;
         const ComparisonGraph<QueryTreeNodePtr> & getGraph() const;
     private:
         QueryTreeNodes constraints;
         std::vector<std::vector<Analyzer::CNFAtomicFormula>> cnf_constraints;
+        std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;
         QueryTreeNodePtrWithHashMap<AtomIds> query_node_to_atom_ids;
         std::unique_ptr<ComparisonGraph<QueryTreeNodePtr>> graph;
 
@@ -85,6 +88,22 @@ public:
     };
 
     QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
+
+    class ActionsDAGData
+    {
+    public:
+        const std::vector<ActionsDAGCNF::AtomicFormula> & getAtomicConstraintData() const;
+        std::shared_ptr<ActionsDAG> getOwnedDag() const { return owned_dag; }
+    private:
+        std::vector<ActionsDAGCNF::AtomicFormula> atomic_constraints_data;
+        /// Stores the DAG that owns the nodes referenced in atomic_constraints_data
+        /// This DAG must outlive atomic_constraints_data to keep node pointers valid
+        std::shared_ptr<ActionsDAG> owned_dag;
+
+        friend ConstraintsDescription;
+    };
+
+    ActionsDAGData getActionsDAGData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
 
 private:
     std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;
