@@ -64,6 +64,7 @@
 #include <IO/ForkWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -352,6 +353,32 @@ public:
     void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
+/// Wrapper for write buffer to execute callback before flush
+/// Used to prevent progress flickering
+class FlushCallbackWriteBuffer : public WriteBufferWithOwnMemoryDecorator
+{
+public:
+    template <typename WriteBufferT>
+    FlushCallbackWriteBuffer(WriteBufferT && out_, std::function<void()> on_flush_callback_)
+        : WriteBufferWithOwnMemoryDecorator(std::forward<WriteBufferT>(out_))
+        , on_flush_callback(std::move(on_flush_callback_))
+    {
+    }
+
+    void nextImpl() override
+    {
+        if (on_flush_callback)
+            on_flush_callback();
+
+        if (!out->isCanceled())
+            out->write(working_buffer.begin(), offset());
+    }
+
+    void finalizeImpl() override { next(); }
+
+private:
+    std::function<void()> on_flush_callback;
+};
 
 ClientBase::~ClientBase() = default;
 
@@ -535,25 +562,6 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
 
-    /// Setup callback to clear progress just before output is flushed.
-    if (!written_first_block)
-    {
-        output_format->setPreFlushCallback([this]()
-        {
-            /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-            if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
-            {
-                std::unique_lock lock(tty_mutex);
-                progress_indication.clearProgressOutput(*tty_buf, lock);
-            }
-            if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
-            {
-                std::unique_lock lock(tty_mutex);
-                progress_table.clearTableOutput(*tty_buf, lock);
-            }
-        });
-    }
-
     try
     {
         output_format->write(materializeBlock(
@@ -665,7 +673,7 @@ try
             return;
         }
 
-        WriteBuffer * out_buf = nullptr;
+        WriteBuffer * underlying_buf = nullptr;
         if (!pager.empty() && !isEmbeeddedClient())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
@@ -678,12 +686,33 @@ try
             config.terminate_in_destructor_strategy.terminate_in_destructor = true;
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
-            out_buf = &pager_cmd->in;
+            underlying_buf = &pager_cmd->in;
         }
         else
         {
-            out_buf = std_out.get();
+            underlying_buf = std_out.get();
         }
+
+        /// Use the flush callback wrapper to prevent progress flickering
+        std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
+            underlying_buf,
+            [this]()
+            {
+                /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                {
+                    std::unique_lock lock(tty_mutex);
+                    progress_indication.clearProgressOutput(*tty_buf, lock);
+                }
+                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                {
+                    std::unique_lock lock(tty_mutex);
+                    progress_table.clearTableOutput(*tty_buf, lock);
+                }
+            }
+        );
+
+        WriteBuffer * out_buf = std_out_wrapper.get();
 
         select_into_file = false;
         select_into_file_and_stdout = false;
@@ -1704,6 +1733,10 @@ void ClientBase::resetOutput()
     }
 
     output_format.reset();
+
+    if (std_out_wrapper)
+        std_out_wrapper->finalize();
+    std_out_wrapper.reset();
 
     logs_out_stream.reset();
 

@@ -114,10 +114,6 @@ public:
     /// that should be used in its derived classes.
     virtual WriteBuffer * getWriteBufferPtr() { return &out; }
 
-    /// Set a callback to be invoked just before flushing buffered output.
-    /// Useful to avoid flickering progress bar.
-    void setPreFlushCallback(std::function<void()> callback) { pre_flush_callback = std::move(callback); }
-
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -226,9 +222,6 @@ private:
 
     UInt64 progress_write_frequency_us = 0;
     std::atomic<UInt64> prev_progress_write_ns = 0;
-
-    /// Called before flush if there's data to write.
-    std::function<void()> pre_flush_callback;
 };
 
 }
