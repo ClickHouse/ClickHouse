@@ -802,9 +802,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             else if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
             {
-                    String identifier = temporary_identifier->as<ASTIdentifier &>().name();
-                    if (Poco::toLower(identifier) == "all")
-                        res->instrumentation_point = Instrumentation::All{};
+                String identifier = temporary_identifier->as<ASTIdentifier &>().name();
+                if (Poco::toLower(identifier) == "all")
+                    res->instrumentation_point = Instrumentation::All{};
                 else
                     return false;
             }

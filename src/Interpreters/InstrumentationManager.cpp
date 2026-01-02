@@ -184,7 +184,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
 
     std::lock_guard lock(shared_mutex);
 
-    for (auto [function_id, symbol] : functions_to_patch)
+    for (const auto & [function_id, symbol] : functions_to_patch)
     {
         patchFunctionIfNeeded(function_id);
 
