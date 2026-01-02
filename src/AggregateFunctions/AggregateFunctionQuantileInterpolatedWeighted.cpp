@@ -36,7 +36,7 @@ struct QuantileInterpolatedWeighted
     {
         size_t operator()(Int128 x) const
         {
-            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
+            return CityHash_v1_0_2::Hash128to64({static_cast<UInt64>(x >> 64), static_cast<UInt64>(x & 0xffffffffffffffffll)});
         }
     };
 

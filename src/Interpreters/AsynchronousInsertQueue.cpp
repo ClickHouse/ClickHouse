@@ -507,7 +507,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
 
-    auto shard_num = key.hash % pool_size;
+    size_t shard_num = static_cast<size_t>(key.hash % pool_size);
     auto & shard = queue_shards[shard_num];
     const auto flush_time_points = flush_time_history_per_queue_shard[shard_num].getRecentTimePoints();
     {
@@ -524,7 +524,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
                 timeout_ms < shard.busy_timeout_ms ? "decreased" : "increased",
                 shard.busy_timeout_ms.count(),
                 timeout_ms.count(),
-                size_t(shard_num));
+                shard_num);
         }
 
         if (inserted)
