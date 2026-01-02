@@ -53,15 +53,20 @@ inline char * writeVarUInt(UInt64 x, char * ostr)
     return ostr;
 }
 
+inline UInt64 encodeZigZag(Int64 value)
+{
+    return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63);
+}
+
 template <typename OutBuf>
 inline void writeVarInt(Int64 x, OutBuf & ostr)
 {
-    writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
+    writeVarUInt(encodeZigZag(x), ostr);
 }
 
 inline char * writeVarInt(Int64 x, char * ostr)
 {
-    return writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
+    return writeVarUInt(encodeZigZag(x), ostr);
 }
 
 namespace varint_impl
@@ -117,17 +122,22 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
     return istr;
 }
 
+inline Int64 decodeZigZag(UInt64 n)
+{
+    return static_cast<Int64>((n >> 1) ^ -(n & 1));
+}
+
 template <typename InBuf>
 inline void ALWAYS_INLINE readVarInt(Int64 & x, InBuf & istr)
 {
     readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
-    x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
+    x = decodeZigZag(static_cast<UInt64>(x));
 }
 
 inline const char * ALWAYS_INLINE readVarInt(Int64 & x, const char * istr, size_t size)
 {
     const char * res = readVarUInt(*reinterpret_cast<UInt64*>(&x), istr, size);
-    x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
+    x = decodeZigZag(static_cast<UInt64>(x));
     return res;
 }
 
@@ -185,7 +195,7 @@ inline size_t getLengthOfVarUInt(UInt64 x)
 
 inline size_t getLengthOfVarInt(Int64 x)
 {
-    return getLengthOfVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)));
+    return getLengthOfVarUInt(encodeZigZag(x));
 }
 
 }

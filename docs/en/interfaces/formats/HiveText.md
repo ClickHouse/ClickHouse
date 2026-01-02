@@ -1,11 +1,13 @@
 ---
-title: HiveText
+description: 'Documentation for the HiveText format'
+keywords: ['HiveText']
 slug: /interfaces/formats/HiveText
-keywords: [HiveText]
+title: 'HiveText'
+doc_type: 'reference'
 ---
 
 ## Description {#description}
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

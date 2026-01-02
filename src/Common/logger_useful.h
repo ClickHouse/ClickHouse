@@ -10,6 +10,8 @@
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/LoggingHelpers.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -26,7 +28,7 @@ namespace impl
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
     [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(const LogSeriesLimiterPtr & logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
 }
 
@@ -64,28 +66,41 @@ namespace impl
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
 
+constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
+{
+    return haystack.find(needle) != std::string_view::npos;
+}
+
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
+    static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
+    static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                  \
+                                                                                                                    \
     auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
     const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
         break;                                                                                                      \
                                                                                                                     \
     Stopwatch _logger_watch;                                                                                        \
+    ProfileEvents::incrementForLogMessage(PRIORITY);                                                                \
+    auto _channel = _logger->getChannel();                                                                          \
+    if (!_channel)                                                                                                  \
+        break;                                                                                                      \
+                                                                                                                    \
+    constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                        \
+    using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;              \
+                                                                                                                    \
+    /* Note, we need to block memory tracking to avoid taking into account this memory in the query context */      \
+    /* Since this memory will be freed either in OwnAsyncSplitChannel::runChannel() (in case of async logging) */   \
+    /* Or in a system thread for flushing system.text_log (in case of sync logging) */                              \
+    MemoryTrackerBlockerInThread block_memory_tracker(VariableContext::Global);                                     \
+                                                                                                                    \
+    std::string_view _format_string;                                                                                \
+    std::string _formatted_message;                                                                                 \
+    std::vector<std::string> _format_string_args;                                                                   \
+                                                                                                                    \
     try                                                                                                             \
     {                                                                                                               \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
-        auto _channel = _logger->getChannel();                                                                      \
-        if (!_channel)                                                                                              \
-            break;                                                                                                  \
-                                                                                                                    \
-        constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
-        using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
-                                                                                                                    \
-        std::string_view _format_string;                                                                            \
-        std::string _formatted_message;                                                                             \
-        std::vector<std::string> _format_string_args;                                                               \
-                                                                                                                    \
         if constexpr (LogTypeInfo::is_static)                                                                       \
         {                                                                                                           \
             formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
@@ -100,30 +115,42 @@ namespace impl
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+            _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
+    }                                                                                                               \
+    /* We want to propagate all exceptions from arguments evaluation, e.g.                                       */ \
+    /* LOG_TRACE(log, "my value is {}", empty_optional.value());                                                 */ \
+    /* because we assume that the user code is to be blamed. Still it means that we have to catch errors that were not a user's fault. */ \
+    catch (const std::bad_alloc & logger_exception)                                                                 \
+    {                                                                                                               \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const char * logger_exception_message = logger_exception.what();                                            \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+    }                                                                                                               \
                                                                                                                     \
+    try                                                                                                             \
+    {                                                                                                               \
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
-        _channel->log(_poco_message);                                                                               \
+            (PRIORITY), std::move(_file_function), __LINE__, _format_string, _format_string_args);                  \
+        _channel->log(std::move(_poco_message));                                                                               \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
     {                                                                                                               \
-        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
         const std::string & logger_exception_message = logger_exception.message();                                  \
-        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
     catch (const std::exception & logger_exception)                                                                 \
     {                                                                                                               \
-        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
         const char * logger_exception_message = logger_exception.what();                                            \
-        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \
-        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
     }                                                                                                               \
     ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
 } while (false)

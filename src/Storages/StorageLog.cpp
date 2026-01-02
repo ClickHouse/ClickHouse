@@ -11,14 +11,15 @@
 
 #include <Parsers/ASTCheckQuery.h>
 
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -35,7 +36,9 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <cassert>
 #include <chrono>
@@ -93,7 +96,7 @@ public:
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : ISource(getHeader(columns_))
+        : ISource(std::make_shared<const Block>(getHeader(columns_)))
         , block_size(block_size_)
         , columns(columns_)
         , storage(storage_)
@@ -154,6 +157,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
+    void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     bool isFinished();
 };
@@ -189,8 +193,17 @@ Chunk LogSource::generate()
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+    std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     Block res;
 
+    /// First, read prefixes for all columns/subcolumns.
+    for (const auto & name_and_type : columns)
+    {
+        auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
+        readPrefix(name_and_type_on_disk, caches[name_and_type_on_disk.getNameInStorage()], deserialize_states_caches[name_and_type_on_disk.getNameInStorage()]);
+    }
+
+    /// Second, read the data of all columns/subcolumns.
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
@@ -211,10 +224,10 @@ Chunk LogSource::generate()
             res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
     }
 
-    if (res)
+    if (!res.empty())
         rows_read += res.rows();
 
-    if (!res)
+    if (res.empty())
         is_finished = true;
 
     if (isFinished())
@@ -229,6 +242,35 @@ Chunk LogSource::generate()
     return Chunk(res.getColumns(), num_rows);
 }
 
+void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache)
+{
+    if (deserialize_states.contains(name_and_type.name))
+        return;
+
+    auto serialization = IDataType::getSerialization(name_and_type);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+            return nullptr;
+
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+
+        const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
+        if (data_file_it == storage.data_files_by_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
+        const auto & data_file = *data_file_it->second;
+
+        size_t offset = 0;
+        size_t file_size = file_sizes[data_file.index];
+
+        auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        return &it->second.compressed.value();
+    };
+
+    serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
+}
 
 void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
@@ -237,36 +279,34 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     const auto & [name, type] = name_and_type;
     auto serialization = IDataType::getSerialization(name_and_type);
 
-    auto create_stream_getter = [&](bool stream_for_prefix)
+    settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
-        {
-            if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
-                return nullptr;
+        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+            return nullptr;
 
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
 
-            const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
-            if (data_file_it == storage.data_files_by_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
-            const auto & data_file = *data_file_it->second;
+        const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
+        if (data_file_it == storage.data_files_by_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
+        const auto & data_file = *data_file_it->second;
 
-            size_t offset = stream_for_prefix ? 0 : offsets[data_file.index];
-            size_t file_size = file_sizes[data_file.index];
+        size_t offset = offsets[data_file.index];
+        size_t file_size = file_sizes[data_file.index];
 
-            auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
-            return &it->second.compressed.value();
-        };
+        auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        return &it->second.compressed.value();
     };
 
-    if (!deserialize_states.contains(name))
-    {
-        settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
-    }
-
-    settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    if (column->getDataType() != name_and_type.type->getColumnType())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected return type when reading column '{}' from {}. Expected {}. Got {}",
+            name_and_type.name,
+            storage.getStorageID().getFullTableName(),
+            name_and_type.type->getColumnType(),
+            column->getDataType());
 }
 
 bool LogSource::isFinished()
@@ -303,7 +343,7 @@ public:
 
     explicit LogSink(
         StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
@@ -402,6 +442,9 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
 
@@ -464,7 +507,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
         if (it == streams.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream was not created when writing data in LogSink");
@@ -478,6 +521,32 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    auto get_codec_or_default = [&default_codec](const auto & column_desc)
+    {
+        return column_desc.codec
+            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
+            : default_codec;
+    };
+
+    const auto & columns = metadata_snapshot->getColumns();
+    if (const auto * column_desc = columns.tryGet(column_name))
+        return get_codec_or_default(*column_desc);
+
+    const auto & virtual_columns = storage.getVirtualsPtr();
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+        return get_codec_or_default(*virtual_desc);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
+{
+    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+
 void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
@@ -486,7 +555,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
         if (it == streams.end())
         {
@@ -495,7 +564,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
+            auto compression = getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -516,7 +585,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     {
         serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
             const auto & stream = streams.at(data_file_name);
             if (stream.written)
                 return;
@@ -534,7 +603,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto & stream = streams.at(data_file_name);
         if (stream.written)
             return;
@@ -664,7 +733,7 @@ void StorageLog::addDataFiles(const NameAndTypePair & column)
 
     ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
+        String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
         if (!data_files_by_names.contains(data_file_name))
         {
             DataFile & data_file = data_files.emplace_back();
@@ -825,7 +894,17 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    disk->clearDirectory(table_path);
+    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
+    auto clear_tx = disk->createTransaction();
+
+    for (auto & data_file : data_files)
+        clear_tx->removeFileIfExists(data_file.path);
+
+    if (use_marks_file)
+        clear_tx->removeFileIfExists(marks_file_path);
+
+    clear_tx->removeFileIfExists(file_checker.getPath());
+    clear_tx->commit();
 
     for (auto & data_file : data_files)
     {
@@ -863,7 +942,7 @@ Pipe StorageLog::read(
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
     size_t num_marks = marks_with_real_row_count.size();
@@ -960,7 +1039,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
+            String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
             auto it = data_files_by_names.find(data_file_name);
             if (it != data_files_by_names.end())
             {
@@ -987,7 +1066,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -998,7 +1077,7 @@ std::optional<UInt64> StorageLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }

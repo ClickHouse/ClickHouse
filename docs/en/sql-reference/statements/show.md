@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/statements/show
+description: 'Documentation for Show'
+sidebar_label: 'SHOW'
 sidebar_position: 37
-sidebar_label: SHOW
-title: SHOW Statements
+slug: /sql-reference/statements/show
+title: 'SHOW Statements'
+doc_type: 'reference'
 ---
 
 :::note
@@ -433,7 +435,7 @@ SHOW USERS
 
 The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
 To view other parameters, 
-see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
+see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role_grants).
 
 ### Syntax {#syntax-14}
 
@@ -499,7 +501,7 @@ The `SHOW CLUSTER(S)` statement returns a list of clusters.
 All available clusters are listed in the [`system.clusters`](../../operations/system-tables/clusters.md) table.
 
 :::note
-The `SHOW CLUSTER name` query displays the contents of `system.clusters` table for the specified cluster name.
+The `SHOW CLUSTER name` query displays `cluster`, `shard_num`, `replica_num`, `host_name`, `host_address`, and `port` of the `system.clusters` table for the specified cluster name.
 :::
 
 ### Syntax {#syntax-20}
@@ -545,16 +547,10 @@ Row 1:
 ──────
 cluster:                 test_shard_localhost
 shard_num:               1
-shard_weight:            1
 replica_num:             1
 host_name:               localhost
 host_address:            127.0.0.1
 port:                    9000
-is_local:                1
-user:                    default
-default_database:
-errors_count:            0
-estimated_recovery_time: 0
 ```
 
 ## SHOW SETTINGS {#show-settings}
@@ -693,7 +689,6 @@ All merges are listed in the [`system.merges`](../../operations/system-tables/me
 | `size_compressed`   | The total size of the compressed data of the merged parts. |
 | `memory_usage`      | Memory consumption of the merge process.                   |
 
-
 ### Syntax {#syntax-25}
 
 ```sql title="Syntax"
@@ -722,3 +717,12 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 └────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
 
+## SHOW CREATE MASKING POLICY {#show-create-masking-policy}
+
+The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [masking policy creation](../../sql-reference/statements/create/masking-policy.md).
+
+### Syntax {#syntax-26}
+
+```sql title="Syntax"
+SHOW CREATE MASKING POLICY name ON [database.]table
+```

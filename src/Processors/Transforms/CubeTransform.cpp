@@ -1,7 +1,7 @@
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include "Processors/Transforms/RollupTransform.h"
+#include <Processors/Transforms/RollupTransform.h>
 
 namespace DB
 {
@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_COLUMNS;
 }
 
-CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+CubeTransform::CubeTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {

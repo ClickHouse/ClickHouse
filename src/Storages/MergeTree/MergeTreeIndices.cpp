@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
@@ -22,12 +23,18 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat
-IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /*unknown*/, ""};
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+
+    return {0 /*unknown*/, {}};
+}
+
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
+{
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    serializeBinary(stream->compressed_hashing);
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -42,6 +49,11 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
+void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
+{
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    deserializeBinary(*stream->getDataBuffer(), state.version);
+}
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
     const IndexDescription & index) const
@@ -73,29 +85,33 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescripti
     return result;
 }
 
+void MergeTreeIndexFactory::implicitValidation(const IndexDescription & index)
+{
+    if (index.expression->hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
+
+    try
+    {
+        index.expression->assertDeterministic();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("for secondary index '{}'", index.name));
+        throw;
+    }
+
+    for (const auto & elem : index.sample_block)
+        if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
+}
+
+
 void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
     if (!attach)
-    {
-        if (index.expression->hasArrayJoin())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
-
-        try
-        {
-            index.expression->assertDeterministic();
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("for secondary index '{}'", index.name));
-            throw;
-        }
-
-        for (const auto & elem : index.sample_block)
-            if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
-    }
+        implicitValidation(index);
 
     auto it = validators.find(index.type);
     if (it == validators.end())
@@ -132,38 +148,22 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
+    registerCreator("sparse_grams", bloomFilterIndexTextCreator);
+    registerValidator("sparse_grams", bloomFilterIndexTextValidator);
+
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
-
     registerValidator("hypothesis", hypothesisIndexValidator);
 
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
-    /// ------
-    /// TODO: remove this block at the end of 2024.
-    /// Index types 'annoy' and 'usearch' are no longer supported as of June 2024. Their successor is index type 'vector_similarity'.
-    /// To support loading tables with old indexes during a transition period, register dummy indexes which allow load/attaching but
-    /// throw an exception when the user attempts to use them.
-    registerCreator("annoy", legacyVectorSimilarityIndexCreator);
-    registerValidator("annoy", legacyVectorSimilarityIndexValidator);
-    registerCreator("usearch", legacyVectorSimilarityIndexCreator);
-    registerValidator("usearch", legacyVectorSimilarityIndexValidator);
-    /// ------
 
-    registerCreator("inverted", fullTextIndexCreator);
-    registerValidator("inverted", fullTextIndexValidator);
-
-    /// ------
-    /// TODO: remove this block at the end of 2024.
-    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// To support loading tables with old indexes during a transition period, register full-text indexes under their old name.
-    registerCreator("full_text", fullTextIndexCreator);
-    registerValidator("full_text", fullTextIndexValidator);
-    /// ------
+    registerCreator("text", textIndexCreator);
+    registerValidator("text", textIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

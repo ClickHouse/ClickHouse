@@ -1,16 +1,13 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
 
 #include <Core/Settings.h>
+
 
 namespace DB
 {

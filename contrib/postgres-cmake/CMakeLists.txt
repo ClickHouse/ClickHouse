@@ -7,6 +7,8 @@ set(LIBPQ_CMAKE_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/postgres-cmake")
 set(SRCS
     "${LIBPQ_SOURCE_DIR}/fe-auth.c"
     "${LIBPQ_SOURCE_DIR}/fe-auth-scram.c"
+    "${LIBPQ_SOURCE_DIR}/fe-auth-oauth.c"
+    "${LIBPQ_SOURCE_DIR}/fe-cancel.c"
     "${LIBPQ_SOURCE_DIR}/fe-connect.c"
     "${LIBPQ_SOURCE_DIR}/fe-exec.c"
     "${LIBPQ_SOURCE_DIR}/fe-lobj.c"
@@ -45,8 +47,6 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/common/logging.c"
 
     "${POSTGRES_SOURCE_DIR}/src/port/snprintf.c"
-    "${POSTGRES_SOURCE_DIR}/src/port/strlcat.c"
-    "${POSTGRES_SOURCE_DIR}/src/port/strlcpy.c"
     "${POSTGRES_SOURCE_DIR}/src/port/strerror.c"
     "${POSTGRES_SOURCE_DIR}/src/port/inet_net_ntop.c"
     "${POSTGRES_SOURCE_DIR}/src/port/getpeereid.c"
@@ -55,15 +55,21 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/port/pg_strong_random.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pgstrcasecmp.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pg_bitutils.c"
-    "${POSTGRES_SOURCE_DIR}/src/port/thread.c"
     "${POSTGRES_SOURCE_DIR}/src/port/path.c"
 )
 
+if(NOT OS_DARWIN)
+    set(SRCS ${SRCS}
+        "${POSTGRES_SOURCE_DIR}/src/port/strlcat.c"
+        "${POSTGRES_SOURCE_DIR}/src/port/strlcpy.c"
+    )
+endif()
+
 add_library(_libpq ${SRCS})
 
-add_definitions(-DHAVE_BIO_METH_NEW)
-add_definitions(-DHAVE_HMAC_CTX_NEW)
-add_definitions(-DHAVE_HMAC_CTX_FREE)
+add_definitions(-DFRONTEND)
+add_definitions(-D_GNU_SOURCE)
+add_definitions(-DOPENSSL_NO_ENGINE)
 
 target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
 target_include_directories (_libpq SYSTEM PUBLIC "${POSTGRES_SOURCE_DIR}/src/include")

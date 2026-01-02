@@ -8,7 +8,7 @@
 TEST(ThreadFuzzer, mutex)
 {
     /// Initialize ThreadFuzzer::started
-    DB::ThreadFuzzer::instance().isEffective();
+    DB::ThreadFuzzer::instance().setup();
 
     std::mutex mutex;
     std::atomic<size_t> elapsed_ns = 0;

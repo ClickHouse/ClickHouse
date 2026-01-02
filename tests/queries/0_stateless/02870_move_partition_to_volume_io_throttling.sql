@@ -8,7 +8,7 @@ CREATE TABLE test_move_partition_throttling (key UInt64 CODEC(NONE)) ENGINE = Me
 INSERT INTO test_move_partition_throttling SELECT number FROM numbers(1e6);
 SELECT disk_name, partition, rows FROM system.parts WHERE database = currentDatabase() AND table = 'test_move_partition_throttling' and active;
 ALTER TABLE test_move_partition_throttling MOVE PARTITION tuple() TO VOLUME 'remote' SETTINGS max_remote_write_network_bandwidth=1600000;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- (8e6-1600000)/1600000=4.0
 SELECT query_kind, query_duration_ms>4e3 FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query_kind = 'Alter';
 SELECT disk_name, partition, rows FROM system.parts WHERE database = currentDatabase() AND table = 'test_move_partition_throttling' and active;

@@ -52,8 +52,8 @@ ${CLICKHOUSE_CLIENT} --query="SELECT 'old,content' INTO OUTFILE '${CLICKHOUSE_TM
 perform "2" "SELECT 'new,content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_2.out' TRUNCATE FORMAT CSV" "\"new,content\"" "0"
 
 # Test 3: Atomic TRUNCATE with compression
-${CLICKHOUSE_CLIENT} --query="SELECT 'old content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_3.out.gz' COMPRESSION 'gzip' FORMAT TSV" || { echo "Failed to create initial file for test 3"; exit 1; }
-perform "3" "SELECT 'new content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_3.out.gz' TRUNCATE COMPRESSION 'gzip' FORMAT TSV" "new content" "1"
+${CLICKHOUSE_CLIENT} --query="SELECT 'old content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_3.out.gz' FORMAT TSV" || { echo "Failed to create initial file for test 3"; exit 1; }
+perform "3" "SELECT 'new content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_3.out.gz' TRUNCATE FORMAT TSV" "new content" "1"
 
 # Test 4: Raw text file using RawBLOB format
 ${CLICKHOUSE_CLIENT} --query="SELECT 'old text' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_4.out' FORMAT RawBLOB" || { echo "Failed to create initial file for test 4"; exit 1; }

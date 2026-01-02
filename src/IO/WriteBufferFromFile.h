@@ -3,7 +3,7 @@
 #include <sys/types.h>
 
 #include <Common/CurrentMetrics.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
 

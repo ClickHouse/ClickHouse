@@ -8,7 +8,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -16,19 +16,18 @@ namespace DB
 class WorkloadEntityStorageBase : public IWorkloadEntityStorage
 {
 public:
-    explicit WorkloadEntityStorageBase(ContextPtr global_context_);
+    explicit WorkloadEntityStorageBase(ContextPtr global_context_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
     ASTPtr get(const String & entity_name) const override;
 
     ASTPtr tryGet(const String & entity_name) const override;
 
     bool has(const String & entity_name) const override;
 
-    std::vector<String> getAllEntityNames() const override;
-    std::vector<String> getAllEntityNames(WorkloadEntityType entity_type) const override;
-
     std::vector<std::pair<String, ASTPtr>> getAllEntities() const override;
 
     bool empty() const override;
+
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
 
     bool storeEntity(
         const ContextPtr & current_context,
@@ -48,12 +47,16 @@ public:
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
+    String getMasterThreadResourceName() override;
+    String getWorkerThreadResourceName() override;
+    String getQueryResourceName() override;
+
 protected:
     enum class OperationResult
     {
         Ok,
         Failed,
-        Retry
+        Retry,
     };
 
     virtual OperationResult storeEntityImpl(
@@ -73,21 +76,24 @@ protected:
 
     std::unique_lock<std::recursive_mutex> getLock() const;
 
-    /// Replace current `entities` with `new_entities` and notifies subscribers.
+    /// Replace current `local_entities` with `new_entities`, merge them with entities in the next storage and notifies subscribers.
     /// Note that subscribers will be notified with a sequence of events.
     /// It is guaranteed that all itermediate states (between every pair of consecutive events)
     /// will be consistent (all references between entities will be valid)
-    void setAllEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+    void setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
 
-    /// Serialize `entities` stored in memory plus one optional `change` into multiline string
-    String serializeAllEntities(std::optional<Event> change = {});
+    /// Serialize `local_entities` stored in memory plus one optional `change` into multiline string
+    String serializeLocalEntities(std::optional<Event> change);
+
+    /// Shared parsing function for both keeper and config storage
+    static std::vector<std::pair<String, ASTPtr>> parseEntitiesFromString(const String & data, LoggerPtr log);
 
 private:
     /// Change state in memory
     void applyEvent(std::unique_lock<std::recursive_mutex> & lock, const Event & event);
 
     /// Notify subscribers about changes describe by vector of events `tx`
-    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, std::vector<Event> tx);
+    void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
 
     /// Return true iff `references` has a path from `source` to `target`
     bool isIndirectlyReferenced(const String & target, const String & source);
@@ -112,11 +118,20 @@ private:
     std::shared_ptr<Handlers> handlers;
 
     mutable std::recursive_mutex mutex;
-    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query
+    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query (including entities from the next storage)
+    std::unordered_map<String, ASTPtr> local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
+    std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
 
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
     String root_name; /// current root workload name
+    String master_thread_resource; /// current resource name for worker threads
+    String worker_thread_resource; /// current resource name for master threads
+    String query_resource; /// current resource name for queries
+
+    // Chain of storages
+    std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)
+    scope_guard subscription; /// Subscription to changes in the next storage in the chain, if any
 
 protected:
     ContextPtr global_context;

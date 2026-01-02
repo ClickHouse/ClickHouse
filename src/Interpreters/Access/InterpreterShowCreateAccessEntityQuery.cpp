@@ -7,13 +7,13 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
@@ -23,6 +23,7 @@
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
+#include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
 #include <Core/Defines.h>
@@ -38,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -49,8 +51,7 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
-        query->names = std::make_shared<ASTUserNamesWithHost>();
-        query->names->push_back(user.getName());
+        query->names = std::make_shared<ASTUserNamesWithHost>(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -273,12 +274,12 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    String desc = serializeAST(show_query);
+    String desc = show_query.formatWithSecretsOneLine();
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}})));
 }
 
 
@@ -338,6 +339,10 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
                 entities.push_back(policy);
             }
         }
+    }
+    else if (show_query.type == AccessEntityType::MASKING_POLICY)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
     }
     else
     {
@@ -419,6 +424,11 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::QUOTA:
         {
             res.emplace_back(AccessType::SHOW_QUOTAS);
+            return res;
+        }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            res.emplace_back(AccessType::SHOW_MASKING_POLICIES);
             return res;
         }
         case AccessEntityType::MAX:

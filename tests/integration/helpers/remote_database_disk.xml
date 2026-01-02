@@ -1,0 +1,17 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_db_remote>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://{host}:{port}/{bucket}/test-{shard}|{replica}</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_db_remote>
+        </disks>
+    </storage_configuration>
+    <database_disk>
+        <disk>disk_db_remote</disk>
+    </database_disk>
+</clickhouse>

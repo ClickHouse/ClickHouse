@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Access/Common/AuthenticationType.h>
 #include <Access/Common/AllowedClientHosts.h>
 
 

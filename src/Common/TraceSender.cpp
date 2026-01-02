@@ -1,9 +1,14 @@
-#include <Common/TraceSender.h>
-
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
-#include <Common/StackTrace.h>
+#include <Common/CPUID.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StackTrace.h>
+#include <Common/TraceSender.h>
+#include <Common/setThreadName.h>
+#include <base/defines.h>
+
+#include <string_view>
 
 namespace
 {
@@ -41,11 +46,14 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(UInt8)                      /// String size
         + QUERY_ID_MAX_LEN                   /// Maximum query_id length
         + sizeof(UInt8)                      /// Number of stack frames
-        + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
+        + sizeof(FramePointers)              /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
+        + sizeof(ThreadName)                 /// thread name enum
         + sizeof(Int64)                      /// size
         + sizeof(void *)                     /// ptr
+        + sizeof(UInt8)                      /// memory_context
+        + sizeof(UInt8)                      /// memory_blocked_context
         + sizeof(ProfileEvents::Event)       /// event
         + sizeof(ProfileEvents::Count);      /// increment
 
@@ -58,6 +66,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
     std::string_view query_id;
+    UInt64 cpu_id = CPU::get_cpuid();
     UInt64 thread_id;
 
     if (CurrentThread::isInitialized())
@@ -68,9 +77,9 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
         thread_id = CurrentThread::get().thread_id;
     }
-    else
+    else if (const auto * main_thread = MainThreadStatus::get())
     {
-        thread_id = MainThreadStatus::get()->thread_id;
+        thread_id = main_thread->thread_id;
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
@@ -85,9 +94,20 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
+    writePODBinary(cpu_id, out);
     writePODBinary(thread_id, out);
+    writePODBinary(UInt8(getThreadName()), out);
+
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);
+    if (extras.memory_context.has_value())
+        writePODBinary(static_cast<Int8>(extras.memory_context.value()), out);
+    else
+        writePODBinary(static_cast<Int8>(MEMORY_CONTEXT_UNKNOWN), out);
+    if (extras.memory_blocked_context.has_value())
+        writePODBinary(static_cast<Int8>(extras.memory_blocked_context.value()), out);
+    else
+        writePODBinary(static_cast<Int8>(MEMORY_CONTEXT_UNKNOWN), out);
     writePODBinary(extras.event, out);
     writePODBinary(extras.increment, out);
 

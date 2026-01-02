@@ -17,7 +17,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ResizeProcessor::Status BaseResizeProcessor::prepareRoundRobin()
+/// TODO Check that there is non zero number of inputs and outputs.
+ResizeProcessor::ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    , current_input(inputs.begin())
+    , current_output(outputs.begin())
+{
+}
+
+ResizeProcessor::Status ResizeProcessor::prepare()
 {
     bool is_first_output = true;
     auto output_end = current_output;
@@ -156,7 +164,7 @@ ResizeProcessor::Status BaseResizeProcessor::prepareRoundRobin()
         if (input == inputs.end())
             return get_status_if_no_inputs();
 
-        output->push(input->pull());
+        output->pushData(input->pullData());
     }
 
     if (is_end_input())

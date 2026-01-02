@@ -1,4 +1,4 @@
-#include "Interpreters/OpenTelemetrySpanLog.h"
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <random>
 #include <base/getThreadId.h>
@@ -31,7 +31,7 @@ bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
     if (!this->isTraceEnabled() || name.empty())
         return false;
 
-    return addAttributeImpl(name, toString(value));
+    return addAttributeImpl(name, value);
 }
 
 bool Span::addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept
@@ -39,7 +39,7 @@ bool Span::addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept
     if (!this->isTraceEnabled() || name.empty() || value == 0)
         return false;
 
-    return addAttributeImpl(name, toString(value));
+    return addAttributeImpl(name, value);
 }
 
 bool Span::addAttribute(std::string_view name, std::string_view value) noexcept
@@ -81,7 +81,7 @@ bool Span::addAttribute(const Exception & e) noexcept
         return false;
 
     return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false))
-        && addAttributeImpl("clickhouse.exception_code", toString(e.code()));
+        && addAttributeImpl("clickhouse.exception_code", e.code());
 }
 
 bool Span::addAttribute(std::exception_ptr e) noexcept
@@ -98,20 +98,7 @@ bool Span::addAttribute(const ExecutionStatus & e) noexcept
         return false;
 
     return addAttributeImpl("clickhouse.exception", e.message)
-        && addAttributeImpl("clickhouse.exception_code", toString(e.code));
-}
-
-bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexcept
-{
-    try
-    {
-        this->attributes.push_back(Tuple{name, value});
-    }
-    catch (...)
-    {
-        return false;
-    }
-    return true;
+        && addAttributeImpl("clickhouse.exception_code", e.code);
 }
 
 SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
@@ -147,7 +134,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     current_trace_context->span_id = this->span_id;
 }
 
-void SpanHolder::finish() noexcept
+void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 {
     if (!this->isTraceEnabled())
         return;
@@ -163,9 +150,7 @@ void SpanHolder::finish() noexcept
         /// The log might be disabled, check it before use
         if (log)
         {
-            this->finish_time_us
-                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
+            this->finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch()).count();
             log->add(OpenTelemetrySpanLogElement(*this));
         }
     }
@@ -179,7 +164,7 @@ void SpanHolder::finish() noexcept
 
 SpanHolder::~SpanHolder()
 {
-    finish();
+    finish(std::chrono::system_clock::now());
 }
 
 bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)

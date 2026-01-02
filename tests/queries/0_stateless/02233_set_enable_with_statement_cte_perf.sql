@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: read_rows can differ if query execution was cancelled for remote replica(s)
+
 DROP TABLE IF EXISTS ev;
 DROP TABLE IF EXISTS idx;
 

@@ -26,12 +26,14 @@ function wait_part()
 
 function restore_failpoints()
 {
+    if [ -z "$failed_replica" ]; then
+        return
+    fi
+
     # restore entry error with failpoints (to avoid endless errors in logs)
-    $CLICKHOUSE_CLIENT -m -q "
-        system enable failpoint replicated_queue_unfail_entries;
-        system sync replica $failed_replica;
-        system disable failpoint replicated_queue_unfail_entries;
-    "
+    $CLICKHOUSE_CLIENT -q "system enable failpoint replicated_queue_unfail_entries" ||:
+    $CLICKHOUSE_CLIENT -q "system sync replica $failed_replica" ||:
+    $CLICKHOUSE_CLIENT -q "system disable failpoint replicated_queue_unfail_entries" ||:
 }
 trap restore_failpoints EXIT
 
@@ -96,6 +98,6 @@ wait_part "$failed_replica" all_0_2_2_1
 restore_failpoints
 trap '' EXIT
 
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs part_log"
 # check for error "Different number of files: 5 compressed (expected 3) and 2 uncompressed ones (expected 2). (CHECKSUM_DOESNT_MATCH)"
 $CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"

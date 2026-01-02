@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -34,6 +33,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 
 #include <base/range.h>
 
@@ -63,8 +63,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
@@ -86,6 +84,7 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
@@ -104,7 +103,8 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.cloneEmpty().getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        nullptr);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     Block converted = block;
@@ -143,12 +143,12 @@ DistributedSink::DistributedSink(
     bool insert_sync_,
     UInt64 insert_timeout_,
     const Names & columns_to_send_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
-    , query_string(queryToString(query_ast))
+    , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
@@ -332,7 +332,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
@@ -449,9 +449,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     copy_query_ast,
                     job.local_context,
                     allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* no_squash= */ false,
+                    /* no_destination= */ false,
+                    /* async_insert_= */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -594,7 +594,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "");
+                            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
                             job.executor->finish();
                         });
@@ -756,9 +756,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             query_ast,
             context,
             allow_materialized,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+            /* no_squash= */ false,
+            /* no_destination= */ false,
+            /* async_insert_= */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
@@ -789,6 +789,15 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     std::string compression_method = Poco::toUpper(settings[Setting::network_compression_method].toString());
     std::optional<int> compression_level;
 
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (compression_method != "NONE" && compression_method != "ZSTD" && compression_method != "LZ4" && compression_method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
     if (compression_method == "ZSTD")
         compression_level = settings[Setting::network_zstd_compression_level];
 
@@ -796,9 +805,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         compression_method,
         compression_level,
         !settings[Setting::allow_suspicious_codecs],
-        settings[Setting::allow_experimental_codecs],
-        settings[Setting::enable_deflate_qpl_codec],
-        settings[Setting::enable_zstd_qat_codec]);
+        settings[Setting::allow_experimental_codecs]);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -844,7 +851,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
 
             /// Prepare the header.
             /// See also DistributedAsyncInsertHeader::read() in DistributedInsertQueue (for reading side)
@@ -874,7 +881,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
                 header_stream.write(block.cloneEmpty());
             }
 
@@ -905,12 +912,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
         // Create hardlink here to reuse increment number
         auto bin_file = (fs::path(path) / file_name).string();
-        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue->addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
     ++it;
 
@@ -921,12 +928,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         fs::create_directory(path);
 
         auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
-        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue->addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads

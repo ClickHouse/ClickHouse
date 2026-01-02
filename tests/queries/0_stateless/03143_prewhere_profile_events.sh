@@ -60,7 +60,7 @@ settings enable_multiple_prewhere_read_steps=1;
 "
 
 ${CLICKHOUSE_CLIENT} -q "
-  SYSTEM FLUSH LOGS;
+  SYSTEM FLUSH LOGS query_log;
 
   -- 52503 which is 43 * number of granules, 10000000
   SELECT ProfileEvents['RowsReadByMainReader'], ProfileEvents['RowsReadByPrewhereReaders']

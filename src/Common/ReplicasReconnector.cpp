@@ -2,6 +2,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ReplicasReconnector.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ namespace ServerSetting
 }
 
 ReplicasReconnector::ReplicasReconnector(ContextPtr context)
-    : task_handle(context->getSchedulePool().createTask("ReplicasReconnector", [this]{ run(); }))
+    : task_handle(context->getSchedulePool().createTask(StorageID::createEmpty(), "ReplicasReconnector", [this]{ run(); }))
     , log(getLogger("ReplicasReconnector"))
 {
 }

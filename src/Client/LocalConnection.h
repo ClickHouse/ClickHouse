@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Connection.h"
-#include <Interpreters/Context.h>
+#include <Client/Connection.h>
+#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -37,6 +37,7 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> input_pipeline_executor;
 
     InternalProfileEventsQueuePtr profile_queue;
+    InternalTextLogsQueuePtr logs_queue;
 
     std::unique_ptr<Exception> exception;
 
@@ -77,6 +78,7 @@ public:
 
     explicit LocalConnection(
         std::unique_ptr<Session> && session_,
+        ReadBuffer * in_,
         bool send_progress_ = false,
         bool send_profile_events_ = false,
         const String & server_display_name_ = "");
@@ -96,6 +98,7 @@ public:
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         std::unique_ptr<Session> && session,
+        ReadBuffer * in_,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");
@@ -128,6 +131,8 @@ public:
         bool with_pending_data/* = false */,
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
+
+    void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;
 
@@ -171,6 +176,7 @@ private:
     bool pollImpl();
 
     bool needSendProgressOrMetrics();
+    bool needSendLogs();
 
     ContextMutablePtr query_context;
     std::unique_ptr<Session> session;

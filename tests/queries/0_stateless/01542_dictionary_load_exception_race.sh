@@ -18,27 +18,27 @@ $CLICKHOUSE_CLIENT --query "CREATE DICTIONARY ordinary_db.dict1 ( key_column UIn
 
 function dict_get_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "SELECT dictGetString('ordinary_db.dict1', 'third_column', toUInt64(rand() % 1000)) from numbers(2)" &>/dev/null
     done
 }
 
-export -f dict_get_thread;
-
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
-timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
+dict_get_thread 2> /dev/null &
 
 wait
 

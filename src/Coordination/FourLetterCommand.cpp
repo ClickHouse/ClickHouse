@@ -8,11 +8,12 @@
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -53,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
@@ -63,6 +65,11 @@ IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
 int32_t IFourLetterCommand::code()
 {
     return toCode(name());
+}
+
+String IFourLetterCommand::runWithArgument(const std::string &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Four letter command {} does not support argument", name());
 }
 
 String IFourLetterCommand::toName(int32_t code)
@@ -92,7 +99,7 @@ void FourLetterCommandFactory::checkInitialization() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
-bool FourLetterCommandFactory::isKnown(int32_t code)
+bool FourLetterCommandFactory::isKnown(int32_t code) const
 {
     checkInitialization();
     return commands.contains(code);
@@ -206,18 +213,33 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
         factory.registerCommand(profile_events_command);
 
+        FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
+        factory.registerCommand(toggle_request_logging);
+
+        FourLetterCommandPtr reconfigure_command = std::make_shared<ReconfigureCommand>(keeper_dispatcher);
+        factory.registerCommand(reconfigure_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
 
-bool FourLetterCommandFactory::isEnabled(int32_t code)
+bool FourLetterCommandFactory::isEnabled(int32_t code) const
 {
     checkInitialization();
     if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
         return true;
 
     return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
+}
+
+bool FourLetterCommandFactory::supportArguments(int32_t code) const
+{
+    checkInitialization();
+
+    if (IFourLetterCommand::toName(code) == "rcfg")
+        return true;
+    return false;
 }
 
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
@@ -649,19 +671,17 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    return flushJemallocProfile("/tmp/jemalloc_keeper");
+    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
 }
 
 String JemallocEnableProfile::run()
 {
-    setJemallocProfileActive(true);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 
 String JemallocDisableProfile::run()
 {
-    setJemallocProfileActive(false);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 #endif
 
@@ -690,6 +710,34 @@ String ProfileEventsCommand::run()
 #endif
 
     return ret.str();
+}
+
+String ToggleRequestLogging::run()
+{
+    const auto & keeper_context = keeper_dispatcher.getKeeperContext();
+    auto old_value = keeper_context->shouldLogRequests();
+    keeper_context->setLogRequests(!old_value);
+    return old_value ? "disabled" : "enabled";
+}
+
+
+String ReconfigureCommand::run()
+{
+    return "Reconfiguration command require single JSON argument";
+}
+
+String ReconfigureCommand::runWithArgument(const std::string & argument)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(argument).extract<Poco::JSON::Object::Ptr>();
+
+    if (!keeper_dispatcher.reconfigEnabled())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconfiguration is not enabled on this keeper server");
+
+    auto result = keeper_dispatcher.reconfigureClusterFromReconfigureCommand(json);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(result, oss, 4);
+    return oss.str();
 }
 
 }

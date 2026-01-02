@@ -11,14 +11,7 @@ namespace DB
 class BaseResizeProcessor : public IProcessor
 {
 public:
-    BaseResizeProcessor(const Block & header_, size_t num_inputs, size_t num_outputs)
-        : IProcessor(InputPorts(num_inputs, header_), OutputPorts(num_outputs, header_))
-        , header(header_)
-        , current_input(inputs.begin())
-        , current_output(outputs.begin())
-    {
-        is_output_enabled.resize(num_outputs, true);
-    }
+    ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override = 0;
     virtual bool isMemoryDependent() const { return false; }
@@ -141,11 +134,14 @@ protected:
     void concurrencyControlLogic() override;
 };
 
+/// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
+/// This is an attempt to keep thread locality of data, but support rebalance when some inputs are finished earlier.
+/// Usually, it's N to N mapping. Probably, we can simplify the implementation because of it.
 class StrictResizeProcessor : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.
-    StrictResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
+    StrictResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
         : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
         , current_input(inputs.begin())
         , current_output(outputs.begin())

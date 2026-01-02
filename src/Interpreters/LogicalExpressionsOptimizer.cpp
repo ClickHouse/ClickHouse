@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(const ASTFunction * or_function_,
-    const IAST::Hash & expression_, const std::string & alias_)
+    const IASTHash & expression_, const std::string & alias_)
     : or_function(or_function_), expression(expression_), alias(alias_)
 {
 }
@@ -303,15 +303,8 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
 
-    ASTPtr expression_list = std::make_shared<ASTExpressionList>();
-    expression_list->children.push_back(equals_expr_lhs);
-    expression_list->children.push_back(tuple_literal);
-
     /// Construct the expression `expr IN (x1, ..., xN)`
-    auto in_function = std::make_shared<ASTFunction>();
-    in_function->name = "in";
-    in_function->arguments = expression_list;
-    in_function->children.push_back(in_function->arguments);
+    auto in_function = makeASTOperator("in", equals_expr_lhs, tuple_literal);
     in_function->setAlias(or_with_expression.alias);
 
     /// 2. Insert the new IN expression.

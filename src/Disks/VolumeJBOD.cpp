@@ -1,4 +1,4 @@
-#include "VolumeJBOD.h"
+#include <Disks/VolumeJBOD.h>
 
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>

@@ -62,7 +62,6 @@ public:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
             }
-
         }
     }
 

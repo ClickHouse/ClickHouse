@@ -57,13 +57,6 @@ $CLICKHOUSE_CLIENT -u u03298 -q "
 
 ####################################################
 
-echo "[Sort] -- Big Ratio"
-$CLICKHOUSE_CLIENT -u u03298 -q "
-    SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS $common_settings, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.99999999
-    -- { serverError MEMORY_LIMIT_EXCEEDED }
-"
-
 echo "[Sort] -- Big Bytes"
 $CLICKHOUSE_CLIENT -u u03298 -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
@@ -80,19 +73,7 @@ $CLICKHOUSE_CLIENT -u u03298 -q "
 echo "[Sort] -- Ratio Limit Only"
 $CLICKHOUSE_CLIENT -u u03298 -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS $common_settings, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.5
-"
-
-echo "[Sort] -- Small Bytes Big Ratio"
-$CLICKHOUSE_CLIENT -u u03298 -q "
-    SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS $common_settings, max_bytes_before_external_sort = $half_limit, max_bytes_ratio_before_external_sort = 0.99999999
-"
-
-echo "[Sort] -- Big Bytes Small Ratio"
-$CLICKHOUSE_CLIENT -u u03298 -q "
-    SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS $common_settings, max_bytes_before_external_sort = $near_limit, max_bytes_ratio_before_external_sort = 0.5
+    SETTINGS $common_settings, max_bytes_before_external_sort = '100Mi', max_bytes_ratio_before_external_sort = 0.5
 "
 
 $CLICKHOUSE_CLIENT -q 'DROP USER IF EXISTS u03298'

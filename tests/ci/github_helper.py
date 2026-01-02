@@ -131,12 +131,17 @@ class GitHub(github.Github):
         return prs
 
     def get_release_pulls(self, repo_name: str) -> PullRequests:
-        return self.get_pulls_from_search(
+        prs = self.get_pulls_from_search(
             query=f"type:pr repo:{repo_name} is:open",
             sort="created",
             order="asc",
             label="release",
         )
+        # All PRs should belong to the repo_name
+        prs = [pr for pr in prs if pr.head.repo.full_name == repo_name]
+        # Ensure that the answer from GitHub is correct (we should always have some releases)
+        assert prs
+        return prs
 
     def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():
@@ -158,35 +163,77 @@ class GitHub(github.Github):
         repo_name = re.sub(r"\W", "_", repo.full_name)
         cache_file = self.cache_path / f"pr-{repo_name}-{number}.pickle"
 
-        if cache_file.is_file():
-            is_updated, cached_pr = self._is_cache_updated(cache_file, obj_updated_at)
-            if is_updated:
-                logger.debug("Getting PR #%s from cache", number)
-                return cached_pr  # type: ignore
-        logger.debug("Getting PR #%s from API", number)
+        return self._get_repo_obj_cached(  # type: ignore
+            repo, "get_pull", cache_file, number, obj_updated_at=obj_updated_at
+        )
+
+    def get_issue_cached(
+        self, repo: Repository, number: int, obj_updated_at: Optional[datetime] = None
+    ) -> Issue:
+        # clean any special symbol from the repo name, especially '/'
+        repo_name = re.sub(r"\W", "_", repo.full_name)
+        cache_file = self.cache_path / f"issue-{repo_name}-{number}.pickle"
+
+        return self._get_repo_obj_cached(  # type: ignore
+            repo, "get_issue", cache_file, number, obj_updated_at=obj_updated_at
+        )
+
+    def _get_repo_obj_cached(
+        self,
+        repo: Repository,
+        func: str,
+        cache_file: Path,
+        *args: Any,
+        obj_updated_at: Optional[datetime] = None,
+        **kwargs: Any,
+    ) -> object:
+        is_updated, cached_obj = self._is_cache_updated(cache_file, obj_updated_at)
+        if is_updated and cached_obj is not None:
+            logger.debug(
+                "Getting object for `%s(%s, %s)` from cache",
+                func,
+                args,
+                kwargs,
+            )
+            return cached_obj  # type: ignore
+
+        logger.debug(
+            "Getting object for `%s(%s, %s)` from API",
+            func,
+            args,
+            kwargs,
+        )
+
         for i in range(self.retries):
             try:
-                pr = repo.get_pull(number)
+                obj = getattr(repo, func)(*args, **kwargs)
                 break
             except RateLimitExceededException:
                 if i == self.retries - 1:
                     raise
                 self.sleep_on_rate_limit()
-        logger.debug("Caching PR #%s from API in %s", number, cache_file)
-        with open(cache_file, "wb") as prfd:
-            self.dump(pr, prfd)  # type: ignore
-        return pr
+        logger.debug(
+            "Caching object for `%s(%s, %s)` from API in %s",
+            func,
+            args,
+            kwargs,
+            cache_file,
+        )
+        if self.cache_path.is_dir():
+            with open(cache_file, "wb") as prfd:
+                self.dump(obj, prfd)  # type: ignore
+        return obj
 
     def get_user_cached(
         self, login: str, obj_updated_at: Optional[datetime] = None
     ) -> Union[AuthenticatedUser, NamedUser]:
         cache_file = self.cache_path / f"user-{login}.pickle"
 
-        if cache_file.is_file():
-            is_updated, cached_user = self._is_cache_updated(cache_file, obj_updated_at)
-            if is_updated:
-                logger.debug("Getting user %s from cache", login)
-                return cached_user  # type: ignore
+        is_updated, cached_user = self._is_cache_updated(cache_file, obj_updated_at)
+        if is_updated and cached_user is not None:
+            logger.debug("Getting user %s from cache", login)
+            return cached_user  # type: ignore
+
         logger.debug("Getting PR #%s from API", login)
         for i in range(self.retries):
             try:
@@ -197,8 +244,9 @@ class GitHub(github.Github):
                     raise
                 self.sleep_on_rate_limit()
         logger.debug("Caching user %s from API in %s", login, cache_file)
-        with open(cache_file, "wb") as prfd:
-            self.dump(user, prfd)  # type: ignore
+        if self.cache_path.is_dir():
+            with open(cache_file, "wb") as prfd:
+                self.dump(user, prfd)  # type: ignore
         return user
 
     def _get_cached(self, path: Path):  # type: ignore
@@ -234,6 +282,8 @@ class GitHub(github.Github):
     def _is_cache_updated(
         self, cache_file: Path, obj_updated_at: Optional[datetime]
     ) -> Tuple[bool, object]:
+        if not cache_file.is_file():
+            return False, None
         cached_obj = self._get_cached(cache_file)
         # We don't want the cache_updated being always old,
         # for example in cases when the user is not updated for ages
@@ -253,7 +303,7 @@ class GitHub(github.Github):
         return self._cache_path
 
     @cache_path.setter
-    def cache_path(self, value: str) -> None:
+    def cache_path(self, value: Union[str, Path]) -> None:
         self._cache_path = Path(value)
         if self._cache_path.exists():
             assert self._cache_path.is_dir()

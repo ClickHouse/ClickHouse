@@ -4,9 +4,11 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Interpreters/Session.h>
-#include <boost/algorithm/string/replace.hpp>
-#include "Common/setThreadName.h"
+#include <Interpreters/Context.h>
+#include <Common/setThreadName.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 
 #include <iomanip>
 
@@ -22,9 +24,25 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
 }
 
+
+ClientEmbedded::ClientEmbedded(
+    std::unique_ptr<Session> && session_,
+    int in_fd_,
+    int out_fd_,
+    int err_fd_,
+    std::istream & input_stream_,
+    std::ostream & output_stream_,
+    std::ostream & error_stream_)
+    : ClientBase(in_fd_, out_fd_, err_fd_, input_stream_, output_stream_, error_stream_), session(std::move(session_))
+{
+    global_context = session->makeSessionContext();
+    configuration = ConfigHelper::createEmpty();
+    layered_configuration = new Poco::Util::LayeredConfiguration();
+    layered_configuration->addWriteable(configuration, 0);
+}
 
 void ClientEmbedded::printHelpMessage(const OptionsDescription & options_description)
 {
@@ -43,7 +61,7 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
 }
 
 
-void ClientEmbedded::processError(const String &) const
+void ClientEmbedded::processError(std::string_view) const
 {
     if (ignore_error)
         return;
@@ -93,7 +111,7 @@ void ClientEmbedded::connect()
     }
     connection_parameters = ConnectionParameters::createForEmbedded(session->sessionContext()->getUserName(), default_database);
     connection = LocalConnection::createConnection(
-        connection_parameters, std::move(session), need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, std::move(session), std_in.get(), need_render_progress, need_render_profile_events, server_display_name);
     if (!default_database.empty())
     {
         connection->setDefaultDatabase(default_database);
@@ -107,11 +125,16 @@ Poco::Util::LayeredConfiguration & ClientEmbedded::getClientConfiguration()
 }
 
 
-int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
+bool ClientEmbedded::isEmbeeddedClient() const
 {
+    return true;
+}
+
+
+int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
-    setThreadName("LocalServerPty");
+    DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
@@ -141,14 +164,14 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.count("version") || options.count("V"))
+    if (options.contains("version") || options.contains("V"))
     {
         showClientVersion();
         cleanup();
         return 0;
     }
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         printHelpMessage(options_description);
         cleanup();
@@ -159,8 +182,8 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::EMBEDDED_CLIENT);
-    global_context->setSettings(cmd_settings);
+    global_context->setApplicationType(Context::ApplicationType::SERVER);
+    global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:
@@ -175,8 +198,10 @@ try
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
 
+    load_suggestions = true;
+    wait_for_suggestions_to_load = true;
     server_display_name = getFQDNOrHostName();
-    prompt = fmt::format("{} :) ", server_display_name);
+    prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
     enable_highlight = getClientConfiguration().getBool("highlight", true);
@@ -188,12 +213,10 @@ try
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
+    initKeystrokeInterceptor();
 
-    /// TODO: Support progress table.
-    /// initKeystrokeInterceptor();
-
-    client_context = session->sessionContext();
-    initClientContext();
+    initClientContext(session->sessionContext());
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {
@@ -225,17 +248,17 @@ catch (const DB::Exception & e)
     cleanup();
 
     error_stream << getExceptionMessage(e, print_stack_trace, true) << std::endl;
-    return e.code() ? e.code() : -1;
+    auto code = DB::getCurrentExceptionCode();
+    return static_cast<UInt8>(code) ? code : 1;
 }
 catch (...)
 {
     cleanup();
 
     error_stream << getCurrentExceptionMessage(false) << std::endl;
-    return getCurrentExceptionCode();
+    auto code = DB::getCurrentExceptionCode();
+    return static_cast<UInt8>(code) ? code : 1;
 }
-}
-
 
 }
 

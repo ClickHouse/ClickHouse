@@ -1,7 +1,10 @@
 ---
-slug: /operations/utilities/clickhouse-disks
+description: 'Documentation for Clickhouse-disks'
+sidebar_label: 'clickhouse-disks'
 sidebar_position: 59
-sidebar_label: clickhouse-disks
+slug: /operations/utilities/clickhouse-disks
+title: 'Clickhouse-disks'
+doc_type: 'reference'
 ---
 
 # Clickhouse-disks

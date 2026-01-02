@@ -1,10 +1,13 @@
-#include "UserDefinedExecutableFunctionFactory.h"
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
 #include <filesystem>
+#include <iomanip>
 
+#include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
@@ -18,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -26,6 +30,12 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
+    extern const int UDF_EXECUTION_FAILED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool log_queries;
 }
 
 namespace
@@ -105,7 +115,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return executable_function->getConfiguration().is_deterministic; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -175,61 +185,83 @@ public:
             column_with_type = std::move(column_to_cast);
         }
 
-        ColumnWithTypeAndName result(result_type, configuration.result_name);
-        Block result_block({result});
-
-        Block arguments_block(arguments_copy);
-        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
-        auto shell_input_pipe = Pipe(std::move(source));
-
-        ShellCommandSourceConfiguration shell_command_source_configuration;
-
-        if (coordinator_configuration.is_executable_pool)
+        try
         {
-            shell_command_source_configuration.read_fixed_number_of_rows = true;
-            shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
+            ColumnWithTypeAndName result(result_type, configuration.result_name);
+            Block result_block({result});
+
+            Block arguments_block(arguments_copy);
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(arguments_block)));
+            auto shell_input_pipe = Pipe(std::move(source));
+
+            ShellCommandSourceConfiguration shell_command_source_configuration;
+
+            if (coordinator_configuration.is_executable_pool)
+            {
+                shell_command_source_configuration.read_fixed_number_of_rows = true;
+                shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
+            }
+
+            Pipes shell_input_pipes;
+            shell_input_pipes.emplace_back(std::move(shell_input_pipe));
+
+            Pipe pipe = coordinator->createPipe(
+                command,
+                command_arguments_with_parameters,
+                std::move(shell_input_pipes),
+                result_block,
+                context,
+                shell_command_source_configuration);
+
+            QueryPipeline pipeline(std::move(pipe));
+            PullingPipelineExecutor executor(pipeline);
+
+            auto result_column = result_type->createColumn();
+            result_column->reserve(input_rows_count);
+
+            Block block;
+            while (executor.pull(block))
+            {
+                const auto & result_column_to_add = *block.safeGetByPosition(0).column;
+                result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+            }
+
+            size_t result_column_size = result_column->size();
+            if (result_column_size != input_rows_count)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Function {}: wrong result, expected {} row(s), actual {}",
+                    quoteString(getName()),
+                    input_rows_count,
+                    result_column_size);
+
+            return result_column;
         }
-
-        Pipes shell_input_pipes;
-        shell_input_pipes.emplace_back(std::move(shell_input_pipe));
-
-        Pipe pipe = coordinator->createPipe(
-            command,
-            command_arguments_with_parameters,
-            std::move(shell_input_pipes),
-            result_block,
-            context,
-            shell_command_source_configuration);
-
-        QueryPipeline pipeline(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        auto result_column = result_type->createColumn();
-        result_column->reserve(input_rows_count);
-
-        Block block;
-        while (executor.pull(block))
+        catch (...)
         {
-            const auto & result_column_to_add = *block.safeGetByPosition(0).column;
-            result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+            std::vector<String> quoted_arguments_with_parameters;
+            for (const auto & argument : command_arguments_with_parameters)
+                quoted_arguments_with_parameters.push_back("\"" + argument + "\"");
+            String quoted_arguments_string = boost::algorithm::join(quoted_arguments_with_parameters, ", ");
+
+            String error_message = getCurrentExceptionMessage(true /* with_stacktrace */);
+
+            throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+                "User defined function '{}' failed. "
+                "Command: '{}', Arguments: [{}]. "
+                "Original error: {}",
+                getName(),
+                command_with_parameters,
+                quoted_arguments_string,
+                error_message);
         }
-
-        size_t result_column_size = result_column->size();
-        if (result_column_size != input_rows_count)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function {}: wrong result, expected {} row(s), actual {}",
-                quoteString(getName()),
-                input_rows_count,
-                result_column_size);
-
-        return result_column;
+        UNREACHABLE();
     }
 
 private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
     String command_with_parameters;
-    std::vector<std::string> command_arguments_with_parameters;
+    std::vector<String> command_arguments_with_parameters;
 };
 
 }
@@ -245,6 +277,14 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
     auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
+
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
+    }
+
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
@@ -257,6 +297,14 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     {
         auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
         auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
+
+        if (CurrentThread::isInitialized())
+        {
+            auto query_context = CurrentThread::get().getQueryContext();
+            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
+        }
+
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
     }
 

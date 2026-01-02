@@ -1,15 +1,17 @@
 ---
-slug: /sql-reference/statements/alter/column
+description: 'Documentation for Column'
+sidebar_label: 'COLUMN'
 sidebar_position: 37
-sidebar_label: COLUMN
-title: "Column Manipulations"
+slug: /sql-reference/statements/alter/column
+title: 'Column Manipulations'
+doc_type: 'reference'
 ---
 
 A set of queries that allow changing the table structure.
 
 Syntax:
 
-``` sql
+```sql
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
@@ -32,7 +34,7 @@ These actions are described in detail below.
 
 ## ADD COLUMN {#add-column}
 
-``` sql
+```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
@@ -46,14 +48,14 @@ This approach allows us to complete the `ALTER` query instantly, without increas
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
 ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
 ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
 DESC alter_test FORMAT TSV;
 ```
 
-``` text
+```text
 Added1  UInt32
 CounterID       UInt32
 StartDate       Date
@@ -68,7 +70,7 @@ Added3  UInt32
 
 ## DROP COLUMN {#drop-column}
 
-``` sql
+```sql
 DROP COLUMN [IF EXISTS] name
 ```
 
@@ -82,13 +84,13 @@ You can't delete a column if it is referenced by [materialized view](/sql-refere
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits DROP COLUMN browser
 ```
 
 ## RENAME COLUMN {#rename-column}
 
-``` sql
+```sql
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
@@ -98,13 +100,13 @@ Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified,
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
 ## CLEAR COLUMN {#clear-column}
 
-``` sql
+```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
@@ -114,13 +116,13 @@ If the `IF EXISTS` clause is specified, the query won't return an error if the c
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
 ## COMMENT COLUMN {#comment-column}
 
-``` sql
+```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
@@ -132,13 +134,13 @@ Comments are stored in the `comment_expression` column returned by the [DESCRIBE
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
 ## MODIFY COLUMN {#modify-column}
 
-``` sql
+```sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 ```
@@ -167,7 +169,7 @@ When changing the type, values are converted as if the [toType](/sql-reference/f
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
@@ -211,6 +213,10 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
+:::note
+Please be careful when changing a Nullable column to Non-Nullable. Make sure it doesn't have any NULL values, otherwise it will cause problems when reading from it. In that case, the workaround would be to Kill the mutation and revert the column back to Nullable type.
+:::
+
 ## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
@@ -232,7 +238,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
-
 
 ## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 

@@ -38,7 +38,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionSingleValueOrNullData initialized empty");
     }
 
-    explicit AggregateFunctionSingleValueOrNullData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
+    explicit AggregateFunctionSingleValueOrNullData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
 
     ~AggregateFunctionSingleValueOrNullData() { data().~SingleValueDataBase(); }
 
@@ -80,7 +80,7 @@ public:
     /// Fixing it requires a breaking change (but it's probably necessary)
     void write(WriteBuffer & buf, const ISerialization & serialization) const { data().write(buf, serialization); }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data().read(buf, serialization, arena); }
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type, Arena * arena) { data().read(buf, serialization, data_type, arena); }
 
     void insertResultInto(IColumn & to, const DataTypePtr & result_type) const
     {
@@ -103,18 +103,18 @@ class AggregateFunctionSingleValueOrNull final
 {
 private:
     SerializationPtr serialization;
-    const TypeIndex value_type_index;
+    const DataTypePtr value_type;
 
 public:
     explicit AggregateFunctionSingleValueOrNull(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<AggregateFunctionSingleValueOrNullData, AggregateFunctionSingleValueOrNull>(
             {type}, {}, makeNullable(type))
         , serialization(type->getDefaultSerialization())
-        , value_type_index(WhichDataType(type).idx)
+        , value_type(type)
     {
     }
 
-    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionSingleValueOrNullData(value_type_index); }
+    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionSingleValueOrNullData(value_type); }
 
     String getName() const override { return "singleValueOrNull"; }
 
@@ -169,10 +169,10 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, arena);
+        data(place).read(buf, *serialization, result_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }
+    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type->getTypeId()); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {

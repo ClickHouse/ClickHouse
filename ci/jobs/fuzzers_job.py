@@ -1,6 +1,8 @@
-from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
-from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from praktika.result import Result
+from praktika.utils import Shell, Utils
+
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -9,13 +11,14 @@ def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseLight()
+    ch = ClickHouseProc()
+    info = Info()
 
     if res:
         print("Install ClickHouse")
 
         def install():
-            return ch.install() and ch.fuzzer_config_tweaks()
+            return ch.fuzzer_config_tweaks()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -30,17 +33,8 @@ def main():
             # TODO: attach gdb
             # and ch.attach_gdb()
 
-        log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
-        setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
-
-        results.append(
-            Result.from_commands_run(
-                name="Start ClickHouse",
-                command=[start, log_export_config, setup_logs_replication],
-                with_log=True,
-            )
-        )
-        res = results[-1].is_ok()
+        if ch.create_log_export_config():
+            ch.start_log_exports(check_start_time=stop_watch.start_time)
 
     if res:
         print("AST Fuzzer")
@@ -50,7 +44,6 @@ def main():
             Result.from_commands_run(
                 name="Start ClickHouse",
                 command=commands,
-                with_log=True,
             )
         )
         res = results[-1].is_ok()
@@ -61,7 +54,9 @@ def main():
         verbose=True,
     )
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=[ch.prepare_logs(info=info)]
+    ).complete_job()
 
 
 if __name__ == "__main__":

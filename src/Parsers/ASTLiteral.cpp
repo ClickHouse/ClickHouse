@@ -1,6 +1,8 @@
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
+#include <Common/quoteString.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>

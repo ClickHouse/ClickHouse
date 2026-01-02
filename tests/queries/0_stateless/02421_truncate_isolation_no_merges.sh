@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long, no-encrypted-storage
 
 set -e -o pipefail
 
@@ -139,7 +139,7 @@ function concurrent_drop_part_after()
     $CLICKHOUSE_CLIENT -q "select name, rows from system.parts
                               where table='drop_part_after_table' and database=currentDatabase() and active
                               order by name"
-    $CLICKHOUSE_CLIENT -q "system flush logs"
+    $CLICKHOUSE_CLIENT -q "system flush logs part_log"
     $CLICKHOUSE_CLIENT -q "select event_type, part_name from system.part_log
                               where table='drop_part_after_table' and database=currentDatabase()
                               order by part_name"

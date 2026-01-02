@@ -64,7 +64,7 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -290,16 +290,4 @@ namespace cctz_extension
     }
 
     ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
-}
-
-DateLUTImpl::Values DateLUTImpl::lutIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const
-{
-    Int16 year = 1970 + months / 12;
-    UInt8 month = months % 12 + 1;
-    return lut[makeLUTIndex(year, month, 1)];
-}
-
-DateLUTImpl::Values DateLUTImpl::lutIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const
-{
-    return lut[makeLUTIndex(years + 1970, 1, 1)];
 }

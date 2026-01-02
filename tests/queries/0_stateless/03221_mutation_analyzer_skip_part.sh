@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # Mutation query may return before the entry is added to part log.
 # So, we may have to retry the flush of logs until all entries are actually flushed.
 for _ in {1..10}; do
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
     res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE database = currentDatabase() AND table = 't_mutate_skip_part' AND event_type = 'MutatePart'")
 
     if [[ $res -eq 4 ]]; then
@@ -34,7 +34,7 @@ for _ in {1..10}; do
 done
 
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS part_log;
 
     -- If part is skipped in mutation and hardlinked then read_rows must be 0.
     SELECT part_name, read_rows

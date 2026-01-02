@@ -6,7 +6,6 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 
 namespace DB
@@ -209,7 +208,7 @@ String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, true);
-        new_expr += ch_op + " (" + serializeAST(*select) + ")";
+        new_expr += ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -256,7 +255,7 @@ std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, co
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, false);
-        auto new_expr = ch_op + " (" + serializeAST(*select) + ")";
+        auto new_expr = ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -375,7 +374,7 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
         else
             --pos;
 
-        if (KQLOperator.find(op) == KQLOperator.end())
+        if (!KQLOperator.contains(op))
         {
             pos = begin;
             return false;

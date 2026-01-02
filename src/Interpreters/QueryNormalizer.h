@@ -3,9 +3,8 @@
 #include <map>
 
 #include <Core/Names.h>
-#include <Core/Settings.h>
 #include <Interpreters/Aliases.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -15,17 +14,12 @@ class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
 class Context;
 class ASTQueryParameter;
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_ast_depth;
-    extern const SettingsUInt64 max_expanded_ast_elements;
-    extern const SettingsBool prefer_column_name_to_alias;
-}
+struct Settings;
 
 
 class QueryNormalizer
 {
+public:
     /// Extracts settings, mostly to show which are used and which are not.
     struct ExtractedSettings
     {
@@ -33,16 +27,9 @@ class QueryNormalizer
         const UInt64 max_expanded_ast_elements;
         bool prefer_column_name_to_alias;
 
-        template <typename T>
-        ExtractedSettings(const T & settings) /// NOLINT
-            : max_ast_depth(settings[Setting::max_ast_depth])
-            , max_expanded_ast_elements(settings[Setting::max_expanded_ast_elements])
-            , prefer_column_name_to_alias(settings[Setting::prefer_column_name_to_alias])
-        {
-        }
+        explicit ExtractedSettings(const Settings & settings);
     };
 
-public:
     struct Data
     {
         using SetOfASTs = std::set<const IAST *>;

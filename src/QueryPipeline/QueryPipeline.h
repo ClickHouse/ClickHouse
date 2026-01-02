@@ -1,7 +1,11 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Interpreters/Context_fwd.h>
+
 #include <functional>
 
 namespace DB
@@ -98,6 +102,7 @@ public:
 
     /// Only for pushing and pulling.
     Block getHeader() const;
+    SharedHeader getSharedHeader() const;
 
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
@@ -132,13 +137,14 @@ public:
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
-    void addCompletedPipeline(QueryPipeline other);
+    void addCompletedPipeline(QueryPipeline && other);
+    void addCompletedPipeline(const QueryPipeline & other);
 
     const Processors & getProcessors() const { return *processors; }
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
-    void convertStructureTo(const ColumnsWithTypeAndName & columns);
+    void convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context);
 
     void reset();
     void cancel() noexcept;
