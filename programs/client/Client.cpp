@@ -1111,6 +1111,23 @@ void Client::readArguments(
     {
         std::string_view arg = argv[arg_num];
 
+        /// Support arguments with a space on both sides of equals sign.
+        /// Ex: --param = value
+        std::string fused_arg;
+        if (arg.starts_with('-') && arg_num + 2 < argc)
+        {
+            std::string_view next_arg = argv[arg_num + 1];
+            if (next_arg == "=" && !arg.contains('='))
+            {
+                fused_arg = std::string(arg);
+                fused_arg += "=";
+                fused_arg += argv[arg_num + 2];
+
+                arg = fused_arg;
+                arg_num += 2;
+            }
+        }
+
         if (has_connection_string || is_hostname_argument)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
 
