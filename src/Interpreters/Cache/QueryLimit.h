@@ -44,7 +44,7 @@ public:
             KeyMetadataPtr key_metadata,
             size_t offset,
             size_t size,
-            const FileCacheUserInfo & user,
+            const FileCacheOriginInfo & origin,
             const CachePriorityGuard::Lock &);
 
         void remove(
