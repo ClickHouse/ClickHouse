@@ -65,9 +65,10 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() > 10, function_name, handler, entry_type FROM system.instrumentation WHERE symbol ILIKE '%executeQuery%' GROUP BY function_name, handler, entry_type;
 
     SELECT '-- Remove functions that match';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'my log in startQuery';
     SYSTEM INSTRUMENT REMOVE 'unknown'; -- { serverError BAD_ARGUMENTS }
     SYSTEM INSTRUMENT REMOVE 'executeQuery';
-    SELECT count() FROM system.instrumentation;
+    SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Remove everything';
     SYSTEM INSTRUMENT REMOVE ALL;
