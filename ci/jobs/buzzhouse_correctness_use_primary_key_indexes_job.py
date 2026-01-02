@@ -85,7 +85,7 @@ def main():
         "max_string_length": 10,
         "max_parallel_queries": 1,
         "max_number_alters": 1,
-        "time_to_run": 180,
+        "time_to_run": 300,
         # Compare results of the same query under different settings.
         "allow_query_oracles": True,
         "compare_success_results": True,
