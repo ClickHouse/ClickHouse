@@ -4,8 +4,6 @@
 
 -- { echo }
 
-SET use_primary_key_indexes = 0;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (
@@ -18,6 +16,8 @@ SETTINGS index_granularity = 1;
 INSERT INTO tab
 SELECT number
 FROM numbers(100);
+
+SET use_primary_key_indexes = 0;
 
 SELECT count() FROM tab WHERE id = 5;
 
@@ -25,19 +25,6 @@ EXPLAIN indexes = 1
 SELECT count() FROM tab WHERE id = 5;
 
 SET use_primary_key_indexes = 1;
-
-DROP TABLE IF EXISTS tab;
-
-CREATE TABLE tab (
-  id UInt64
-)
-ENGINE = MergeTree()
-ORDER BY id
-SETTINGS index_granularity = 1;
-
-INSERT INTO tab
-SELECT number
-FROM numbers(100);
 
 SELECT count() FROM tab WHERE id = 5;
 
