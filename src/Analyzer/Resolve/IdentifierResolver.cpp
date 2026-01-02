@@ -242,8 +242,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// Two parts: could be db.table or table with dots in current database
     /// The parser already joined extra parts into the table name, so parts[0] is
     /// potential database and parts[1] is potential table name (may contain dots)
-    std::string db_name = table_identifier[0];
-    std::string tbl_name = table_identifier[1];
+    const std::string & db_name = table_identifier[0];
+    const std::string & tbl_name = table_identifier[1];
 
     bool db_exists = DatabaseCatalog::instance().isDatabaseExist(db_name);
 
@@ -255,7 +255,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// but only if the first part is NOT a known database (to avoid false ambiguity)
     if (is_datalake && !db_exists)
     {
-        std::string full_table_name = table_identifier.getFullName();
+        const std::string & full_table_name = table_identifier.getFullName();
         if (auto result = tryResolveTableWithNames({}, full_table_name, context))
             return result;
 
