@@ -747,14 +747,13 @@ def main():
                     )
                 )
             elif sha and sha != "local" and not have_cidb:
-                # Non-blocking: record a warning but don't fail the job as integration post-run will push results
                 results.append(
                     Result.from_commands_run(
                         name="CIDB Sanity Gate (missing credentials)",
                         command=[
-                            "bash -lc 'echo missing CI DB credentials/helper; echo will not block; true'"
+                            "bash -lc 'echo ERROR: missing CI DB credentials/helper; false'"
                         ],
-                        with_info=True,
+                        with_info_on_failure=True,
                     )
                 )
         except Exception:
