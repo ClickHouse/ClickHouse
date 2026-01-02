@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Storages/ObjectStorage/Common.h>
 
 namespace DB
 {
@@ -37,6 +38,7 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     ContextPtr /*context*/,
     const std::optional<ColumnsDescription> & /*columns*/,
     ASTPtr /*partition_by*/,
+    ASTPtr /*order_by*/,
     bool /*if_not_exists*/,
     std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
@@ -200,7 +202,7 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
     return path.substr(0, end_of_path_without_globs);
 }
 
-void StorageObjectStorageConfiguration::check(ContextPtr) const
+void StorageObjectStorageConfiguration::check(ContextPtr)
 {
     FormatFactory::instance().checkFormatName(format);
 }
@@ -234,5 +236,15 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     const std::optional<FormatSettings> &,
     ContextPtr) const
 {
+}
+
+void StorageObjectStorageConfiguration::initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments)
+{
+    format = parsed_arguments.format;
+    compression_method = parsed_arguments.compression_method;
+    structure = parsed_arguments.structure;
+    partition_strategy_type = parsed_arguments.partition_strategy_type;
+    partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    partition_strategy = parsed_arguments.partition_strategy;
 }
 }

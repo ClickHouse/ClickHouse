@@ -75,4 +75,4 @@ The number of accessible subcolumns depends on the element type:
 
 These are the distance functions for vector similarity search that use `QBit` data type:
 
-* [`L2DistanceTransposed`](../functions/distance-functions.md#l2distancetransposed)
+* [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)

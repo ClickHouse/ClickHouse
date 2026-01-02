@@ -7,6 +7,7 @@ INSERT INTO customer SELECT number, 5 FROM numbers(500);
 
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
+SET join_algorithm = 'hash,parallel_hash';
 
 SELECT '-- Check that filter on c_nationkey is moved to PREWHERE';
 SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')

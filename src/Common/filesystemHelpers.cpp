@@ -73,11 +73,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(folder_path);
-    return std::make_unique<PocoTemporaryFile>(folder_path);
+    return std::make_unique<Poco::TemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -219,7 +219,17 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
     auto rel = fs::relative(path, prefix_path);
-    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
@@ -230,7 +240,18 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
     /// not be a path of a symlink itself.
 
     auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
-    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
+
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 bool pathStartsWith(const String & path, const String & prefix_path)

@@ -39,9 +39,14 @@ ReadFromFormatInfo prepareReadingFromFormat(
     for (const auto & column_name : requested_columns)
     {
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name); it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        }
+        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name);
+                 it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        {
             info.hive_partition_columns_to_read_from_file_path.emplace_back(it->first, it->second);
+        }
         else
             columns_to_read.push_back(column_name);
     }
@@ -251,11 +256,11 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     ///  supports_tuple_elements also support empty list of columns.)
 }
 
-ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info)
+ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
 {
     chassert(prewhere_info);
 
-    if (info.prewhere_info)
+    if (info.prewhere_info || info.row_level_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info;
@@ -263,7 +268,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 
     /// Removes columns that are only used as prewhere input.
     /// Adds prewhere result column if !remove_prewhere_column.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, prewhere_info);
+    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, row_level_filter, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
     /// don't need to replace subcolumns with their nested columns etc.
@@ -294,20 +299,20 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
-        return {};
+        return SerializationInfoByName{{}};
 
     auto insertion_table = context->getInsertionTable();
     if (!insertion_table)
-        return {};
+        return SerializationInfoByName{{}};
 
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
     if (!storage_ptr)
-        return {};
+        return SerializationInfoByName{{}};
 
     const auto & our_columns = metadata_snapshot->getColumns();
     const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
-    SerializationInfoByName res;
+    SerializationInfoByName res({});
 
     for (const auto & hint : storage_hints)
     {
@@ -322,7 +327,7 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(), ctx.out);
+    writeStringBinary(columns_description.toString(false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);
@@ -364,7 +369,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
     readString(json, ctx.in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
 
     ctx.in >> "\n";
 
@@ -372,7 +377,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     bool has_prewhere_info;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
-        result.prewhere_info = PrewhereInfo::deserialize(ctx);
+        result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
     ctx.in >> "\n";
 

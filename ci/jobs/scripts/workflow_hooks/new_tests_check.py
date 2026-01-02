@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 from ci.praktika.info import Info
 
@@ -14,7 +15,11 @@ def has_new_functional_tests(changed_files):
 def has_new_integration_tests(changed_files):
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        if file.startswith("tests/integration/test_"):
+        if (
+            file.startswith("tests/integration/test_")
+            and Path(file).name.startswith("test")
+            and file.endswith(".py")
+        ):
             return True
     return False
 

@@ -15,6 +15,14 @@ namespace DB::ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
+namespace ProfileEvents
+{
+    extern const Event ParquetFetchWaitTimeMicroseconds;
+    extern const Event ParquetPrefetcherReadRandomRead;
+    extern const Event ParquetPrefetcherReadSeekAndRead;
+    extern const Event ParquetPrefetcherReadEntireFile;
+}
+
 namespace DB::Parquet
 {
 
@@ -69,7 +77,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
         if (!reader_->eof() && reader_->available() >= expected_prefix.size() &&
             memcmp(reader_->position(), expected_prefix.data(), expected_prefix.size()) != 0)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a parquet file (wrong magic bytes at the start)");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the start)");
         }
 
         WriteBufferFromVector<PaddedPODArray<char>> out(entire_file);
@@ -91,6 +99,7 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
     {
         case ReadMode::RandomRead:
             nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
             break;
         case ReadMode::SeekAndRead:
         {
@@ -101,11 +110,13 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
             reader->seek(offset, SEEK_SET);
             reader->setReadUntilPosition(offset + n);
             nread = reader->readBig(to, n);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadSeekAndRead);
             break;
         }
         case ReadMode::EntireFileIsInMemory:
             memcpy(to, entire_file.data() + offset, n);
             nread = n;
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadEntireFile);
             break;
     }
     if (nread != n)
@@ -126,7 +137,7 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
 
 void Prefetcher::finalizeRanges()
 {
-    bool already_finalized = ranges_finalized.exchange(true);
+    bool already_finalized = ranges_finalized.exchange(true);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(!already_finalized);
     auto & ranges = range_sets[0].ranges;
     std::sort(ranges.begin(), ranges.end(), [](const RangeState & a, const RangeState & b)
@@ -409,16 +420,24 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
     const RequestState * req = request.request;
     chassert(req->state == RequestState::State::HasTask);
     Task * task = req->task;
-    auto s = task->state.load(std::memory_order_acquire);
-    if (s == Task::State::Scheduled)
+    Task::State s = task->state.load(std::memory_order_acquire);
+    if (s == Task::State::Scheduled || s == Task::State::Running)
     {
-        s = runTask(task);
-        chassert(s != Task::State::Scheduled);
-    }
-    if (s == Task::State::Running)
-    {
-        task->completion.wait();
-        s = task->state.load();
+        Stopwatch wait_time;
+
+        if (s == Task::State::Scheduled)
+        {
+            s = runTask(task);
+            chassert(s != Task::State::Scheduled);
+        }
+
+        if (s == Task::State::Running) // (not `else`, the runTask above may return Running)
+        {
+            task->completion.wait();
+            s = task->state.load();
+        }
+
+        ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, wait_time.elapsedMicroseconds());
     }
     if (s == Task::State::Exception)
         rethrowException(task);

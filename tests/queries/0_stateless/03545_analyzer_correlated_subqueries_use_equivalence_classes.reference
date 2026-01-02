@@ -7,7 +7,7 @@ Positions: 2
   Actions: INPUT :: 0 -> __table3.number UInt64 : 0
            INPUT :: 1 -> __table1 Nullable(UInt64) : 1
   Positions: 0 1
-    Join
+    Join (JOIN FillRightFirst)
     Type: LEFT
     Strictness: ANY
     Algorithm: ConcurrentHashJoin
