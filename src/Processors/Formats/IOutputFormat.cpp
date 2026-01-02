@@ -126,6 +126,10 @@ void IOutputFormat::work()
 
 void IOutputFormat::flushImpl()
 {
+    /// Call pre-flush callback if there's data to write in the buffer
+    if (pre_flush_callback && out.offset() > 0)
+        pre_flush_callback();
+
     out.next();
 
     /// If output is a compressed buffer, we will flush the compressed chunk as well.
