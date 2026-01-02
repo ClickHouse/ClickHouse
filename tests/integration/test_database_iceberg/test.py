@@ -674,7 +674,7 @@ def test_not_specified_catalog_type(started_cluster):
 def test_three_part_identifier(started_cluster):
     """
     Test 3-part compound identifier syntax: db.namespace.table
-    This allows accessing tables with single-level namespaces without backticks.
+    This allows accessing tables with single-level namespaces without backticks
     For example: SELECT * FROM demo.my_namespace.my_table
     Instead of:  SELECT * FROM demo.`my_namespace.my_table`
     """
@@ -689,7 +689,6 @@ def test_three_part_identifier(started_cluster):
 
     table = create_table(catalog, namespace, table_name)
 
-    # Insert test data
     num_rows = 5
     data = [generate_record() for _ in range(num_rows)]
     df = pa.Table.from_pylist(data)
@@ -726,12 +725,6 @@ def test_three_part_identifier(started_cluster):
 def test_database_priority_over_namespace(started_cluster):
     """
     Test that database.table interpretation takes priority over namespace.table.
-    
-    Scenario:
-    - We have a regular database named 'ns_xxx' with table 'table1'
-    - We have a DataLakeCatalog database with table 'ns_xxx.table1'
-    - When querying 'ns_xxx.table1', it should resolve to the regular database
-      (database.table takes priority over namespace.table in current database)
     """
     node = started_cluster.instances["node1"]
 
@@ -741,50 +734,40 @@ def test_database_priority_over_namespace(started_cluster):
 
     catalog = load_catalog_impl(started_cluster)
 
-    # Create namespace and table in Iceberg catalog
     catalog.create_namespace(namespace)
     iceberg_table = create_table(catalog, namespace, table_name)
 
-    # Insert data into iceberg table (5 rows)
     data = [generate_record() for _ in range(5)]
     df = pa.Table.from_pylist(data)
     iceberg_table.append(df)
 
-    # Create the DataLakeCatalog database
+    # create the DataLakeCatalog database
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    # Create a regular database with the same name as the namespace
+    # create a regular database with the same name as the namespace
     node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
     node.query(f"CREATE DATABASE `{namespace}`")
     
-    # Create a table with the same name in the regular database (3 rows)
+    # create a table with the same name in the regular database (3 rows)
     node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
     node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
 
     # When in the DataLakeCatalog database, querying namespace.table should resolve
     # to the regular database (db.table takes priority)
-    node.query(f"USE {CATALOG_NAME}")
-
-    # This should return 3 rows (from regular database), not 5 (from iceberg)
-    count = int(node.query(f"SELECT count() FROM {namespace}.{table_name}"))
+    # run USE and SELECT in same session
+    count = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}"))
     assert count == 3, f"Expected 3 rows from regular database, got {count}"
 
     # To access the iceberg table, use backticks
-    count_iceberg = int(node.query(f"SELECT count() FROM `{namespace}.{table_name}`"))
+    count_iceberg = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM `{namespace}.{table_name}`"))
     assert count_iceberg == 5, f"Expected 5 rows from iceberg table, got {count_iceberg}"
 
-    # Cleanup
     node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
 
 
 def test_use_database_with_namespace(started_cluster):
     """
-    Test USE db.namespace syntax for DataLakeCatalog databases.
-    
-    After USE demo.my_namespace:
-    - Current database is set to 'demo'
-    - Table prefix is set to 'my_namespace'
-    - SELECT * FROM table resolves to my_namespace.table in demo
+    Test USE db.namespace syntax for DataLakeCatalog databases
     """
     node = started_cluster.instances["node1"]
 
@@ -794,37 +777,25 @@ def test_use_database_with_namespace(started_cluster):
 
     catalog = load_catalog_impl(started_cluster)
 
-    # Create namespace and table in Iceberg catalog
     catalog.create_namespace(namespace)
     iceberg_table = create_table(catalog, namespace, table_name)
 
-    # Insert data into iceberg table
     data = [generate_record() for _ in range(5)]
     df = pa.Table.from_pylist(data)
     iceberg_table.append(df)
 
-    # Create the DataLakeCatalog database
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    # Test USE db.namespace syntax
-    node.query(f"USE {CATALOG_NAME}.{namespace}")
-
-    # Now SELECT * FROM table_name should resolve to namespace.table_name
-    count = int(node.query(f"SELECT count() FROM {table_name}"))
+    # Test USE db.namespace syntax in same session
+    count = int(node.query(f"USE {CATALOG_NAME}.{namespace}; SELECT count() FROM {table_name}"))
     assert count == 5, f"Expected 5 rows after USE db.namespace, got {count}"
 
     # Verify we can also use the full path
     count_full = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"))
     assert count_full == 5, f"Expected 5 rows with full path, got {count_full}"
 
-    # Switch to a different namespace - verify prefix is cleared when switching to regular db
-    node.query("USE default")
-    
-    # Now the short name should not resolve
-    try:
-        node.query(f"SELECT * FROM {table_name}")
-        assert False, "Should have failed - table doesn't exist in default database"
-    except Exception as e:
-        assert "UNKNOWN_TABLE" in str(e) or "doesn't exist" in str(e)
+    # check that prefix is cleared when switching to regular db
+    result = node.query(f"USE {CATALOG_NAME}.{namespace}; USE default; SELECT 1 FROM {table_name}", ignore_error=True)
+    assert "UNKNOWN_TABLE" in result or "doesn't exist" in result, f"Expected UNKNOWN_TABLE error, got: {result}"
 
 
