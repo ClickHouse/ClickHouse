@@ -211,7 +211,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
             table_identifier.getFullName());
 
-    /// table prefix from session context (set by USE db.prefix)
+    /// table prefix from context (set by USE db.prefix)
     /// Only applies to DataLakeCatalog databases
     String table_prefix;
     String current_database = context->getCurrentDatabase();
@@ -219,11 +219,8 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     if (is_datalake)
     {
-        /// Try to get table prefix from session context first, then from current context
-        if (context->hasSessionContext())
-            table_prefix = context->getSessionContext()->getCurrentTablePrefix();
-        if (table_prefix.empty())
-            table_prefix = context->getCurrentTablePrefix();
+        /// Get the table prefix from the current context
+        table_prefix = context->getCurrentTablePrefix();
     }
 
     /// Single part: table name, possibly with prefix
