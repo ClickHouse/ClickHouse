@@ -684,20 +684,21 @@ class Utils:
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
         path_out = ""
+        temp_dir = tempfile.gettempdir()
 
         if Shell.check("which zstd"):
             if is_dir:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.zst"
+                path_out = f"{temp_dir}/{name}.tar.zst"
                 Shell.check(
                     f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.zst"
+                path_out = f"{temp_dir}/{path_obj.name}.zst"
                 Shell.check(
                     f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
                     verbose=True,
@@ -729,21 +730,22 @@ class Utils:
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
         path_out = ""
+        temp_dir = tempfile.gettempdir()
 
         if Shell.check("which gzip"):
             if is_dir:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.gz"
                 archive_name = f"{name}.tar.gz"
+                path_out = f"{temp_dir}/{archive_name}"
                 Shell.check(
                     f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.gz"
+                path_out = f"{temp_dir}/{path_obj.name}.gz"
                 Shell.check(
                     f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
