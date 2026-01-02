@@ -51,6 +51,15 @@ mongodb(uri, collection, structure[, oid_columns])
 | `collection`  | Remote collection name.                                                                                |
 | `structure`   | The schema for the ClickHouse table returned from this function.                                       |
 | `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
+:::
+
+You can pass the arguments using a named collection:
+
+```sql
+mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options[, oid_columns]])
+-- or
+mongodb(_named_collection_[, uri][, structure][, options[, oid_columns]])
+```
 
 ## Returned value {#returned_value}
 
