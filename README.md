@@ -48,9 +48,11 @@ You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-even
 
 Upcoming meetups
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
+* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/312621832/) - January 10th, 2026
 * [Iceberg Meetup Menlo Park](https://luma.com/abggijbh) - January 21st, 2026
 * [Data & AI Paris Meetup](https://luma.com/3szhmv9h) - January 22nd, 2026
 * [Iceberg Meetup New York](https://luma.com/ifxnj82q) - January 23rd, 2026
+* [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/312679894/) - January 29th, 2026
 * [Iceberg Meetup Brussels](https://luma.com/yx3lhqu9) - January 30th, 2026
 
 Recent meetups

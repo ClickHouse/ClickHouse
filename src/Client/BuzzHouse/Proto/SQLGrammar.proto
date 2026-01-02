@@ -1762,7 +1762,7 @@ message Function {
 }
 
 message Cluster {
-    required string cluster = 1;
+    optional string cluster = 1;
 }
 
 message Storage {
@@ -3030,6 +3030,7 @@ message DatabaseEngineParam {
 message DatabaseEngine {
     required DatabaseEngineValues engine = 1;
     repeated DatabaseEngineParam params = 2;
+    optional SettingValues setting_values = 3;
 }
 
 message CreateDatabase {
@@ -3038,8 +3039,7 @@ message CreateDatabase {
     optional string uuid = 3;
     optional Cluster cluster = 4;
     required DatabaseEngine dengine = 5;
-    optional SettingValues setting_values = 6;
-    optional string comment = 7;
+    optional string comment = 6;
 }
 
 message CreateFunction {

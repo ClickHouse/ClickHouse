@@ -1571,6 +1571,9 @@ class ResultTranslator:
                                 )
                                 test_results[node_id] = test_result
                             else:
+                                # accumulate duration setup + call + teardown
+                                test_results[node_id].duration += duration
+
                                 # Always override with a failure, or keep existing failure
                                 if (
                                     status == Result.StatusExtended.FAIL
@@ -1578,7 +1581,6 @@ class ResultTranslator:
                                     == Result.StatusExtended.FAIL
                                 ):
                                     test_results[node_id].status = status
-                                    test_results[node_id].duration = duration
                                 # Update info if we now have traceback
                                 if traceback_str:
                                     if not test_results[node_id].info:
@@ -1597,7 +1599,6 @@ class ResultTranslator:
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
                                         test_results[node_id].status = status
-                                        test_results[node_id].duration = duration
 
                     except json.JSONDecodeError as e:
                         print(f"Error decoding line in jsonl file: {e}")

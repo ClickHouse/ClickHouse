@@ -101,21 +101,15 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
-## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
-
-Clears the text index dictionary cache.
-
-## SYSTEM DROP TEXT INDEX HEADER CACHE {#drop-text-index-header-cache}
-
-Clears the text index header cache.
-
-## SYSTEM DROP TEXT INDEX POSTINGS CACHE {#drop-text-index-postings-cache}
-
-Clears the text index postings cache.
-
 ## SYSTEM DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index header cache, dictionary cache, and postings cache.
+Clears the text index's header, dictionary and postings caches.
+
+If you like to drop one of these caches individually, you can run
+
+- `SYSTEM DROP TEXT INDEX HEADER CACHE`,
+- `SYSTEM DROP TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM DROP TEXT INDEX POSTINGS CACHE`
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
