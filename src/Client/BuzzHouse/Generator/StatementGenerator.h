@@ -146,7 +146,7 @@ private:
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
          allow_subqueries = true, enforce_final = false, allow_engine_udf = true;
     uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, function_counter = 0, current_level = 0, backup_counter = 0,
-             cache_counter = 0, aliases_counter = 0;
+             cache_counter = 0, aliases_counter = 0, id_counter = 0;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::unordered_map<uint32_t, SQLTable> staged_tables, tables;
     std::unordered_map<uint32_t, SQLView> staged_views, views;
@@ -341,6 +341,7 @@ private:
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
+    void setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu) const;
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
     template <typename T>
     void randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te);
