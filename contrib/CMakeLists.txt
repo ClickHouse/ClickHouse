@@ -246,9 +246,7 @@ add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
 
-if (OS_LINUX AND ARCH_AMD64)
-    add_contrib(simdcomp-cmake simdcomp)
-endif()
+add_contrib(simdcomp-cmake simdcomp)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

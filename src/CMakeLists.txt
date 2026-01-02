@@ -511,7 +511,7 @@ target_link_libraries(dbms PUBLIC
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
 
-if (OS_LINUX AND ARCH_AMD64)
+if (TARGET ch_contrib::simdcomp)
     target_link_libraries (dbms PRIVATE ch_contrib::simdcomp)
 endif()
 

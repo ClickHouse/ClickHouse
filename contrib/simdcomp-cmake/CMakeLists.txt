@@ -1,11 +1,12 @@
 option (ENABLE_SIMDCOMP "Enable simdcomp" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_SIMDCOMP)
+if (NOT ENABLE_SIMDCOMP OR NOT OS_LINUX OR NOT ARCH_AMD64)
     message(STATUS "Not using simdcomp")
     return()
 endif()
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/simdcomp")
+
 set (SRCS
     "${LIBRARY_DIR}/src/avx512bitpacking.c"
     "${LIBRARY_DIR}/src/avxbitpacking.c"
@@ -23,7 +24,5 @@ target_include_directories (_simdcomp SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/src"
 )
-
-target_compile_options (_simdcomp PRIVATE -g0)
 
 add_library (ch_contrib::simdcomp ALIAS _simdcomp)

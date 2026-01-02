@@ -277,7 +277,7 @@ private:
 struct SIMDCompCodec : public  IPostingListCodec
 {
     SIMDCompCodec();
-    static const char * getName() { return "simdcomp"; }
+    static const char * getName() { return "bitpacking"; }
     /// Serializes a postings list into a `Write buffer`.
     /// Serialization is segment-oriented and controlled by `posting_list_block_size`:
     /// if a postings list is long, it is split into multiple consecutive segments, each containing
