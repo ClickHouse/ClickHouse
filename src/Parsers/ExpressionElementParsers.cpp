@@ -408,7 +408,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
         }
 
-        /// db.namespace.table for DataLakeCatalog databases
+        /// Support db.namespace.table for DataLakeCatalog databases
         if (parts.size() == 1)
         {
             node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
@@ -417,13 +417,14 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         {
             node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         }
+        else if (parts.size() == 3)
+        {
+            /// Join namespace and table into table name: db.namespace.table -> db, namespace.table
+            node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1] + "." + parts[2], std::move(params));
+        }
         else
         {
-            /// Join parts[1..] into table name with dots
-            String table_name = parts[1];
-            for (size_t i = 2; i < parts.size(); ++i)
-                table_name += "." + parts[i];
-            node = std::make_shared<ASTTableIdentifier>(parts[0], table_name, std::move(params));
+            return false;
         }
         node->as<ASTTableIdentifier>()->uuid = uuid;
     }
