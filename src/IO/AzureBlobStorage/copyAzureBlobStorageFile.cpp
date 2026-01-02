@@ -433,7 +433,7 @@ void copyAzureBlobStorageFile(
             }
             else if (e.StatusCode == Azure::Core::Http::HttpStatusCode::BadRequest)
             {
-                LOG_TRACE(log, "Copy operation has thrown bad argument error. e.what = {}"
+                LOG_TRACE(log, "Copy operation has thrown bad argument error. e.what = {}. "
                                "Will attempt to copy using read & write. source container = {} blob = {} and destination container = {} blob = {}",
                           e.what(), src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
             }
