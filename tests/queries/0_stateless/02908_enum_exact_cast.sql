@@ -28,11 +28,19 @@ INSERT INTO enum_table VALUES (0, 'first');
 INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO enum_table VALUES (0, 0);
 
+INSERT INTO enum_table SELECT 0, 'first';
+INSERT INTO enum_table SELECT 0, 'fifth'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO enum_table SELECT 0, 0;
+
 SET input_format_numbers_enum_on_conversion_error = 1;
 
 INSERT INTO enum_table VALUES (0, 'first');
 INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO enum_table VALUES (0, 0); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
+
+INSERT INTO enum_table SELECT 0, 'first';
+INSERT INTO enum_table SELECT 0, 'fifth'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+INSERT INTO enum_table SELECT 0, 0; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
 DROP TABLE enum_table;
 
