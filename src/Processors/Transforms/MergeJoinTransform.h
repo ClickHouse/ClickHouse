@@ -201,7 +201,7 @@ public:
     void setChunk(Chunk && chunk);
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
-    absl::InlinedVector<ConstNullMapPtr, 4> null_maps;
+    absl::InlinedVector<ColumnPtr, 4> null_maps;
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;

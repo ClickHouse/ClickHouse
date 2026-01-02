@@ -61,6 +61,12 @@ int nullableCompareAt(const T & left_column, const NullMap * left_null_map,
     return left_column.compareAt(lpos, rpos, right_column, null_direction_hint);
 }
 
+ConstNullMapPtr getNullMapData(const ColumnPtr & column)
+{
+    if (!column)
+        return nullptr;
+    return &assert_cast<const ColumnUInt8 &>(*column).getData();
+}
 
 template <typename TCursor>
 int ALWAYS_INLINE compareCursors(const TCursor & lhs, size_t lpos,
@@ -76,7 +82,7 @@ int ALWAYS_INLINE compareCursors(const TCursor & lhs, size_t lpos,
 
         int cmp = 0;
         if constexpr (TCursor::has_null_maps)
-            cmp = nullableCompareAt(left_column, lhs.null_maps[i], right_column, rhs.null_maps[i], lpos, rpos, null_direction_hint);
+            cmp = nullableCompareAt(left_column, getNullMapData(lhs.null_maps[i]), right_column, getNullMapData(rhs.null_maps[i]), lpos, rpos, null_direction_hint);
         else
             cmp = left_column.compareAt(lpos, rpos, right_column, null_direction_hint);
 
@@ -95,8 +101,8 @@ int ALWAYS_INLINE compareCursors(const TCursor & lhs, const TCursor & rhs, int n
 int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
 {
     return nullableCompareAt(
-        *lhs.asof_column, lhs.null_maps.back(),
-        *rhs.asof_column, rhs.null_maps.back(),
+        *lhs.asof_column, getNullMapData(lhs.null_maps.back()),
+        *rhs.asof_column, getNullMapData(rhs.null_maps.back()),
         lhs.getRow(), rhs.getRow(), null_direction_hint);
 }
 
@@ -150,7 +156,7 @@ bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
     size_t pos = impl.getRow();
     for (size_t i = 0; i < impl.sort_columns.size(); ++i)
     {
-        const auto * nm = impl.null_maps[i];
+        const auto * nm = getNullMapData(impl.null_maps[i]);
         if (nm && ((*nm)[pos] != (*nm)[pos + 1]))
             return false;
 
@@ -236,11 +242,12 @@ void inline addMany(PaddedPODArray<UInt64> & values, UInt64 value, size_t num)
 {
     values.resize_fill(values.size() + num, value);
 }
+
 }
 
 JoinKeyRow::JoinKeyRow(const FullMergeJoinCursor & cursor, size_t pos)
 {
-    bool is_null = std::ranges::any_of(cursor.null_maps, [&](const auto * nm) { return nm && (*nm)[pos]; });
+    bool is_null = std::ranges::any_of(cursor.null_maps | std::views::transform(getNullMapData), [pos](const auto * nm) { return nm && (*nm)[pos]; });
     if (is_null)
         return;
 
@@ -271,7 +278,7 @@ bool JoinKeyRow::equals(const FullMergeJoinCursor & cursor) const
         return false;
 
     size_t pos = cursor.getRow();
-    if (std::ranges::any_of(cursor.null_maps, [pos](const auto * nm) { return nm && (*nm)[pos]; }))
+    if (std::ranges::any_of(cursor.null_maps | std::views::transform(getNullMapData), [pos](const auto * nm) { return nm && (*nm)[pos]; }))
         return false;
 
     for (size_t i = 0; i < cursor.sort_columns.size(); ++i)
@@ -369,14 +376,14 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     {
         auto column = all_columns.at(i);
         column = column->convertToFullColumnIfLowCardinality();
-        ConstNullMapPtr null_map = nullptr;
+        ColumnPtr null_map = nullptr;
         if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
         {
+            null_map = column_nullable->getNullMapColumnPtr();
             column = column_nullable->getNestedColumnPtr();
-            null_map = &column_nullable->getNullMapData();
         }
+        null_maps.push_back(std::move(null_map));
         sort_columns.push_back(std::move(column));
-        null_maps.push_back(null_map);
     }
 
     if (is_asof)
@@ -1002,9 +1009,11 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
         auto cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
         if (cmp == 0)
         {
-            if (left_cursor.null_maps.back() && (*left_cursor.null_maps.back())[lpos])
+            const auto * lhs_null_map = getNullMapData(left_cursor.null_maps.back());
+            if (lhs_null_map && (*lhs_null_map)[lpos])
                 cmp = -1;
-            if (right_cursor.null_maps.back() && (*right_cursor.null_maps.back())[rpos])
+            const auto * rhs_null_map = getNullMapData(right_cursor.null_maps.back());
+            if (rhs_null_map && (*rhs_null_map)[rpos])
                 cmp = 1;
         }
 
