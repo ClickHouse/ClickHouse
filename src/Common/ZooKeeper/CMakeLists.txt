@@ -1,6 +1,7 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
 add_headers_and_sources(clickhouse_common_zookeeper .)
+add_headers_and_sources(clickhouse_common_zookeeper KeeperClientCLI)
 
 # Needs to be built differently depending on ZOOKEEPER_LOG
 list(REMOVE_ITEM clickhouse_common_zookeeper_sources "ZooKeeperImpl.cpp")

@@ -14,13 +14,22 @@ CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs"
 
 # Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node1",
+    main_configs=["configs/enable_keeper1.xml"],
+    stay_alive=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node2",
+    main_configs=["configs/enable_keeper2.xml"],
+    stay_alive=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True, with_remote_database_disk=False,
+    "node3",
+    main_configs=["configs/enable_keeper3.xml"],
+    stay_alive=True,
+    with_remote_database_disk=False,
 )
 
 
@@ -53,7 +62,7 @@ def test_http_readiness_basic_responses(started_cluster):
     readiness_data = response.json()
     assert readiness_data["status"] == "ok"
     assert readiness_data["details"]["role"] == "follower"
-    assert readiness_data["details"]["hasLeader"] == True
+    assert readiness_data["details"]["hasLeader"]
 
 
 def test_http_readiness_partitioned_cluster(started_cluster):
