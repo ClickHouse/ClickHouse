@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
-#include "Core/Block.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 
