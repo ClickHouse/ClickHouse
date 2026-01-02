@@ -58,6 +58,11 @@ public:
         return arguments;
     }
 
+    virtual DataTypes transformArguments(const DataTypes & arguments, const Array & /*parameters*/) const
+    {
+        return transformArguments(arguments);
+    }
+
     /** From the parameters for combined function,
       *  get the parameters for nested function.
       * If arguments are not suitable for combined function, throw an exception.
