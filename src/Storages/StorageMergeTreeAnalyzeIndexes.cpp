@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -35,6 +36,7 @@ class MergeTreeAnalyzeIndexSource : public ISource, WithContext
 public:
     MergeTreeAnalyzeIndexSource(
         SharedHeader header_,
+        std::vector<UInt8> columns_mask_,
         const StoragePtr & storage_,
         const SelectQueryInfo & query_info_,
         size_t num_streams_,
@@ -45,6 +47,7 @@ public:
         : ISource(header_)
         , WithContext(context_)
         , header(std::move(header_))
+        , columns_mask(std::move(columns_mask_))
         , storage(storage_)
         , query_info(query_info_)
         , num_streams(num_streams_)
@@ -69,15 +72,18 @@ protected:
 
         for (const auto & ranges_in_part : ranges)
         {
-            size_t i = 0;
-            res_columns[i++]->insert(ranges_in_part.data_part->name);
+            size_t src_index = 0;
+            size_t res_index = 0;
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(ranges_in_part.data_part->name);
 
             /// ranges
+            if (columns_mask[src_index++])
             {
                 Array field;
                 for (const auto & range : ranges_in_part.ranges)
                     field.push_back(Tuple{range.begin, range.end});
-                res_columns[i++]->insert(std::move(field));
+                res_columns[res_index++]->insert(std::move(field));
             }
 
             processed_parts.insert(ranges_in_part.data_part->name);
@@ -89,9 +95,12 @@ protected:
             if (processed_parts.contains(part->name))
                 continue;
 
-            size_t i = 0;
-            res_columns[i++]->insert(part->name);
-            res_columns[i++]->insertDefault();
+            size_t src_index = 0;
+            size_t res_index = 0;
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(part->name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
         }
 
         size_t rows = res_columns.front()->size();
@@ -172,6 +181,7 @@ protected:
 
 private:
     SharedHeader header;
+    std::vector<UInt8> columns_mask;
     const StoragePtr storage;
     SelectQueryInfo query_info;
     size_t num_streams;
@@ -198,6 +208,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         SharedHeader sample_block,
+        std::vector<UInt8> columns_mask_,
         std::shared_ptr<StorageMergeTreeAnalyzeIndexes> storage_)
         : SourceStepWithFilter(
             std::move(sample_block),
@@ -205,6 +216,7 @@ public:
             query_info_,
             storage_snapshot_,
             context_)
+        , columns_mask(std::move(columns_mask_))
         , storage(std::move(storage_))
         , num_streams(num_streams_)
         , log(&Poco::Logger::get("StorageMergeTreeAnalyzeIndexes"))
@@ -212,6 +224,7 @@ public:
     }
 
 private:
+    std::vector<UInt8> columns_mask;
     std::shared_ptr<StorageMergeTreeAnalyzeIndexes> storage;
     const size_t num_streams;
     Poco::Logger * log;
@@ -225,6 +238,7 @@ void ReadFromMergeTreeAnalyzeIndexes::initializePipeline(QueryPipelineBuilder & 
 
     pipeline.init(Pipe(std::make_shared<MergeTreeAnalyzeIndexSource>(
         getOutputHeader(),
+        columns_mask,
         storage->source_table,
         getQueryInfo(),
         num_streams,
@@ -279,7 +293,8 @@ void StorageMergeTreeAnalyzeIndexes::read(
 {
     context->checkAccess(AccessType::SELECT, source_table->getStorageID());
 
-    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+    auto sample = storage_snapshot->metadata->getSampleBlock();
+    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeAnalyzeIndexes>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromMergeTreeAnalyzeIndexes>(
@@ -288,7 +303,8 @@ void StorageMergeTreeAnalyzeIndexes::read(
         num_streams,
         storage_snapshot,
         std::move(context),
-        std::move(sample_block),
+        std::make_shared<Block>(header),
+        std::move(columns_mask),
         std::move(this_ptr));
 
     query_plan.addStep(std::move(reading));
