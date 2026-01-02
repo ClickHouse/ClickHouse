@@ -116,28 +116,33 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     int direction = sort_description.front().direction;
 
-    if ((settings.use_skip_indexes_for_top_k &&
-            read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
-        (settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
+    bool can_use_with_skip_index = settings.use_skip_indexes_for_top_k
+        && settings.use_skip_indexes_on_data_read
+        && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
+
+    bool can_use_with_prewhere = settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo();
+
+    if (can_use_with_skip_index || can_use_with_prewhere)
     {
         threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
-    if  (settings.use_top_k_dynamic_filtering &&
-         !read_from_mergetree_step->getPrewhereInfo())
+    if  (can_use_with_prewhere)
     {
-        auto new_prewhere_info = std::make_shared<PrewhereInfo>();
-        NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
-        new_prewhere_info->prewhere_actions = ActionsDAG({sort_column_name_and_type});
+        ActionsDAG dag(read_from_mergetree_step->getOutputHeader()->getColumnsWithTypeAndName());
+        auto & outputs = dag.getOutputs();
+        const auto * col = outputs[read_from_mergetree_step->getOutputHeader()->getPositionByName(sort_column_name)];
 
         /// Cannot use get() because need to pass an argument to constructor
         /// auto filter_function = FunctionFactory::instance().get("__topKFilter",nullptr);
         auto filter_function =  DB::createInternalFunctionTopKFilterResolver(threshold_tracker);
-        const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
-                filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
-        new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
-        new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
+        const auto * prewhere_node = &dag.addFunction(filter_function, {col}, {});
+        outputs.insert(outputs.begin(), prewhere_node);
+
+        auto new_prewhere_info = std::make_shared<PrewhereInfo>();
+        new_prewhere_info->prewhere_actions = std::move(dag);
+        new_prewhere_info->prewhere_column_name = prewhere_node->result_name;
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
@@ -152,7 +157,11 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     ///                                  \
     ///                                __topKFilter() (Prewhere filtering)
 
-    read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
+    if (threshold_tracker)
+    {
+        read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
+        return 1;
+    }
 
     return 0;
 }
