@@ -72,9 +72,9 @@ std::vector<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArgumen
 {
     /// Filter should not be analyzed
     if (resolve_by_uuid)
-        return {2};
+        return {1};
     else
-        return {3};
+        return {2};
 }
 
 void TableFunctionMergeTreeAnalyzeIndexes::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -95,19 +95,19 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
     /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
     if (args.empty() || args.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 1 to 3 arguments (UUID, parts_regexp, condition), got: {}", getName(), args.size());
+            "Table function '{}' must have at from 1 to 3 arguments (UUID, condition[, parts_regexp]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
 
     if (args.size() > 1)
-    {
-        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
-        parts_regexp = checkAndGetLiteralArgument<String>(args[1], "parts_regexp");
-    }
+        predicate = args[1]->clone();
 
     if (args.size() > 2)
-        predicate = args[2]->clone();
+    {
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
+        parts_regexp = checkAndGetLiteralArgument<String>(args[2], "parts_regexp");
+    }
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
@@ -117,7 +117,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     ASTs & args = args_func.at(0)->children;
     if (args.size() < 2 || args.size() > 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 2 to 4 arguments (database, table, parts_regexp, condition), got: {}", getName(), args.size());
+            "Table function '{}' must have at from 2 to 4 arguments (database, table, condition[, parts_regexp]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     auto database = checkAndGetLiteralArgument<String>(args[0], "database");
@@ -126,13 +126,13 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     auto table = checkAndGetLiteralArgument<String>(args[1], "table");
 
     if (args.size() > 2)
-    {
-        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
-        parts_regexp = checkAndGetLiteralArgument<String>(args[2], "parts_regexp");
-    }
+        predicate = args[2]->clone();
 
     if (args.size() > 3)
-        predicate = args[3]->clone();
+    {
+        args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], context);
+        parts_regexp = checkAndGetLiteralArgument<String>(args[3], "parts_regexp");
+    }
 
     source_table_id = StorageID{database, table};
 }
@@ -188,7 +188,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .documentation =
             {
                 .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, 'parts_regexp', predicate)", ""}},
+                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, 'parts_regexp'])", ""}},
                 .category = FunctionDocumentation::Category::TableFunction
             },
             .allow_readonly = true,
@@ -201,7 +201,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .documentation =
             {
                 .description = "Internal function for index analysis",
-                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', 'parts_regexp', predicate)", ""}},
+                .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, 'parts_regexp'])", ""}},
                 .category = FunctionDocumentation::Category::TableFunction
             },
             .allow_readonly = true,

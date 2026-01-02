@@ -17,19 +17,19 @@ table_uuid="$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE databa
 $CLICKHOUSE_CLIENT -nm -q "
   -- { echo }
   select * from mergeTreeAnalyzeIndexesUUID('$table_uuid');
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '');
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', key = 8193);
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', key >= 8193);
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', key = 8192+1 or key = 8192*3+1);
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', key = 8192+1 or key = 8192*5+1);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid');
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key = 8193);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key >= 8193);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key = 8192+1 or key = 8192*3+1);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key = 8192+1 or key = 8192*5+1);
 
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', 'all_1_1_0', key = 8193);
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', 'no_such_part', key = 8193);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key = 8193, 'all_1_1_0');
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key = 8193, 'no_such_part');
 
   -- Columns not from PK is allowed and ignored.
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', value = 0);
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', key = 8193 and value = 0);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', value = 0);
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key = 8193 and value = 0);
 
   -- Set
-  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', '', key in (8193, 16385));
+  select * from mergeTreeAnalyzeIndexesUUID('$table_uuid', key in (8193, 16385));
 " |& sed "s/$table_uuid/UUID/"
