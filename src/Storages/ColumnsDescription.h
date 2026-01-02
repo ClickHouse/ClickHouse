@@ -222,6 +222,11 @@ public:
         return columns.size();
     }
 
+    size_t getNumberOfSubcoumns() const
+    {
+        return subcolumns.size();
+    }
+
     bool empty() const
     {
         return columns.empty();
