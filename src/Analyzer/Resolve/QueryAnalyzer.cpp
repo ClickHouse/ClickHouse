@@ -54,8 +54,8 @@
 
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+
 #include <boost/algorithm/string/predicate.hpp>
-#include <ranges>
 
 namespace DB
 {
@@ -75,6 +75,7 @@ namespace Setting
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool rewrite_count_distinct_if_with_count_distinct_implementation;
+    extern const SettingsBool rewrite_in_to_join;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
@@ -968,7 +969,47 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     return result_aggregate_function_name;
 }
 
-/// Resolve identifier functions implementation
+/// Check if any argument of a function is a query or union node
+static bool hasQueryOrUnionArgument(const FunctionNode * func)
+{
+    for (const auto & arg : func->getArguments().getNodes())
+    {
+        auto arg_type = arg->getNodeType();
+        if (arg_type == QueryTreeNodeType::QUERY || arg_type == QueryTreeNodeType::UNION)
+            return true;
+    }
+    return false;
+}
+
+/** Check if a node contains expressions that cannot be safely shared from alias cache.
+  * IN/exists functions with query/union arguments need cloning when rewrite_in_to_join is enabled
+  * because each use needs unique table aliases after rewriting.
+  */
+static bool nodeRequiresCloneFromCache(const QueryTreeNodePtr & node, bool rewrite_in_to_join_enabled)
+{
+    if (!node)
+        return false;
+
+    auto node_type = node->getNodeType();
+
+    if (node_type == QueryTreeNodeType::FUNCTION && rewrite_in_to_join_enabled)
+    {
+        if (const auto * func = node->as<FunctionNode>())
+        {
+            const auto func_name = func->getFunctionName();
+            if ((isNameOfInFunction(func_name) || func_name == "exists") && hasQueryOrUnionArgument(func))
+            {
+                return true;
+            }
+        }
+    }
+
+    for (const auto & child : node->getChildren())
+        if (nodeRequiresCloneFromCache(child, rewrite_in_to_join_enabled))
+            return true;
+
+    return false;
+}
 
 /** Resolve identifier from scope aliases.
   *
@@ -1034,7 +1075,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             identifier_bind_part,
             scope.scope_node->formatASTForErrorMessage());
 
+
     auto node_type = alias_node->getNodeType();
+
     if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
@@ -1272,9 +1315,27 @@ static void correctColumnExpressionType(ColumnNode & column_node, const ContextP
   */
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
-    IdentifierResolveContext identifier_resolve_settings)
+    IdentifierResolveContext identifier_resolve_context)
 {
-    auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
+    /// Create a scope-aware version of the lookup for cache operations.
+    /// Different values of allow_resolve_from_using need different cache entries
+    /// (e.g., PREWHERE sets it to false to avoid resolving USING columns).
+    /// Each IN function instance gets its own cache entries to ensure
+    /// proper cloning when aliased IN expressions are expanded.
+    IdentifierLookup cache_lookup = identifier_lookup;
+    cache_lookup.allow_resolve_from_using = scope.allow_resolve_from_using;
+    cache_lookup.in_function_instance_id = scope.expressions_in_resolve_process_stack.getInFunctionInstanceId();
+
+    auto it = scope.identifier_in_lookup_process.find(cache_lookup);
+
+    /// Can not use cache if:
+    /// 1. Identifier is resolved in non-initial context.
+    /// 2. There is an expression that is in resolve process with the same alias.
+    /// Example: SELECT (id + 2) as id, id as b FROM test_table;
+    ///                  ^^
+    /// Here, we cannot cache result of `id` identifier lookup because it is part of expression with alias `id`.
+    /// If we add such entry to the cache it will lead to incorrect resolution of `b` into `test_table.id` instead of `test_table.id` + 2.
+    const bool can_use_cache = identifier_resolve_context.isInitialContext() && !scope.expressions_in_resolve_process_stack.hasExpressionWithAlias(identifier_lookup.identifier.getFullName());
 
     bool already_in_resolve_process = false;
     if (it != scope.identifier_in_lookup_process.end())
@@ -1284,7 +1345,29 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
     else
     {
-        auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
+        if (can_use_cache)
+        {
+            const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(cache_lookup);
+            if (cached_result)
+            {
+                // requires_clone_from_cache is precomputed at insert time to avoid repeated tree traversal
+                if (cached_result->requires_clone_from_cache)
+                {
+                    // cloning is obviously not as fast as returning the same pointer, but still faster
+                    // than re-resolving from scratch
+                    return IdentifierResolveResult
+                    {
+                        .resolved_identifier = cached_result->resolved_identifier->clone(),
+                        .resolve_place = cached_result->resolve_place,
+                        .requires_clone_from_cache = cached_result->requires_clone_from_cache
+                    };
+                }
+                else
+                    return *cached_result;
+            }
+        }
+
+        auto [insert_it, _] = scope.identifier_in_lookup_process.insert({cache_lookup, IdentifierResolveState()});
         it = insert_it;
     }
 
@@ -1315,22 +1398,22 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (unlikely(prefer_column_name_to_alias))
         {
-            if (identifier_resolve_settings.allow_to_check_join_tree)
+            if (identifier_resolve_context.allow_to_check_join_tree)
             {
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
 
-            if (identifier_resolve_settings.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
+            if (identifier_resolve_context.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
             {
-                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
+                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
             }
         }
         else
         {
-            if (identifier_resolve_settings.allow_to_check_aliases && !already_in_resolve_process)
-                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
+            if (identifier_resolve_context.allow_to_check_aliases && !already_in_resolve_process)
+                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
 
-            if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_join_tree)
+            if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_join_tree)
             {
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
@@ -1355,7 +1438,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
+    if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
         auto full_name = identifier_lookup.identifier.getFullName();
         auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
@@ -1382,11 +1465,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve identifier from parent scopes
     if (!resolve_result.resolved_identifier)
     {
-        resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope, identifier_resolve_settings);
+        resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope, identifier_resolve_context);
     }
 
     /// Try to resolve table identifier from database catalog
-    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
+    if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
     }
@@ -1395,6 +1478,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (it->second.count == 0)
     {
         scope.identifier_in_lookup_process.erase(it);
+        if (can_use_cache && resolve_result.resolved_identifier)
+        {
+            bool rewrite_in_to_join_enabled = scope.context->getSettingsRef()[Setting::rewrite_in_to_join];
+            resolve_result.requires_clone_from_cache = nodeRequiresCloneFromCache(resolve_result.resolved_identifier, rewrite_in_to_join_enabled);
+            scope.identifier_to_resolved_expression_cache.insert(cache_lookup, resolve_result);
+        }
     }
 
     return resolve_result;
@@ -4835,6 +4924,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
         scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
+    scope.identifier_to_resolved_expression_cache.disable();
+
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
 
@@ -4846,6 +4937,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (!scope.group_by_use_nulls)
     {
+        scope.identifier_to_resolved_expression_cache.enable();
+
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
