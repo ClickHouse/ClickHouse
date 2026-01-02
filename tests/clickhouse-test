@@ -1174,6 +1174,7 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         **randomize_external_sort_group_by(),
     }
 
@@ -1540,10 +1541,12 @@ class TestCase:
         for setting in random_settings:
             if setting in self.random_settings_limits:
                 min_value = self.random_settings_limits[setting][0]
-                if min_value and random_settings[setting] < min_value:
+                # min_value can be 0
+                if min_value != None and random_settings[setting] < min_value:
                     random_settings[setting] = min_value
                 max_value = self.random_settings_limits[setting][1]
-                if max_value and random_settings[setting] > max_value:
+                # max_value can be 0
+                if max_value != None and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
     def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):
@@ -1745,7 +1748,9 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
-        if "no-flaky-check" in tags and args.test_runs > 1:
+        if "no-flaky-check" in tags and args.flaky_check:
+            # skip for flaky and targeted check
+            #  main reason for using this tag - a test is not compatible with the thread fuzzer which is used in both jobs
             return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
@@ -1759,8 +1764,9 @@ class TestCase:
 
         if tags:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky check
-                if "no-" + build_flag in tags and not args.flaky_check:
+                # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
+                # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
+                if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
                     return FailureReason.BUILD
             for tag in tags:
                 tag = tag.replace("-", "_")
@@ -1942,6 +1948,19 @@ class TestCase:
         )
 
         if result_is_different:
+            # If --record is enabled, copy stdout to reference file
+            if self.testcase_args.record:
+                import shutil
+                shutil.copy2(self.stdout_file, self.reference_file)
+                description += "\tReference file updated\n"
+                return TestResult(
+                    self.name,
+                    TestStatus.OK,
+                    None,
+                    total_time,
+                    description,
+                )
+
             with Popen(
                 [
                     "diff",
@@ -4010,6 +4029,12 @@ def parse_args():
     )
     parser.add_argument(
         "--no-long", action="store_true", dest="no_long", help="Do not run long tests"
+    )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        default=False,
+        help="Automatically update reference files when stdout differs from reference",
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"

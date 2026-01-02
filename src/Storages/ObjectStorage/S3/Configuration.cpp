@@ -102,6 +102,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "no_sign_request",
     "partition_strategy",
     "partition_columns_in_data_file",
+    "storage_class_name",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -164,14 +165,12 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
-
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
         url,
         *s3_capabilities,
-        key_generator,
+        /*key_generator=*/nullptr,
         "StorageS3",
         false);
 }
@@ -1012,4 +1011,3 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 }
 
 #endif
-

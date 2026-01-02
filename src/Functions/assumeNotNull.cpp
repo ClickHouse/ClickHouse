@@ -4,6 +4,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
@@ -58,6 +63,22 @@ public:
             return nullable_col->getNestedColumnPtr();
         return col;
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+            return b.CreateExtractValue(arguments[0].value, {0});
+        else
+            return arguments[0].value;
+    }
+#endif
+
+
 };
 
 }
@@ -100,7 +121,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null;
     };
     FunctionDocumentation::IntroducedIn introduced_in{1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAssumeNotNull>(documentation);
 }
