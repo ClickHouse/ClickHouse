@@ -5814,12 +5814,6 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
-<<<<<<< Updated upstream
-                    privileged="true" if self.privileged_docker else "false",
-                    devices=self.devices,
-                    loop_control_device=self.loop_control_device
-=======
->>>>>>> Stashed changes
                 )
             )
 
