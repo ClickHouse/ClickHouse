@@ -151,7 +151,7 @@ void PostingListCodecImpl::decodeOneBlock(std::span<const std::byte> & in, size_
 }
 
 SIMDCompCodec::SIMDCompCodec()
-    : IPostingListCodec(Type::Simpcomp)
+    : IPostingListCodec(Type::Bitpacking)
 {
 }
 

@@ -270,7 +270,7 @@ private:
     /// Total number of postings added across all segments.
     size_t cardinality = 0;
     /// Used as the globally unique identifier for a codec, and it is defined in IPostingListCodec.
-    IPostingListCodec::Type codec_type = IPostingListCodec::Type::Simpcomp;
+    IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
 };
 
 /// Codec for serializing/deserializing a single postings list to/from a binary stream.

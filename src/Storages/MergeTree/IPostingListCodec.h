@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <IO/WriteBufferFromString.h>
 #include <Core/Field.h>
-#include <span>
 
 
 namespace DB
@@ -27,17 +26,18 @@ public:
     enum class Type
     {
         None,
-        Simpcomp,
+        Bitpacking,
     };
 
     IPostingListCodec() = default;
     explicit IPostingListCodec(Type type_) : type(type_) {}
+
     IPostingListCodec(const IPostingListCodec &) = default;
     IPostingListCodec & operator=(const IPostingListCodec &) = default;
 
-    Type getType() const { return type; }
-
     virtual ~IPostingListCodec() = default;
+
+    Type getType() const { return type; }
 
     /// The `encode splits the posting list into blocks according to posting_list_block_size and encodes each block separately.
     /// It also collects per-segment metadata into info and returns it to the caller.
