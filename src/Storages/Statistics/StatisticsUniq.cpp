@@ -2,11 +2,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_STATISTICS;
+}
 
 StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
     : IStatistics(description)
@@ -25,30 +28,11 @@ StatisticsUniq::~StatisticsUniq()
 
 void StatisticsUniq::build(const ColumnPtr & column)
 {
-    const IColumn * raw_column_ptr = nullptr;
-
-    /// For sparse and low cardinality columns an extra default
-    /// value may be added. That is ok since the uniq count is an estimation.
-    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
-    {
-        raw_column_ptr = &column_sparse->getValuesColumn();
-    }
-    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-    {
-        raw_column_ptr = column_low_cardinality->getDictionary().getNestedColumn().get();
-    }
-    else
-    {
-        raw_column_ptr = column.get();
-    }
-
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
-}
-
-void StatisticsUniq::merge(const StatisticsPtr & other_stats)
-{
-    const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
-    collector->merge(data, other->data, arena.get());
+    /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
+    /// Here we intend to avoid crash in CI.
+    auto col_ptr = column->convertToFullColumnIfLowCardinality();
+    const IColumn * raw_ptr = col_ptr.get();
+    collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
 }
 
 void StatisticsUniq::serialize(WriteBuffer & buf)
@@ -68,11 +52,12 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

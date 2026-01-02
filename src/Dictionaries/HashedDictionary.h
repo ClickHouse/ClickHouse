@@ -335,7 +335,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
+                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
 
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
                 MemoryTrackerBlockerInThread memory_blocker;
@@ -875,43 +875,41 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 {
     /// NOTE: updateData() does not preallocation since it may increase memory usage.
-    BlockIO io = source_ptr->loadUpdatedAll();
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
+        Block block;
 
-        io.executeWithCallbacks([&]()
+        while (executor.pull(block))
         {
-            Block block;
-            while (executor.pull(block))
+            if (!block.rows())
+                continue;
+
+            convertToFullIfSparse(block);
+
+            /// We are using this to keep saved data if input stream consists of multiple blocks
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
-                if (!block.rows())
-                    continue;
-
-                removeSpecialColumnRepresentations(block);
-
-                /// We are using this to keep saved data if input stream consists of multiple blocks
-                if (!update_field_loaded_block)
-                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
-                {
-                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
-                }
+                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
-        });
+        }
     }
     else
     {
+        auto pipe = source_ptr->loadUpdatedAll();
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(io)));
+            std::move(pipe)));
     }
 
     if (update_field_loaded_block)
@@ -1159,23 +1157,21 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         if constexpr (sharded)
             parallel_loader.emplace(*this);
 
-        BlockIO io = source_ptr->loadAll();
+        QueryPipeline pipeline(source_ptr->loadAll());
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
+        Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-        io.executeWithCallbacks([&]()
+
+        while (executor.pull(block))
         {
-            Block block;
-            while (executor.pull(block))
-            {
-                resize(block.rows());
-                if (parallel_loader)
-                    parallel_loader->addBlock(block);
-                else
-                    blockToAttributes(block, arena_holder, /* shard= */ 0);
-            }
-        });
+            resize(block.rows());
+            if (parallel_loader)
+                parallel_loader->addBlock(block);
+            else
+                blockToAttributes(block, arena_holder, /* shard= */ 0);
+        }
 
         if (parallel_loader)
             parallel_loader->finish();

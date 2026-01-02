@@ -4,7 +4,6 @@ description: 'Aggregate function that calculates the positions of the occurrence
 sidebar_position: 164
 slug: /sql-reference/aggregate-functions/reference/maxintersectionsposition
 title: 'maxIntersectionsPosition'
-doc_type: 'reference'
 ---
 
 # maxIntersectionsPosition
@@ -34,7 +33,7 @@ CREATE TABLE my_events (
     start UInt32,
     end UInt32
 )
-ENGINE = MergeTree
+Engine = MergeTree
 ORDER BY tuple();
 
 INSERT INTO my_events VALUES

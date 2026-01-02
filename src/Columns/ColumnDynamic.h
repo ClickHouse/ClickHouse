@@ -143,7 +143,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override
     {
@@ -235,7 +235,7 @@ public:
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         MutableColumns scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         MutableColumns scattered_columns;
@@ -278,9 +278,9 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+    void prepareVariantsForSquashing(const Columns & source_columns);
 
     void ensureOwnership() override
     {
@@ -385,8 +385,7 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
@@ -411,7 +410,7 @@ public:
         return name;
     }
 
-    static const DataTypePtr & getSharedVariantDataType();
+    static DataTypePtr getSharedVariantDataType();
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {

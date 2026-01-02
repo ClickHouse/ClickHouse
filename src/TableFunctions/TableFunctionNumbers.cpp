@@ -9,8 +9,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/types.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "base/types.h"
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -45,11 +45,7 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's SystemNumbers but it doesn't register itself
-        return "";
-    }
+    const char * getStorageTypeName() const override { return "SystemNumbers"; }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 

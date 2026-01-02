@@ -35,12 +35,12 @@ enum
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     ReadBuffer & in_,
-    SharedHeader header_,
+    const Block & header_,
     Params params_,
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
-    , prev_positions(header_->columns())
+    , prev_positions(header_.columns())
     , yield_strings(yield_strings_)
     , format_settings(format_settings_)
 {
@@ -400,13 +400,12 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings);
+            return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, json_strings);
         });
     };
 
     register_format("JSONEachRow", false);
     register_format("JSONLines", false);
-    register_format("JSONL", false);
     register_format("NDJSON", false);
 
     factory.registerFileExtension("ndjson", "JSONEachRow");

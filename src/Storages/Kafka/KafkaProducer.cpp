@@ -1,7 +1,7 @@
-#include <Storages/Kafka/KafkaProducer.h>
-#include <Core/Block.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
+#include "KafkaProducer.h"
+#include "Core/Block.h"
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsNumber.h"
 
 #include <Common/ProfileEvents.h>
 

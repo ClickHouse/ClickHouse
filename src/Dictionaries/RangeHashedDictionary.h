@@ -26,9 +26,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime64.h>
 
 #include <Columns/ColumnNullable.h>
 
@@ -175,7 +173,6 @@ private:
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
             AttributeContainerType<DateTime64>,
-            AttributeContainerType<Time64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
@@ -218,7 +215,6 @@ private:
         ContainerType<Decimal128>,
         ContainerType<Decimal256>,
         ContainerType<DateTime64>,
-        ContainerType<Time64>,
         ContainerType<Float32>,
         ContainerType<Float64>,
         ContainerType<UUID>,
@@ -303,7 +299,7 @@ namespace impl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTimeOrTime<DataType> || IsDataTypeEnum<DataType>)
+            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
                 && !std::is_same_v<DataType, DataTypeBFloat16>)
             {
                 using ColumnType = typename DataType::ColumnType;
@@ -545,18 +541,15 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll();
+        QueryPipeline pipeline(source_ptr->loadAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
+        Block block;
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-        io.executeWithCallbacks([&]()
+        while (executor.pull(block))
         {
-            Block block;
-            while (executor.pull(block))
-            {
-                blockToAttributes(block);
-            }
-        });
+            blockToAttributes(block);
+        }
     }
     else
     {
@@ -698,46 +691,44 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::updateData()
 {
-    BlockIO io = source_ptr->loadUpdatedAll();
-
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
+        Block block;
 
-        io.executeWithCallbacks([&]()
+        while (executor.pull(block))
         {
-            Block block;
-            while (executor.pull(block))
+            if (!block.rows())
+                continue;
+
+            convertToFullIfSparse(block);
+
+            /// We are using this to keep saved data if input stream consists of multiple blocks
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
-                if (!block.rows())
-                    continue;
-
-                removeSpecialColumnRepresentations(block);
-
-                /// We are using this to keep saved data if input stream consists of multiple blocks
-                if (!update_field_loaded_block)
-                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
-
-                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
-                {
-                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
-                }
+                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
-        });
+        }
     }
     else
     {
         static constexpr size_t range_columns_size = 2;
 
+        auto pipe = source_ptr->loadUpdatedAll();
+
         /// Use complex dictionary key type to count range columns as part of complex primary key during update
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Complex>(
             dict_struct.getKeysSize() + range_columns_size,
             *update_field_loaded_block,
-            std::move(io)));
+            std::move(pipe)));
     }
 
     if (update_field_loaded_block)

@@ -22,34 +22,36 @@ $CLICKHOUSE_CLIENT --query "
         min_bytes_to_prewarm_caches = 30000;
 
     SYSTEM DROP MARK CACHE;
-    SYSTEM DROP INDEX MARK CACHE;
     SYSTEM DROP PRIMARY INDEX CACHE;
 
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(100, 100);
     INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(1000, 2000);
 
-    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SYSTEM RELOAD ASYNCHRONOUS METRICS;
+    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a >= 100 AND a < 2000 AND NOT ignore(a, b);
 
-    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SYSTEM RELOAD ASYNCHRONOUS METRICS;
+    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     SYSTEM DROP MARK CACHE;
-    SYSTEM DROP INDEX MARK CACHE;
     SYSTEM DROP PRIMARY INDEX CACHE;
 
     OPTIMIZE TABLE t_prewarm_cache_rmt_1 FINAL;
 
     SELECT count() FROM t_prewarm_cache_rmt_1 WHERE a % 2 = 0 AND a >= 100 AND a < 2000 AND NOT ignore(a, b);
 
-    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SYSTEM RELOAD ASYNCHRONOUS METRICS;
+    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
     TRUNCATE TABLE t_prewarm_cache_rmt_1;
 "
 
 for _ in {1..100}; do
     res=$($CLICKHOUSE_CLIENT -q "
-        SELECT value FROM system.metrics WHERE metric = 'PrimaryIndexCacheFiles';
+        SYSTEM RELOAD ASYNCHRONOUS METRICS;
+        SELECT value FROM system.asynchronous_metrics WHERE metric = 'PrimaryIndexCacheFiles';
     ")
     if [[ $res -eq 0 ]]; then
         break
@@ -58,9 +60,10 @@ for _ in {1..100}; do
 done
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
+    SYSTEM RELOAD ASYNCHRONOUS METRICS;
+    SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'MarkCacheFiles') ORDER BY metric;
 
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 
     SELECT
         ProfileEvents['LoadedMarksFiles'],

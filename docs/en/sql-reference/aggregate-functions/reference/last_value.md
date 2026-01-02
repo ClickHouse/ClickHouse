@@ -4,7 +4,6 @@ description: 'Selects the last encountered value, similar to `anyLast`, but coul
 sidebar_position: 160
 slug: /sql-reference/aggregate-functions/reference/last_value
 title: 'last_value'
-doc_type: 'reference'
 ---
 
 # last_value
@@ -23,13 +22,13 @@ CREATE TABLE test_data
 )
 ENGINE = Memory;
 
-INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null)
+INSERT INTO test_data (a, b) Values (1,null), (2,3), (4, 5), (6,null)
 ```
 
-### Example 1 {#example1}
+### example1 {#example1}
 The NULL value is ignored at default.
 ```sql
-SELECT last_value(b) FROM test_data
+select last_value(b) from test_data
 ```
 
 ```text
@@ -38,10 +37,10 @@ SELECT last_value(b) FROM test_data
 └────────────────────────────┘
 ```
 
-### Example 2 {#example2}
+### example2 {#example2}
 The NULL value is ignored.
 ```sql
-SELECT last_value(b) ignore nulls FROM test_data
+select last_value(b) ignore nulls from test_data
 ```
 
 ```text
@@ -50,10 +49,10 @@ SELECT last_value(b) ignore nulls FROM test_data
 └────────────────────────────┘
 ```
 
-### Example 3 {#example3}
+### example3 {#example3}
 The NULL value is accepted.
 ```sql
-SELECT last_value(b) respect nulls FROM test_data
+select last_value(b) respect nulls from test_data
 ```
 
 ```text
@@ -62,7 +61,7 @@ SELECT last_value(b) respect nulls FROM test_data
 └─────────────────────────────┘
 ```
 
-### Example 4 {#example4}
+### example4 {#example4}
 Stabilized result using the sub-query with `ORDER BY`.
 ```sql
 SELECT
@@ -81,3 +80,5 @@ FROM
 │                        ᴺᵁᴸᴸ │             5 │
 └─────────────────────────────┴───────────────┘
 ```
+
+

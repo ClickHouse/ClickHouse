@@ -15,29 +15,16 @@ class ServerDied(Exception):
     pass
 
 
-def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
+def get_options(i: int, upgrade_check: bool) -> str:
     options = []
     client_options = []
     if i > 0:
         options.append("--order=random")
 
     if i % 3 == 2 and not upgrade_check:
-        client_options.extend(
-            [
-                "enable_deflate_qpl_codec=1",
-                "enable_zstd_qat_codec=1",
-                # For Replicated database
-                "distributed_ddl_output_mode=none",
-                "database_replicated_always_detach_permanently=1",
-            ]
-        )
-        options.extend(
-            [
-                "--replicated-database",
-                "--database",
-                f"test_{i}",
-            ]
-        )
+        options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
+        client_options.append("enable_deflate_qpl_codec=1")
+        client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -79,7 +66,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("group_by_use_nulls=1")
 
     # 12 % 3 == 0, so it's Atomic database
-    if i == 12 and not upgrade_check and not encrypted_storage:
+    if i == 12 and not upgrade_check:
         client_options.append("implicit_transaction=1")
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
@@ -100,10 +87,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
 
-    if random.random() < 0.2:
-        client_options.append(f"query_plan_join_swap_table={random.choice(['auto', 'false', 'true'])}")
-        client_options.append(f"query_plan_optimize_join_order_limit={random.randint(0, 64)}")
-
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
@@ -117,10 +100,8 @@ def run_func_test(
     skip_tests_option: str,
     global_time_limit: int,
     upgrade_check: bool,
-    encrypted_storage: bool,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
-    encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
@@ -132,8 +113,8 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         with open(path, "w", encoding="utf-8") as op:
             full_command = (
-                f"{cmd} {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
-                f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option}"
+                f"{cmd} {get_options(i, upgrade_check)} {global_time_limit_option} "
+                f"{skip_tests_option} {upgrade_check_option}"
             )
             logging.info("Run func tests '%s'", full_command)
             # pylint:disable-next=consider-using-with
@@ -182,13 +163,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         timeout=60,
     )
     # Ensure that process exists
-    if (
-        call(
-            "kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)",
-            shell=True,
-        )
-        != 0
-    ):
+    if call("kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)", shell=True) != 0:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
@@ -209,7 +184,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
-    # Issue #21004, window views are experimental, so let's just suppress it
+    # Issue #21004, live views are experimental, so let's just suppress it
     call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
 
     # Kill other queries which known to be slow
@@ -270,23 +245,23 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
             )
 
     # Wait for last queries to finish if any, not longer than 300 seconds
-    cutoff_time = time.time() + 300
-    while time.time() < cutoff_time:
-        queries = int(
-            check_output(
-                make_query_command(
-                    "SELECT count() FROM system.processes WHERE query NOT LIKE '%FROM system.processes%'"
-                ),
-                shell=True,
-                stderr=STDOUT,
-                timeout=30,
-            )
-            .decode("utf-8")
-            .strip()
-        )
-        if queries == 0:
-            break
-        time.sleep(1)
+    call(
+        make_query_command(
+            """
+    SELECT sleepEachRow((
+        SELECT maxOrDefault(300 - elapsed) + 1
+        FROM system.processes
+        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
+    ) / 300)
+    FROM numbers(300)
+    FORMAT Null
+    SETTINGS function_sleep_max_microseconds_per_block = 0
+    """
+        ),
+        shell=True,
+        stderr=STDOUT,
+        timeout=330,
+    )
 
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
@@ -320,9 +295,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
     parser.add_argument("--drop-databases", action="store_true", default=False)
-    parser.add_argument(
-        "--encrypted-storage", type=lambda x: bool(int(x)), default=False
-    )
     return parser.parse_args()
 
 
@@ -343,7 +315,6 @@ def main():
         args.skip_func_tests,
         args.global_time_limit,
         args.upgrade_check,
-        args.encrypted_storage,
     )
 
     logging.info("Will wait functests to finish")
@@ -401,7 +372,6 @@ def main():
                     # Use system database to avoid CREATE/DROP DATABASE queries
                     "--database=system",
                     "--hung-check",
-                    "--capture-client-stacktrace",
                     "--report-logs-stats",
                     "00001_select_1",
                 ]

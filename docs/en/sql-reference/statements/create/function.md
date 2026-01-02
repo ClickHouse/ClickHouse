@@ -4,7 +4,6 @@ sidebar_label: 'FUNCTION'
 sidebar_position: 38
 slug: /sql-reference/statements/create/function
 title: 'CREATE FUNCTION -user defined function (UDF)'
-doc_type: 'reference'
 ---
 
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
@@ -35,7 +34,7 @@ SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 
 Result:
 
-```text
+``` text
 ┌─number─┬─plus(multiply(2, number), 1)─┐
 │      0 │                            1 │
 │      1 │                            3 │
@@ -52,7 +51,7 @@ SELECT number, parity_str(number) FROM numbers(3);
 
 Result:
 
-```text
+``` text
 ┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
 │      0 │ even                                 │
 │      1 │ odd                                  │

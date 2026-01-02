@@ -33,7 +33,7 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
 
 TTLTransform::TTLTransform(
     const ContextPtr & context,
-    SharedHeader header_,
+    const Block & header_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
@@ -128,13 +128,13 @@ void TTLTransform::consume(Chunk chunk)
         return;
     }
 
-    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfSparse(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (block.empty())
+    if (!block)
         return;
 
     size_t num_rows = block.rows();
@@ -147,7 +147,7 @@ Chunk TTLTransform::generate()
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (block.empty())
+    if (!block)
         return {};
 
     size_t num_rows = block.rows();

@@ -1,11 +1,9 @@
 #include <memory>
 #include <Dictionaries/FlatDictionary.h>
-
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ArenaUtils.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -452,43 +450,40 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
 void FlatDictionary::updateData()
 {
-    BlockIO io = source_ptr->loadUpdatedAll();
-
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
+        Block block;
 
-        io.executeWithCallbacks([&]()
+        while (executor.pull(block))
         {
-            Block block;
-            while (executor.pull(block))
+            if (!block.rows())
+                continue;
+
+            convertToFullIfSparse(block);
+
+            /// We are using this to keep saved data if input stream consists of multiple blocks
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+
+            for (size_t column_index = 0; column_index < block.columns(); ++column_index)
             {
-                if (!block.rows())
-                    continue;
-
-                removeSpecialColumnRepresentations(block);
-
-                /// We are using this to keep saved data if input stream consists of multiple blocks
-                if (!update_field_loaded_block)
-                    update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
-
-                for (size_t column_index = 0; column_index < block.columns(); ++column_index)
-                {
-                    const IColumn & update_column = *block.getByPosition(column_index).column.get();
-                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(column_index).column->assumeMutable();
-                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
-                }
+                const IColumn & update_column = *block.getByPosition(column_index).column.get();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(column_index).column->assumeMutable();
+                saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
-        });
+        }
     }
     else
     {
+        auto pipeline(source_ptr->loadUpdatedAll());
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(io)));
+            std::move(pipeline)));
     }
 
     if (update_field_loaded_block)
@@ -499,17 +494,13 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        BlockIO io = source_ptr->loadAll();
+        QueryPipeline pipeline(source_ptr->loadAll());
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
-        io.executeWithCallbacks([&]()
-        {
-            Block block;
-            while (executor.pull(block))
-                blockToAttributes(block);
-        });
+        Block block;
+        while (executor.pull(block))
+            blockToAttributes(block);
     }
     else
         updateData();

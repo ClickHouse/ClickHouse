@@ -26,7 +26,7 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    using OnRemoveEntryFunction = std::function<void(size_t, const MappedPtr &)>;  /// For per-item callback
+    using OnWeightLossFunction = std::function<void(size_t)>;
 
     struct KeyMapped
     {

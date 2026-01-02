@@ -44,7 +44,7 @@ class DataSkippingIndicesSource : public ISource
 public:
     DataSkippingIndicesSource(
         std::vector<UInt8> columns_mask_,
-        SharedHeader header,
+        Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
@@ -196,7 +196,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
+            std::move(sample_block),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -227,7 +227,7 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
@@ -261,12 +261,12 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
-        if (database->isExternal())
+        if (!database->canContainMergeTreeTables())
             continue;
 
         /// Lazy database can contain only very primitive tables,

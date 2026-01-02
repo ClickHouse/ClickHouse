@@ -6,12 +6,6 @@
     function gantt(input_data) {
         data = input_data;
 
-        // compute aggregates
-        total_count = data.length;
-        total_runtime = data.reduce((a, d)  => a + d.t2 - d.t1, 0);
-        filtered_count = total_count;
-        filtered_runtime = total_runtime;
-
         initAxis();
 
         // create svg element
@@ -91,18 +85,6 @@
         // tooltips for bands
         var maxTipHeight = 130;
         const tipDirection = d => y(d.band) - maxTipHeight < documentBodyScrollTop()? 's': 'n';
-        function tipText(d) {
-            const runtime = d.t2 - d.t1;
-            return `
-                <table>
-                    <tr><td colspan="2">${d.text}</td></tr>
-                    <tr><td><strong>begin</strong></td><td>${d.t1.toFixed(3)}</td></tr>
-                    <tr><td><strong>end</strong></td><td>${d.t2.toFixed(3)}</td></tr>
-                    <tr><td><strong>runtime</strong></td><td>${runtime.toFixed(3)}</td></tr>
-                    <tr><td><strong>share</strong></td><td>${(runtime * 100 / filtered_runtime).toFixed(3)}%</td></tr>
-                </table>
-            `;
-        }
         tip = d3.tip()
             .attr("class", "d3-tip")
             .offset(function(d) {
@@ -113,7 +95,7 @@
                 return [dir === 'n'? -10 : 10, xZoomed(t1) - xZoomed(t0)];
             })
             .direction(tipDirection)
-            .html(d => tipText(d))
+            .html(d => "<pre>" + d.text + "</pre>")
         ;
 
         bandsSvg.call(tip);
@@ -280,10 +262,6 @@
         return "translate(" + x(d.t1) + "," + y(d.band) + ")";
     }
 
-    var filterMatch = function(d) {
-        return filter == '' || d.text.toLowerCase().includes(filter);
-    }
-
     var render = function(t0, smooth) {
         // Save/restore last t0 value
         if (!arguments.length || t0 == -1) {
@@ -310,7 +288,7 @@
                 }
             })
           .merge(bands)
-            .attr("class", d => "bar " + (filterMatch(d) ? " bar-f" : " bar-u"))
+            .attr("class", d => "bar " + (filter != '' && !d.text.toLowerCase().includes(filter) ? " bar-u" : " bar-f"))
           .transition().duration(smooth? 250: 0)
             .attr("y", 0)
             .attr("transform", bandTransform)
@@ -469,34 +447,12 @@
         if (!arguments.length)
             return filter;
         filter = pattern.toLowerCase();
-
-        filtered_count = 0;
-        filtered_runtime = 0;
-        for (const d of data) {
-            if (filterMatch(d)) {
-                filtered_count++;
-                filtered_runtime += d.t2 - d.t1;
-            }
-        }
-    
         render();
         return gantt;
     }
 
     gantt.filteredCount = function() {
-        return filtered_count;
-    }
-
-    gantt.filteredRuntime = function() {
-        return filtered_runtime;
-    }
-
-    gantt.totalCount = function() {
-        return total_count;
-    }
-
-    gantt.totalRuntime = function() {
-        return total_runtime;
+        return bandsSvg.selectAll("rect.bar-f").size();
     }
 
     gantt.data = function() {
@@ -518,11 +474,7 @@
         selector = 'body',
         timeDomainStart = 0,
         timeDomainEnd = 1000,
-        filter = '',
-        filtered_count = 0,
-        filtered_runtime = 0,
-        total_count = 0,
-        total_runtime = 0
+        filter = ''
     ;
 
     // View

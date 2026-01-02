@@ -5,7 +5,6 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
-#include <variant>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -15,69 +14,25 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
-#include <Common/Exception.h>
-#include <Common/ObjectStorageKey.h>
-#include <Common/ThreadPool.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
-
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
 #include <Disks/ObjectStorages/MetadataStorageMetrics.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
-
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
-
 #include <Interpreters/Context_fwd.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-
-#include <azure/core/credentials/credentials.hpp>
-#include <azure/storage/common/storage_credential.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/identity/client_secret_credential.hpp>
-
 namespace DB::AzureBlobStorage
 {
-
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
-
-class StaticCredential : public Azure::Core::Credentials::TokenCredential
-{
-public:
-    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
-        : token(std::move(token_)), expires_on(expires_on_)
-    {}
-
-    Azure::Core::Credentials::AccessToken GetToken(
-        Azure::Core::Credentials::TokenRequestContext const &,
-        Azure::Core::Context const &) const override
-    {
-        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
-    }
-
-private:
-    std::string token;
-    std::chrono::system_clock::time_point expires_on;
-};
-
-using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
-
-using AuthMethod = std::variant<
-    ConnectionString,
-    std::shared_ptr<Azure::Identity::ClientSecretCredential>,
-    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
-    std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
-    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
 }
-
 #endif
 
 #if USE_AWS_S3
@@ -92,7 +47,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class ReadBufferFromFileBase;
@@ -105,16 +61,12 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
     std::string etag;
-    ObjectAttributes tags;
     ObjectAttributes attributes;
 };
-
-struct DataLakeObjectMetadata;
 
 struct RelativePathWithMetadata
 {
     String relative_path;
-    /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
     RelativePathWithMetadata() = default;
@@ -124,12 +76,13 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
-    RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
+    virtual ~RelativePathWithMetadata() = default;
 
-    ~RelativePathWithMetadata() = default;
-
-    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
-    std::string getPath() const { return relative_path; }
+    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    virtual std::string getPath() const { return relative_path; }
+    virtual bool isArchive() const { return false; }
+    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
 };
 
 struct ObjectKeyWithMetadata
@@ -143,12 +96,6 @@ struct ObjectKeyWithMetadata
         : key(std::move(key_))
         , metadata(std::move(metadata_))
     {}
-};
-
-struct SmallObjectDataWithMetadata
-{
-    std::string data;
-    ObjectMetadata metadata;
 };
 
 using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
@@ -173,10 +120,6 @@ public:
 
     virtual ObjectStorageType getType() const = 0;
 
-    /// The logical root or base path used to group a set of related objects.
-    virtual std::string getRootPrefix() const { return ""; }
-
-    /// Common object key prefix relative to the root path.
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
@@ -196,35 +139,22 @@ public:
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
-    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
 
-    /// Get object metadata if supported. It should be possible to receive at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const;
 
-    /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
+    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const = 0;
-
-    /// Read small object into memory and return it as string
-    /// Also contain consistent object metadata if available in this object storage.
-    /// if size of object is larger than max_size_bytes throws exception
-    ///
-    /// NOTE: This method exists because it's impossible to get object metadata in generic way
-    /// from readObject. ReadObject returns ReadBufferFromFileBase and most of implementations
-    /// issue first request to object store only in first call of read/next method.
-    ///
-    /// WARN: Don't use this method for large objects, it will eat all memory.
-    /// That is the reason why max_size_bytes is explicit and 0-value will not help to bypass this check.
-    virtual SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
-        const StoredObject & object,
-        const ReadSettings & read_settings,
-        size_t max_size_bytes,
-        std::optional<size_t> read_hint = {}) const;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -286,6 +216,13 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
 
+    /// FIXME: confusing function required for a very specific case. Create new instance of object storage
+    /// in different namespace.
+    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix, ContextPtr context) = 0;
+
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
@@ -326,11 +263,6 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
-
-    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
 #endif
 
 #if USE_AWS_S3
@@ -340,6 +272,12 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
+
+
+private:
+    mutable std::mutex throttlers_mutex;
+    ThrottlerPtr remote_read_throttler;
+    ThrottlerPtr remote_write_throttler;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
