@@ -1,8 +1,16 @@
 #include <unordered_set>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Core/Field.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -121,15 +129,30 @@ protected:
         std::optional<ActionsDAG> filter_dag;
         if (predicate)
         {
-            /// FIXME:
-            /// - use analyzer
-            /// - use primary_key->getSampleBlock().getNamesAndTypesList() over metadata_snapshot->getSampleBlock().getNamesAndTypesList()
-            TreeRewriterResultPtr syntax_analyzer_result = TreeRewriter(context).analyze(predicate, metadata_snapshot->getSampleBlock().getNamesAndTypesList());
-            ExpressionAnalyzer analyzer(predicate, syntax_analyzer_result, context);
-            /// FIXME: add_aliases is true to avoid adding source columns as outputs
-            filter_dag.emplace(analyzer.getActionsDAG(/*add_aliases=*/ true));
-            if (filter_dag->getOutputs().size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ActionsDAG contains more than 1 output for expression: {}", predicate->formatForLogging());
+            auto execution_context = Context::createCopy(context);
+            auto expression = buildQueryTree(predicate, execution_context);
+
+            auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
+            QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+
+            QueryAnalyzer analyzer(false);
+            analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
+
+            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+            collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+            collectSets(expression, *planner_context);
+
+            ColumnNodePtrWithHashSet empty_correlated_columns_set;
+            auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+                expression,
+                /*input_columns=*/ {},
+                planner_context,
+                empty_correlated_columns_set);
+            correlated_subtrees.assertEmpty("in constant expression without query context");
+
+            filter_dag.emplace(std::move(actions));
         }
 
         const auto & parts_ranges = RangesInDataParts{data_parts};
