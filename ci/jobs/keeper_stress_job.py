@@ -282,6 +282,29 @@ def main():
 
     # Prepare env for pytest
     env = os.environ.copy()
+    try:
+        need_url = not env.get("CI_DB_URL")
+        need_user = not env.get("CI_DB_USER")
+        need_pass = not env.get("CI_DB_PASSWORD")
+        if need_url or need_user or need_pass:
+            try:
+                from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
+
+                _h = ClickHouseHelper()
+                if need_url and getattr(_h, "url", None):
+                    env["CI_DB_URL"] = _h.url
+                if need_user and isinstance(getattr(_h, "auth", None), dict):
+                    u = _h.auth.get("X-ClickHouse-User")
+                    if u:
+                        env["CI_DB_USER"] = u
+                if need_pass and isinstance(getattr(_h, "auth", None), dict):
+                    k = _h.auth.get("X-ClickHouse-Key")
+                    if k:
+                        env["CI_DB_PASSWORD"] = k
+            except Exception:
+                pass
+    except Exception:
+        pass
     env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
     try:
         subproc_to = str(max(300, min(timeout_val - 60, 900)))
@@ -630,6 +653,32 @@ def main():
         )
         try:
             files_to_attach.append(cidb_txt)
+        except Exception:
+            pass
+        try:
+            if helper is not None and sha and sha != "local":
+                gate_cmd = (
+                    "bash -lc \"" \
+                    f"echo 'CIDB Sanity Gate: sha={sha} bench_rows={bench_rows} checks_rows={checks_rows}'; " \
+                    f"test {bench_rows} -gt 0 -a {checks_rows} -gt 0\""
+                )
+                results.append(
+                    Result.from_commands_run(
+                        name="CIDB Sanity Gate (non-zero metrics and checks)",
+                        command=gate_cmd,
+                        with_info_on_failure=True,
+                    )
+                )
+            elif sha and sha != "local" and helper is None:
+                results.append(
+                    Result.from_commands_run(
+                        name="CIDB Sanity Gate (missing credentials)",
+                        command=[
+                            "bash -lc 'echo missing CI DB credentials/helper; exit 1'"
+                        ],
+                        with_info_on_failure=True,
+                    )
+                )
         except Exception:
             pass
     except Exception:
