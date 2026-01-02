@@ -57,3 +57,13 @@ $CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
     SELECT count() FROM system.instrumentation;
 "
+
+$CLICKHOUSE_CLIENT -q "
+    SELECT '-- Add several functions that match';
+    SYSTEM INSTRUMENT ADD 'executeQuery' LOG ENTRY 'my log in executeQuery';
+    SELECT count() > 10, function_name, handler, entry_type FROM system.instrumentation WHERE symbol ILIKE '%executeQuery%' GROUP BY function_name, handler, entry_type;
+
+    SELECT '-- Remove everything';
+    SYSTEM INSTRUMENT REMOVE ALL;
+    SELECT count() FROM system.instrumentation;
+"
