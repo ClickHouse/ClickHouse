@@ -176,6 +176,21 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
     return {min_length, max_length, min_cutoff_length};
 }
 
+std::vector<String> TokenizerFactory::extractStandardParam(std::span<const Field> params)
+{
+    assertParamsCount(params.size(), 1, StandardTokenExtractor::getExternalName());
+    if (params.empty())
+        return std::vector<String>{"，", "。", "！", "？", "；", "：", "、", "“", "”", "‘", "’"};
+
+    std::vector<String> values;
+    auto array = castAs<Array>(params[0], "stop_words");
+
+    for (const auto & value : array)
+        values.emplace_back(castAs<String>(value, "stop_word"));
+
+    return values;
+}
+
 void TokenizerFactory::isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name)
 {
     if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
@@ -227,6 +242,11 @@ std::unique_ptr<ITokenExtractor> TokenizerFactory::createTokenizer(
     {
         assertParamsCount(params.size(), 0, tokenizer);
         return only_validate ? nullptr : std::make_unique<ArrayTokenExtractor>();
+    }
+    if (tokenizer == StandardTokenExtractor::getName() || tokenizer == StandardTokenExtractor::getExternalName())
+    {
+        auto stop_words = extractStandardParam(params);
+        return only_validate ? nullptr : std::make_unique<StandardTokenExtractor>(stop_words);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown tokenizer: '{}' for function or index '{}'", tokenizer, caller_name);
@@ -315,97 +335,6 @@ bool SplitByNonAlphaTokenExtractor::nextInString(const char * data, size_t lengt
             ++*token_length;
         }
     }
-
-    return *token_length > 0;
-}
-
-bool SplitByNonAlphaTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
-{
-    *token_start = *pos;
-    *token_length = 0;
-
-    while (*pos < length)
-    {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
-        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
-        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
-        const size_t haystack_length = 16;
-
-#if defined(__SSE4_2__)
-        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
-        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
-                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
-        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
-        const unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
-#else
-        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
-        const auto number_begin =      _mm_set1_epi8('0' - 1);
-        const auto number_end =        _mm_set1_epi8('9' + 1);
-        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
-        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
-        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
-        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        const auto zero =              _mm_set1_epi8(0);
-
-        // every bit represents if `haystack` character `c` satisfies condition:
-        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
-        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
-        const unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
-                _mm_cmplt_epi8(haystack, zero),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
-                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
-#endif
-        if (result_bitmask == 0)
-        {
-            if (*token_length != 0)
-                // end of token started on previous haystack
-                return true;
-
-            *pos += haystack_length;
-            continue;
-        }
-
-        const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
-        if (*token_length == 0)
-            // new token
-            *token_start = *pos + token_start_pos_in_current_haystack;
-        else if (token_start_pos_in_current_haystack != 0)
-            // end of token starting in one of previous haystacks
-            return true;
-
-        const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
-        *token_length += token_bytes_in_current_haystack;
-
-        *pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
-        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
-            // check if there are leftovers in next `haystack`
-            continue;
-
-        break;
-#else
-        if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
-        {
-            /// Finish current token if any
-            if (*token_length > 0)
-                return true;
-            *token_start = ++*pos;
-        }
-        else
-        {
-            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
-            ++*pos;
-            ++*token_length;
-        }
-#endif
-    }
-
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
-    // Could happen only if string is not padded with zeros, and we accidentally hopped over the end of data.
-    if (*token_start > length)
-        return false;
-    *token_length = std::min(length - *token_start, *token_length);
-#endif
 
     return *token_length > 0;
 }
@@ -630,6 +559,339 @@ bool SparseGramsTokenExtractor::nextInStringLike(const char * data, size_t lengt
             return true;
         }
     }
+}
+
+bool StandardTokenExtractor::nextInString(
+    const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+{
+    *token_length = 0;
+    while (*pos < length)
+    {
+        *token_start = *pos;
+        char c = data[*pos];
+
+        /// =======================
+        /// 1. ASCII fast path
+        /// =======================
+        if (isAlphaNumericASCII(c) || c == '_')
+        {
+            size_t token_alnum_count = 0;
+            *token_length = 0;
+
+            while (*pos < length)
+            {
+                char cur = data[*pos];
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++(*pos);
+                    ++(*token_length);
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_')
+                {
+                    ++(*pos);
+                    ++(*token_length);
+                    continue;
+                }
+
+                /// Check if next character exists
+                if (*pos + 1 >= length)
+                    break;
+
+                char next_c = data[*pos + 1];
+                char prev_c = (*pos > 0) ? data[*pos - 1] : '\0';
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++(*pos);
+                    ++(*token_length);
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++(*pos);
+                    ++(*token_length);
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character
+            if (token_alnum_count > 0)
+            {
+                /// Check if token is a stop word
+                std::string_view token_view(data + *token_start, *token_length);
+                if (stop_words.contains(token_view))
+                {
+                    *token_length = 0;
+                    continue;
+                }
+                return true;
+            }
+
+            /// Invalid token (underscore only), continue searching
+            *token_length = 0;
+            continue;
+        }
+
+        /// =======================
+        /// 2. ASCII non-alphanumeric: skip
+        /// =======================
+        if (isASCII(c))
+        {
+            ++(*pos);
+            continue;
+        }
+
+        /// =======================
+        /// 3. Unicode character handling
+        /// =======================
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Prevent out-of-bounds
+        if (*pos + char_len > length)
+        {
+            ++(*pos);
+            continue;
+        }
+
+        std::string_view utf8_char(data + *pos, char_len);
+
+        /// 3a. Stop words (Chinese punctuation, etc.): skip
+        if (stop_words.contains(utf8_char))
+        {
+            *pos += char_len;
+            continue;
+        }
+
+        *token_start = *pos;
+        *token_length = char_len;
+        *pos += char_len;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool StandardTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const
+{
+    token.clear();
+    size_t token_start;
+    std::optional<size_t> last_glob_pos;
+    bool escaped = false; /// Whether current char is an escaped char
+    while (*pos < length)
+    {
+        token_start = *pos;
+        char c = data[*pos];
+
+        if (c == '\\' && !escaped)
+        {
+            if (*pos + 1 >= length)
+                break;
+            ++(*pos);
+            c = data[*pos];
+            escaped = true;
+        }
+
+        /// =======================
+        /// 1. ASCII fast path
+        /// =======================
+        if (isAlphaNumericASCII(c) || (c == '_' && escaped))
+        {
+            size_t token_alnum_count = 0;
+            token.clear();
+
+            while (*pos < length)
+            {
+                char cur = data[*pos];
+                if (cur == '\\' && !escaped)
+                {
+                    if (*pos + 1 >= length)
+                        break;
+                    ++(*pos);
+                    cur = data[*pos];
+                    escaped = true;
+                }
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_' && escaped)
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Wildcard
+                if (cur == '_' || (cur == '%' && !escaped))
+                {
+                    last_glob_pos = *pos;
+                    ++(*pos);
+                    break;
+                }
+
+                /// Check if next character exists
+                if (*pos + 1 >= length)
+                    break;
+
+                char next_c = data[*pos + 1];
+                if (next_c == '\\')
+                {
+                    if (*pos + 2 >= length)
+                        break;
+                    next_c = data[*pos + 2];
+                }
+                char prev_c = token.empty() ? '\0' : token.back();
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character
+            if (token_alnum_count > 0 && (!last_glob_pos || (*last_glob_pos + 1 != *pos && *last_glob_pos + 1 != token_start)))
+            {
+                /// Check if token is a stop word
+                if (stop_words.contains(token))
+                    continue;
+
+                if (escaped)
+                    --(*pos);
+                return true;
+            }
+
+            /// Invalid token, continue searching
+            continue;
+        }
+
+        /// =======================
+        /// 2. ASCII non-alphanumeric: skip
+        /// =======================
+        if (isASCII(c))
+        {
+            if (!escaped && (c == '_' || c == '%'))
+                last_glob_pos = *pos;
+
+            ++(*pos);
+            escaped = false;
+            continue;
+        }
+
+        /// =======================
+        /// 3. Unicode character handling
+        /// =======================
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Prevent out-of-bounds
+        if (*pos + char_len > length)
+        {
+            ++(*pos);
+            escaped = false;
+            continue;
+        }
+
+        token = {data + *pos, char_len};
+
+        /// 3a. Stop words (Chinese punctuation, etc.): skip
+        if (stop_words.contains(token))
+        {
+            *pos += char_len;
+            escaped = false;
+            continue;
+        }
+
+        *pos += char_len;
+        return true;
+    }
+
+    return false;
+}
+
+void StandardTokenExtractor::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
+        // In order to avoid filter updates with incomplete tokens,
+        // first token is ignored, unless substring is prefix and
+        // last token is ignored, unless substring is suffix
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            bloom_filter.add(data + token_start, token_len);
+}
+
+void StandardTokenExtractor::substringToTokens(
+    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
+    {
+        // In order to avoid filter updates with incomplete tokens,
+        // first token is ignored, unless substring is prefix and
+        // last token is ignored, unless substring is suffix
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            tokens.push_back({data + token_start, token_len});
+    }
+}
+
+void forEachTokenToBloomFilter(const ITokenExtractor & extractor, const char * data, size_t length, BloomFilter & bloom_filter)
+{
+    forEachToken(
+        extractor,
+        data,
+        length,
+        [&](const char * token_start, size_t token_length)
+        {
+            bloom_filter.add(token_start, token_length);
+            return false;
+        });
 }
 
 }

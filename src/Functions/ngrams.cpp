@@ -101,15 +101,16 @@ private:
         {
             auto data = input_data_column.getDataAt(i);
 
-            size_t cur = 0;
-            size_t token_start = 0;
-            size_t token_length = 0;
-
-            while (cur < data.size() && extractor.nextInString(data.data(), data.size(), &cur, &token_start, &token_length))
-            {
-                result_data_column.insertData(data.data() + token_start, token_length);
-                ++current_tokens_size;
-            }
+            forEachToken(
+                extractor,
+                data.data(),
+                data.size(),
+                [&](const char * token_start, size_t token_length)
+                {
+                    result_data_column.insertData(token_start, token_length);
+                    ++current_tokens_size;
+                    return false;
+                });
 
             offsets_data[i] = current_tokens_size;
         }

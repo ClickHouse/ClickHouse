@@ -62,15 +62,17 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
            SplitByNonAlphaTokenExtractor::getExternalName(),
            SplitByStringTokenExtractor::getExternalName(),
            ArrayTokenExtractor::getExternalName(),
-           SparseGramsTokenExtractor::getExternalName()};
+           SparseGramsTokenExtractor::getExternalName(),
+           StandardTokenExtractor::getExternalName()};
 
     return TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, function_name);
 }
 
+template <bool for_like_pattern>
 class ExecutableFunctionTokens : public IExecutableFunction
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = for_like_pattern ? "tokensForLikePattern" : "tokens";
 
     explicit ExecutableFunctionTokens(std::shared_ptr<const ITokenExtractor> token_extractor_)
         : token_extractor(std::move(token_extractor_))
@@ -135,12 +137,32 @@ private:
         {
             std::string_view input = column_input.getDataAt(i);
 
-            forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+            if constexpr (for_like_pattern)
             {
-                column_result.insertData(token_start, token_len);
-                ++tokens_count;
-                return false;
-            });
+                size_t cur = 0;
+                const char * data = input.data();
+                size_t length = input.size();
+                String token;
+
+                while (cur < length && extractor.nextInStringLike(data, length, &cur, token))
+                {
+                    column_result.insertData(token.data(), token.size());
+                    ++tokens_count;
+                }
+            }
+            else
+            {
+                forEachToken(
+                    extractor,
+                    input.data(),
+                    input.size(),
+                    [&](const char * token_start, size_t token_len)
+                    {
+                        column_result.insertData(token_start, token_len);
+                        ++tokens_count;
+                        return false;
+                    });
+            }
 
             offsets_data[i] = tokens_count;
         }
@@ -149,10 +171,11 @@ private:
     std::shared_ptr<const ITokenExtractor> token_extractor;
 };
 
+template <bool for_like_pattern>
 class FunctionBaseTokens : public IFunctionBase
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = for_like_pattern ? "tokensForLikePattern" : "tokens";
 
     FunctionBaseTokens(std::shared_ptr<const ITokenExtractor> token_extractor_, DataTypes argument_types_, DataTypePtr result_type_)
         : token_extractor(std::move(token_extractor_))
@@ -168,7 +191,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionTokens>(token_extractor);
+        return std::make_unique<ExecutableFunctionTokens<for_like_pattern>>(token_extractor);
     }
 
 private:
@@ -177,10 +200,11 @@ private:
     DataTypePtr result_type;
 };
 
+template <bool for_like_pattern>
 class FunctionTokensOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = for_like_pattern ? "tokensForLikePattern" : "tokens";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -212,6 +236,8 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+                else if (tokenizer == StandardTokenExtractor::getExternalName())
+                    optional_args.emplace_back("stop_words", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
@@ -235,7 +261,7 @@ public:
     {
         auto token_extractor = createTokenizer(arguments, getName());
         DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-        return std::make_shared<FunctionBaseTokens>(std::move(token_extractor), std::move(argument_types), return_type);
+        return std::make_shared<FunctionBaseTokens<for_like_pattern>>(std::move(token_extractor), std::move(argument_types), return_type);
     }
 };
 
@@ -243,42 +269,74 @@ public:
 
 REGISTER_FUNCTION(Tokens)
 {
-    FunctionDocumentation::Description description = R"(
-Splits a string into tokens using the given tokenizer.
-The default tokenizer uses non-alphanumeric ASCII characters as separators.
-
-In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
-To do so, pass the separators in order of descending length.
-For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
-)";
-    FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
         {"ngrams", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
-        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
+        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
+        {"stop_words", "Only relevant if argument `tokenizer` is `standard`: An optional parameter which defines the stop words. If not set explicitly, defaults to `['，', '。', '！', '？', '；', '：', '、', '“', '”', '‘', '’']`.", {"const Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Default tokenizer",
-        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
-        R"(
-['test1','test2','test3','test4']
-        )"
-    },
-    {
-        "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
-        R"(
-['abc','bc ','c d',' de','def']
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTokensOverloadResolver>(documentation);
+    {
+        FunctionDocumentation::Description description = R"(
+            Splits a string into tokens using the given tokenizer.
+            The default tokenizer uses non-alphanumeric ASCII characters as separators.
+
+            In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+            To do so, pass the separators in order of descending length.
+            For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
+            )";
+        FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
+        FunctionDocumentation::Examples examples = {
+            {
+                "Default tokenizer",
+                R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
+                R"(
+                    ['test1','test2','test3','test4']
+                    )"
+            },
+            {
+                "Ngram tokenizer",
+                "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
+                R"(
+                    ['abc','bc ','c d',' de','def']
+                    )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionTokensOverloadResolver<false>>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+            Splits a LIKE pattern string into tokens using the specified tokenizer.
+
+            Unlike the `tokens` function, this function is aware of LIKE pattern semantics
+            (such as leading and trailing wildcard characters) and applies tokenizer-specific
+            rules to extract meaningful tokens for pattern matching.
+
+            This function is primarily intended for debugging and testing purposes,
+            and is used internally to analyze tokenization behavior for LIKE patterns.
+            )";
+        FunctionDocumentation::Syntax syntax = "tokensForLikePattern(value[, tokenizer[, ngrams[, separators]]])";
+        FunctionDocumentation::Examples examples = {
+            {
+                "Default tokenizer",
+                R"(SELECT tokensForLikePattern('%test1,test2,test3%') AS tokens;)",
+                R"(
+                    ['test2']
+                    )"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionTokensOverloadResolver<true>>(documentation); /// tokensForLikePattern is mainly for debugging/testing
+    }
 }
 }

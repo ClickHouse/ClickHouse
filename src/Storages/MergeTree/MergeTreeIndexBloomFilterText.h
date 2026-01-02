@@ -1,15 +1,14 @@
 #pragma once
 
-#include <memory>
-
+#include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Interpreters/BloomFilter.h>
-#include <Interpreters/ITokenExtractor.h>
-
 
 namespace DB
 {
+
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
 
 struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranule
 {
@@ -153,14 +152,9 @@ class MergeTreeIndexBloomFilterText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilterText(
-        const IndexDescription & index_,
-        const BloomFilterParameters & params_,
-        std::unique_ptr<ITokenExtractor> && token_extractor_)
-        : IMergeTreeIndex(index_)
-        , params(params_)
-        , token_extractor(std::move(token_extractor_)) {}
+        const IndexDescription & index_, const BloomFilterParameters & params_, std::unique_ptr<ITokenExtractor> && token_extractor_);
 
-    ~MergeTreeIndexBloomFilterText() override = default;
+    ~MergeTreeIndexBloomFilterText() override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
