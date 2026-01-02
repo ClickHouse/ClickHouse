@@ -94,6 +94,10 @@ NULL-safe comparisons with type-correct literals
 0	1
 0	1
 1.8 Some ILLEGAL_TYPE_OF_ARGUMENT case
+\N
+\N
+0
+\N
 Array vs Map cross-type test cases
 Map vs Variant cross-type test cases
 1.9 WHERE Clause
