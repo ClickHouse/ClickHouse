@@ -453,84 +453,159 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         return result;
     }
 
-    /// Variant result: build Variant column directly from individual variant columns
-    auto result = result_type->createColumn();
-    auto & result_variant = assert_cast<ColumnVariant &>(*result);
+    /// Variant result: check if we can use optimized direct construction
+    /// or need to use general approach with casting.
     const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
     const auto & result_variants = result_variant_type.getVariants();
 
-    /// Map each variant result to its discriminator in the result Variant
-    std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+    /// Check if we can use optimized direct construction:
+    /// 1. All result types must be different (no duplicates)
+    /// 2. None of the result types should be a nested Variant
+    bool can_use_direct_construction = true;
+    std::unordered_set<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {
-        /// Skip variants that don't exist in the data or have no result.
         if (!variants[i].column || !variants_results[i])
             continue;
 
         const auto & variant_result_type = variants_result_types[i];
 
-        /// Find discriminator by name first (for custom types), then by equals()
-        for (size_t j = 0; j < result_variants.size(); ++j)
+        /// Check if this result type is a Variant
+        if (isVariant(variant_result_type))
         {
-            if (result_variants[j]->getName() == variant_result_type->getName())
-            {
-                result_discriminators[i] = j;
-                break;
-            }
+            can_use_direct_construction = false;
+            break;
         }
-        if (!result_discriminators[i])
+
+        /// Check for duplicate result types
+        if (!result_type_names.insert(variant_result_type->getName()).second)
         {
+            can_use_direct_construction = false;
+            break;
+        }
+    }
+
+    if (can_use_direct_construction)
+    {
+        /// Optimized path: build Variant directly from individual variant columns
+        auto result = result_type->createColumn();
+        auto & result_variant = assert_cast<ColumnVariant &>(*result);
+
+        /// Map each variant result to its discriminator in the result Variant
+        std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+
+        for (size_t i = 0; i < num_variants; ++i)
+        {
+            /// Skip variants that don't exist in the data or have no result.
+            if (!variants[i].column || !variants_results[i])
+                continue;
+
+            const auto & variant_result_type = variants_result_types[i];
+
+            /// Find discriminator by name first (for custom types), then by equals()
             for (size_t j = 0; j < result_variants.size(); ++j)
             {
-                if (result_variants[j]->equals(*variant_result_type))
+                if (result_variants[j]->getName() == variant_result_type->getName())
                 {
                     result_discriminators[i] = j;
                     break;
                 }
             }
+            if (!result_discriminators[i])
+            {
+                for (size_t j = 0; j < result_variants.size(); ++j)
+                {
+                    if (result_variants[j]->equals(*variant_result_type))
+                    {
+                        result_discriminators[i] = j;
+                        break;
+                    }
+                }
+            }
+
+            if (!result_discriminators[i])
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find variant type {} in result Variant type {} during execution of {}",
+                    variant_result_type->getName(),
+                    result_type->getName(),
+                    getName());
         }
 
-        if (!result_discriminators[i])
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot find variant type {} in result Variant type {} during execution of {}",
-                variant_result_type->getName(),
-                result_type->getName(),
-                getName());
-    }
+        /// Set variant columns in the result
+        for (size_t i = 0; i < num_variants; ++i)
+        {
+            if (variants[i].column && variants_results[i] && result_discriminators[i])
+            {
+                auto global_discr = *result_discriminators[i];
+                auto local_discr = result_variant.localDiscriminatorByGlobal(global_discr);
+                result_variant.getVariantPtrByLocalDiscriminator(local_discr) = variants_results[i];
+            }
+        }
 
-    /// Set variant columns in the result
+        /// Build discriminators and offsets
+        auto & result_discriminators_col = result_variant.getLocalDiscriminators();
+        auto & result_offsets = result_variant.getOffsets();
+        result_discriminators_col.reserve(variant_column.size());
+        result_offsets.reserve(variant_column.size());
+
+        for (size_t i = 0; i != selector.size(); ++i)
+        {
+            if (selector[i] == num_variants || !variants_results[selector[i]])
+            {
+                result_discriminators_col.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                result_offsets.emplace_back();
+            }
+            else
+            {
+                auto global_discr = *result_discriminators[selector[i]];
+                auto local_discr = result_variant.localDiscriminatorByGlobal(global_discr);
+                result_discriminators_col.push_back(local_discr);
+                result_offsets.push_back(offsets[i]);
+            }
+        }
+
+        return result;
+    }
+    /// General path: cast each result to final Variant type to handle
+    /// duplicate result types and nested Variants correctly
+    std::vector<ColumnPtr> casted_results(variants_results.size());
+
     for (size_t i = 0; i < num_variants; ++i)
     {
-        if (variants[i].column && variants_results[i] && result_discriminators[i])
+        if (!variants[i].column || !variants_results[i])
+            continue;
+
+        const auto & variant_result_type = variants_result_types[i];
+
+        /// Cast this result to the final Variant type
+        try
         {
-            auto global_discr = *result_discriminators[i];
-            auto local_discr = result_variant.localDiscriminatorByGlobal(global_discr);
-            result_variant.getVariantPtrByLocalDiscriminator(local_discr) = variants_results[i];
+            casted_results[i] = castColumn(ColumnWithTypeAndName{variants_results[i], variant_result_type, ""}, result_type);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
+                getName(),
+                variant_result_type->getName(),
+                result_type->getName(),
+                e.message());
         }
     }
 
-    /// Build discriminators and offsets
-    auto & result_discriminators_col = result_variant.getLocalDiscriminators();
-    auto & result_offsets = result_variant.getOffsets();
-    result_discriminators_col.reserve(variant_column.size());
-    result_offsets.reserve(variant_column.size());
+    /// Build result column row by row using selector and casted results
+    auto result = result_type->createColumn();
+    result->reserve(variant_column.size());
 
     for (size_t i = 0; i != selector.size(); ++i)
     {
         if (selector[i] == num_variants || !variants_results[selector[i]])
-        {
-            result_discriminators_col.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-            result_offsets.emplace_back();
-        }
+            result->insertDefault();
         else
-        {
-            auto global_discr = *result_discriminators[selector[i]];
-            auto local_discr = result_variant.localDiscriminatorByGlobal(global_discr);
-            result_discriminators_col.push_back(local_discr);
-            result_offsets.push_back(offsets[i]);
-        }
+            result->insertFrom(*casted_results[selector[i]], offsets[i]);
     }
 
     return result;
