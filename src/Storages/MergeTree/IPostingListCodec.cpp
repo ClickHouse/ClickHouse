@@ -38,8 +38,8 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
     if (only_validate || codec_name.empty() || codec_name == "none")
         return {};
 #if USE_SIMDCOMP
-    if (codec_name == SIMDCompCodec::getName())
-        return std::make_unique<SIMDCompCodec>();
+    if (codec_name == PostingListCodecSIMDComp::getName())
+        return std::make_unique<PostingListCodecSIMDComp>();
 #endif
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec: '{}' for index '{}'", codec_name, caller_name);
 }

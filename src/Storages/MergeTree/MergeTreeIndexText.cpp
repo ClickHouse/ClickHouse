@@ -19,11 +19,11 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Storages/MergeTree/MergeTreeWriterStream.h>
-#include <Storages/MergeTree/TextIndexCache.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+#include <Storages/MergeTree/MergeTreeWriterStream.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 
 
 #include <base/range.h>
@@ -1344,15 +1344,6 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 
     auto token_extractor = TokenizerFactory::createTokenizer(tokenizer, params, allowed_tokenizers, index.name);
 
-    const String posting_list_codec_name = extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
-    static std::vector<String> allowed_codecs
-        = {"none",
-#if USE_SIMDCOMP
-            SIMDCompCodec::getName(),
-#endif
-        };
-    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, allowed_codecs, index.name);
-
     String preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR).value_or("");
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
@@ -1363,6 +1354,15 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         preprocessor};
+
+    String posting_list_codec_name = extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+    static std::vector<String> allowed_codecs
+        = {"none",
+#if USE_SIMDCOMP
+            PostingListCodecSIMDComp::getName(),
+#endif
+        };
+    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, allowed_codecs, index.name);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1396,9 +1396,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
-
     extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
+
+    auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1447,7 +1447,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         if (required_columns.size() != 1 || required_columns.front() != index.column_names.front())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index preprocessor expression must depend only of column: {}", index.column_names.front());
     }
-
 }
 
 static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)

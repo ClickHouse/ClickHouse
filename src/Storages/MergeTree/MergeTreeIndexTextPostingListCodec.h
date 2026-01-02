@@ -274,17 +274,13 @@ private:
 };
 
 /// Codec for serializing/deserializing a single postings list to/from a binary stream.
-struct SIMDCompCodec : public  IPostingListCodec
+struct PostingListCodecSIMDComp : public  IPostingListCodec
 {
-    SIMDCompCodec();
     static const char * getName() { return "bitpacking"; }
-    /// Serializes a postings list into a `Write buffer`.
-    /// Serialization is segment-oriented and controlled by `posting_list_block_size`:
-    /// if a postings list is long, it is split into multiple consecutive segments, each containing
-    /// up to `posting_list_block_size` values.
-    void encode(const PostingListBuilder & builder, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & wb) const override;
 
-    /// Performs the inverse operation, read from `ReadBuffer` and reconstructs the in-memory `PostingList`.
+    PostingListCodecSIMDComp();
+
+    void encode(const PostingListBuilder & builder, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & wb) const override;
     void decode(ReadBuffer & rb, PostingList & posting_list) const override;
 };
 

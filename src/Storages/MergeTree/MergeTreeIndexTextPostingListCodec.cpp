@@ -150,18 +150,18 @@ void PostingListCodecImpl::decodeOneBlock(std::span<const std::byte> & in, size_
     prev_value = current.empty() ? prev_value : current.back();
 }
 
-SIMDCompCodec::SIMDCompCodec()
+PostingListCodecSIMDComp::PostingListCodecSIMDComp()
     : IPostingListCodec(Type::Bitpacking)
 {
 }
 
-void SIMDCompCodec::decode(ReadBuffer & in, PostingList & postings) const
+void PostingListCodecSIMDComp::decode(ReadBuffer & in, PostingList & postings) const
 {
     PostingListCodecImpl impl;
     impl.deserialize(in, postings);
 }
 
-void SIMDCompCodec::encode(const PostingListBuilder & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const
+void PostingListCodecSIMDComp::encode(const PostingListBuilder & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     PostingListCodecImpl impl(posting_list_block_size);
     if (postings.isSmall())
