@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 set allow_experimental_variant_type=1;
 
 create table test (v Variant(String, UInt64)) engine=MergeTree ORDER BY tuple();
