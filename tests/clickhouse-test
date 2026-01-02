@@ -1174,6 +1174,7 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         **randomize_external_sort_group_by(),
     }
 

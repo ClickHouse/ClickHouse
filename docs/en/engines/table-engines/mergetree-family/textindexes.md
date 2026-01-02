@@ -508,6 +508,7 @@ Different caches are available to buffer parts of the text index in memory (see 
 Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
 They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
 By default, all caches are disabled.
+To drop the caches, use statement [SYSTEM DROP TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
 

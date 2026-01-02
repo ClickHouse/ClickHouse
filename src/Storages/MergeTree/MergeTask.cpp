@@ -176,7 +176,7 @@ public:
     static constexpr auto FILE_ID = "rows_sources";
 
     explicit RowsSourcesTemporaryFile(TemporaryDataOnDiskScopePtr temporary_data_on_disk_)
-        : temporary_data_on_disk(temporary_data_on_disk_->childScope(CurrentMetrics::TemporaryFilesForMerge))
+        : temporary_data_on_disk(temporary_data_on_disk_->childScope({CurrentMetrics::TemporaryFilesForMerge}))
     {
     }
 
@@ -969,7 +969,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_to_squash = projection.calculate(block, global_ctx->context);
+        Block block_with_required_columns;
+        for (const auto & name : projection.getRequiredColumns())
+            if (name != "_part_offset")
+                block_with_required_columns.insert(block.getByName(name));
+        Block block_to_squash = projection.calculate(block_with_required_columns, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
             return;
