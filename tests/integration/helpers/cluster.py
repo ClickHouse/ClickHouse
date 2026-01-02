@@ -3852,10 +3852,22 @@ class ClickHouseCluster:
 
             if self.with_dremio26:
                 try:
-                    self.wait_for_url(
-                        url=f"http://{self.dremio26_host}:{self.dremio26_rest_port}/",
-                        timeout=300,
-                    )
+                    ip = self.get_instance_ip(self.dremio26_host)
+                    # wait for Arrow Flight TCP port to accept connections
+                    start = time.time()
+                    while time.time() - start < 300:
+                        try:
+                            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            s.settimeout(2)
+                            s.connect((ip, self.dremio26_port))
+                            s.close()
+                            break
+                        except Exception:
+                            time.sleep(1)
+                    else:
+                        raise Exception(
+                            f"Cannot wait Dremio Flight port {self.dremio26_port} at {ip}"
+                        )
                 except Exception:
                     run_and_check(["docker", "ps", "--all"])
                     raise

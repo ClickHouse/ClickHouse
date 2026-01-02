@@ -180,7 +180,34 @@ def _push_ci_check_result(check_name, check_status, check_duration, check_start_
     except Exception:
         return
     try:
-        helper = ClickHouseHelper()
+        try:
+            url = (
+                os.environ.get("CI_DB_URL")
+                or os.environ.get("CLICKHOUSE_TEST_STAT_URL")
+                or None
+            )
+            user = (
+                os.environ.get("CI_DB_USER")
+                or os.environ.get("CLICKHOUSE_TEST_STAT_LOGIN")
+                or None
+            )
+            password = (
+                os.environ.get("CI_DB_PASSWORD")
+                or os.environ.get("CLICKHOUSE_TEST_STAT_PASSWORD")
+                or None
+            )
+            if url and user and password:
+                helper = ClickHouseHelper(
+                    url=url,
+                    auth={
+                        "X-ClickHouse-User": user,
+                        "X-ClickHouse-Key": password,
+                    },
+                )
+            else:
+                helper = ClickHouseHelper()
+        except Exception:
+            helper = ClickHouseHelper()
         pr_info = PRInfo()
         events = prepare_tests_results_for_clickhouse(
             pr_info,
