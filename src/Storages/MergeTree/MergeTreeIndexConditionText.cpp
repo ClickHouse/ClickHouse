@@ -488,9 +488,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
-        auto use = [&](auto tokens) -> bool
+        auto make_map_function = [&](RPNElement::Function function, auto tokens) -> bool
         {
-            out.function = RPNElement::FUNCTION_EQUALS;
+            out.function = function;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
@@ -499,19 +499,25 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
         if (has_map_keys_column)
         {
+            /// TODO: The functions used under these two conditions are inconsistent, but preserve backward compatibility.
+            /// This is because #89757 changed `mapContainsKey` and `has` with a text index to return no results when the
+            /// extracted tokens array is empty. Meanwhile, the desired behavior in `hint` mode is that the result set of
+            /// functions like `mapContains*Like` should not change just by adding a text index. Ideally, these should all
+            /// use `FUNCTION_EQUALS`, but that would be another backward-incompatible change.
             if (function_name == "mapContainsKey" || function_name == "has")
-                return use(stringToTokens(value_field));
+                return make_map_function(RPNElement::FUNCTION_HAS, stringToTokens(value_field));
             if (function_name == "mapContainsKeyLike" && token_extractor->supportsStringLike())
-                return use(stringLikeToTokens(value_field));
+                return make_map_function(RPNElement::FUNCTION_EQUALS, stringLikeToTokens(value_field));
         }
 
         /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
         if (has_map_values_column)
         {
+            /// TODO: See above in `if (has_map_keys_column)`.
             if (function_name == "mapContainsValue")
-                return use(stringToTokens(value_field));
+                return make_map_function(RPNElement::FUNCTION_HAS, stringToTokens(value_field));
             if (function_name == "mapContainsValueLike" && token_extractor->supportsStringLike())
-                return use(stringLikeToTokens(value_field));
+                return make_map_function(RPNElement::FUNCTION_EQUALS, stringLikeToTokens(value_field));
         }
 
         return false;
