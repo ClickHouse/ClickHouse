@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StatisticsDescription.h>
@@ -77,6 +78,7 @@ struct ColumnDescription
 {
     String name;
     DataTypePtr type;
+    UUID uuid = UUIDHelpers::Nil;
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
@@ -113,6 +115,8 @@ public:
     explicit ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns = true);
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
+
+    explicit ColumnsDescription(const std::vector<ColumnDescription> & ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 
