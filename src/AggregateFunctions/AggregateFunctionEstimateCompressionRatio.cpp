@@ -77,7 +77,7 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void reCreateBuffersIfNeeded(AggregateDataPtr __restrict place) const
+    void resetBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
         Data & data_ref = data(place);
 
@@ -149,7 +149,7 @@ public:
     {
         const auto & column = columns[0];
 
-        reCreateBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -181,7 +181,7 @@ public:
     {
         const auto & column = columns[0];
 
-        reCreateBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
