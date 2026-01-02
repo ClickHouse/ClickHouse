@@ -243,7 +243,7 @@ It uses the HyperLogLog algorithm to approximate the number of different argumen
 
 2^12 5-bit cells are used.
 The size of the state is slightly more than 2.5 KB.
-The result is not very accurate (up to ~10% error) for small data sets (<10K elements).
+The result is not very accurate (up to ~10% error) for small data sets (\<10K elements).
 However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%.
 Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
@@ -261,15 +261,17 @@ uniqHLL12(x[, ...])
     {
         "Basic usage",
         R"(
-CREATE TABLE example_hll (
+CREATE TABLE example_hll
+(
     id UInt32,
     category String
-) ENGINE = Memory;
+)
+ENGINE = Memory;
 
 INSERT INTO example_hll VALUES
 (1, 'A'), (2, 'B'), (3, 'A'), (4, 'C'), (5, 'B'), (6, 'A');
 
-SELECT uniqHLL12(category) as hll_unique_categories
+SELECT uniqHLL12(category) AS hll_unique_categories
 FROM example_hll;
         )",
         R"(
@@ -320,10 +322,12 @@ uniqExact(x[, ...])
     {
         "Basic usage",
         R"(
-CREATE TABLE example_data (
+CREATE TABLE example_data
+(
     id UInt32,
     category String
-) ENGINE = Memory;
+)
+ENGINE = Memory;
 
 INSERT INTO example_data VALUES
 (1, 'A'), (2, 'B'), (3, 'A'), (4, 'C'), (5, 'B'), (6, 'A');
@@ -363,6 +367,7 @@ Calculates the approximate number of different argument values, using the [Theta
 
 <details>
 <summary>Implementation details</summary>
+
 This function calculates a hash for all parameters in the aggregate, then uses it in calculations.
 It uses the [KMV](https://datasketches.apache.org/docs/Theta/InverseEstimate.html) algorithm to approximate the number of different argument values.
 
@@ -383,10 +388,12 @@ uniqTheta(x[, ...])
     {
         "Basic usage",
         R"(
-CREATE TABLE example_theta (
+CREATE TABLE example_theta
+(
     id UInt32,
     category String
-) ENGINE = Memory;
+)
+ENGINE = Memory;
 
 INSERT INTO example_theta VALUES
 (1, 'A'), (2, 'B'), (3, 'A'), (4, 'C'), (5, 'B'), (6, 'A');

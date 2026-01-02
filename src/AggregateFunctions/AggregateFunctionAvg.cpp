@@ -46,6 +46,47 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_avg = R"(
+Calculates the arithmetic mean.
+    )";
+    FunctionDocumentation::Syntax syntax_avg = R"(
+avg(x)
+    )";
+    FunctionDocumentation::Parameters parameters_avg = {};
+    FunctionDocumentation::Arguments arguments_avg = {
+        {"x", "Input values.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the arithmetic mean, otherwise returns `NaN` if the input parameter `x` is empty.", {"Float64"}};
+    FunctionDocumentation::Examples examples_avg = {
+    {
+        "Basic usage",
+        R"(
+SELECT avg(x) FROM VALUES('x Int8', 0, 1, 2, 3, 4, 5);
+        )",
+        R"(
+┌─avg(x)─┐
+│    2.5 │
+└────────┘
+        )"
+    },
+    {
+        "Empty table returns NaN",
+        R"(
+CREATE TABLE test (t UInt8) ENGINE = Memory;
+
+SELECT avg(t) FROM test;
+        )",
+        R"(
+┌─avg(x)─┐
+│    nan │
+└────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_avg = {1, 1};
+    FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, parameters_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
+
+    factory.registerFunction("avg", {createAggregateFunctionAvg, {}, documentation_avg}, AggregateFunctionFactory::Case::Insensitive);
 }
 }
