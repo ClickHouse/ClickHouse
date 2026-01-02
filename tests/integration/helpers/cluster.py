@@ -585,8 +585,9 @@ class ClickHouseCluster:
         #
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
-        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
+        # Only set TSAN_OPTIONS if explicitly provided by the environment; do not force a memory limit here
+        if os.environ.get("CLICKHOUSE_TSAN_OPTIONS"):
+            self.env_variables["TSAN_OPTIONS"] = os.environ["CLICKHOUSE_TSAN_OPTIONS"]
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
