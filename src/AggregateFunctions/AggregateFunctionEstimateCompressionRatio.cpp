@@ -88,8 +88,6 @@ private:
         /// calls updateAggregationState + writeOutCurrentRow in a loop.
         /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
         /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
-        /// But WriteBuffer objects doesn't have a reset function.
-        /// Note: If at some point we find that this re-creation becomes a performance issue, we should implement a reset function.
         if (!data_ref.compressed_buf || data_ref.compressed_buf->isFinalized())
             data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
                 *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
