@@ -280,8 +280,8 @@ struct PostingListCodecSIMDComp : public  IPostingListCodec
 
     PostingListCodecSIMDComp();
 
-    void encode(const PostingListBuilder & builder, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
-    void decode(ReadBuffer & in, PostingList & posting_list) const override;
+    void encode(const PostingListBuilder & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
 }
