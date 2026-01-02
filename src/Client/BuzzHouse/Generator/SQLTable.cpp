@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <type_traits>
 
 #include <Common/checkStackSize.h>
 
@@ -1483,7 +1484,7 @@ void StatementGenerator::generateEngineDetails(
     if (te->has_engine() && b.has_order_by)
     {
         /// Optional ORDER BY
-        generateTableKey(rg, rel, b, false, te->mutable_order());
+        generateTableKey(rg, rel, b, true, te->mutable_order());
     }
     if (te->has_engine() && b.has_partition_by)
     {
