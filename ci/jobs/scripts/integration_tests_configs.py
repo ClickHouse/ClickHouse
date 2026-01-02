@@ -64,53 +64,53 @@ TEST_CONFIGS = [
     # TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
     # TC("test_storage_s3/", True, "no idea why i'm sequential"),
     # Sequential
-    TC("test_crash_log/", True, "no idea why i'm sequential"),
-    TC(
-        "test_dictionary_allow_read_expired_keys/",
-        True,
-        "no idea why i'm sequential",
-    ),
+
+    # TC("test_crash_log/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_dictionary_allow_read_expired_keys/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
     TC("test_dns_cache/", True, "no idea why i'm sequential"),
     TC("test_global_overcommit_tracker/", True, "no idea why i'm sequential"),
-    TC("test_grpc_protocol/", True, "no idea why i'm sequential"),
-    TC("test_host_regexp_multiple_ptr_records/", True, "no idea why i'm sequential"),
-    TC("test_http_failover/", True, "no idea why i'm sequential"),
-    TC("test_https_replication/", True, "no idea why i'm sequential"),
-    TC("test_merge_tree_s3/", True, "no idea why i'm sequential"),
+    # TC("test_grpc_protocol/", True, "no idea why i'm sequential"),
+    # TC("test_host_regexp_multiple_ptr_records/", True, "no idea why i'm sequential"),
+    # TC("test_http_failover/", True, "no idea why i'm sequential"),
+    # TC("test_https_replication/", True, "no idea why i'm sequential"),
+    # TC("test_merge_tree_s3/", True, "no idea why i'm sequential"),
     TC(
         "test_profile_max_sessions_for_user/",
         True,
         "no idea why i'm sequential",
     ),
     TC("test_random_inserts/", True, "no idea why i'm sequential"),
-    TC("test_replicated_database/", True, "no idea why i'm sequential"),
+    # TC("test_replicated_database/", True, "no idea why i'm sequential"),
     TC("test_server_overload/", True, "no idea why i'm sequential"),
-    TC("test_server_reload/", True, "no idea why i'm sequential"),
+    # TC("test_server_reload/", True, "no idea why i'm sequential"),
     TC("test_storage_kafka/", True, "no idea why i'm sequential"),
     TC("test_storage_kerberized_kafka/", True, "no idea why i'm sequential"),
-    TC("test_storage_rabbitmq/", True, "no idea why i'm sequential"),
-    TC("test_storage_s3_queue/", True, "no idea why i'm sequential"),
-    TC("test_system_flush_logs/", True, "no idea why i'm sequential"),
-    TC("test_system_logs/", True, "no idea why i'm sequential"),
-    TC("test_user_ip_restrictions/", True, "no idea why i'm sequential"),
+    # TC("test_storage_s3_queue/", True, "no idea why i'm sequential"),
+    # TC("test_system_flush_logs/", True, "no idea why i'm sequential"),
+    # TC("test_system_logs/", True, "no idea why i'm sequential"),
+    # TC("test_user_ip_restrictions/", True, "no idea why i'm sequential"),
     TC(
         "test_backup_restore_on_cluster/test_concurrency.py",
         True,
         "no idea why i'm sequential",
     ),
-    TC("test_database_delta/test.py", True, "no idea why i'm sequential"),
-    TC("test_keeper_ipv4_fallback/test.py", True, "no idea why i'm sequential"),
+    # TC("test_database_delta/test.py", True, "no idea why i'm sequential"),
+    # TC("test_keeper_ipv4_fallback/test.py", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
-    TC("test_storage_iceberg_with_spark/", True, "no idea why i'm sequential"),
+    # TC("test_storage_iceberg_with_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
-    TC(
-        "test_storage_iceberg_schema_evolution/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC("test_disks_app_interactive/", True, "no idea why i'm sequential"),
-    TC("test_storage_delta_disks/", True, "no idea why i'm sequential"),
-    TC("test_storage_iceberg_disks/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_storage_iceberg_schema_evolution/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC("test_disks_app_interactive/", True, "no idea why i'm sequential"),
+    # TC("test_storage_delta_disks/", True, "no idea why i'm sequential"),
+    # TC("test_storage_iceberg_disks/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_concurrent/", True, "no idea why i'm sequential"),
 ]
 
@@ -135,6 +135,7 @@ IMAGES_ENV = {
     "clickhouse/s3-proxy": "DOCKER_S3_PROXY_TAG",
 }
 
+
 # collected by
 # SELECT
 #     splitByString('::', test_name)[1] AS test_file,
@@ -153,7 +154,6 @@ test_storage_delta/test.py	776078
 test_storage_nats/test_nats_jet_stream.py	701045
 test_ttl_move/test.py	666451
 test_storage_s3/test.py	561548
-test_storage_rabbitmq/test.py	556081
 test_backup_restore_on_cluster/test_concurrency.py	417547
 test_executable_table_function/test.py	364426
 test_replicated_database/test.py	337507
@@ -316,7 +316,6 @@ test_storage_iceberg_with_spark/test_system_iceberg_metadata.py	40493
 test_parallel_replicas_over_distributed/test.py	40284
 test_system_logs_recreate/test.py	39442
 test_jbod_ha/test.py	39314
-test_storage_rabbitmq/test_failed_connection.py	39052
 test_system_metrics/test.py	38955
 test_keeper_nodes_add/test.py	38817
 test_keeper_force_recovery_single_node/test.py	38434

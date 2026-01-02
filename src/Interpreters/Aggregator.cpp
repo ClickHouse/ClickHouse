@@ -1,8 +1,6 @@
-#include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
-#include <base/defines.h>
 #include <Poco/Util/Application.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -21,7 +19,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/NativeWriter.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
@@ -30,7 +27,6 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <base/sort.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
@@ -44,6 +40,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
+
 
 namespace ProfileEvents
 {

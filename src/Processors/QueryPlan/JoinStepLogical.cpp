@@ -138,7 +138,7 @@ static void addToNullableIfNeeded(
     if (outputs.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, String(join_dummy_result_name));
+        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
         const auto * node = &actions_dag->addColumn(std::move(column));
         actions_after_join.push_back(node);
         outputs.push_back(node);
@@ -362,7 +362,7 @@ IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMu
     if (required_nodes.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, String(join_dummy_result_name));
+        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
         const auto * node = &actions_dag.addColumn(std::move(column));
         new_actions_after_join.push_back(node);
         required_nodes.push_back(node);
@@ -1244,9 +1244,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             auto input_it = name_to_nodes.find(column.name);
 
-            if (input_it == name_to_nodes.end())
+            if (input_it == name_to_nodes.end() || input_it->second.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in {}",
+                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in\n{}",
                     column.name,
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
@@ -1409,7 +1409,7 @@ void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMappi
 
 ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
 {
-    ActionsDAG dag(stream_header->getColumnsWithTypeAndName());
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
 
     ActionsDAG::NodeMapping node_map;
     auto second_dag = ActionsDAG::cloneSubDAG(keys, node_map, false);
