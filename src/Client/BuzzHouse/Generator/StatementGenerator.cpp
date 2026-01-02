@@ -416,7 +416,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
     if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
-        cf->mutable_cluster()->set_cluster(next.cluster.value());
+        setClusterClause(rg, next.cluster, cf->mutable_cluster());
     }
     next.setName(cf->mutable_function());
     this->staged_functions[fname] = std::move(next);
@@ -1548,7 +1548,7 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     this->ids.clear();
     if (cluster1.has_value() && cluster2.has_value() && cluster1 == cluster2)
     {
-        exc->mutable_cluster()->set_cluster(cluster1.value());
+        setClusterClause(rg, cluster1, exc->mutable_cluster());
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -4511,6 +4511,10 @@ void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
         std::uniform_int_distribution<uint32_t> opt_range(1, static_cast<uint32_t>(Kill::KillOption_MAX));
 
         kil->set_option(static_cast<Kill_KillOption>(opt_range(rg.generator)));
+    }
+    if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
+    {
+        setClusterClause(rg, std::nullopt, kil->mutable_cluster());
     }
     if (rg.nextSmallNumber() < 3)
     {

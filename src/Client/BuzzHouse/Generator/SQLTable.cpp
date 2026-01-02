@@ -2883,7 +2883,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (!next.isSharedDatabase() && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
     {
         next.cluster = rg.pickRandomly(fc.clusters);
-        cd->mutable_cluster()->set_cluster(next.cluster.value());
+        setClusterClause(rg, next.cluster, cd->mutable_cluster());
     }
     next.dname = dname;
     next.setDatabasePath(rg, fc);
