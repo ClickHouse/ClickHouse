@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
+#include "Core/Block.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -20,7 +21,7 @@ FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresho
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -116,38 +117,54 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     int direction = sort_description.front().direction;
 
-    bool can_use_with_skip_index = settings.use_skip_indexes_for_top_k
-        && settings.use_skip_indexes_on_data_read
-        && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
-
-    bool can_use_with_prewhere = settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo();
-
-    if (can_use_with_skip_index || can_use_with_prewhere)
+    if ((settings.use_skip_indexes_for_top_k &&
+            read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
+        (settings.use_top_k_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
     {
         threshold_tracker = std::make_shared<TopKThresholdTracker>(direction);
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
-    if  (can_use_with_prewhere)
+    bool added_step = false;
+
+    if  (settings.use_top_k_dynamic_filtering &&
+         !read_from_mergetree_step->getPrewhereInfo())
     {
-        ActionsDAG dag(read_from_mergetree_step->getOutputHeader()->getColumnsWithTypeAndName());
-        auto & outputs = dag.getOutputs();
-        const auto * col = outputs[read_from_mergetree_step->getOutputHeader()->getPositionByName(sort_column_name)];
+        auto new_prewhere_info = std::make_shared<PrewhereInfo>();
+        NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
+        new_prewhere_info->prewhere_actions = ActionsDAG({sort_column_name_and_type});
 
         /// Cannot use get() because need to pass an argument to constructor
         /// auto filter_function = FunctionFactory::instance().get("__topKFilter",nullptr);
         auto filter_function =  DB::createInternalFunctionTopKFilterResolver(threshold_tracker);
-        const auto * prewhere_node = &dag.addFunction(filter_function, {col}, {});
-        outputs.insert(outputs.begin(), prewhere_node);
-
-        auto new_prewhere_info = std::make_shared<PrewhereInfo>();
-        new_prewhere_info->prewhere_actions = std::move(dag);
-        new_prewhere_info->prewhere_column_name = prewhere_node->result_name;
+        const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
+                filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
+        new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
+        new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
+        auto initial_header = read_from_mergetree_step->getOutputHeader();
+
         LOG_TRACE(getLogger("optimizeTopK"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
         read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
+
+        auto updated_header = read_from_mergetree_step->getOutputHeader();
+        if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+        {
+            auto dag = ActionsDAG::makeConvertingActions(
+                updated_header->getColumnsWithTypeAndName(),
+                initial_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name, read_from_mergetree_step->getContext());
+
+            auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+            auto & converting_node = nodes.emplace_back();
+            converting_node.step = std::move(converting_step);
+
+            node->children.push_back(&converting_node);
+            std::swap(node->step, converting_node.step);
+            added_step = true;
+        }
     }
 
     ///TopKThresholdTracker acts as a link between 3 components
@@ -157,13 +174,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     ///                                  \
     ///                                __topKFilter() (Prewhere filtering)
 
-    if (threshold_tracker)
-    {
-        read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
-        return 1;
-    }
+    read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
 
-    return 0;
+    return added_step ? 1 : 0;
 }
 
 }
