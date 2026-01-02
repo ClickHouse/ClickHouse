@@ -576,6 +576,12 @@ private:
             const auto & index_columns = index.expression->getRequiredColumns();
             add_key_columns(index_columns);
         }
+
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.index && projection.index->getIndexDescription())
+                add_key_columns(projection.getRequiredColumns());
+        }
     }
 
     void enterImpl(const ColumnNode & column_node)

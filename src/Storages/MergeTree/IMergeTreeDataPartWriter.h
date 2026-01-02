@@ -20,9 +20,10 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
+Block getIndexBlockAndPermute(
+    const Block & source_block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -43,7 +44,7 @@ public:
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
+    virtual void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) = 0;
 
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 

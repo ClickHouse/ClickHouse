@@ -59,7 +59,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
-    auto data_settings = data.getSettings(projection);
+    auto data_settings = data.getSettings(projection ? &projection->settings_changes : nullptr);
     switch (part_type->getValue())
     {
         case PartType::Wide:

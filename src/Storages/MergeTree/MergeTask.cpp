@@ -959,17 +959,30 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     const auto & settings = global_ctx->context->getSettingsRef();
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
-        ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
-            settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+    {
+        if (projection->index && projection->index->getIndexDescription())
+        {
+            /// TODO(amos): In-memory merge for inverted indices within projections is not yet supported. Force
+            /// immediate flush (block size = 1) until the lazy-loading merge path is fully implemented.
+            ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()), 1, 1);
+        }
+        else
+        {
+            ctx->projection_squashes.emplace_back(
+                std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes]);
+        }
+    }
 }
 
 
-void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block) const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block, UInt64 starting_offset) const
 {
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_to_squash = projection.calculate(block, global_ctx->context);
+        Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
             return;
@@ -1091,6 +1104,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             }
         }
 
+        size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
@@ -1100,7 +1114,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
                 block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
         }
 
-        calculateProjections(block);
+        /// TODO(amos): Projection index might also need to evaluate expressions here
+        calculateProjections(block, starting_offset);
 
         UInt64 result_rows = 0;
         UInt64 result_bytes = 0;
@@ -2327,23 +2342,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                 chassert(global_ctx->merged_part_offsets == nullptr);
                 chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
                 global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
+                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Enabled);
                 merging_column_names.push_back("_part_index");
             }
             else
             {
                 global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
+                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Disabled);
             }
             break;
         }
     }
 
-    if (!global_ctx->merge_may_reduce_rows
-        && !global_ctx->text_indexes_to_merge.empty()
+    if (!global_ctx->merge_may_reduce_rows && !global_ctx->text_indexes_to_merge.empty()
         && (!global_ctx->merged_part_offsets || !global_ctx->merged_part_offsets->isMappingEnabled()))
     {
-        global_ctx->merged_part_offsets = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
+        global_ctx->merged_part_offsets
+            = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Enabled);
         merging_column_names.push_back("_part_index");
     }
 
