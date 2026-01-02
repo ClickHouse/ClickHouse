@@ -45,7 +45,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -65,7 +65,7 @@ public:
         /// Handle Geometry (Variant) type
         if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(column.get()))
         {
-            result = executeForVariant(column_variant, result_type, input_rows_count);
+            result = executeForVariant(column_variant, result_type);
         }
         else if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
@@ -91,7 +91,7 @@ public:
     }
 
 private:
-    ColumnPtr executeForVariant(const ColumnVariant * column_variant, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeForVariant(const ColumnVariant * column_variant, const DataTypePtr & result_type) const
     {
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(result_type.get());
         if (!variant_type)
@@ -101,8 +101,6 @@ private:
         auto result_column = result_type->createColumn();
         auto & result_variant = assert_cast<ColumnVariant &>(*result_column);
 
-        const auto & local_discriminators = column_variant->getLocalDiscriminators();
-        const auto & offsets = column_variant->getOffsets();
         const auto & variant_types = variant_type->getVariants();
 
         /// Process each variant type and flip its coordinates
@@ -135,17 +133,9 @@ private:
             result_variants.push_back(flipped_variant->assumeMutable());
         }
 
-        /// Build result discriminators and offsets
-        auto & result_discriminators = result_variant.getLocalDiscriminators();
-        auto & result_offsets = result_variant.getOffsets();
-        result_discriminators.reserve(input_rows_count);
-        result_offsets.reserve(input_rows_count);
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            result_discriminators.push_back(local_discriminators[i]);
-            result_offsets.push_back(offsets[i]);
-        }
+        /// Share discriminators and offsets from the input variant since they don't change.
+        result_variant.getLocalDiscriminatorsPtr() = column_variant->getLocalDiscriminatorsPtr();
+        result_variant.getOffsetsPtr() = column_variant->getOffsetsPtr();
 
         /// Set the variant columns in the result
         auto & result_variant_columns = result_variant.getVariants();
