@@ -34,6 +34,7 @@ def has_new_unit_tests(changed_files):
 
 
 def check():
+    # read actual PR body from GH API - fallback to workflow context if failed
     title, body, labels = GH.get_pr_title_body_labels()
     if body:
         pr_body = body
