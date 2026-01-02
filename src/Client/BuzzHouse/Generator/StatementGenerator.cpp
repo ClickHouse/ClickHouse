@@ -286,7 +286,8 @@ void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) 
 
 void StatementGenerator::setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu) const
 {
-    if (cluster.has_value() || !fc.clusters.empty())
+    if ((cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 9))
+        || (!fc.clusters.empty() && rg.nextMediumNumber() < 19))
     {
         clu->set_cluster(
             (cluster.has_value() && (!this->allow_not_deterministic || fc.clusters.empty() || rg.nextSmallNumber() < 7))
