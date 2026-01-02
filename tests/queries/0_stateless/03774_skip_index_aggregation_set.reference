@@ -1,0 +1,21 @@
+ReadFromPreparedSource (skip_set_value)
+7
+ReadFromPreparedSource (skip_set_value)
+7
+ReadFromPreparedSource (skip_set_value)
+7
+ReadFromPreparedSource (skip_set_value)
+7
+ReadFromPreparedSource (skip_set_value)
+7
+ReadFromMergeTree (default.test_skip_index_set_agg)
+2
+ReadFromPreparedSource (skip_set_value)
+p1	3
+p2	2
+p3	2
+ReadFromPreparedSource (skip_set_value)
+p1	3
+p2	2
+ReadFromMergeTree (default.test_skip_index_set_overflow)
+4
