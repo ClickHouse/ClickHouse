@@ -15,7 +15,7 @@ echo "Parquet"
 
 DATA_FILE=$CUR_DIR/data_parquet/list_monotonically_increasing_offsets.parquet
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load (list Array(Int64), json Nullable(String)) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load (list Array(Int64), json Nullable(String)) ENGINE = TinyLog"
 cat "$DATA_FILE" | ${CLICKHOUSE_CLIENT} --max_memory_usage 10G -q "INSERT INTO parquet_load FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --max-threads 1 --max_memory_usage 10G --max_result_rows 0 --max_result_bytes 0 --query="SELECT * FROM parquet_load" | md5sum
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM parquet_load"
