@@ -38,6 +38,24 @@ struct CramersVBiasCorrectedData : CrossTabData
     }
 };
 
+struct CramersVBiasCorrectedWindowData : CramersVBiasCorrectedData
+{
+    static const char * getName()
+    {
+        return "cramersVBiasCorrectedWindow";
+    }
+
+    void add(UInt64 hash1, UInt64 hash2)
+    {
+        CramersVBiasCorrectedData::add(hash1, hash2);
+    }
+
+    Float64 getResult() const
+    {
+        return CramersVBiasCorrectedData::getResult();
+    }
+};
+
 }
 
 void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & factory)
@@ -90,6 +108,18 @@ FROM
         },
         {},
         documentation
+    });
+
+    factory.registerFunction(CramersVBiasCorrectedWindowData::getName(),
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedWindowData>>(argument_types);
+        },
+        {},
+        {}
     });
 }
 

@@ -50,6 +50,24 @@ struct TheilsUData : CrossTabData
     }
 };
 
+struct TheilsUWindowData : TheilsUData
+{
+    static const char * getName()
+    {
+        return "theilsUWindow";
+    }
+
+    void add(UInt64 hash1, UInt64 hash2)
+    {
+        TheilsUData::add(hash1, hash2);
+    }
+
+    Float64 getResult() const
+    {
+        return TheilsUData::getResult();
+    }
+};
+
 }
 
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
@@ -100,6 +118,14 @@ FROM (
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
         }, {}, documentation});
+
+    factory.registerFunction(TheilsUWindowData::getName(), {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<TheilsUWindowData>>(argument_types);
+        }, {}, {}});
 }
 
 }

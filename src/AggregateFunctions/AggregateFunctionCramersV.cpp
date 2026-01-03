@@ -28,6 +28,24 @@ struct CramersVData : CrossTabData
     }
 };
 
+struct CramersVWindowData : CramersVData
+{
+    static const char * getName()
+    {
+        return "cramersVWindow";
+    }
+
+    void add(UInt64 hash1, UInt64 hash2)
+    {
+        CramersVData::add(hash1, hash2);
+    }
+
+    Float64 getResult() const
+    {
+        return CramersVData::getResult();
+    }
+};
+
 }
 
 void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
@@ -103,6 +121,18 @@ FROM
         },
         {},
         documentation
+    });
+
+    factory.registerFunction(CramersVWindowData::getName(),
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<CramersVWindowData>>(argument_types);
+        },
+        {},
+        {}
     });
 }
 

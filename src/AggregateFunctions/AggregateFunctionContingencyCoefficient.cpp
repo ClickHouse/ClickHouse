@@ -43,6 +43,24 @@ struct ContingencyData : CrossTabData
     }
 };
 
+struct ContingencyWindowData : ContingencyData
+{
+    static const char * getName()
+    {
+        return "contingencyWindow";
+    }
+
+    void add(UInt64 hash1, UInt64 hash2)
+    {
+        ContingencyData::add(hash1, hash2);
+    }
+
+    Float64 getResult() const
+    {
+        return ContingencyData::getResult();
+    }
+};
+
 }
 
 void registerAggregateFunctionContingency(AggregateFunctionFactory & factory)
@@ -94,6 +112,18 @@ FROM
         },
         {},
         documentation
+    });
+
+    factory.registerFunction(ContingencyWindowData::getName(),
+    {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertBinary(name, argument_types);
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionCrossTab<ContingencyWindowData>>(argument_types);
+        },
+        {},
+        {}
     });
 }
 
