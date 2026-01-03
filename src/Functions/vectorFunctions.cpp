@@ -1609,7 +1609,7 @@ Calculates the sum of corresponding elements of two tuples of the same size.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePlus = {21, 11};
     FunctionDocumentation::Category category_tuplePlus = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tuplePlus = {description_tuplePlus, syntax_tuplePlus, arguments_tuplePlus, returned_value_tuplePlus, examples_tuplePlus, introduced_in_tuplePlus, category_tuplePlus};
+    FunctionDocumentation documentation_tuplePlus = {description_tuplePlus, syntax_tuplePlus, arguments_tuplePlus, {}, returned_value_tuplePlus, examples_tuplePlus, introduced_in_tuplePlus, category_tuplePlus};
     factory.registerFunction<FunctionTuplePlus>(documentation_tuplePlus);
     factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::Case::Insensitive);
 
@@ -1628,7 +1628,7 @@ Calculates the difference between corresponding elements of two tuples of the sa
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMinus = {21, 11};
     FunctionDocumentation::Category category_tupleMinus = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleMinus = {description_tupleMinus, syntax_tupleMinus, arguments_tupleMinus, returned_value_tupleMinus, examples_tupleMinus, introduced_in_tupleMinus, category_tupleMinus};
+    FunctionDocumentation documentation_tupleMinus = {description_tupleMinus, syntax_tupleMinus, arguments_tupleMinus, {}, returned_value_tupleMinus, examples_tupleMinus, introduced_in_tupleMinus, category_tupleMinus};
     factory.registerFunction<FunctionTupleMinus>(documentation_tupleMinus);
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::Case::Insensitive);
 
@@ -1647,7 +1647,7 @@ Calculates the multiplication of corresponding elements of two tuples of the sam
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiply = {21, 11};
     FunctionDocumentation::Category category_tupleMultiply = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleMultiply = {description_tupleMultiply, syntax_tupleMultiply, arguments_tupleMultiply, returned_value_tupleMultiply, examples_tupleMultiply, introduced_in_tupleMultiply, category_tupleMultiply};
+    FunctionDocumentation documentation_tupleMultiply = {description_tupleMultiply, syntax_tupleMultiply, arguments_tupleMultiply, {}, returned_value_tupleMultiply, examples_tupleMultiply, introduced_in_tupleMultiply, category_tupleMultiply};
     factory.registerFunction<FunctionTupleMultiply>(documentation_tupleMultiply);
 
     /// tupleDivide documentation
@@ -1669,7 +1669,7 @@ Division by zero will return `inf`.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivide = {21, 11};
     FunctionDocumentation::Category category_tupleDivide = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleDivide = {description_tupleDivide, syntax_tupleDivide, arguments_tupleDivide, returned_value_tupleDivide, examples_tupleDivide, introduced_in_tupleDivide, category_tupleDivide};
+    FunctionDocumentation documentation_tupleDivide = {description_tupleDivide, syntax_tupleDivide, arguments_tupleDivide, {}, returned_value_tupleDivide, examples_tupleDivide, introduced_in_tupleDivide, category_tupleDivide};
     factory.registerFunction<FunctionTupleDivide>(documentation_tupleDivide);
 
     /// tupleModulo documentation
@@ -1687,7 +1687,7 @@ Returns a tuple of the remainders (moduli) of division operations of two tuples.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModulo = {23, 8};
     FunctionDocumentation::Category category_tupleModulo = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleModulo = {description_tupleModulo, syntax_tupleModulo, arguments_tupleModulo, returned_value_tupleModulo, examples_tupleModulo, introduced_in_tupleModulo, category_tupleModulo};
+    FunctionDocumentation documentation_tupleModulo = {description_tupleModulo, syntax_tupleModulo, arguments_tupleModulo, {}, returned_value_tupleModulo, examples_tupleModulo, introduced_in_tupleModulo, category_tupleModulo};
     factory.registerFunction<FunctionTupleModulo>(documentation_tupleModulo);
 
     /// tupleIntDiv documentation
@@ -1708,7 +1708,7 @@ Division by 0 causes an error to be thrown.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDiv = {23, 8};
     FunctionDocumentation::Category category_tupleIntDiv = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleIntDiv = {description_tupleIntDiv, syntax_tupleIntDiv, arguments_tupleIntDiv, returned_value_tupleIntDiv, examples_tupleIntDiv, introduced_in_tupleIntDiv, category_tupleIntDiv};
+    FunctionDocumentation documentation_tupleIntDiv = {description_tupleIntDiv, syntax_tupleIntDiv, arguments_tupleIntDiv, {}, returned_value_tupleIntDiv, examples_tupleIntDiv, introduced_in_tupleIntDiv, category_tupleIntDiv};
     factory.registerFunction<FunctionTupleIntDiv>(documentation_tupleIntDiv);
 
     /// tupleIntDivOrZero documentation
@@ -1728,7 +1728,7 @@ If either tuple contains non-integer elements then the result is calculated by r
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZero = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZero = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleIntDivOrZero = {description_tupleIntDivOrZero, syntax_tupleIntDivOrZero, arguments_tupleIntDivOrZero, returned_value_tupleIntDivOrZero, examples_tupleIntDivOrZero, introduced_in_tupleIntDivOrZero, category_tupleIntDivOrZero};
+    FunctionDocumentation documentation_tupleIntDivOrZero = {description_tupleIntDivOrZero, syntax_tupleIntDivOrZero, arguments_tupleIntDivOrZero, {}, returned_value_tupleIntDivOrZero, examples_tupleIntDivOrZero, introduced_in_tupleIntDivOrZero, category_tupleIntDivOrZero};
     factory.registerFunction<FunctionTupleIntDivOrZero>(documentation_tupleIntDivOrZero);
 
     /// tupleNegate documentation
@@ -1745,7 +1745,7 @@ Calculates the negation of the tuple elements.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleNegate = {21, 11};
     FunctionDocumentation::Category category_tupleNegate = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleNegate = {description_tupleNegate, syntax_tupleNegate, arguments_tupleNegate, returned_value_tupleNegate, examples_tupleNegate, introduced_in_tupleNegate, category_tupleNegate};
+    FunctionDocumentation documentation_tupleNegate = {description_tupleNegate, syntax_tupleNegate, arguments_tupleNegate, {}, returned_value_tupleNegate, examples_tupleNegate, introduced_in_tupleNegate, category_tupleNegate};
     factory.registerFunction<FunctionTupleNegate>(documentation_tupleNegate);
 
     /// addTupleOfIntervals documentation
@@ -1773,7 +1773,7 @@ SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 MONTH, INTERVAL 1 Y
     };
     FunctionDocumentation::IntroducedIn introduced_in_addTupleOfIntervals = {22, 11};
     FunctionDocumentation::Category category_addTupleOfIntervals = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addTupleOfIntervals = {description_addTupleOfIntervals, syntax_addTupleOfIntervals, arguments_addTupleOfIntervals, returned_value_addTupleOfIntervals, examples_addTupleOfIntervals, introduced_in_addTupleOfIntervals, category_addTupleOfIntervals};
+    FunctionDocumentation documentation_addTupleOfIntervals = {description_addTupleOfIntervals, syntax_addTupleOfIntervals, arguments_addTupleOfIntervals, {}, returned_value_addTupleOfIntervals, examples_addTupleOfIntervals, introduced_in_addTupleOfIntervals, category_addTupleOfIntervals};
 
     factory.registerFunction<FunctionAddTupleOfIntervals>(documentation_addTupleOfIntervals);
 
@@ -1804,7 +1804,7 @@ WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVA
     };
     FunctionDocumentation::IntroducedIn introduced_in_subtractTupleOfIntervals = {22, 11};
     FunctionDocumentation::Category category_subtractTupleOfIntervals = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractTupleOfIntervals = {description_subtractTupleOfIntervals, syntax_subtractTupleOfIntervals, arguments_subtractTupleOfIntervals, returned_value_subtractTupleOfIntervals, examples_subtractTupleOfIntervals, introduced_in_subtractTupleOfIntervals, category_subtractTupleOfIntervals};
+    FunctionDocumentation documentation_subtractTupleOfIntervals = {description_subtractTupleOfIntervals, syntax_subtractTupleOfIntervals, arguments_subtractTupleOfIntervals, {}, returned_value_subtractTupleOfIntervals, examples_subtractTupleOfIntervals, introduced_in_subtractTupleOfIntervals, category_subtractTupleOfIntervals};
 
     factory.registerFunction<FunctionSubtractTupleOfIntervals>(documentation_subtractTupleOfIntervals);
 
@@ -1844,7 +1844,7 @@ SELECT addInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)
     };
     FunctionDocumentation::IntroducedIn introduced_in_addInterval = {22, 11};
     FunctionDocumentation::Category category_addInterval = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addInterval = {description_addInterval, syntax_addInterval, arguments_addInterval, returned_value_addInterval, examples_addInterval, introduced_in_addInterval, category_addInterval};
+    FunctionDocumentation documentation_addInterval = {description_addInterval, syntax_addInterval, arguments_addInterval, {}, returned_value_addInterval, examples_addInterval, introduced_in_addInterval, category_addInterval};
 
     factory.registerFunction<FunctionTupleAddInterval>(documentation_addInterval);
 
@@ -1883,7 +1883,7 @@ SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY);
     };
     FunctionDocumentation::IntroducedIn introduced_in_subtractInterval = {22, 11};
     FunctionDocumentation::Category category_subtractInterval = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractInterval = {description_subtractInterval, syntax_subtractInterval, arguments_subtractInterval, returned_value_subtractInterval, examples_subtractInterval, introduced_in_subtractInterval, category_subtractInterval};
+    FunctionDocumentation documentation_subtractInterval = {description_subtractInterval, syntax_subtractInterval, arguments_subtractInterval, {}, returned_value_subtractInterval, examples_subtractInterval, introduced_in_subtractInterval, category_subtractInterval};
 
     factory.registerFunction<FunctionTupleSubtractInterval>(documentation_subtractInterval);
 
@@ -1902,7 +1902,7 @@ Returns a tuple with all elements multiplied by a number.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiplyByNumber = {21, 11};
     FunctionDocumentation::Category category_tupleMultiplyByNumber = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleMultiplyByNumber = {description_tupleMultiplyByNumber, syntax_tupleMultiplyByNumber, arguments_tupleMultiplyByNumber, returned_value_tupleMultiplyByNumber, examples_tupleMultiplyByNumber, introduced_in_tupleMultiplyByNumber, category_tupleMultiplyByNumber};
+    FunctionDocumentation documentation_tupleMultiplyByNumber = {description_tupleMultiplyByNumber, syntax_tupleMultiplyByNumber, arguments_tupleMultiplyByNumber, {}, returned_value_tupleMultiplyByNumber, examples_tupleMultiplyByNumber, introduced_in_tupleMultiplyByNumber, category_tupleMultiplyByNumber};
     factory.registerFunction<FunctionTupleMultiplyByNumber>(documentation_tupleMultiplyByNumber);
 
     /// tupleDivideByNumber documentation
@@ -1924,7 +1924,7 @@ Division by zero will return `inf`.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivideByNumber = {21, 11};
     FunctionDocumentation::Category category_tupleDivideByNumber = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleDivideByNumber = {description_tupleDivideByNumber, syntax_tupleDivideByNumber, arguments_tupleDivideByNumber, returned_value_tupleDivideByNumber, examples_tupleDivideByNumber, introduced_in_tupleDivideByNumber, category_tupleDivideByNumber};
+    FunctionDocumentation documentation_tupleDivideByNumber = {description_tupleDivideByNumber, syntax_tupleDivideByNumber, arguments_tupleDivideByNumber, {}, returned_value_tupleDivideByNumber, examples_tupleDivideByNumber, introduced_in_tupleDivideByNumber, category_tupleDivideByNumber};
     factory.registerFunction<FunctionTupleDivideByNumber>(documentation_tupleDivideByNumber);
 
     /// tupleModuloByNumber documentation
@@ -1942,7 +1942,7 @@ Returns a tuple of the moduli (remainders) of division operations of a tuple and
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModuloByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleModuloByNumber = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleModuloByNumber = {description_tupleModuloByNumber, syntax_tupleModuloByNumber, arguments_tupleModuloByNumber, returned_value_tupleModuloByNumber, examples_tupleModuloByNumber, introduced_in_tupleModuloByNumber, category_tupleModuloByNumber};
+    FunctionDocumentation documentation_tupleModuloByNumber = {description_tupleModuloByNumber, syntax_tupleModuloByNumber, arguments_tupleModuloByNumber, {}, returned_value_tupleModuloByNumber, examples_tupleModuloByNumber, introduced_in_tupleModuloByNumber, category_tupleModuloByNumber};
     factory.registerFunction<FunctionTupleModuloByNumber>(documentation_tupleModuloByNumber);
 
     /// tupleIntDivByNumber documentation
@@ -1963,7 +1963,7 @@ An error will be thrown for division by 0.
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivByNumber = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleIntDivByNumber = {description_tupleIntDivByNumber, syntax_tupleIntDivByNumber, arguments_tupleIntDivByNumber, returned_value_tupleIntDivByNumber, examples_tupleIntDivByNumber, introduced_in_tupleIntDivByNumber, category_tupleIntDivByNumber};
+    FunctionDocumentation documentation_tupleIntDivByNumber = {description_tupleIntDivByNumber, syntax_tupleIntDivByNumber, arguments_tupleIntDivByNumber, {}, returned_value_tupleIntDivByNumber, examples_tupleIntDivByNumber, introduced_in_tupleIntDivByNumber, category_tupleIntDivByNumber};
     factory.registerFunction<FunctionTupleIntDivByNumber>(documentation_tupleIntDivByNumber);
 
     /// tupleIntDivOrZeroByNumber documentation
@@ -1984,7 +1984,7 @@ If either the tuple or div contain non-integer elements then the result is calcu
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZeroByNumber = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZeroByNumber = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation_tupleIntDivOrZeroByNumber = {description_tupleIntDivOrZeroByNumber, syntax_tupleIntDivOrZeroByNumber, arguments_tupleIntDivOrZeroByNumber, returned_value_tupleIntDivOrZeroByNumber, examples_tupleIntDivOrZeroByNumber, introduced_in_tupleIntDivOrZeroByNumber, category_tupleIntDivOrZeroByNumber};
+    FunctionDocumentation documentation_tupleIntDivOrZeroByNumber = {description_tupleIntDivOrZeroByNumber, syntax_tupleIntDivOrZeroByNumber, arguments_tupleIntDivOrZeroByNumber, {}, returned_value_tupleIntDivOrZeroByNumber, examples_tupleIntDivOrZeroByNumber, introduced_in_tupleIntDivOrZeroByNumber, category_tupleIntDivOrZeroByNumber};
     factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>(documentation_tupleIntDivOrZeroByNumber);
 
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
@@ -2013,7 +2013,7 @@ SELECT L1Norm((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l1_norm = {21, 11};
     FunctionDocumentation::Category category_l1_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l1_norm = {description_l1_norm, syntax_l1_norm, arguments_l1_norm, returned_value_l1_norm, examples_l1_norm, introduced_in_l1_norm, category_l1_norm};
+    FunctionDocumentation documentation_l1_norm = {description_l1_norm, syntax_l1_norm, arguments_l1_norm, {}, returned_value_l1_norm, examples_l1_norm, introduced_in_l1_norm, category_l1_norm};
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>(documentation_l1_norm);
 
@@ -2040,7 +2040,7 @@ SELECT L2Norm((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_norm = {21, 11};
     FunctionDocumentation::Category category_l2_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_norm = {description_l2_norm, syntax_l2_norm, arguments_l2_norm, returned_value_l2_norm, examples_l2_norm, introduced_in_l2_norm, category_l2_norm};
+    FunctionDocumentation documentation_l2_norm = {description_l2_norm, syntax_l2_norm, arguments_l2_norm, {}, returned_value_l2_norm, examples_l2_norm, introduced_in_l2_norm, category_l2_norm};
 
     factory.registerFunction<TupleOrArrayFunctionL2Norm>(documentation_l2_norm);
 
@@ -2067,7 +2067,7 @@ SELECT L2SquaredNorm((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_squared_norm = {22, 7};
     FunctionDocumentation::Category category_l2_squared_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_squared_norm = {description_l2_squared_norm, syntax_l2_squared_norm, arguments_l2_squared_norm, returned_value_l2_squared_norm, examples_l2_squared_norm, introduced_in_l2_squared_norm, category_l2_squared_norm};
+    FunctionDocumentation documentation_l2_squared_norm = {description_l2_squared_norm, syntax_l2_squared_norm, arguments_l2_squared_norm, {}, returned_value_l2_squared_norm, examples_l2_squared_norm, introduced_in_l2_squared_norm, category_l2_squared_norm};
 
     factory.registerFunction<TupleOrArrayFunctionL2SquaredNorm>(documentation_l2_squared_norm);
 
@@ -2094,7 +2094,7 @@ SELECT LinfNorm((1, -2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_linf_norm = {21, 11};
     FunctionDocumentation::Category category_linf_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_linf_norm = {description_linf_norm, syntax_linf_norm, arguments_linf_norm, returned_value_linf_norm, examples_linf_norm, introduced_in_linf_norm, category_linf_norm};
+    FunctionDocumentation documentation_linf_norm = {description_linf_norm, syntax_linf_norm, arguments_linf_norm, {}, returned_value_linf_norm, examples_linf_norm, introduced_in_linf_norm, category_linf_norm};
 
     factory.registerFunction<TupleOrArrayFunctionLinfNorm>(documentation_linf_norm);
 
@@ -2127,7 +2127,7 @@ SELECT LpNorm((1, -2), 2)
     };
     FunctionDocumentation::IntroducedIn introduced_in_lp_norm = {21, 11};
     FunctionDocumentation::Category category_lp_norm = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_lp_norm = {description_lp_norm, syntax_lp_norm, arguments_lp_norm, returned_value_lp_norm, examples_lp_norm, introduced_in_lp_norm, category_lp_norm};
+    FunctionDocumentation documentation_lp_norm = {description_lp_norm, syntax_lp_norm, arguments_lp_norm, {}, returned_value_lp_norm, examples_lp_norm, introduced_in_lp_norm, category_lp_norm};
 
     factory.registerFunction<TupleOrArrayFunctionLpNorm>(documentation_lp_norm);
 
@@ -2162,7 +2162,7 @@ SELECT L1Distance((1, 2), (2, 3))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l1_distance = {21, 11};
     FunctionDocumentation::Category category_l1_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l1_distance = {description_l1_distance, syntax_l1_distance, arguments_l1_distance, returned_value_l1_distance, examples_l1_distance, introduced_in_l1_distance, category_l1_distance};
+    FunctionDocumentation documentation_l1_distance = {description_l1_distance, syntax_l1_distance, arguments_l1_distance, {}, returned_value_l1_distance, examples_l1_distance, introduced_in_l1_distance, category_l1_distance};
 
     factory.registerFunction<TupleOrArrayFunctionL1Distance>(documentation_l1_distance);
 
@@ -2190,7 +2190,7 @@ SELECT L2Distance((1, 2), (2, 3))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_distance = {21, 11};
     FunctionDocumentation::Category category_l2_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_distance = {description_l2_distance, syntax_l2_distance, arguments_l2_distance, returned_value_l2_distance, examples_l2_distance, introduced_in_l2_distance, category_l2_distance};
+    FunctionDocumentation documentation_l2_distance = {description_l2_distance, syntax_l2_distance, arguments_l2_distance, {}, returned_value_l2_distance, examples_l2_distance, introduced_in_l2_distance, category_l2_distance};
 
     factory.registerFunction<TupleOrArrayFunctionL2Distance>(documentation_l2_distance);
 
@@ -2219,6 +2219,7 @@ SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;"
         = {description_l2_distance_transposed,
            syntax_l2_distance_transposed,
            arguments_l2_distance_transposed,
+           {},
            returned_value_l2_distance_transposed,
            examples_l2_distance_transposed,
            introduced_in_l2_distance_transposed,
@@ -2250,7 +2251,7 @@ SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_squared_distance = {22, 7};
     FunctionDocumentation::Category category_l2_squared_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_squared_distance = {description_l2_squared_distance, syntax_l2_squared_distance, arguments_l2_squared_distance, returned_value_l2_squared_distance, examples_l2_squared_distance, introduced_in_l2_squared_distance, category_l2_squared_distance};
+    FunctionDocumentation documentation_l2_squared_distance = {description_l2_squared_distance, syntax_l2_squared_distance, arguments_l2_squared_distance, {}, returned_value_l2_squared_distance, examples_l2_squared_distance, introduced_in_l2_squared_distance, category_l2_squared_distance};
 
     factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>(documentation_l2_squared_distance);
 
@@ -2278,7 +2279,7 @@ SELECT LinfDistance((1, 2), (2, 3))
     };
     FunctionDocumentation::IntroducedIn introduced_in_linf_distance = {21, 11};
     FunctionDocumentation::Category category_linf_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_linf_distance = {description_linf_distance, syntax_linf_distance, arguments_linf_distance, returned_value_linf_distance, examples_linf_distance, introduced_in_linf_distance, category_linf_distance};
+    FunctionDocumentation documentation_linf_distance = {description_linf_distance, syntax_linf_distance, arguments_linf_distance, {}, returned_value_linf_distance, examples_linf_distance, introduced_in_linf_distance, category_linf_distance};
 
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>(documentation_linf_distance);
 
@@ -2307,7 +2308,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
     };
     FunctionDocumentation::IntroducedIn introduced_in_lp_distance = {21, 11};
     FunctionDocumentation::Category category_lp_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_lp_distance = {description_lp_distance, syntax_lp_distance, arguments_lp_distance, returned_value_lp_distance, examples_lp_distance, introduced_in_lp_distance, category_lp_distance};
+    FunctionDocumentation documentation_lp_distance = {description_lp_distance, syntax_lp_distance, arguments_lp_distance, {}, returned_value_lp_distance, examples_lp_distance, introduced_in_lp_distance, category_lp_distance};
 
     factory.registerFunction<TupleOrArrayFunctionLpDistance>(documentation_lp_distance);
 
@@ -2343,7 +2344,7 @@ SELECT cosineDistance((1, 2), (2, 3));
     };
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {1, 1};
     FunctionDocumentation::Category category_cosine_distance = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_cosine_distance = {description_cosine_distance, syntax_cosine_distance, arguments_cosine_distance, returned_value_cosine_distance, examples_cosine_distance, introduced_in_cosine_distance, category_cosine_distance};
+    FunctionDocumentation documentation_cosine_distance = {description_cosine_distance, syntax_cosine_distance, arguments_cosine_distance, {}, returned_value_cosine_distance, examples_cosine_distance, introduced_in_cosine_distance, category_cosine_distance};
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistance>(documentation_cosine_distance);
 
@@ -2370,7 +2371,7 @@ SELECT L1Normalize((1, 2))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l1_normalize = {21, 11};
     FunctionDocumentation::Category category_l1_normalize = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l1_normalize = {description_l1_normalize, syntax_l1_normalize, arguments_l1_normalize, returned_value_l1_normalize, examples_l1_normalize, introduced_in_l1_normalize, category_l1_normalize};
+    FunctionDocumentation documentation_l1_normalize = {description_l1_normalize, syntax_l1_normalize, arguments_l1_normalize, {}, returned_value_l1_normalize, examples_l1_normalize, introduced_in_l1_normalize, category_l1_normalize};
 
     factory.registerFunction<FunctionL1Normalize>(documentation_l1_normalize);
     factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
@@ -2398,7 +2399,7 @@ SELECT L2Normalize((3, 4))
     };
     FunctionDocumentation::IntroducedIn introduced_in_l2_normalize = {21, 11};
     FunctionDocumentation::Category category_l2_normalize = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_normalize = {description_l2_normalize, syntax_l2_normalize, arguments_l2_normalize, returned_value_l2_normalize, examples_l2_normalize, introduced_in_l2_normalize, category_l2_normalize};
+    FunctionDocumentation documentation_l2_normalize = {description_l2_normalize, syntax_l2_normalize, arguments_l2_normalize, {}, returned_value_l2_normalize, examples_l2_normalize, introduced_in_l2_normalize, category_l2_normalize};
 
     factory.registerFunction<FunctionL2Normalize>(documentation_l2_normalize);
     factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
@@ -2426,7 +2427,7 @@ SELECT LinfNormalize((3, 4))
     };
     FunctionDocumentation::IntroducedIn introduced_in_linf_normalize = {21, 11};
     FunctionDocumentation::Category category_linf_normalize = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_linf_normalize = {description_linf_normalize, syntax_linf_normalize, arguments_linf_normalize, returned_value_linf_normalize, examples_linf_normalize, introduced_in_linf_normalize, category_linf_normalize};
+    FunctionDocumentation documentation_linf_normalize = {description_linf_normalize, syntax_linf_normalize, arguments_linf_normalize, {}, returned_value_linf_normalize, examples_linf_normalize, introduced_in_linf_normalize, category_linf_normalize};
 
     factory.registerFunction<FunctionLinfNormalize>(documentation_linf_normalize);
     factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
@@ -2456,7 +2457,7 @@ SELECT LpNormalize((3, 4), 5)
         };
         FunctionDocumentation::IntroducedIn introduced_in_lp_normalize = {21, 11};
         FunctionDocumentation::Category category_lp_normalize = FunctionDocumentation::Category::Distance;
-        FunctionDocumentation documentation_lp_normalize = {description_lp_normalize, syntax_lp_normalize, arguments_lp_normalize, returned_value_lp_normalize, examples_lp_normalize, introduced_in_lp_normalize, category_lp_normalize};
+        FunctionDocumentation documentation_lp_normalize = {description_lp_normalize, syntax_lp_normalize, arguments_lp_normalize, {}, returned_value_lp_normalize, examples_lp_normalize, introduced_in_lp_normalize, category_lp_normalize};
 
         factory.registerFunction<FunctionLpNormalize>(documentation_lp_normalize);
     }

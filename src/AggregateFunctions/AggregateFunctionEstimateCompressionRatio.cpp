@@ -59,10 +59,12 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
+        /// Real cancellation can happen only in case of exception
+        /// In other cases the data will be read via finalizeAndGetSizes()
         if (compressed_buf)
-            compressed_buf->finalize();
+            compressed_buf->cancel();
         if (null_buf)
-            null_buf->finalize();
+            null_buf->cancel();
     }
 };
 
@@ -75,27 +77,40 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void createBuffersIfNeeded(AggregateDataPtr __restrict place) const
+    void resetBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
-        if (!data(place).null_buf)
-            data(place).null_buf = std::make_unique<NullWriteBuffer>();
-        if (!data(place).compressed_buf)
-            data(place).compressed_buf = std::make_unique<CompressedWriteBuffer>(
-                *data(place).null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+        Data & data_ref = data(place);
+
+        if (!data_ref.null_buf || data_ref.null_buf->isFinalized())
+            data_ref.null_buf = std::make_unique<NullWriteBuffer>();
+
+        /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
+        /// calls updateAggregationState + writeOutCurrentRow in a loop.
+        /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
+        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
+        if (!data_ref.compressed_buf || data_ref.compressed_buf->isFinalized())
+            data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
+                *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
     {
-        UInt64 uncompressed_size = data(place).merged_uncompressed_size;
-        UInt64 compressed_size = data(place).merged_compressed_size;
-        if (data(place).compressed_buf)
-        {
-            data(place).compressed_buf->finalize();
-            data(place).null_buf->finalize();
+        const Data & data_ref = data(place);
 
-            uncompressed_size += data(place).compressed_buf->getUncompressedBytes();
-            compressed_size += data(place).compressed_buf->getCompressedBytes();
+        UInt64 uncompressed_size = data_ref.merged_uncompressed_size;
+        UInt64 compressed_size = data_ref.merged_compressed_size;
+
+        if (data_ref.compressed_buf)
+        {
+            chassert(data_ref.null_buf != nullptr);
+
+            data_ref.compressed_buf->finalize();
+            data_ref.null_buf->finalize();
+
+            uncompressed_size += data_ref.compressed_buf->getUncompressedBytes();
+            compressed_size += data_ref.compressed_buf->getCompressedBytes();
         }
+
         return {uncompressed_size, compressed_size};
     }
 
@@ -132,7 +147,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -164,7 +179,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -264,8 +279,74 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Estimates the compression ratio of a given column without compressing it.
+
+:::note
+For the examples below, the result will differ based on the default compression codec of the server.
+See [Column Compression Codecs](/sql-reference/statements/create/table#column_compression_codec).
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "Column of any type.", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage with default codec",
+        R"(
+CREATE TABLE compression_estimate_example
+(
+    `number` UInt64
+)
+ENGINE = MergeTree()
+ORDER BY number
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO compression_estimate_example
+SELECT number FROM system.numbers LIMIT 100_000;
+
+SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
+        )",
+        R"(
+┌───────────estimate─┐
+│ 1.9988506608699999 │
+└────────────────────┘
+        )"
+    },
+    {
+        "Using a specific codec",
+        R"(
+SELECT estimateCompressionRatio('T64')(number) AS estimate FROM compression_estimate_example
+        )",
+        R"(
+┌──────────estimate─┐
+│ 3.762758101688538 │
+└───────────────────┘
+        )"
+    },
+    {
+        "Using multiple codecs",
+        R"(
+SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compression_estimate_example
+        )",
+        R"(
+┌───────────estimate─┐
+│ 143.60078980434392 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}});
+        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
 }
 }

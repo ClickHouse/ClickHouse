@@ -1260,7 +1260,8 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
         <!-- Only tasks longer then duration_threshold_milliseconds will be logged. Zero means log everything -->
-        <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
+        <!-- Default value is 30ms (averge tasks execution time) -->
+        <duration_threshold_milliseconds>30</duration_threshold_milliseconds>
     </background_schedule_pool_log>
 
     <!-- Text log contains all information from usual server log but stores it in structured and efficient way.

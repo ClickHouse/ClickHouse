@@ -312,7 +312,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"shared", allow_shared},
            {"datalakecatalog", allow_datalakecatalog},
            {"arrowflight", allow_arrowflight},
-           {"alias", allow_alias}};
+           {"alias", allow_alias},
+           {"kafka", allow_kafka}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -373,6 +374,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
         {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
         {"set_smt_disk", [&](const JSONObjectType & value) { set_smt_disk = value.getBool(); }},
+        {"allow_query_oracles", [&](const JSONObjectType & value) { allow_query_oracles = value.getBool(); }},
+        {"allow_health_check", [&](const JSONObjectType & value) { allow_health_check = value.getBool(); }},
+        {"enable_compatibility_settings", [&](const JSONObjectType & value) { enable_compatibility_settings = value.getBool(); }},
         {"max_reconnection_attempts",
          [&](const JSONObjectType & value)
          { max_reconnection_attempts = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
@@ -394,6 +398,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
+        {"kafka", [&](const JSONObjectType & value) { kafka_server = loadServerCredentials(value, "kafka", 19092); }},
         {"dolor", [&](const JSONObjectType & value) { dolor_server = loadServerCredentials(value, "dolor", 8080); }},
         {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
         {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},
@@ -670,9 +675,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
-                "{}\"table\" "
-                "= "
-                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                "{}\"table\" = '{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,
@@ -687,6 +690,34 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
         std::getline(infile, res);
     }
     return res;
+}
+
+void FuzzConfig::validateClickHouseHealth()
+{
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "(SELECT count() FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken')) UNION ALL (SELECT "
+                "ifNull(sum(\"lost_part_count\"), 0) FROM \"system\".\"replicas\") INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                fuzz_server_out.generic_string())))
+    {
+        String buf;
+        uint32_t i = 0;
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+
+        while (std::getline(infile, buf) && !buf.empty() && i < 2)
+        {
+            buf.erase(std::find_if(buf.rbegin(), buf.rend(), [](unsigned char c) { return !std::isspace(c); }).base(), buf.end());
+            const uint32_t val = static_cast<uint32_t>(std::stoul(buf));
+            if (val != 0)
+            {
+                static const DB::Strings & health_errors = {"broken detached parts", "broken replicas"};
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "ClickHouse health check: found {} {}", val, health_errors[i]);
+            }
+            i++;
+            buf.resize(0);
+        }
+    }
 }
 
 void FuzzConfig::comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const
