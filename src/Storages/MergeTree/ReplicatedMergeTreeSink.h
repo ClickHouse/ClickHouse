@@ -31,24 +31,16 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 struct MergeTreeTemporaryPart;
 using TemporaryPartPtr = std::unique_ptr<MergeTreeTemporaryPart>;
 
-struct ReplicatedMergeTreeDelayedChunk
+
+struct DelayedPartInPartition
 {
-    struct Partition
-    {
-        LoggerPtr log;
-        BlockWithPartition block_with_partition;
+    LoggerPtr log;
+    BlockWithPartition block_with_partition;
 
-        DeduplicationInfo::Ptr deduplication_info;
-        TemporaryPartPtr temp_part;
-        UInt64 elapsed_ns;
-        ProfileEvents::Counters part_counters;
-    };
-
-    ReplicatedMergeTreeDelayedChunk() = default;
-    explicit ReplicatedMergeTreeDelayedChunk(size_t replicas_num_);
-
-    size_t replicas_num = 0;
-    std::vector<Partition> partitions;
+    DeduplicationInfo::Ptr deduplication_info;
+    TemporaryPartPtr temp_part;
+    UInt64 elapsed_ns;
+    ProfileEvents::Counters part_counters;
 };
 
 
@@ -87,13 +79,43 @@ public:
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
 protected:
-    virtual void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
+
+    ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
     std::vector<std::string> detectConflictsInAsyncBlockIDs(const std::vector<std::string> & ids);
 
     /// We can delay processing for previous chunk and start writing a new one.
-    std::unique_ptr<ReplicatedMergeTreeDelayedChunk> delayed_chunk;
+    std::vector<DelayedPartInPartition> delayed_parts;
+
+
+    /// Rename temporary part and commit to ZooKeeper.
+    /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
+    std::map<std::string, std::string> commitPart(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        MergeTreeData::MutableDataPartPtr & part,
+        const std::vector<std::string> & block_ids);
+
+    StorageReplicatedMergeTree & storage;
+    StorageMetadataPtr metadata_snapshot;
+
+    /// Checks active replicas.
+    /// Returns total number of replicas.
+    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+
+    size_t getQuorumSize() const;
+    bool isQuorumEnabled() const;
+    String quorumLogMessage() const; /// Used in logs for debug purposes
+    void resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::string actual_part_name);
+    /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
+    /// Also checks that replica still alive.
+    void waitForQuorum(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        const std::string & part_name,
+        const std::string & quorum_path,
+        int is_active_node_version,
+        int host_node_version) const;
 
     struct QuorumInfo
     {
@@ -103,42 +125,12 @@ protected:
     };
 
     QuorumInfo quorum_info;
-
-    /// Checks active replicas.
-    /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
-
-    /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
-    std::map<std::string, std::string> commitPart(
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        MergeTreeData::MutableDataPartPtr & part,
-        const std::vector<std::string> & block_ids,
-        size_t replicas_num);
-
-
-    /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
-    /// Also checks that replica still alive.
-    void waitForQuorum(
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::string & part_name,
-        const std::string & quorum_path,
-        int is_active_node_version,
-        int host_node_version,
-        size_t replicas_num) const;
-
-    StorageReplicatedMergeTree & storage;
-    StorageMetadataPtr metadata_snapshot;
-
-    /// Empty means use majority quorum.
+    /// std::nullopt means use majority quorum.
+    /// 0 or 1 means no quorum, larger than 1 means quorum size.
     std::optional<size_t> required_quorum_size;
-
-    size_t getQuorumSize(size_t replicas_num) const;
-    bool isQuorumEnabled() const;
-    String quorumLogMessage(size_t replicas_num) const; /// Used in logs for debug purposes
-    void resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, size_t replicas_num, std::vector<std::string> parts_to_wait);
-
+    size_t quorum_replicas_num = 0;
     size_t quorum_timeout_ms;
+
     size_t max_parts_per_block;
 
     UInt64 cache_version = 0;

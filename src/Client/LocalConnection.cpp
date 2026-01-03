@@ -168,7 +168,7 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
+    state->query_scope_holder = CurrentThread::QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);

@@ -132,6 +132,21 @@ namespace ProfileEvents
         }
 
         /// Set parent (thread unsafe)
+        void setUserCountes(Counters * user)
+        {
+            auto * current_val = this;
+            auto * parent_val = this->parent.load(std::memory_order_relaxed);
+
+            while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
+            {
+                current_val = parent_val;
+                parent_val = current_val->parent.load(std::memory_order_relaxed);
+            }
+
+            current_val->parent.store(user, std::memory_order_relaxed);
+        }
+
+        /// Set parent (thread unsafe)
         void setParent(Counters * parent_)
         {
             parent.store(parent_, std::memory_order_relaxed);

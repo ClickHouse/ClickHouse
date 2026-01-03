@@ -270,7 +270,7 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            thread_group->performance_counters.setUserCountes(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
