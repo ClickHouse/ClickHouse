@@ -325,6 +325,8 @@ def main():
     # Ensure ClickHouseCluster uses the same readiness window when waiting for instances
     env.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_val))
     env.setdefault("KEEPER_SCENARIO_FILE", "all")
+    # Use default DB for Keeper metrics to avoid DB creation permissions issues
+    env.setdefault("KEEPER_METRICS_DB", "keeper_stress_tests")
     # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
     repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
     cur_pp = env.get("PYTHONPATH", "")
@@ -459,6 +461,7 @@ def main():
             ensure_sink_schema()
         except Exception:
             helper = None
+        metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
         if helper is not None and Path(pytest_log_file).exists():
             rows = []
             inside = False
@@ -484,12 +487,12 @@ def main():
                         pass
                     if len(rows) >= 1000:
                         body = "\n".join(rows)
-                        ClickHouseHelper.insert_json_str(helper.url, helper.auth, "keeper_stress_tests", "keeper_metrics_ts", body)
+                        ClickHouseHelper.insert_json_str(helper.url, helper.auth, metrics_db, "keeper_metrics_ts", body)
                         pushed_rows += len(rows)
                         rows = []
             if rows:
                 body = "\n".join(rows)
-                ClickHouseHelper.insert_json_str(helper.url, helper.auth, "keeper_stress_tests", "keeper_metrics_ts", body)
+                ClickHouseHelper.insert_json_str(helper.url, helper.auth, metrics_db, "keeper_metrics_ts", body)
                 pushed_rows += len(rows)
         results.append(
             Result.from_commands_run(
@@ -585,6 +588,7 @@ def main():
             except Exception:
                 pass
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
+        metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
         if have_cidb:
             try:
                 from tests.stress.keeper.framework.io.sink import ensure_sink_schema  # type: ignore
@@ -593,7 +597,29 @@ def main():
                 try:
                     requests.post(
                         cidb_url,
-                        params={"query": "CREATE DATABASE IF NOT EXISTS keeper_stress_tests"},
+                        params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
+                        headers=auth,
+                        timeout=30,
+                    )
+                    table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
+                        ts DateTime DEFAULT now(),
+                        run_id String,
+                        commit_sha String,
+                        backend String,
+                        scenario String,
+                        topology Int32,
+                        node String,
+                        stage String,
+                        source LowCardinality(String),
+                        name LowCardinality(String),
+                        value Float64,
+                        labels_json String DEFAULT '{{}}'
+                    ) ENGINE=MergeTree
+                    ORDER BY (run_id, scenario, node, stage, name, ts)
+                    TTL ts + INTERVAL 30 DAY DELETE"""
+                    requests.post(
+                        cidb_url,
+                        params={"query": table_ddl},
                         headers=auth,
                         timeout=30,
                     )
@@ -606,7 +632,7 @@ def main():
                     # Fallback: recent window without sha filter (covers 'local' runs)
                     filt_metrics = "ts > now() - INTERVAL 2 DAY"
                 q = (
-                    "SELECT backend, count() FROM keeper_stress_tests.keeper_metrics_ts "
+                    f"SELECT backend, count() FROM {metrics_db}.keeper_metrics_ts "
                     f"WHERE {filt_metrics} "
                     "GROUP BY backend ORDER BY backend FORMAT TabSeparated"
                 )
@@ -624,7 +650,7 @@ def main():
                 else:
                     filt_bench = "source = 'bench' AND ts > now() - INTERVAL 2 DAY"
                 q = (
-                    "SELECT count() FROM keeper_stress_tests.keeper_metrics_ts "
+                    f"SELECT count() FROM {metrics_db}.keeper_metrics_ts "
                     f"WHERE {filt_bench} FORMAT TabSeparated"
                 )
                 r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
@@ -641,7 +667,7 @@ def main():
                 if sha and sha != "local":
                     q = (
                         "SELECT count() FROM default.checks "
-                        f"WHERE {name_filter} AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                        f"WHERE {name_filter} AND commit_sha = '{sha}' "
                         "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 else:
@@ -667,7 +693,7 @@ def main():
                         filt = "ts > now() - INTERVAL 2 DAY"
                     q = (
                         "SELECT ts, run_id, backend, scenario, node, stage, source, name, value "
-                        "FROM keeper_stress_tests.keeper_metrics_ts "
+                        f"FROM {metrics_db}.keeper_metrics_ts "
                         f"WHERE {filt} ORDER BY ts DESC LIMIT 30 FORMAT TabSeparated"
                     )
                     r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
@@ -686,7 +712,7 @@ def main():
                         q = (
                             "SELECT check_start_time, check_name, check_status, test_name "
                             "FROM default.checks "
-                            f"WHERE {name_filter} AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
+                            f"WHERE {name_filter} AND commit_sha = '{sha}' "
                             "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
                         )
                     else:

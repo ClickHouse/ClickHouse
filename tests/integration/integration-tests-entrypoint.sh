@@ -3,29 +3,10 @@
 JEMALLOC_PROFILER=0
 if [[ ! -v MALLOC_CONF ]]; then
     jemalloc_profiles=/tmp/jemalloc_profiles
-    limit=""
-    if [[ -r /sys/fs/cgroup/memory.max ]]; then
-        limit="$(cat /sys/fs/cgroup/memory.max 2>/dev/null)"
-    fi
-    if [[ -z "$limit" || "$limit" == "max" ]]; then
-        if [[ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]]; then
-            limit="$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null)"
-        fi
-    fi
-    enable_prof=1
-    if [[ "$limit" =~ ^[0-9]+$ ]]; then
-        if (( limit < 4294967296 )); then
-            enable_prof=0
-        fi
-    fi
-    if [[ "${CH_ENABLE_JEMALLOC_PROFILER:-}" == "1" ]]; then
-        enable_prof=1
-    fi
-    if [[ "$enable_prof" -eq 1 ]]; then
-        mkdir -p "$jemalloc_profiles"
-        export MALLOC_CONF=prof_active:true,prof_prefix:$jemalloc_profiles/clickhouse.jemalloc
-        JEMALLOC_PROFILER=1
-    fi
+    mkdir -p "$jemalloc_profiles"
+
+    export MALLOC_CONF=prof_active:true,prof_prefix:$jemalloc_profiles/clickhouse.jemalloc
+    JEMALLOC_PROFILER=1
 fi
 
 umask 022
