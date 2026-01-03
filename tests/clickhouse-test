@@ -1631,6 +1631,7 @@ class TestCase:
             if case in suite.all_random_settings_limits
             else {}
         )
+        self.memory_limit = suite.all_memory_limits.get(case, args.memory_limit)
 
         for tag in os.getenv("GLOBAL_TAGS", "").split(","):
             self.tags.add(tag.strip())
@@ -2287,9 +2288,9 @@ class TestCase:
 
         preexec_fn = None
         cgroup_name = None
-        if args.memory_limit > 0:
+        if args.memory_limit:
             cgroup_name = f"clickhouse-test-{os.getpid()}"
-            preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, args.memory_limit)
+            preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
         # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
@@ -2570,6 +2571,19 @@ class TestCase:
                 raise
             break
 
+def parse_to_bytes(size_str):
+    units = {
+        'B': 1, 'KB': 10**3, 'MB': 10**6, 'GB': 10**9, 'TB': 10**12,
+        'KIB': 2**10, 'MIB': 2**20, 'GIB': 2**30, 'TIB': 2**40
+    }
+
+    # Use regex to split the number from the unit
+    match = re.match(r"^([\d.]+)\s*([a-zA-Z]{1,3})$", size_str.strip())
+    if not match:
+        raise ValueError("Invalid format. Use '10GB' or '5 MiB'.")
+
+    number, unit = match.groups()
+    return int(float(number) * units[unit.upper()])
 
 class TestSuite:
     @staticmethod
@@ -2619,7 +2633,7 @@ class TestSuite:
     @staticmethod
     def read_test_tags_and_random_settings_limits(
         suite_dir: str, all_tests: List[str]
-    ) -> (Dict[str, Set[str]], Dict[str, Dict[str, Tuple[int, int]]]):
+    ) -> (Dict[str, Set[str]], Dict[str, Dict[str, Tuple[int, int]]], Dict[str, int]):
         def get_comment_sign(filename):
             if filename.endswith(".sql") or filename.endswith(".sql.j2"):
                 return "--"
@@ -2642,6 +2656,18 @@ class TestSuite:
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
             return tags
+
+        def parse_memory_limits_from_line(
+            line, comment_sign
+        ) -> Dict[str, Tuple[int, int]]:
+            if not line.startswith(comment_sign):
+                return None
+            memory_limits_str = line[len(comment_sign) :].lstrip()
+            memory_limits_prefix = "Memory limits:"
+            if not memory_limits_str.startswith(memory_limits_prefix):
+                return None
+            memory_limits_str = memory_limits_str[len(memory_limits_prefix) : ]
+            return parse_to_bytes(memory_limits_str)
 
         def parse_random_settings_limits_from_line(
             line, comment_sign
@@ -2680,6 +2706,14 @@ class TestSuite:
                     return line
             return ""
 
+        def find_memory_limits_line(lines, comment_sign):
+            for line in lines:
+                if line.startswith(comment_sign) and line[
+                    len(comment_sign) :
+                ].lstrip().startswith("Memory limits:"):
+                    return line
+            return ""
+
         def load_tags_and_random_settings_limits_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
             need_query_params = False
@@ -2687,9 +2721,8 @@ class TestSuite:
                 try:
                     lines = file.readlines()
                     tag_line = find_tag_line(lines, comment_sign)
-                    random_settings_limits_line = find_random_settings_limits_line(
-                        lines, comment_sign
-                    )
+                    random_settings_limits_line = find_random_settings_limits_line(lines, comment_sign)
+                    memory_limits_line = find_memory_limits_line(lines, comment_sign)
                 except UnicodeDecodeError:
                     return [], {}
                 try:
@@ -2707,30 +2740,34 @@ class TestSuite:
             if ".cloud." in filepath:
                 parsed_tags.add("cloud")
 
-            random_settings_limits = parse_random_settings_limits_from_line(
-                random_settings_limits_line, comment_sign
-            )
-            return parsed_tags, random_settings_limits
+            random_settings_limits = parse_random_settings_limits_from_line(random_settings_limits_line, comment_sign)
+            memory_limits = parse_memory_limits_from_line(memory_limits_line, comment_sign)
+
+            return parsed_tags, random_settings_limits, memory_limits
 
         all_tags = {}
         all_random_settings_limits = {}
+        all_memory_limits = {}
         start_time = datetime.now()
         for test_name in all_tests:
             (
                 tags,
                 random_settings_limits,
+                memory_limits,
             ) = load_tags_and_random_settings_limits_from_file(
                 os.path.join(suite_dir, test_name)
             )  # noqa: ignore E203
             all_tags[test_name] = tags or set()
             if random_settings_limits:
                 all_random_settings_limits[test_name] = random_settings_limits
+            if memory_limits:
+                all_memory_limits[test_name] = memory_limits
         elapsed = (datetime.now() - start_time).total_seconds()
         if elapsed > 1:
             print(
                 f"Tags and random settings limits for suite {suite_dir} read in {elapsed:.2f} seconds"
             )
-        return all_tags, all_random_settings_limits
+        return all_tags, all_random_settings_limits, all_memory_limits
 
     def __init__(self, args, suite_path: str, suite_tmp_path: str, suite: str):
         self.args = args
@@ -2768,9 +2805,8 @@ class TestSuite:
             self.read_test_tags_and_random_settings_limits(self.suite_path, all_tests)
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
-            all_tags_and_random_settings_limits[1]
-        )
+        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (all_tags_and_random_settings_limits[1])
+        self.all_memory_limits: Dict[str, int] = (all_tags_and_random_settings_limits[2])
         self.sequential_tests = []
         self.parallel_tests = []
 
