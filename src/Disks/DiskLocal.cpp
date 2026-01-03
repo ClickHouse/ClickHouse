@@ -150,7 +150,7 @@ private:
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
-    auto unreserved_space = tryReserve(bytes);
+    auto unreserved_space = tryReserve(bytes, std::nullopt);
     if (!unreserved_space.has_value())
         return {};
     return std::make_unique<DiskLocalReservation>(
@@ -158,7 +158,17 @@ ReservationPtr DiskLocal::reserve(UInt64 bytes)
         bytes, unreserved_space.value());
 }
 
-std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
+ReservationPtr DiskLocal::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    auto unreserved_space = tryReserve(bytes, constraints);
+    if (!unreserved_space.has_value())
+        return {};
+    return std::make_unique<DiskLocalReservation>(
+        std::static_pointer_cast<DiskLocal>(shared_from_this()),
+        bytes, unreserved_space.value());
+}
+
+std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
 
@@ -167,6 +177,41 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space
         ? *available_space - std::min(*available_space, reserved_bytes)
         : std::numeric_limits<UInt64>::max();
+
+    /// Check constraints if specified
+    if (constraints.has_value())
+    {
+        auto total_space = getTotalSpace();
+
+        if (available_space.has_value() && total_space.has_value())
+        {
+            /// Not enough space for reservation itself
+            if (bytes > unreserved_space)
+                return {};
+
+            UInt64 free_bytes_after = unreserved_space - bytes;
+
+            /// Check min_bytes constraint
+            if (constraints->min_bytes > 0 && free_bytes_after < constraints->min_bytes)
+            {
+                LOG_TRACE(logger, "Could not reserve {} on disk {}. Free space after reservation ({}) would be less than min_bytes ({})",
+                    ReadableSize(bytes), backQuote(name), ReadableSize(free_bytes_after), ReadableSize(constraints->min_bytes));
+                return {};
+            }
+
+            /// Check min_ratio constraint
+            if (constraints->min_ratio > 0.0)
+            {
+                UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (*total_space));
+                if (free_bytes_after < min_bytes_from_ratio)
+                {
+                    LOG_TRACE(logger, "Could not reserve {} on disk {}. Free space after reservation ({}) would be less than min_ratio requirement ({})",
+                        ReadableSize(bytes), backQuote(name), ReadableSize(free_bytes_after), ReadableSize(min_bytes_from_ratio));
+                    return {};
+                }
+            }
+        }
+    }
 
     if (bytes == 0)
     {
@@ -201,7 +246,6 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
     }
 
     LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-
 
     return {};
 }

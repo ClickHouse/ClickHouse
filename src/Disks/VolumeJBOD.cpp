@@ -116,6 +116,16 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 {
+    return reserveImpl(bytes, std::nullopt);
+}
+
+ReservationPtr VolumeJBOD::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    return reserveImpl(bytes, constraints);
+}
+
+ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
+{
     /// This volume can not store data which size is greater than `max_data_part_size`
     /// to ensure that parts of size greater than that go to another volume(s).
     if (max_data_part_size != 0 && bytes > max_data_part_size)
@@ -134,7 +144,10 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
                 if (disks[index]->isReadOnly())
                     continue;
 
-                auto reservation = disks[index]->reserve(bytes);
+                /// Try to reserve - with or without constraints
+                ReservationPtr reservation = constraints.has_value()
+                    ? disks[index]->reserve(bytes, *constraints)
+                    : disks[index]->reserve(bytes);
 
                 if (reservation)
                     return reservation;
@@ -155,7 +168,11 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 
                     DiskWithSize disk = disks_by_size.top();
                     if (!disk.disk->isReadOnly())
-                        reservation = disk.reserve(bytes);
+                    {
+                        reservation = constraints.has_value()
+                            ? disk.disk->reserve(bytes, *constraints)
+                            : disk.disk->reserve(bytes);
+                    }
                 }
                 else
                 {
@@ -163,7 +180,11 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
                     disks_by_size.pop();
 
                     if (!disk.disk->isReadOnly())
-                        reservation = disk.reserve(bytes);
+                    {
+                        reservation = constraints.has_value()
+                            ? disk.disk->reserve(bytes, *constraints)
+                            : disk.disk->reserve(bytes);
+                    }
                     disks_by_size.push(disk);
                 }
             }

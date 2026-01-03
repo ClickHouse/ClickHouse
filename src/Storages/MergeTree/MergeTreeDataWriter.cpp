@@ -732,9 +732,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(context, ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    const auto & global_settings = context->getSettingsRef();
-    const auto & data_settings = data.getSettings();
-
     const UInt64 & min_bytes_to_perform_insert =
             (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
             ? (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert]
@@ -750,78 +747,24 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     ReservationPtr reservation;
 
-    struct DiskSpaceInfo
-    {
-        UInt64 total_bytes;
-        UInt64 free_bytes;
-        UInt64 needed_bytes;
-    };
-
-    /// Check free space on disks before making reservation
     if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
     {
-        auto check_disk_space = [&](const DiskPtr & disk, DiskSpaceInfo & info) -> bool
-        {
-            info.total_bytes = disk->getTotalSpace().value_or(0);
-            info.free_bytes = disk->getUnreservedSpace().value_or(0);
+        ReservationConstraints constraints(min_bytes_to_perform_insert, min_ratio_to_perform_insert);
 
-            const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * info.total_bytes);
-            info.needed_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
-
-            return info.needed_bytes <= info.free_bytes;
-        };
-
-        const auto & primary_disk = volume->getDisk();
-        DiskSpaceInfo first_failed_disk_info;
-        DiskPtr first_failed_disk;
-        bool primary_disk_suitable = check_disk_space(primary_disk, first_failed_disk_info);
-
-        if (primary_disk_suitable)
-        {
-            reservation = data.reserveSpacePreferringTTLRules(
-                metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true, primary_disk);
-        }
-        first_failed_disk = primary_disk;
-
-        const auto & disks = volume->getDisks();
-        if (!primary_disk_suitable && disks.size() > 1)
-        {
-
-            for (const auto & disk : disks)
-            {
-                if (disk == primary_disk)
-                    continue;
-                if (check_disk_space(disk, first_failed_disk_info))
-                {
-                    /// Try to reserve on this disk since it meets our threshold
-                    ReservationPtr current_reservation = data.reserveSpacePreferringTTLRules(
-                        metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true, disk);
-                    first_failed_disk = disk;
-                    if (current_reservation)
-                    {
-                        reservation = std::move(current_reservation);
-                        break;
-                    }
-                }
-            }
-        }
+        /// Try to reserve space on volume with constraints
+        reservation = volume->reserve(expected_size, constraints);
 
         if (!reservation)
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
                 "None of the disks in volume have enough free space to meet the configured threshold. "
-                "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
                 "The threshold can be configured either in MergeTree settings or User settings, "
                 "using the following settings: "
-                "(1) `min_free_disk_bytes_to_perform_insert` "
-                "(2) `min_free_disk_ratio_to_perform_insert`. "
-                "The total disk capacity of {} is {}",
-                formatReadableSizeWithBinarySuffix(first_failed_disk_info.free_bytes),
-                backQuote(first_failed_disk->getName()),
-                formatReadableSizeWithBinarySuffix(first_failed_disk_info.needed_bytes),
-                backQuote(first_failed_disk->getName()),
-                formatReadableSizeWithBinarySuffix(first_failed_disk_info.total_bytes));
+                "(1) `min_free_disk_bytes_to_perform_insert` = {} "
+                "(2) `min_free_disk_ratio_to_perform_insert` = {}",
+                min_bytes_to_perform_insert,
+                min_ratio_to_perform_insert);
         }
     }
     else
