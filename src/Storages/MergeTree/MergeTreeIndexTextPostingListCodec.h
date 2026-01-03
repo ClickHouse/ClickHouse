@@ -70,47 +70,13 @@ static constexpr bool has_simdcomp = false;
 template<>
 struct BlockCodecTrait<false>
 {
-    static inline uint32_t maxRequiredBitWidthU32(std::span<const uint32_t> data) noexcept
-    {
-        const size_t n0 = data.size();
-        if (n0 == 0)
-            return 0;
-
-        const uint32_t * __restrict p = data.data();
-        size_t n = n0;
-
-        uint32_t a0 = 0, a1 = 0, a2 = 0, a3 = 0;
-        uint32_t a4 = 0, a5 = 0, a6 = 0, a7 = 0;
-
-        while (n >= 32)
-        {
-            a0 |= p[0] | p[1] | p[2] | p[3];
-            a1 |= p[4] | p[5] | p[6] | p[7];
-            a2 |= p[8] | p[9] | p[10] | p[11];
-            a3 |= p[12] | p[13] | p[14] | p[15];
-            a4 |= p[16] | p[17] | p[18] | p[19];
-            a5 |= p[20] | p[21] | p[22] | p[23];
-            a6 |= p[24] | p[25] | p[26] | p[27];
-            a7 |= p[28] | p[29] | p[30] | p[31];
-
-            p += 32;
-            n -= 32;
-        }
-
-        uint32_t acc = (a0 | a1) | (a2 | a3) | (a4 | a5) | (a6 | a7);
-
-        while (n--)
-            acc |= *p++;
-
-        return static_cast<uint32_t>(std::bit_width(acc));
-    }
-
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
     static inline std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
     {
-        const size_t n = data.size();
-        const uint32_t bits = maxRequiredBitWidthU32(data);
+        size_t n = data.size();
+        /// In the posting list case, rowids are in ascending order, so the last rowid is always the maximum.
+        uint32_t bits = n == 0 ? 0 : std::bit_width(data.back());
         size_t bytes = (n * bits + 7) / 8;
         return {bytes, bits};
     }
