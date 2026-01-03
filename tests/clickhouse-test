@@ -1631,7 +1631,7 @@ class TestCase:
             if case in suite.all_random_settings_limits
             else {}
         )
-        self.memory_limit = suite.all_memory_limits.get(case, args.memory_limit)
+        self.memory_limit = suite.all_memory_limits.get(case, args.memory_limit) or args.memory_limit
 
         for tag in os.getenv("GLOBAL_TAGS", "").split(","):
             self.tags.add(tag.strip())
