@@ -98,8 +98,12 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
     {
+        /// Build the filter only from the main stream
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+            return nullptr;
+
         return std::make_shared<BuildRuntimeFilterTransform>(
             header,
             filter_column_name,

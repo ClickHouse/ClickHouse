@@ -232,7 +232,7 @@ void FileCacheSettings::validate()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
 
     if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute: {}", (*this)[FileCacheSetting::path].value);
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");
