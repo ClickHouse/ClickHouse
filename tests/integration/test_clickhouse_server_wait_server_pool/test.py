@@ -21,6 +21,8 @@ def start_cluster():
 
 
 def test(start_cluster):
+    node.restart_clickhouse()
+
     def run_query():
         node.query("select sleepEachRow(1) from numbers(10)", settings={"function_sleep_max_microseconds_per_block": 0})
 
