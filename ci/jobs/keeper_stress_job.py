@@ -462,6 +462,77 @@ def main():
         except Exception:
             helper = None
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
+        try:
+            cidb_url = env.get("CI_DB_URL") or env.get("CLICKHOUSE_TEST_STAT_URL") or ""
+            cidb_user = env.get("CI_DB_USER") or env.get("CLICKHOUSE_TEST_STAT_LOGIN") or ""
+            cidb_pass = env.get("CI_DB_PASSWORD") or env.get("CLICKHOUSE_TEST_STAT_PASSWORD") or ""
+            auth = (
+                {"X-ClickHouse-User": cidb_user, "X-ClickHouse-Key": cidb_pass}
+                if cidb_user and cidb_pass
+                else None
+            )
+            if (not cidb_url or not auth) and helper is not None:
+                if not cidb_url:
+                    cidb_url = getattr(helper, "url", "") or cidb_url
+                if not auth and isinstance(getattr(helper, "auth", None), dict):
+                    auth = {
+                        "X-ClickHouse-User": helper.auth.get("X-ClickHouse-User", ""),
+                        "X-ClickHouse-Key": helper.auth.get("X-ClickHouse-Key", ""),
+                    }
+            if cidb_url and auth:
+                try:
+                    requests.post(
+                        cidb_url,
+                        params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
+                        headers=auth,
+                        timeout=20,
+                    )
+                    table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
+                        ts DateTime DEFAULT now(),
+                        run_id String,
+                        commit_sha String,
+                        backend String,
+                        scenario String,
+                        topology Int32,
+                        node String,
+                        stage String,
+                        source LowCardinality(String),
+                        name LowCardinality(String),
+                        value Float64,
+                        labels_json String DEFAULT '{{}}'
+                    ) ENGINE=MergeTree
+                    ORDER BY (run_id, scenario, node, stage, name, ts)
+                    TTL ts + INTERVAL 30 DAY DELETE"""
+                    requests.post(
+                        cidb_url,
+                        params={"query": table_ddl},
+                        headers=auth,
+                        timeout=20,
+                    )
+                except Exception:
+                    pass
+                # Report existence for job logs
+                try:
+                    chk = requests.get(
+                        cidb_url,
+                        params={"query": f"EXISTS DATABASE {metrics_db} FORMAT TabSeparated"},
+                        headers=auth,
+                        timeout=15,
+                    )
+                    db_exists = ((chk.text or "").strip().splitlines()[0] == "1")
+                except Exception:
+                    db_exists = False
+                try:
+                    results.append(
+                        Result.from_commands_run(
+                            name=f"CIDB Ensure Schema (post-run): db={metrics_db} exists={(1 if db_exists else 0)}",
+                            command=["true"],
+                        )
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
         if helper is not None and Path(pytest_log_file).exists():
             rows = []
             inside = False
@@ -594,37 +665,59 @@ def main():
                 from tests.stress.keeper.framework.io.sink import ensure_sink_schema  # type: ignore
                 ensure_sink_schema()
             except Exception:
-                try:
-                    requests.post(
-                        cidb_url,
-                        params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
-                        headers=auth,
-                        timeout=30,
+                pass
+            # Idempotent safety: ensure DB/table via HTTP regardless of helper behavior
+            try:
+                requests.post(
+                    cidb_url,
+                    params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
+                    headers=auth,
+                    timeout=30,
+                )
+                table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
+                    ts DateTime DEFAULT now(),
+                    run_id String,
+                    commit_sha String,
+                    backend String,
+                    scenario String,
+                    topology Int32,
+                    node String,
+                    stage String,
+                    source LowCardinality(String),
+                    name LowCardinality(String),
+                    value Float64,
+                    labels_json String DEFAULT '{{}}'
+                ) ENGINE=MergeTree
+                ORDER BY (run_id, scenario, node, stage, name, ts)
+                TTL ts + INTERVAL 30 DAY DELETE"""
+                requests.post(
+                    cidb_url,
+                    params={"query": table_ddl},
+                    headers=auth,
+                    timeout=30,
+                )
+            except Exception:
+                pass
+            # Report existence for job logs
+            try:
+                chk = requests.get(
+                    cidb_url,
+                    params={"query": f"EXISTS DATABASE {metrics_db} FORMAT TabSeparated"},
+                    headers=auth,
+                    timeout=20,
+                )
+                db_exists = ((chk.text or "").strip().splitlines()[0] == "1")
+            except Exception:
+                db_exists = False
+            try:
+                results.append(
+                    Result.from_commands_run(
+                        name=f"CIDB Ensure Schema (verify): db={metrics_db} exists={(1 if db_exists else 0)}",
+                        command=["true"],
                     )
-                    table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
-                        ts DateTime DEFAULT now(),
-                        run_id String,
-                        commit_sha String,
-                        backend String,
-                        scenario String,
-                        topology Int32,
-                        node String,
-                        stage String,
-                        source LowCardinality(String),
-                        name LowCardinality(String),
-                        value Float64,
-                        labels_json String DEFAULT '{{}}'
-                    ) ENGINE=MergeTree
-                    ORDER BY (run_id, scenario, node, stage, name, ts)
-                    TTL ts + INTERVAL 30 DAY DELETE"""
-                    requests.post(
-                        cidb_url,
-                        params={"query": table_ddl},
-                        headers=auth,
-                        timeout=30,
-                    )
-                except Exception:
-                    pass
+                )
+            except Exception:
+                pass
             try:
                 if sha and sha != "local":
                     filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
