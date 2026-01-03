@@ -1010,18 +1010,18 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 ///
                 /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
                 /// To fix this, we prepend a rename : 'Hello'_String -> s
-                if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
-                {
-                    const auto & name = interpolate_node_typed.getExpressionName();
-                    const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
-                    node = &rename_dag.addAlias(*node, name);
-                    rename_dag.getOutputs().push_back(node);
+                // if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
+                // {
+                //     const auto & name = interpolate_node_typed.getExpressionName();
+                //     const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
+                //     node = &rename_dag.addAlias(*node, name);
+                //     rename_dag.getOutputs().push_back(node);
 
-                    /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
-                    const auto & inputs = interpolate_actions_dag.getInputs();
-                    if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
-                        interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
-                }
+                //     /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
+                //     const auto & inputs = interpolate_actions_dag.getInputs();
+                //     if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
+                //         interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
+                // }
             }
 
             if (!rename_dag.getOutputs().empty())

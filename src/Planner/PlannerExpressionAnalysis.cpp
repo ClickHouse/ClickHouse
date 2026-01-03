@@ -502,13 +502,20 @@ SortAnalysisResult analyzeSort(
 
         PlannerActionsVisitor interpolate_actions_visitor(planner_context, correlated_columns_set);
 
-        ActionsDAG before_interpolate_actions_dag(actions_chain.getLastStepAvailableOutputColumns());
+        /// getLastStepAvailableOutputColumns should have been correct.
+        /// However, we materialize ORDER BY columns in case of WITH FILL, and it causes a name-collision.
+        /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
+        /// so here we add materialized ORDER BY columns manually, and append everything else after.
+        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
+        for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
+            if (!before_sort_actions_dag_output_node_names.contains(out.name))
+                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
-               continue;
+            // if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
+            //    continue;
 
             auto [nodes, correlated_subtrees] = interpolate_actions_visitor.visit(before_interpolate_actions_dag, interpolate_node_typed.getExpression());
             correlated_subtrees.assertEmpty("in expression to interpolate");
@@ -523,8 +530,6 @@ SortAnalysisResult analyzeSort(
         before_interpolate_actions = std::make_shared<ActionsAndProjectInputsFlag>();
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
 
-        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
-        actions_chain.addStep(std::move(actions_step_before_interpolate));
 
         // ActionsDAG interpolate_actions_dag;
 
@@ -559,6 +564,12 @@ SortAnalysisResult analyzeSort(
         //     before_sort_actions_outputs.push_back(input_node_it->second);
         //     before_sort_actions_dag_output_node_names.insert(node.result_name);
         // }
+    }
+
+    if (before_interpolate_actions)
+    {
+        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
+        actions_chain.addStep(std::move(actions_step_before_interpolate));
     }
 
     return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
