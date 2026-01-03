@@ -1149,6 +1149,7 @@ ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t 
         variant_indexes_data[i] = &assert_cast<ColumnUInt64 &>(*variant_indexes_columns[i]).getData();
     }
 
+    validateDiscriminators();
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
     for (size_t i = 0; i != limit; ++i)
@@ -1304,6 +1305,8 @@ MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selec
     std::vector<Selector> nested_selectors(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
         nested_selectors[i].reserve_exact(variants[i]->size());
+
+    validateDiscriminators();
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1838,6 +1841,18 @@ void ColumnVariant::fixDynamicStructure()
 {
     for (auto & variant : variants)
         variant->fixDynamicStructure();
+}
+
+void ColumnVariant::validateDiscriminators(size_t offset) const
+{
+    size_t num_variants = variants.size();
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    for (size_t i = offset; i < local_discriminators_data.size(); ++i)
+    {
+        auto discr = local_discriminators_data[i];
+        if (discr != NULL_DISCRIMINATOR && discr >= num_variants)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected discriminator: {}. Number of variants: {}", UInt32(discr), num_variants);
+    }
 }
 
 

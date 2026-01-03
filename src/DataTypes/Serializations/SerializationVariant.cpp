@@ -559,6 +559,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     size_t discriminators_offset = col.getLocalDiscriminators().size() - num_read_discriminators;
+    col.validateDiscriminators(discriminators_offset);
 
     /// Second, calculate offsets and limits for each variant by iterating through new discriminators
     /// if we didn't do it during discriminators deserialization.

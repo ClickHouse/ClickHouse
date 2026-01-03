@@ -86,6 +86,8 @@ ColumnObject::ColumnObject(
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
+
+    validateDynamicPathsSizes();
 }
 
 ColumnObject::ColumnObject(
@@ -131,6 +133,8 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)
         sorted_dynamic_paths.emplace(path);
+
+    validateDynamicPathsSizes();
 }
 
 ColumnObject::Ptr ColumnObject::create(
@@ -645,6 +649,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
+    validateDynamicPathsSizes();
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -685,6 +690,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+    validateDynamicPathsSizes();
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -2199,6 +2205,17 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     if (new_shared_data->size() != size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of new shared data: {} != {}", new_shared_data->size(), size);
     shared_data = std::move(new_shared_data);
+}
+
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
 }
 
 }
