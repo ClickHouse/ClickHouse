@@ -259,12 +259,12 @@ def test_introspection():
     ]
     assert actual == expected
     assert instance.query("SHOW GRANTS FOR R1") == ""
-    actual_r2 = [line.rstrip(";") for line in instance.query("SHOW GRANTS FOR R2").splitlines()]
-    expected_r2 = [
-        "GRANT SELECT ON test.`table` TO R2",
-        "REVOKE SELECT(x) ON test.`table` FROM R2",
-    ]
-    assert actual_r2 == expected_r2
+    assert instance.query("SHOW GRANTS FOR R2") == TSV(
+        [
+            "GRANT SELECT ON test.`table` TO R2;",
+            "REVOKE SELECT(x) ON test.`table` FROM R2;",
+        ]
+    )
 
     actual_grants = [line.rstrip(";") for line in instance.query("SHOW GRANTS", user="A").splitlines()]
     expected_grants = ["GRANT SELECT ON test.`table` TO A", "GRANT R1 TO A"]

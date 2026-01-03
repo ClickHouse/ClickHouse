@@ -157,7 +157,7 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
     for (const auto & grant_query : grant_queries)
     {
         String formatted = grant_query->formatWithSecretsOneLine();
-        if (formatted.empty() || !formatted.ends_with(';'))
+        if (!formatted.ends_with(';'))
             formatted.push_back(';');
         column->insert(formatted);
     }
