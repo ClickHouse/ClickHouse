@@ -149,15 +149,14 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 head
 
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingListCodecPtr posting_list_codec)
 {
-    if (posting_list_codec)
+    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
         chassert(header & Flags::HasCodec);
         auto postings = std::make_shared<PostingList>();
         posting_list_codec->decode(istr, *postings);
         return postings;
     }
-
-    if (header & Flags::RawPostings)
+    else if (header & Flags::RawPostings)
     {
         std::vector<UInt32> values(cardinality);
         for (size_t i = 0; i < cardinality; ++i)
@@ -691,14 +690,11 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     info.header = 0;
     info.cardinality = postings.size();
 
-    if (posting_list_codec)
+    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
         info.header |= HasCodec;
-        posting_list_codec->encode(postings, params.posting_list_block_size, info, postings_stream.plain_hashing);
-        return info;
     }
-
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    else if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
@@ -719,6 +715,10 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
         PostingsSerialization::serialize(postings, info.header, postings_stream.plain_hashing);
+    }
+    else if (info.header & HasCodec)
+    {
+        posting_list_codec->encode(postings, params.posting_list_block_size, info, postings_stream.plain_hashing);
     }
     else
     {

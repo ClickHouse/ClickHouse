@@ -154,7 +154,7 @@ public:
     }
 
     size_t size() const { return total_rows; }
-    bool empty() const { return size(); }
+    bool empty() const { return size() == 0; }
 
     size_t getSizeInBytes() const { return compressed_data.size(); }
 
