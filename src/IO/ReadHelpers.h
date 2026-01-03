@@ -11,6 +11,7 @@
 
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
+#include <Common/formatMacAddress.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
@@ -22,6 +23,7 @@
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <base/IPv4andIPv6.h>
+#include <base/MacAddress.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -52,6 +54,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_MAC_ADDRESS;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -806,6 +809,44 @@ inline bool tryReadIPv6Text(IPv6 & ip, ReadBuffer & buf)
     return readIPv6TextImpl<bool>(ip, buf);
 }
 
+template <typename ReturnType = void>
+inline ReturnType readMacAddressTextImpl(MacAddress & mac, ReadBuffer & buf)
+{
+    unsigned char bytes[MAC_ADDRESS_BINARY_LENGTH];
+
+    auto checkEOF = [&buf]()
+    {
+        return buf.eof();
+    };
+
+    if (parseMacAddress(buf.position(), checkEOF, bytes))
+    {
+        // Convert 6-byte array to UInt64 in big-endian order
+        UInt64 value = 0;
+        for (const auto byte : bytes)
+        {
+            value = (value << 8) | byte;
+        }
+        mac = MacAddress(value);
+        return ReturnType(true);
+    }
+
+    if constexpr (std::is_same_v<ReturnType, void>)
+        throw Exception(ErrorCodes::CANNOT_PARSE_MAC_ADDRESS, "Cannot parse MacAddress {}", std::string_view(buf.position(), buf.available()));
+    else
+        return ReturnType(false);
+}
+
+inline void readMacAddressText(MacAddress & mac, ReadBuffer & buf)
+{
+    readMacAddressTextImpl<void>(mac, buf);
+}
+
+inline bool tryReadMacAddressText(MacAddress & mac, ReadBuffer & buf)
+{
+    return readMacAddressTextImpl<bool>(mac, buf);
+}
+
 template <typename T>
 inline T parse(const char * data, size_t size);
 
@@ -1552,6 +1593,13 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
+inline void readBinary(MacAddress & x, ReadBuffer & buf)
+{
+    UInt64 value;
+    readPODBinary(value, buf);
+    x = MacAddress(value);
+}
+
 inline void readBinary(UUID & x, ReadBuffer & buf)
 {
     readUUIDBinary(x, buf);
@@ -1622,6 +1670,7 @@ inline bool tryReadText(is_floating_point auto & x, ReadBuffer & buf)
 inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
 inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, buf); }
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
+inline bool tryReadText(MacAddress & x, ReadBuffer & buf) { return tryReadMacAddressText(x, buf); }
 
 template <typename T>
 requires is_floating_point<T>
@@ -1647,6 +1696,7 @@ inline bool tryReadText(LocalDateTime & x, ReadBuffer & buf)
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 inline void readText(IPv4 & x, ReadBuffer & buf) { readIPv4Text(x, buf); }
 inline void readText(IPv6 & x, ReadBuffer & buf) { readIPv6Text(x, buf); }
+inline void readText(MacAddress & x, ReadBuffer & buf) { readMacAddressText(x, buf); }
 
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
@@ -1829,6 +1879,9 @@ inline bool tryReadCSV(IPv4 & x, ReadBuffer & buf) { return readCSVSimple<IPv4, 
 
 inline void readCSV(IPv6 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(IPv6 & x, ReadBuffer & buf) { return readCSVSimple<IPv6, bool>(x, buf); }
+
+inline void readCSV(MacAddress & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline bool tryReadCSV(MacAddress & x, ReadBuffer & buf) { return readCSVSimple<MacAddress, bool>(x, buf); }
 
 inline void readCSV(UInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(UInt128 & x, ReadBuffer & buf) { return readCSVSimple<UInt128, bool>(x, buf); }
