@@ -137,6 +137,10 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
+/// Find hive partitioning part inside path
+/// /a/b/c/d=e/f=g/h.i => d=e/f=g
+std::string_view findHivePartitioningInPath(const String & path);
+
 }
 
 }
