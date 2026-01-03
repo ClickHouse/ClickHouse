@@ -1,9 +1,6 @@
 #pragma once
 
 #include <config.h>
-
-#if USE_SIMDCOMP
-
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -11,10 +8,213 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <roaring/roaring.hh>
 
+#if USE_SIMDCOMP
 extern "C"
 {
 #include <simdcomp.h>
 }
+#endif
+
+namespace
+{
+
+static constexpr size_t BLOCK_SIZE = 128;
+template<bool have_simdcomp>
+struct BlockCodecTrait;
+
+#if USE_SIMDCOMP
+
+static constexpr bool has_simdcomp = true;
+
+template<>
+struct BlockCodecTrait<true>
+{
+
+    /// Returns {compressed_bytes, bits} where bits is the max bit-width required
+    /// to represent all values in [0..n).
+    static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
+    {
+        size_t n = data.size();
+        auto bits = maxbits_length(data.data(), n);
+        auto bytes = simdpack_compressedbytes(n, bits);
+        return {bytes, bits};
+    }
+
+    static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out) noexcept
+    {
+        /// simdcomp expects __m128i* output pointer; we compute consumed bytes
+        /// from the returned end pointer (in units of 16-byte vectors).
+        auto * m128_out = reinterpret_cast<__m128i *>(out.data());
+        auto * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
+        auto used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
+        out = out.subspan(used);
+        return used;
+    }
+
+    static std::size_t decode(std::span<const std::byte> & in, std::size_t n, uint32_t max_bits, std::span<uint32_t> & out) noexcept
+    {
+        /// simdcomp expects __m128i* input pointer; we compute consumed bytes
+        /// from the returned end pointer (in units of 16-byte vectors).
+        auto * m128i_in = reinterpret_cast<const __m128i *>(in.data());
+        auto * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
+        auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
+        in = in.subspan(used);
+        return used;
+    }
+};
+
+#else
+
+static constexpr bool has_simdcomp = false;
+
+template<>
+struct BlockCodecTrait<false>
+{
+    static inline uint32_t maxRequiredBitWidthU32(std::span<const uint32_t> data) noexcept
+    {
+        const size_t n0 = data.size();
+        if (n0 == 0)
+            return 0;
+
+        const uint32_t * __restrict p = data.data();
+        size_t n = n0;
+
+        uint32_t a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+        uint32_t a4 = 0, a5 = 0, a6 = 0, a7 = 0;
+
+        while (n >= 32)
+        {
+            a0 |= p[0] | p[1] | p[2] | p[3];
+            a1 |= p[4] | p[5] | p[6] | p[7];
+            a2 |= p[8] | p[9] | p[10] | p[11];
+            a3 |= p[12] | p[13] | p[14] | p[15];
+            a4 |= p[16] | p[17] | p[18] | p[19];
+            a5 |= p[20] | p[21] | p[22] | p[23];
+            a6 |= p[24] | p[25] | p[26] | p[27];
+            a7 |= p[28] | p[29] | p[30] | p[31];
+
+            p += 32;
+            n -= 32;
+        }
+
+        uint32_t acc = (a0 | a1) | (a2 | a3) | (a4 | a5) | (a6 | a7);
+
+        while (n--)
+            acc |= *p++;
+
+        return static_cast<uint32_t>(std::bit_width(acc));
+    }
+
+    /// Returns {compressed_bytes, bits} where bits is the max bit-width required
+    /// to represent all values in [0..n).
+    static inline std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
+    {
+        const size_t n = data.size();
+        const uint32_t bits = maxRequiredBitWidthU32(data);
+        size_t bytes = (n * bits + 7) / 8;
+        return {bytes, bits};
+    }
+
+    static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out) noexcept
+    {
+        const size_t n = in.size();
+        if (n == 0 || max_bits == 0)
+            return 0;
+
+        size_t used = (n * max_bits + 7) / 8;
+        char * dst = out.data();
+
+        if (max_bits == 32)
+        {
+            std::memcpy(dst, in.data(), n * sizeof(uint32_t));
+            out = out.subspan(used);
+            return static_cast<uint32_t>(used);
+        }
+
+        uint64_t acc = 0;
+        uint32_t acc_bits = 0;
+        size_t dst_offset = 0;
+
+        for (uint32_t v : in)
+        {
+            acc |= (static_cast<uint64_t>(v) << acc_bits);
+            acc_bits += max_bits;
+
+            while (acc_bits >= 32)
+            {
+                if (dst_offset + 4 <= used)
+                {
+                    uint32_t word = static_cast<uint32_t>(acc);
+                    std::memcpy(dst + dst_offset, &word, sizeof(word));
+                }
+                dst_offset += 4;
+
+                acc >>= 32;
+                acc_bits -= 32;
+            }
+        }
+
+        if (acc_bits > 0 && dst_offset < used)
+        {
+            uint32_t word = static_cast<uint32_t>(acc);
+            std::memcpy(dst + dst_offset, &word, sizeof(word));
+        }
+
+        out = out.subspan(used);
+        return static_cast<uint32_t>(used);
+    }
+
+    static std::size_t decode(std::span<const std::byte> & in, std::size_t n, uint32_t max_bits, std::span<uint32_t> & out) noexcept
+    {
+        if (n == 0)
+            return 0;
+
+        if (max_bits == 0)
+            return 0;
+
+        size_t used = (n * max_bits + 7) / 8;
+        const char * src = reinterpret_cast<const char *>(in.data());
+
+        if (max_bits == 32)
+        {
+            std::memcpy(out.data(), src, n * sizeof(uint32_t));
+            in = in.subspan(used);
+            return used;
+        }
+
+        uint32_t mask = (1u << max_bits) - 1u;
+
+        uint64_t acc = 0;
+        uint32_t acc_bits = 0;
+        size_t dst_offset = 0;
+
+        for (size_t i = 0; i < n; ++i)
+        {
+            while (acc_bits < max_bits)
+            {
+                uint32_t word = 0;
+                if (dst_offset < used)
+                {
+                    size_t rem = used - dst_offset;
+                    std::memcpy(&word, src + dst_offset, rem >= 4 ? 4 : rem);
+                }
+                dst_offset += 4;
+                acc |= (static_cast<uint64_t>(word) << acc_bits);
+                acc_bits += 32;
+            }
+
+            out[i] = static_cast<uint32_t>(acc) & mask;
+            acc >>= max_bits;
+            acc_bits -= max_bits;
+        }
+
+        in = in.subspan(used);
+        return used;
+    }
+};
+#endif
+}
+
 namespace DB
 {
 struct TokenPostingsInfo;
@@ -104,42 +304,32 @@ class PostingListCodecImpl
     /// unsigned integers (typically delta/gap values).
     struct BlockCodec
     {
-        static constexpr size_t BLOCK_SIZE = 128;
+        using BlockCodecTrait = BlockCodecTrait<has_simdcomp>;
 
         /// Returns {compressed_bytes, bits} where bits is the max bit-width required
         /// to represent all values in [0..n).
         static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data)
         {
-            size_t n = data.size();
-            auto bits = maxbits_length(data.data(), n);
-            auto bytes = simdpack_compressedbytes(n, bits);
-            return {bytes, bits};
+            return BlockCodecTrait::calculateNeededBytesAndMaxBits(data);
         }
 
+        /// Bit-pack `in` using `max_bits` bits/value into `out`, advance `out` by the consumed bytes,
+        /// and return the number of bytes written.
+        /// Dispatches to the SIMDComp or fallback implementation.
         static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
         {
-            /// simdcomp expects __m128i* output pointer; we compute consumed bytes
-            /// from the returned end pointer (in units of 16-byte vectors).
-            auto * m128_out = reinterpret_cast<__m128i *>(out.data());
-            auto * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
-            auto used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
-            out = out.subspan(used);
-            return used;
+            return BlockCodecTrait::encode(in, max_bits, out);
         }
 
+        /// Unpack `n` values encoded with `max_bits` bits/value from `in` into `out`, advance `in` by the
+        /// consumed bytes, and return the number of bytes read.
+        /// Dispatches to the SIMDComp or fallback implementation.
         static std::size_t decode(std::span<const std::byte> & in, std::size_t n, uint32_t max_bits, std::span<uint32_t> & out)
         {
-            /// simdcomp expects __m128i* input pointer; we compute consumed bytes
-            /// from the returned end pointer (in units of 16-byte vectors).
-            auto * m128i_in = reinterpret_cast<const __m128i *>(in.data());
-            auto * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
-            auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
-            in = in.subspan(used);
-            return used;
+            return BlockCodecTrait::decode(in, n, max_bits, out);
         }
     };
 public:
-    static constexpr size_t BLOCK_SIZE = 128;
 
     PostingListCodecImpl() = default;
 
@@ -274,4 +464,4 @@ struct PostingListCodecSIMDComp : public  IPostingListCodec
 };
 
 }
-#endif
+

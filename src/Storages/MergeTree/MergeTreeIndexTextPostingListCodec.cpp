@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
-#if USE_SIMDCOMP
-
 namespace DB
 {
 namespace ErrorCodes
@@ -201,7 +199,7 @@ void PostingListCodecSIMDComp::encode(
         large_postings.toUint32Array(rowids.data());
         std::span<uint32_t> values(rowids.data(), rowids.size());
 
-        auto block_size = PostingListCodecImpl::BLOCK_SIZE;
+        auto block_size = BLOCK_SIZE;
         while (values.size() >= block_size)
         {
             auto front = values.first(block_size);
@@ -218,4 +216,4 @@ void PostingListCodecSIMDComp::encode(
     impl.serialize(out, info);
 }
 }
-#endif
+

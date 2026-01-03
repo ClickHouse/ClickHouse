@@ -41,11 +41,11 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
     if (codec_name == "none")
         return std::make_unique<PostingListCodecNone>();
 
-#if USE_SIMDCOMP
     if (codec_name == PostingListCodecSIMDComp::getName())
         return std::make_unique<PostingListCodecSIMDComp>();
-#endif
+
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec: '{}' for index '{}'", codec_name, caller_name);
 }
 
 }
+
