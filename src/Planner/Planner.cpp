@@ -909,8 +909,11 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
 
 void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
+    SortAnalysisResult & sort_analysis_result,
     const PlannerContextPtr & planner_context,
-    const QueryNode & query_node)
+    const QueryNode & query_node,
+    const SelectQueryOptions & select_query_options,
+    UsefulSets & useful_sets)
 {
     NameSet column_names_with_fill;
     SortDescription fill_description;
@@ -935,8 +938,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
     if (query_node.hasInterpolate())
     {
+        auto & before_interpolate_actions = sort_analysis_result.before_interpolate_actions;
+        addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
+
         ActionsDAG interpolate_actions_dag;
-        auto query_plan_columns = header->getColumnsWithTypeAndName();
+        auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
@@ -980,7 +986,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
-                const auto & expression_to_interpolate_name = expression_to_interpolate->result_name;
+                // const auto & expression_to_interpolate_name = expression_to_interpolate->result_name;
 
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
@@ -991,7 +997,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                         planner_context->getQueryContext());
                 }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
+                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
                 interpolate_actions_dag.getOutputs().push_back(alias_node);
 
                 /// Here we fix INTERPOLATE by constant expression.
@@ -1031,7 +1037,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
-        header,
+        query_plan.getCurrentHeader(),
         query_analysis_result.sort_description,
         std::move(fill_description),
         interpolate_description,
@@ -2204,7 +2210,7 @@ void Planner::buildPlanForQueryNode()
         }
 
         if (query_node.hasOrderBy())
-            addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
+            addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
