@@ -35,8 +35,12 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
 {
     isAllowedCodec(codec_name, allowed_codecs, caller_name);
 
-    if (only_validate || codec_name.empty() || codec_name == "none")
+    if (only_validate)
         return {};
+
+    if (codec_name == "none")
+        return std::make_unique<PostingListCodecNone>();
+
 #if USE_SIMDCOMP
     if (codec_name == PostingListCodecSIMDComp::getName())
         return std::make_unique<PostingListCodecSIMDComp>();

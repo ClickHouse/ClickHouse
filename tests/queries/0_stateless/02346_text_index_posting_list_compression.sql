@@ -102,6 +102,17 @@ FROM numbers(2000);
 OPTIMIZE TABLE tab_bitpacking FINAL;
 OPTIMIZE TABLE table_uncompressed FINAL;
 
+-- Compare the size of the inverted index for the same dataset with compression enabled versus disabled.
+
+SELECT
+    `table`,
+    sum(rows) AS `rows-count`,
+    formatReadableSize(sum(bytes_on_disk)) AS `total-bytes`,
+    formatReadableSize(sum(secondary_indices_compressed_bytes)) AS `text-index-bytes`
+FROM system.parts
+WHERE active AND table IN ('tab_bitpacking','table_uncompressed')
+GROUP BY `table`;
+
 -- Validates that a very large/high-frequency posting list is decoded correctly by checking the count in the compressed table matches the uncompressed baseline.
 
 SELECT

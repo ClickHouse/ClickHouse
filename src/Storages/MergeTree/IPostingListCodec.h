@@ -49,6 +49,18 @@ private:
     Type type;
 };
 
+/// A no-op posting list codec.
+/// Used to represent the "none" codec explicitly (instead of nullptr).
+struct PostingListCodecNone : public IPostingListCodec
+{
+    static const char * getName() { return "none"; }
+
+    PostingListCodecNone() : IPostingListCodec(Type::None) {}
+
+    void encode(const PostingListBuilder &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
+    void decode(ReadBuffer &, PostingList &) const override {}
+};
+
 class PostingListCodecFactory : public boost::noncopyable
 {
 public:
