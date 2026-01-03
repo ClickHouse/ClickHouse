@@ -15,8 +15,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
@@ -26,7 +24,6 @@
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
-#include <utility>
 #include <Poco/Timestamp.h>
 
 namespace DB
@@ -2243,7 +2240,6 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
             ttl_expr,
             std::make_shared<ASTLiteral>(Field(UInt32(time)))
         );
-        LOG_INFO(getLogger("getOnFlyMutationCommandsForTTL"), "new ast: {}", ttl_expr->dumpTree());
         command->predicate = where_expr.get();
         auto mutation = MutationCommand::parse(command);
         commands.push_back(*mutation);

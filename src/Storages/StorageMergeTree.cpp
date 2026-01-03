@@ -1,10 +1,7 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageMergeTree.h>
 
 #include <optional>
 #include <ranges>
-#include <utility>
-#include <vector>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>

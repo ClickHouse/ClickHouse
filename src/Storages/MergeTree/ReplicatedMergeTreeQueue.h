@@ -6,7 +6,6 @@
 
 #include <Common/ActionBlocker.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
