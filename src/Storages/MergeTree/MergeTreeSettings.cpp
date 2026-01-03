@@ -1777,6 +1777,9 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
+    DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
+    When enabled, min-max (skipping) indices are added for all date and time columns of the table.
+    )", 0) \
     DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.

@@ -2,12 +2,18 @@
 
 drop table if exists t;
 
-create table t (a UInt64, s String) engine = MergeTree order by tuple() settings add_minmax_index_for_numeric_columns = 1;
+create table t (a UInt64, s String, dt DateTime64)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+  add_minmax_index_for_numeric_columns,
+  add_minmax_index_for_string_columns,
+  add_minmax_index_for_temporal_columns;
 
-show create table t;
+SHOW CREATE TABLE t;
 
-alter table t drop column s;
+ALTER TABLE t DROP COLUMN s;
 
-show create table t;
+SHOW CREATE TABLE t;
 
-drop table t;
+DROP TABLE t;
