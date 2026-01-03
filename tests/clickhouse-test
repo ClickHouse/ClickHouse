@@ -2724,7 +2724,7 @@ class TestSuite:
                     random_settings_limits_line = find_random_settings_limits_line(lines, comment_sign)
                     memory_limits_line = find_memory_limits_line(lines, comment_sign)
                 except UnicodeDecodeError:
-                    return [], {}
+                    return [], {}, None
                 try:
                     if filepath.endswith(".sql"):
                         for line in lines:
