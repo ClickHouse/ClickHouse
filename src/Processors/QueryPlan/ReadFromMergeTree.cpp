@@ -346,7 +346,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     LoggerPtr log_,
     AnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading_,
-    std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback_,
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback_,
     std::optional<MergeTreeReadTaskCallback> read_task_callback_,
     std::optional<size_t> number_of_current_replica_)
@@ -384,8 +383,6 @@ ReadFromMergeTree::ReadFromMergeTree(
             read_task_callback = read_task_callback_.value();
         else
             read_task_callback = context->getMergeTreeReadTaskCallback();
-
-        distributed_analysis_results_callback = std::move(distributed_analysis_results_callback_);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -416,7 +413,6 @@ ReadFromMergeTree::ReadFromMergeTree(
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
     ContextPtr & context_,
     AnalysisResultPtr analyzed_result_ptr_,
-    std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback_,
     MergeTreeAllRangesCallback all_ranges_callback_,
     MergeTreeReadTaskCallback read_task_callback_,
     size_t replica_number)
@@ -438,7 +434,6 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         log,
         std::move(analyzed_result_ptr_),
         enable_parallel_reading,
-        distributed_analysis_results_callback_,
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
@@ -1818,8 +1813,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         indexes,
         find_exact_ranges,
         is_parallel_reading_from_replicas,
-        allow_query_condition_cache,
-        distributed_analysis_results_callback);
+        allow_query_condition_cache);
 
     return analyzed_result_ptr;
 }
@@ -2064,8 +2058,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     std::optional<Indexes> & indexes,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
-    bool allow_query_condition_cache_,
-    const std::optional<MergeTreeDistributedAnalysisCallback> & distributed_analysis_results_callback_)
+    bool allow_query_condition_cache_)
 {
     AnalysisResult result;
     RangesInDataParts res_parts;
@@ -2308,10 +2301,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 part_range_info.ranges = ranges;
                 result_parts_ranges.push_back(part_range_info);
             }
-
-            /// Pass information to coordinator for parallel replicas (if any)
-            if (distributed_analysis_results_callback_.has_value())
-                (distributed_analysis_results_callback_.value())(distributed_index_analysis);
 
             result.parts_with_ranges = std::move(result_parts_ranges);
         }
@@ -2794,7 +2783,6 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         log,
         std::move(analysis_result_copy),
         is_parallel_reading_from_replicas,
-        distributed_analysis_results_callback,
         all_ranges_callback,
         read_task_callback,
         number_of_current_replica);
