@@ -3,7 +3,8 @@ mysql_user = "root"
 mysql_pass = "ClickHouse_MySQL_P@ssw0rd"
 
 # Dremio CREDENTIALS
-dremio_user = "admin"
+# Dremio OSS default superuser is 'dremio'. Keep password aligned with compose.
+dremio_user = "dremio"
 dremio_pass = "ClickHouse_Dremio_P@ssw0rd"
 
 # POSTGRES CREDENTIALS
