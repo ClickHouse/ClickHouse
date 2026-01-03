@@ -1,8 +1,6 @@
-#include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
 #include <base/sleep.h>
-#include <Core/Settings.h>
 #include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
@@ -18,11 +16,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool parallel_replicas_use_distributed_index_analysis_info;
-}
 
 namespace FailPoints
 {
@@ -96,13 +89,6 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
     }
 
-    std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_cb;
-    if (context->getSettingsRef()[Setting::parallel_replicas_use_distributed_index_analysis_info])
-    {
-        distributed_analysis_results_cb = [coordinator](DistributedIndexAnalysisPartsRanges analysis)
-        { coordinator->handleDistributedAnalysisResults(std::move(analysis)); };
-    }
-
     MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)
     { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 
@@ -116,12 +102,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     };
 
     auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-        context,
-        analyzed_result_ptr,
-        std::move(distributed_analysis_results_cb),
-        std::move(all_ranges_cb),
-        std::move(read_task_cb),
-        replica_number);
+        context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
     addConvertingActions(*query_plan, header, context);

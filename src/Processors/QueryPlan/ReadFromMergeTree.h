@@ -237,7 +237,6 @@ public:
         LoggerPtr log_,
         AnalysisResultPtr analyzed_result_ptr_,
         bool enable_parallel_reading_,
-        std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback_ = std::nullopt,
         std::optional<MergeTreeAllRangesCallback> all_ranges_callback_ = std::nullopt,
         std::optional<MergeTreeReadTaskCallback> read_task_callback_ = std::nullopt,
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
@@ -248,7 +247,6 @@ public:
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         ContextPtr & context_,
         AnalysisResultPtr analyzed_result_ptr_,
-        std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback_,
         MergeTreeAllRangesCallback all_ranges_callback_,
         MergeTreeReadTaskCallback read_task_callback_,
         size_t replica_number);
@@ -312,8 +310,7 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
-        bool allow_query_condition_cache_,
-        const std::optional<MergeTreeDistributedAnalysisCallback> & distributed_analysis_results_callback_ = std::nullopt);
+        bool allow_query_condition_cache_);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -515,7 +512,6 @@ private:
     IndexReadTasks index_read_tasks;
 
     bool is_parallel_reading_from_replicas;
-    std::optional<MergeTreeDistributedAnalysisCallback> distributed_analysis_results_callback;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
