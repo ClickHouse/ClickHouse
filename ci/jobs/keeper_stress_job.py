@@ -587,6 +587,19 @@ def main():
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
         if have_cidb:
             try:
+                from tests.stress.keeper.framework.io.sink import ensure_sink_schema  # type: ignore
+                ensure_sink_schema()
+            except Exception:
+                try:
+                    requests.post(
+                        cidb_url,
+                        params={"query": "CREATE DATABASE IF NOT EXISTS keeper_stress_tests"},
+                        headers=auth,
+                        timeout=30,
+                    )
+                except Exception:
+                    pass
+            try:
                 if sha and sha != "local":
                     filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
                 else:
@@ -629,13 +642,13 @@ def main():
                     q = (
                         "SELECT count() FROM default.checks "
                         f"WHERE {name_filter} AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
-                        "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                        "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 else:
                     q = (
                         "SELECT count() FROM default.checks "
                         f"WHERE {name_filter} "
-                        "AND started_at > now() - INTERVAL 2 DAY FORMAT TabSeparated"
+                        "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                 t3 = (r.text or "").strip()
@@ -671,17 +684,17 @@ def main():
                 try:
                     if sha and sha != "local":
                         q = (
-                            "SELECT started_at, check_name, check_status, test_name "
+                            "SELECT check_start_time, check_name, check_status, test_name "
                             "FROM default.checks "
                             f"WHERE {name_filter} AND (head_sha = '{sha}' OR commit_sha = '{sha}') "
-                            "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
+                            "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
                         )
                     else:
                         q = (
-                            "SELECT started_at, check_name, check_status, test_name "
+                            "SELECT check_start_time, check_name, check_status, test_name "
                             "FROM default.checks "
                             f"WHERE {name_filter} "
-                            "AND started_at > now() - INTERVAL 2 DAY ORDER BY started_at DESC LIMIT 20 FORMAT TabSeparated"
+                            "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
                         )
                     r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
                     ctxt = (r.text or "").strip()
