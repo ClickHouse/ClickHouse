@@ -197,6 +197,9 @@ class Result(MetaClasses.Serializable):
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
 
+    def is_dropped(self):
+        return self.status in (Result.Status.DROPPED,)
+
     def set_status(self, status) -> "Result":
         self.status = status
         self.dump()

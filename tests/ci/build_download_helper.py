@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-import json
 import logging
-import os
-import platform
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any
 
 import requests
-
-from ci_config import CI
-from ci_definitions import BuildNames
-from env_helper import REPO_COPY
 
 try:
     # A work around for scripts using this downloading module without required deps
@@ -124,55 +117,6 @@ def get_gh_api(
     raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
-BUILD_TO_REPORT = {
-    BuildNames.PACKAGE_RELEASE: "artifact_report_build_amd_release.json",
-    BuildNames.PACKAGE_ASAN: "artifact_report_build_amd_asan.json",
-    BuildNames.PACKAGE_UBSAN: "artifact_report_build_amd_ubsan.json",
-    BuildNames.PACKAGE_TSAN: "artifact_report_build_amd_tsan.json",
-    BuildNames.PACKAGE_MSAN: "artifact_report_build_amd_msan.json",
-    BuildNames.PACKAGE_DEBUG: "artifact_report_build_amd_debug.json",
-    BuildNames.PACKAGE_AARCH64: "artifact_report_build_arm_release.json",
-    BuildNames.PACKAGE_AARCH64_ASAN: "artifact_report_build_arm_asan.json",
-    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_arm_coverage.json",
-    BuildNames.BINARY_RELEASE: "artifact_report_build_amd_binary.json",
-    BuildNames.BINARY_TIDY: "artifact_report_build_amd_tidy.json",
-    BuildNames.BINARY_DARWIN: "artifact_report_build_amd_darwin.json",
-    BuildNames.BINARY_AARCH64: "artifact_report_build_arm_binary.json",
-    BuildNames.BINARY_AARCH64_V80COMPAT: "artifact_report_build_arm_v80compat.json",
-    BuildNames.BINARY_FREEBSD: "artifact_report_build_amd_freebsd.json",
-    BuildNames.BINARY_DARWIN_AARCH64: "artifact_report_build_arm_darwin.json",
-    BuildNames.BINARY_PPC64LE: "artifact_report_build_ppc64le.json",
-    BuildNames.BINARY_AMD64_COMPAT: "artifact_report_build_amd_compat.json",
-    BuildNames.BINARY_AMD64_MUSL: "artifact_report_build_amd_musl.json",
-    BuildNames.BINARY_RISCV64: "artifact_report_build_riscv64.json",
-    BuildNames.BINARY_S390X: "artifact_report_build_s390x.json",
-    BuildNames.BINARY_LOONGARCH64: "artifact_report_build_loongarch.json",
-    BuildNames.ARM_FUZZERS: "artifact_report_build_arm_fuzzers.json",
-}
-
-
-def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
-    artifact_report = Path(REPO_COPY) / "ci" / "tmp" / BUILD_TO_REPORT[build_name]
-    if artifact_report.is_file():
-        with open(artifact_report, "r", encoding="utf-8") as f:
-            return json.load(f)["build_urls"]  # type: ignore
-    for root, _, files in os.walk(reports_path):
-        logging.info("Got files list: %s", str(files))
-        for file in files:
-            if file.endswith(f"_{build_name}.json"):
-                logger.info("Found build report json %s for %s", file, build_name)
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8"
-                ) as file_handler:
-                    build_report = json.load(file_handler)
-                    if not build_report["build_urls"]:
-                        logger.warning("empty build_urls in report: %s: {build_report}")
-                    return build_report["build_urls"]  # type: ignore
-
-    logger.warning("A build report is not found for %s", build_name)
-    return []
-
-
 def download_build_with_progress(url: str, path: Path) -> None:
     logger.info("Downloading from %s to temp path %s", url, path)
     for i in range(DOWNLOAD_RETRIES_COUNT):
@@ -224,118 +168,3 @@ def download_build_with_progress(url: str, path: Path) -> None:
     if sys.stdout.isatty():
         sys.stdout.write("\n")
     logger.info("Downloading finished")
-
-
-def download_builds(
-    result_path: Path, build_urls: List[str], filter_fn: Callable[[str], bool]
-) -> None:
-    for url in build_urls:
-        if filter_fn(url):
-            fname = os.path.basename(url.replace("%2B", "+").replace("%20", " "))
-            logger.info("Will download %s to %s", fname, result_path)
-            download_build_with_progress(url, result_path / fname)
-
-
-def download_builds_filter(
-    check_name: str,
-    reports_path: Union[Path, str],
-    result_path: Path,
-    filter_fn: Callable[[str], bool] = lambda _: True,
-) -> None:
-    if (Path(reports_path) / "artifact_report.json").is_file():
-        with open(
-            Path(reports_path) / "artifact_report.json", "r", encoding="utf-8"
-        ) as f:
-            urls = json.load(f)["build_urls"]  # type: ignore
-    else:
-        build_name = CI.get_required_build_name(check_name)
-        urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", check_name, urls)
-
-    if not urls:
-        raise DownloadException("No build URLs found")
-
-    download_builds(result_path, urls, filter_fn)
-
-
-def download_all_deb_packages(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("deb")
-    )
-
-
-def download_unit_tests(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("unit_tests_dbms")
-    )
-
-
-def download_clickhouse_binary(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("clickhouse")
-    )
-
-
-def download_clickhouse_master(result_path: Path, full: bool = False) -> None:
-    if platform.system() not in ("Linux", "Darwin"):
-        raise DownloadException(
-            f"Unsupported platform {platform.system()} for downloading ClickHouse master build"
-        )
-    arch = "amd64"
-    if platform.system() == "Darwin":
-        arch = "macos"
-    if platform.machine() in ("aarch64", "arm64"):
-        arch = "aarch64"
-        if platform.system() == "Darwin":
-            arch = "macos-aarch64"
-
-    url = (
-        f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{arch}/clickhouse"
-        f"{'-full' if full else ''}"
-    )
-    download_build_with_progress(url, result_path / "clickhouse")
-
-
-def get_clickhouse_binary_url(
-    check_name: str, reports_path: Union[Path, str]
-) -> Optional[str]:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
-    for url in urls:
-        check_url = url
-        if "?" in check_url:
-            check_url = check_url.split("?")[0]
-
-        if check_url.endswith("clickhouse"):
-            return url
-
-    return None
-
-
-def download_performance_build(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith("performance.tar.zst"),
-    )
-
-
-def download_fuzzers(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
-    )

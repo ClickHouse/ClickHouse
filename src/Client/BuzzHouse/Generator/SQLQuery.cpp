@@ -277,10 +277,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                        ? S3Func_FName::S3Func_FName_s3
                        : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltaLakeS3));
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 9))
+            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 4));
-                sfunc->mutable_cluster()->set_cluster(cluster.value());
+                setClusterClause(rg, cluster, sfunc->mutable_cluster());
             }
             else
             {
@@ -301,10 +301,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                        : (t.isIcebergAzureEngine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
                                                    : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure));
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 9))
+            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 afunc->set_fname(static_cast<AzureBlobStorageFunc_FName>(static_cast<uint32_t>(val) + 3));
-                afunc->mutable_cluster()->set_cluster(cluster.value());
+                setClusterClause(rg, cluster, afunc->mutable_cluster());
             }
             else
             {
@@ -330,10 +330,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             FileFunc * ffunc = tfunc->mutable_file();
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 9))
+            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 ffunc->set_fname(FileFunc_FName::FileFunc_FName_fileCluster);
-                ffunc->mutable_cluster()->set_cluster(cluster.value());
+                setClusterClause(rg, cluster, ffunc->mutable_cluster());
             }
             else
             {
@@ -354,10 +354,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             URLFunc * ufunc = tfunc->mutable_url();
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 9))
+            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-                ufunc->mutable_cluster()->set_cluster(cluster.value());
+                setClusterClause(rg, cluster, ufunc->mutable_cluster());
             }
             else
             {
@@ -473,10 +473,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     {
         /// If the table is set on cluster, always insert to all replicas/shards
         ClusterFunc * cdf = tfunc->mutable_cluster();
-        const std::optional<String> & cluster = t.getCluster();
 
         cdf->set_all_replicas(this->allow_not_deterministic && rg.nextBool());
-        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+        setClusterClause(rg, t.getCluster(), cdf->mutable_cluster());
         t.setName(cdf->mutable_tof()->mutable_est(), true);
         if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
         {
@@ -1078,10 +1077,10 @@ bool StatementGenerator::joinedTableOrFunction(
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
-        if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
+        if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-            ufunc->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
+            setClusterClause(rg, cluster, ufunc->mutable_cluster());
         }
         else
         {

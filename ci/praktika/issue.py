@@ -248,13 +248,17 @@ class Issue:
         test_name = self.test_name
 
         # Normalize pytest parameterized names
-        if ".py" in name_in_report:
+        if ".py" in name_in_report and ".py" in test_name:
             if "[" in test_name:
                 # Issue mentions a specific parametrization: keep full name for exact match
                 pass
             elif "[" in name_in_report:
                 # Issue mentions only the base test: compare against the base part
                 name_in_report = name_in_report.split("[")[0]
+
+            if "::" not in test_name:
+                # Issue mentions only the module path without function: extract module path from report test name
+                name_in_report = name_in_report.split("::")[0]
 
         # Check if test name matches
         if not name_in_report.endswith(test_name):
