@@ -10,7 +10,7 @@ SETTINGS index_granularity = 1;
 INSERT INTO tab
 SELECT number
 FROM numbers(100);
-SET use_primary_key_indexes = 0;
+SET use_primary_key = 0;
 SELECT count() FROM tab WHERE id = 5;
 1
 EXPLAIN indexes = 1
@@ -26,7 +26,7 @@ Expression ((Project names + Projection))
             Parts: 1/1
             Granules: 100/100
           Ranges: 1
-SET use_primary_key_indexes = 1;
+SET use_primary_key = 1;
 SELECT count() FROM tab WHERE id = 5;
 1
 EXPLAIN indexes = 1

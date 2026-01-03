@@ -52,7 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
             {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
-            {"use_primary_key_indexes", true, true, "New setting to control usage of primary key indexes for MergeTree tables."},
+            {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

@@ -894,7 +894,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    /// Skip any analysis. Toggled by the `use_primary_key_indexes` setting. This is useful for catching bugs
+    /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
     /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
     /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
     /// unexpected exceptions.
