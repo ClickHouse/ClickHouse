@@ -1007,6 +1007,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
+            {"add_minmax_index_for_time_columns", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
