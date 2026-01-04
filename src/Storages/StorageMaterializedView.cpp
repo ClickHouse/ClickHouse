@@ -539,7 +539,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     return refresh_context;
 }
 
-std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
+std::tuple<std::shared_ptr<ASTInsertQuery>, CurrentThread::QueryScope>
 StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto inner_table_id = getTargetTableId();
@@ -550,7 +550,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
 
     if (!append)
     {
-        CurrentThread::QueryScope query_scope(refresh_context);
+       auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
         auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
         String db_name = db->getDatabaseName();
@@ -579,7 +579,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     }
 
     // Create a thread group for the query.
-    auto query_scope = std::make_unique<CurrentThread::QueryScope>(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto insert_query = std::make_shared<ASTInsertQuery>();
     insert_query->select = select_query;
@@ -613,7 +613,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
     bool exchange = DatabaseCatalog::instance().isTableExist(stale_table_id, refresh_context);
 
-    CurrentThread::QueryScope query_scope(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto rename_query = std::make_shared<ASTRenameQuery>();
     rename_query->exchange = exchange;
@@ -626,7 +626,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
-    CurrentThread::QueryScope query_scope(refresh_context);
+    auto query_scope = CurrentThread::QueryScope::create(refresh_context);
 
     auto drop_query = std::make_shared<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);

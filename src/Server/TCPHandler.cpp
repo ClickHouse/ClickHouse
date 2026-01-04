@@ -561,11 +561,13 @@ void TCPHandler::runImpl()
             thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
             thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
-            query_scope.emplace(query_state->query_context, /* fatal_error_callback */ [this, &query_state]
-            {
-                std::lock_guard lock(callback_mutex);
-                sendLogs(*query_state);
-            });
+            query_scope = CurrentThread::QueryScope::create(
+                query_state->query_context,
+                /* fatal_error_callback */ [this, &query_state]
+                {
+                    std::lock_guard lock(callback_mutex);
+                    sendLogs(*query_state);
+                });
 
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.

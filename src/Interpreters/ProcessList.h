@@ -233,6 +233,11 @@ public:
         return &thread_group->memory_tracker;
     }
 
+    bool hasThreadGroup() const
+    {
+        return bool(thread_group);
+    }
+
     bool updateProgressIn(const Progress & value)
     {
         CurrentThread::updateProgressIn(value);

@@ -960,7 +960,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope.emplace(client_context);
+    query_scope = CurrentThread::QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.

@@ -108,12 +108,22 @@ public:
     static ThrottlerPtr getWriteThrottler();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
-    struct QueryScope : private boost::noncopyable
+    class QueryScope
     {
-        explicit QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        explicit QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
+    private:
+        explicit QueryScope(bool inited_);
+    public:
+        QueryScope() = default;
+        QueryScope(QueryScope && other);
+        QueryScope & operator=(QueryScope && other);
+
+        static QueryScope create(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
+        static QueryScope create(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
+        static QueryScope createFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent);
+
         ~QueryScope();
 
+        bool intited = false;
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
     };

@@ -1490,11 +1490,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            CurrentThread::QueryScope query_scope;
             if (!CurrentThread::getGroup())
-            {
-                query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
-            }
+                query_scope = CurrentThread::QueryScope::create(query_context);
+
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
 
@@ -1507,11 +1506,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("cloud_mode", false);
         query_context->setCurrentQueryId({});
         {
-            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            CurrentThread::QueryScope query_scope;
             if (!CurrentThread::getGroup())
-            {
-                query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
-            }
+                query_scope = CurrentThread::QueryScope::create(query_context);
+
             executeQuery(query, query_context, QueryFlags{.internal = true});
         }
     }

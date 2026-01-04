@@ -37,6 +37,10 @@ namespace ProfileEvents
     extern const Event SelfDuplicatedAsyncInserts;
     extern const Event DuplicatedAsyncInserts;
     extern const Event DuplicationElapsedMicroseconds;
+
+    extern const Event QuorumParts;
+    extern const Event QuorumWaitMicroseconds;
+    extern const Event QuorumFailedInserts;
 }
 
 namespace DB
@@ -80,7 +84,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -158,9 +161,6 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
 {
     if (!isQuorumEnabled())
         return 0;
-
-    if (is_async_insert)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quorum is not supported for async inserts");
 
     size_t replicas_number = 0;
 
@@ -424,10 +424,19 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjecti
 
             auto conflicts = commitPart(zookeeper, partition.temp_part->part, block_ids, delayed_chunk->replicas_num);
 
+            if (isQuorumEnabled())
+            {
+                if (conflicts.empty())
+                    parts_to_wait_for_quorum.insert(partition.temp_part->part->name);
+                else
+                {
+                    for (const auto & [_, part_name] : conflicts)
+                        parts_to_wait_for_quorum.insert(part_name);
+                }
+            }
+
             if (conflicts.empty())
             {
-                resolveQuorum(zookeeper, delayed_chunk->replicas_num, {partition.temp_part->part->name});
-
                 partition.temp_part->prewarmCaches();
 
                 profile_events_scope.reset();
@@ -494,13 +503,6 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjecti
                         block,
                         exists_locally ? "already exists locally" : "already exists on other replicas",
                         actual_part_name);
-                }
-
-                {
-                    std::vector<std::string> actual_part_names;
-                    for (const auto & [_, part_name] : conflicts)
-                        actual_part_names.push_back(part_name);
-                    resolveQuorum(zookeeper, delayed_chunk->replicas_num, actual_part_names);
                 }
 
                 profile_events_scope.reset();
@@ -677,14 +679,6 @@ std::map<std::string, std::string> ReplicatedMergeTreeSink::commitPart(
 
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {
-        if (is_async_insert)
-        {
-            /// For now we do not resolve conflicts for async inserts.
-            for (const auto & path : retry_context.conflict_block_ids)
-                retry_context.conflict_block_id_to_part_name[path] = "";
-            return CommitRetryContext::FILTER_CONFLICTS_AND_RETRY;
-        }
-
         /// This block was already written to some replica. Get the part name for it.
         /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
 
@@ -1153,6 +1147,13 @@ void ReplicatedMergeTreeSink::onFinish()
         log);
 
     finishDelayedChunk(zookeeper);
+
+    if (isQuorumEnabled())
+    {
+        size_t replicas_num = checkQuorumPrecondition(zookeeper);
+        for (const auto & part : parts_to_wait_for_quorum)
+            resolveQuorum(zookeeper, replicas_num, part);
+    }
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(
@@ -1164,7 +1165,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
-    LOG_TRACE(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
+    LOG_DEBUG(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
 
     fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0, { zookeeper->forceFailureBeforeOperation(); });
 
@@ -1234,19 +1235,17 @@ bool ReplicatedMergeTreeSink::isQuorumEnabled() const
     return !required_quorum_size.has_value() || required_quorum_size.value() > 1;
 }
 
-void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, size_t replicas_num, std::vector<std::string> parts_to_wait)
+void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, size_t replicas_num, std::string actual_part_name)
 {
-    if (parts_to_wait.empty())
+    if (actual_part_name.empty())
         return;
 
     if (!isQuorumEnabled())
         return;
 
-    /// it is not implemented to wait for quorum for async inserts
-    if (is_async_insert)
-        return;
+    ProfileEvents::increment(ProfileEvents::QuorumParts);
+    ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::QuorumWaitMicroseconds);
 
-    auto actual_part_name = parts_to_wait.front();
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
     if (quorum_parallel)
         quorum_info.status_path = storage.zookeeper_path + "/quorum/parallel/" + actual_part_name;
@@ -1264,6 +1263,7 @@ void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr
 
     quorum_retries_ctl.actionAfterLastFailedRetry([&]
     {
+        ProfileEvents::increment(ProfileEvents::QuorumFailedInserts);
         /// We do not know whether or not data has been inserted in other replicas
         quorum_retries_ctl.setUserError(
             Exception(

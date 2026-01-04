@@ -136,7 +136,7 @@ protected:
     size_t getQuorumSize(size_t replicas_num) const;
     bool isQuorumEnabled() const;
     String quorumLogMessage(size_t replicas_num) const; /// Used in logs for debug purposes
-    void resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, size_t replicas_num, std::vector<std::string> parts_to_wait);
+    void resolveQuorum(const ZooKeeperWithFaultInjectionPtr & zookeeper, size_t replicas_num, std::string actual_part_name);
 
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
@@ -148,6 +148,8 @@ protected:
     bool quorum_parallel = false;
     bool deduplicate = true;
     UInt64 num_blocks_processed = 0;
+
+    std::set<std::string> parts_to_wait_for_quorum;
 
     LoggerPtr log;
 

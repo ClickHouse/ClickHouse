@@ -1,11 +1,11 @@
 #include <future>
-#include <unordered_set>
 #include <vector>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
+#include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -343,7 +343,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 }
 
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
-    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
+    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group)
 {
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
@@ -356,8 +356,15 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     try
     {
         pool.scheduleOrThrowOnError(
-            [this, key, global_context, shard_num, my_data = data_shared]() mutable
-            { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
+            [this, key, global_context, current_query_thread_group, shard_num, my_data = data_shared]() mutable
+            {
+                processData(
+                    key,
+                    std::move(*my_data),
+                    std::move(global_context),
+                    std::move(current_query_thread_group),
+                    flush_time_history_per_queue_shard[shard_num]);
+            },
             priority);
     }
     catch (...)
@@ -740,7 +747,7 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
                 // that call is blocking when pool is full
                 // and we are under flush_mutex lock so other flushes are blocked too
                 // but other pending inserts are not blocked and can be processed concurrently
-                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+                scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i, CurrentThread::getGroup());
             }
         }
 
@@ -915,7 +922,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 }
 
 void AsynchronousInsertQueue::processData(
-    InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
+    InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
 try
 {
     if (!data)
@@ -928,7 +935,6 @@ try
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
-    auto insert_context = Context::createCopy(global_context);
     bool internal = true;
     bool async_insert = true;
 
@@ -941,6 +947,7 @@ try
     /// We want the remote part to decide if the insert will be async or not.
     key.settings->setDefaultValue("async_insert");
 
+    auto insert_context = Context::createCopy(global_context);
     insert_context->makeQueryContext();
 
     /// Access rights must be checked for the user who executed the initial INSERT query.
@@ -953,7 +960,7 @@ try
     insert_context->setSettings(*key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
-    insert_context->setCurrentQueryId("");
+    insert_context->setCurrentQueryId(""); // "" means generate a new query id
 
     auto insert_query_id = insert_context->getCurrentQueryId();
     auto query_start_time = std::chrono::system_clock::now();
@@ -964,7 +971,22 @@ try
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
 
-    DB::CurrentThread::QueryScope query_scope_holder(insert_context);
+    DB::CurrentThread::QueryScope query_scope;
+    if (current_query_thread_group)
+    {
+        /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE,
+        /// it is important to account profile events and other things correctly
+        query_scope = CurrentThread::QueryScope::createFlushAsyncInsert(insert_context, current_query_thread_group);
+
+        /// This log line is useful to understand if async insert is flushed in the context of some query and which one
+        if (auto query_context = current_query_thread_group->query_context.lock())
+            LOG_DEBUG(
+                getLogger("AsynchronousInsertQueue"),
+                "Processing async insert as a part of a query with query_id: {}",
+                query_context->getCurrentQueryId());
+    }
+    else
+        query_scope = CurrentThread::QueryScope::create(insert_context);
 
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
@@ -1117,6 +1139,7 @@ try
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
         queue_shard_flush_time_history.updateWithCurrentTime();
 
+        LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
         logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
     };
 
