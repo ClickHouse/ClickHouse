@@ -61,7 +61,8 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false);
+        bool single_point_ = false,
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key` setting. Useful for testing.
 
     struct BloomFilterData
     {
