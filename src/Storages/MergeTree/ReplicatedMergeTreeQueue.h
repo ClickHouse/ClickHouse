@@ -450,9 +450,15 @@ public:
         MutationsByPartititon mutations_by_partition;
 
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_);
+        MutationsSnapshot(
+          Params params_,
+          MutationCounters counters_,
+          MutationsByPartititon mutations_by_partition_,
+          DataPartsVector patches_,
+          std::vector<ASTPtr> ttl_asts_);
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        MutationCommands getOnFlyMutationCommandsForTTL(const ContextPtr & query_context) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
     };
