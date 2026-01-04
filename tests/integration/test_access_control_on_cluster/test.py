@@ -59,9 +59,9 @@ def test_access_control_on_cluster():
     ch2.query_with_retry(
         "GRANT ON CLUSTER 'cluster' SELECT ON *.* TO Alex", retry_count=3
     )
-    assert ch1.query("SHOW GRANTS FOR Alex") == "GRANT SELECT ON *.* TO Alex\n"
-    assert ch2.query("SHOW GRANTS FOR Alex") == "GRANT SELECT ON *.* TO Alex\n"
-    assert ch3.query("SHOW GRANTS FOR Alex") == "GRANT SELECT ON *.* TO Alex\n"
+    assert ch1.query("SHOW GRANTS FOR Alex") == "GRANT SELECT ON *.* TO Alex;\n"
+    assert ch2.query("SHOW GRANTS FOR Alex") == "GRANT SELECT ON *.* TO Alex;\n"
+    assert ch3.query("SHOW GRANTS FOR Alex") == "GRANT SELECT ON *.* TO Alex;\n"
 
     ch3.query_with_retry(
         "REVOKE ON CLUSTER 'cluster' SELECT ON *.* FROM Alex", retry_count=3
@@ -80,8 +80,8 @@ def test_grant_all_on_cluster():
     ch1.query("CREATE USER IF NOT EXISTS Alex ON CLUSTER 'cluster'")
     ch1.query("GRANT ALL ON *.* TO Alex ON CLUSTER 'cluster'")
 
-    assert ch1.query("SHOW GRANTS FOR Alex") == "GRANT ALL ON *.* TO Alex\n"
-    assert ch2.query("SHOW GRANTS FOR Alex") == "GRANT ALL ON *.* TO Alex\n"
+    assert ch1.query("SHOW GRANTS FOR Alex") == "GRANT ALL ON *.* TO Alex;\n"
+    assert ch2.query("SHOW GRANTS FOR Alex") == "GRANT ALL ON *.* TO Alex;\n"
 
     ch1.query("DROP USER Alex ON CLUSTER 'cluster'")
 

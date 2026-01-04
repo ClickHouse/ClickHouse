@@ -80,5 +80,5 @@ EOF""",
 
     assert (
         instance.query(f"SHOW GRANTS FOR `{user_id}`")
-        == f"GRANT SELECT ON mydb.* TO `{user_id}`\n"
+        == f"GRANT SELECT ON mydb.* TO `{user_id};`\n"
     )

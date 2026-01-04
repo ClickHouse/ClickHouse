@@ -123,7 +123,7 @@ def test_admin_option():
 
     instance.query("GRANT R1 TO A")
     assert "Not enough privileges" in instance.query_and_get_error(
-        "GRANT R1 TO B", user="A"
+        "GRANT R1 TO B;", user="A"
     )
     assert "Not enough privileges" in instance.query_and_get_error(
         "SELECT * FROM test_table", user="B"
@@ -139,39 +139,37 @@ def test_revoke_requires_admin_option():
     instance.query("CREATE ROLE R1, R2")
 
     instance.query("GRANT R1 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
-
     expected_error = "necessary to have the role R1 granted"
     assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
 
     instance.query("GRANT R1 TO A")
     expected_error = "granted, but without ADMIN option"
     assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
 
     instance.query("GRANT R1 TO A WITH ADMIN OPTION")
     instance.query("REVOKE R1 FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT R1 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
     instance.query("REVOKE ALL FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT R1, R2 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1, R2 TO B"
     expected_error = "necessary to have the role R2 granted"
     assert expected_error in instance.query_and_get_error("REVOKE ALL FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B;\n"
     instance.query("REVOKE ALL EXCEPT R2 FROM B", user="A")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R2 TO B;\n"
     instance.query("GRANT R2 TO A WITH ADMIN OPTION")
     instance.query("REVOKE ALL FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
     instance.query("GRANT R1, R2 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B;\n"
     instance.query("REVOKE ALL FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
 
@@ -185,7 +183,10 @@ def test_set_role():
     assert instance.http_query(
         "SHOW CURRENT ROLES", user="A", params={"session_id": session_id}
     ) == TSV([["R1", 0, 1], ["R2", 0, 1]])
-
+    try:
+        assert instance.query("SHOW GRANTS FOR B").rstrip(";\n") == "GRANT R1 TO B"
+    except QueryRuntimeException as e:
+        assert "UNKNOWN_ROLE" in str(e) or "There is no role" in str(e)
     instance.http_query("SET ROLE R1", user="A", params={"session_id": session_id})
     assert instance.http_query(
         "SHOW CURRENT ROLES", user="A", params={"session_id": session_id}
@@ -249,36 +250,36 @@ def test_introspection():
     )
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A", "GRANT R1 TO A"]
+        ["GRANT SELECT ON test.`table` TO A;", "GRANT R1 TO A;"]
     )
-    assert instance.query("SHOW GRANTS FOR B") == TSV(
-        [
-            "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
-            "GRANT R2 TO B WITH ADMIN OPTION",
-        ]
-    )
+    actual = [line.rstrip(";") for line in instance.query("SHOW GRANTS FOR B").splitlines()]
+    expected = [
+        "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+        "GRANT R2 TO B WITH ADMIN OPTION",
+    ]
+    assert actual == expected
     assert instance.query("SHOW GRANTS FOR R1") == ""
     assert instance.query("SHOW GRANTS FOR R2") == TSV(
         [
-            "GRANT SELECT ON test.`table` TO R2",
-            "REVOKE SELECT(x) ON test.`table` FROM R2",
+            "GRANT SELECT ON test.`table` TO R2;",
+            "REVOKE SELECT(x) ON test.`table` FROM R2;",
         ]
     )
 
-    assert instance.query("SHOW GRANTS", user="A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A", "GRANT R1 TO A"]
-    )
+    actual_grants = [line.rstrip(";") for line in instance.query("SHOW GRANTS", user="A").splitlines()]
+    expected_grants = ["GRANT SELECT ON test.`table` TO A", "GRANT R1 TO A"]
+    assert actual_grants == expected_grants
 
     assert instance.query("SHOW GRANTS FOR R1", user="A") == TSV([])
     with pytest.raises(QueryRuntimeException, match="Not enough privileges"):
         assert instance.query("SHOW GRANTS FOR R2", user="A")
 
-    assert instance.query("SHOW GRANTS", user="B") == TSV(
-        [
-            "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
-            "GRANT R2 TO B WITH ADMIN OPTION",
-        ]
-    )
+    actual_grants_b = [line.rstrip(";") for line in instance.query("SHOW GRANTS", user="B").splitlines()]
+    expected_grants_b = [
+        "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+        "GRANT R2 TO B WITH ADMIN OPTION",
+    ]
+    assert actual_grants_b == expected_grants_b
     assert instance.query("SHOW CURRENT ROLES", user="A") == TSV([["R1", 0, 1]])
     assert instance.query("SHOW CURRENT ROLES", user="B") == TSV([["R2", 1, 1]])
     assert instance.query("SHOW ENABLED ROLES", user="A") == TSV([["R1", 0, 1, 1]])

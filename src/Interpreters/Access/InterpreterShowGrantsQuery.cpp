@@ -156,7 +156,10 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
     MutableColumnPtr column = ColumnString::create();
     for (const auto & grant_query : grant_queries)
     {
-        column->insert(grant_query->formatWithSecretsOneLine());
+        String formatted = grant_query->formatWithSecretsOneLine();
+        if (!formatted.ends_with(';'))
+            formatted.push_back(';');
+        column->insert(formatted);
     }
 
     /// Prepare description of the result column.

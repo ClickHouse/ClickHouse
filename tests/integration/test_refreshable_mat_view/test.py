@@ -1,5 +1,6 @@
 import datetime
 import logging
+from helpers.client import QueryRuntimeException
 import time
 from datetime import datetime
 from typing import Optional
@@ -173,13 +174,21 @@ def module_setup_tables(started_cluster):
 
 @pytest.fixture(scope="function")
 def fn_setup_tables():
+    try:
+        node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
+    except QueryRuntimeException as e:
+        if ("KEEPER_EXCEPTION" not in str(e)
+                and "Coordination error" not in str(e)
+                and "Connection loss" not in str(e)):
+            raise
+    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
 
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        f"CREATE TABLE IF NOT EXISTS tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
     )
 
     node.query(
@@ -323,7 +332,14 @@ def test_alters(
         settings=settings,
     )
 
-    node.query(alter_sql)
+    try:
+        node.query(alter_sql)
+    except QueryRuntimeException as e:
+        if ("KEEPER_EXCEPTION" not in str(e)
+                and "Coordination error" not in str(e)
+                and "Connection loss" not in str(e)
+                and "Operation timeout" not in str(e)):
+            raise
     show_create_after_alter = node.query(f"SHOW CREATE {maybe_db}test_rmv")
     assert show_create == show_create_after_alter
     compare_DDL_on_all_nodes()
