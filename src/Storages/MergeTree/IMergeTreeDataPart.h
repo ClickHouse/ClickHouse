@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -373,6 +374,42 @@ public:
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
     MinMaxIndexPtr minmax_idx;
+
+    /// Container for part-level skip index aggregations.
+    /// Enables early part pruning before reading granule-level index files.
+    struct SkipIndexPartAggregations
+    {
+        std::map<String, MergeTreeIndexPartAggregatePtr> aggregates;
+        bool initialized = false;
+
+        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+
+        void load(
+            const IMergeTreeDataPart & part,
+            const MergeTreeIndices & indices,
+            bool settings_enabled);
+
+        [[nodiscard]] WrittenFiles store(
+            IDataPartStorage & part_storage,
+            Checksums & checksums,
+            const MergeTreeIndices & indices) const;
+
+        void merge(const SkipIndexPartAggregations & other);
+
+        void computeFromGranules(
+            const IMergeTreeDataPart & part,
+            const MergeTreeIndices & indices);
+
+        bool hasIndex(const String & index_name) const;
+
+        MergeTreeIndexPartAggregatePtr getAggregate(const String & index_name) const;
+
+        size_t memoryUsageBytes() const;
+    };
+
+    using SkipIndexPartAggregationsPtr = std::shared_ptr<SkipIndexPartAggregations>;
+
+    SkipIndexPartAggregationsPtr skip_index_part_aggs;
 
     Checksums checksums;
 

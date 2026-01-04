@@ -144,6 +144,8 @@ private:
         size_t num_initial_selected_granules = 0;
         size_t num_parts_after_minmax = 0;
         size_t num_granules_after_minmax = 0;
+        size_t num_parts_after_skip_index_part_agg = 0;
+        size_t num_granules_after_skip_index_part_agg = 0;
         size_t num_parts_after_partition_pruner = 0;
         size_t num_granules_after_partition_pruner = 0;
     };
@@ -158,7 +160,9 @@ private:
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters,
-        QueryStatusPtr query_status);
+        QueryStatusPtr query_status,
+        const UsefulSkipIndexes & skip_indexes = {},
+        bool is_final = false);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     static RangesInDataParts selectPartsToReadWithUUIDFilter(
@@ -171,7 +175,9 @@ private:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
-        LoggerPtr log);
+        LoggerPtr log,
+        const UsefulSkipIndexes & skip_indexes = {},
+        bool is_final = false);
 
 public:
     /// For given number rows and bytes, get the number of marks to read.
@@ -204,7 +210,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Filter parts using minmax index and partition key.
+    /// Filter parts using minmax index, partition key and skip index part-level aggregation.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
@@ -215,7 +221,9 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats);
+        ReadFromMergeTree::IndexStats & index_stats,
+        const UsefulSkipIndexes & skip_indexes = {},
+        bool is_final = false);
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.

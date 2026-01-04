@@ -2122,7 +2122,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             context_,
             max_block_numbers_to_read.get(),
             log,
-            result.index_stats);
+            result.index_stats,
+            indexes->skip_indexes,
+            query_info_.isFinal());
 
         result.sampling = MergeTreeDataSelectExecutor::getSampling(
             query_info_,
@@ -3215,6 +3217,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "None";
         case ReadFromMergeTree::IndexType::MinMax:
             return "MinMax";
+        case ReadFromMergeTree::IndexType::SkipIndexPartAgg:
+            return "SkipIndexPartAgg";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
         case ReadFromMergeTree::IndexType::PrimaryKey:

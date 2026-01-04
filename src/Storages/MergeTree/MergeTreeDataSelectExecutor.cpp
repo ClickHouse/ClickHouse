@@ -569,7 +569,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    const UsefulSkipIndexes & skip_indexes,
+    bool is_final)
 {
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
@@ -605,7 +607,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             max_block_numbers_to_read,
             query_context,
             part_filter_counters,
-            log);
+            log,
+            skip_indexes,
+            is_final);
     else
         res = selectPartsToRead(
             parts,
@@ -615,7 +619,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             partition_pruner,
             max_block_numbers_to_read,
             part_filter_counters,
-            query_status);
+            query_status,
+            skip_indexes,
+            is_final);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
@@ -632,6 +638,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
             .num_granules_after = part_filter_counters.num_granules_after_minmax});
         LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
+    }
+
+    /// Add SkipIndexPartAgg stats only if there was actual filtering
+    /// Compare with num_parts_after_minmax since skip_index_part_agg runs after minmax
+    if (part_filter_counters.num_parts_after_skip_index_part_agg < part_filter_counters.num_parts_after_minmax)
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::SkipIndexPartAgg,
+            .description = "Skip index part-level aggregation",
+            .num_parts_after = part_filter_counters.num_parts_after_skip_index_part_agg,
+            .num_granules_after = part_filter_counters.num_granules_after_skip_index_part_agg});
     }
 
     if (partition_pruner)
@@ -2217,6 +2234,32 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     return res;
 }
 
+static bool shouldPruneBySkipIndexPartAgg(
+    const IMergeTreeDataPart * part,
+    const UsefulSkipIndexes & skip_indexes,
+    bool is_final)
+{
+    /// Cannot prune parts in FINAL queries - all parts with overlapping keys must be read
+    if (is_final)
+        return false;
+
+    if (!part->skip_index_part_aggs || !part->skip_index_part_aggs->initialized)
+        return false;
+
+    for (const auto & index_with_condition : skip_indexes.useful_indices)
+    {
+        const auto & index_name = index_with_condition.index->index.name;
+        if (part->skip_index_part_aggs->hasIndex(index_name))
+        {
+            auto part_agg = part->skip_index_part_aggs->getAggregate(index_name);
+            if (part_agg && !index_with_condition.condition->mayBeTrueOnPartAggregate(part_agg))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -2225,7 +2268,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters,
-    QueryStatusPtr query_status)
+    QueryStatusPtr query_status,
+    const UsefulSkipIndexes & skip_indexes,
+    bool is_final)
 {
     RangesInDataParts res_parts;
 
@@ -2262,6 +2307,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_minmax += 1;
         counters.num_granules_after_minmax += num_granules;
 
+        if (shouldPruneBySkipIndexPartAgg(part, skip_indexes, is_final))
+            continue;
+
+        counters.num_parts_after_skip_index_part_agg += 1;
+        counters.num_granules_after_skip_index_part_agg += num_granules;
+
         if (partition_pruner)
         {
             if (partition_pruner->canBePruned(*part))
@@ -2286,7 +2337,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,
-    LoggerPtr log)
+    LoggerPtr log,
+    const UsefulSkipIndexes & skip_indexes,
+    bool is_final)
 {
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
@@ -2328,6 +2381,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
             counters.num_parts_after_minmax += 1;
             counters.num_granules_after_minmax += num_granules;
+
+            if (shouldPruneBySkipIndexPartAgg(part, skip_indexes, is_final))
+                continue;
+
+            counters.num_parts_after_skip_index_part_agg += 1;
+            counters.num_granules_after_skip_index_part_agg += num_granules;
 
             if (partition_pruner)
             {

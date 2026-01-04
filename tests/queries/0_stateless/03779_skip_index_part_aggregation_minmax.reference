@@ -1,0 +1,154 @@
+--Basic part count
+3
+--Skip all parts
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 0/3
+Granules: 0/75
+PrimaryKey
+Condition: true
+Parts: 0/0
+Granules: 0/0
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 0/0
+Granules: 0/0
+Ranges: 0
+0
+--Match one part
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 1/3
+Granules: 25/75
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 4/25
+Ranges: 1
+11
+--Read all parts
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 3/3
+Granules: 75/75
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 3/3
+Granules: 75/75
+Ranges: 3
+300
+--Nullable - Skip all parts
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 1/3
+Granules: 25/75
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 25/25
+Skip
+Name: idx_value_nullable
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 20/25
+Ranges: 3
+0
+--Nullable - Match one part
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 2/3
+Granules: 50/75
+PrimaryKey
+Condition: true
+Parts: 2/2
+Granules: 50/50
+Skip
+Name: idx_value_nullable
+Description: minmax GRANULARITY 2
+Parts: 2/2
+Granules: 24/50
+Ranges: 4
+11
+--Parts after merge
+1
+--Skip merged part
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 0/1
+Granules: 0/75
+PrimaryKey
+Condition: true
+Parts: 0/0
+Granules: 0/0
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 0/0
+Granules: 0/0
+Ranges: 0
+0
+--Use merged part
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 75/75
+Skip
+Name: idx_value
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 26/75
+Ranges: 1
+101
+--After MATERIALIZE - Skip part
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+SkipIndexPartAgg
+Description: Skip index part-level aggregation
+Parts: 0/1
+Granules: 0/75
+PrimaryKey
+Condition: true
+Parts: 0/0
+Granules: 0/0
+Skip
+Name: idx_extra
+Description: minmax GRANULARITY 2
+Parts: 0/0
+Granules: 0/0
+Ranges: 0
+0
+--After MATERIALIZE - Match range
+ReadFromMergeTree (default.test_skip_idx_part_agg)
+Indexes:
+PrimaryKey
+Condition: true
+Parts: 1/1
+Granules: 75/75
+Skip
+Name: idx_extra
+Description: minmax GRANULARITY 2
+Parts: 1/1
+Granules: 6/75
+Ranges: 1
+11

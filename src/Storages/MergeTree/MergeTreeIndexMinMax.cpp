@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -16,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 
@@ -202,6 +204,18 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
+bool MergeTreeIndexConditionMinMax::mayBeTrueOnPartAggregate(const MergeTreeIndexPartAggregatePtr & part_aggregate) const
+{
+    if (!part_aggregate || !part_aggregate->initialized())
+        return true;
+
+    const auto * minmax_agg = dynamic_cast<const MergeTreeIndexPartAggregateMinMax *>(part_aggregate.get());
+    if (!minmax_agg)
+        return true;
+
+    return condition.checkInHyperrectangle(minmax_agg->hyperrectangle, index_data_types, {}, {}).can_be_true;
+}
+
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
@@ -329,6 +343,129 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     for (auto & part_ranges : result)
         std::sort(part_ranges.begin(), part_ranges.end());
 }
+
+
+MergeTreeIndexPartAggregateMinMax::MergeTreeIndexPartAggregateMinMax(const Block & index_sample_block_)
+    : index_sample_block(index_sample_block_)
+{
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
+    {
+        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        serializations.push_back(type->getDefaultSerialization());
+    }
+}
+
+void MergeTreeIndexPartAggregateMinMax::serializeBinary(WriteBuffer & ostr) const
+{
+    if (!is_initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write uninitialized part aggregate");
+
+    writeBinaryLittleEndian(static_cast<UInt8>(1), ostr);
+
+    writeVarUInt(hyperrectangle.size(), ostr);
+
+    for (size_t i = 0; i < hyperrectangle.size(); ++i)
+    {
+        serializations[i]->serializeBinary(hyperrectangle[i].left, ostr, format_settings);
+        serializations[i]->serializeBinary(hyperrectangle[i].right, ostr, format_settings);
+    }
+}
+
+void MergeTreeIndexPartAggregateMinMax::deserializeBinary(ReadBuffer & istr)
+{
+    UInt8 version;
+    readBinaryLittleEndian(version, istr);
+    if (version != 1)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown minmax part aggregate version: {}", static_cast<int>(version));
+
+    size_t num_columns;
+    readVarUInt(num_columns, istr);
+
+    hyperrectangle.clear();
+    hyperrectangle.reserve(num_columns);
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        Field min_val;
+        Field max_val;
+        serializations[i]->deserializeBinary(min_val, istr, format_settings);
+        serializations[i]->deserializeBinary(max_val, istr, format_settings);
+
+        if (min_val.isNull())
+            min_val = POSITIVE_INFINITY;
+        if (max_val.isNull())
+            max_val = POSITIVE_INFINITY;
+
+        hyperrectangle.emplace_back(min_val, true, max_val, true);
+    }
+    is_initialized = true;
+}
+
+void MergeTreeIndexPartAggregateMinMax::merge(const IMergeTreeIndexPartAggregate & other)
+{
+    const auto & other_minmax = dynamic_cast<const MergeTreeIndexPartAggregateMinMax &>(other);
+    if (!other_minmax.is_initialized)
+        return;
+
+    if (!is_initialized)
+    {
+        hyperrectangle = other_minmax.hyperrectangle;
+        is_initialized = true;
+    }
+    else
+    {
+        for (size_t i = 0; i < hyperrectangle.size(); ++i)
+        {
+            hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, other_minmax.hyperrectangle[i].left)
+                ? hyperrectangle[i].left
+                : other_minmax.hyperrectangle[i].left;
+            hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, other_minmax.hyperrectangle[i].right)
+                ? other_minmax.hyperrectangle[i].right
+                : hyperrectangle[i].right;
+        }
+    }
+}
+
+void MergeTreeIndexPartAggregateMinMax::update(const MergeTreeIndexGranulePtr & granule)
+{
+    const auto & minmax_granule = dynamic_cast<const MergeTreeIndexGranuleMinMax &>(*granule);
+    if (minmax_granule.empty())
+        return;
+
+    if (!is_initialized)
+    {
+        hyperrectangle = minmax_granule.hyperrectangle;
+        is_initialized = true;
+    }
+    else
+    {
+        for (size_t i = 0; i < hyperrectangle.size(); ++i)
+        {
+            hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, minmax_granule.hyperrectangle[i].left)
+                ? hyperrectangle[i].left
+                : minmax_granule.hyperrectangle[i].left;
+            hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, minmax_granule.hyperrectangle[i].right)
+                ? minmax_granule.hyperrectangle[i].right
+                : hyperrectangle[i].right;
+        }
+    }
+}
+
+size_t MergeTreeIndexPartAggregateMinMax::memoryUsageBytes() const
+{
+    return sizeof(*this) + hyperrectangle.capacity() * sizeof(Range);
+}
+
+MergeTreeIndexPartAggregatePtr MergeTreeIndexMinMax::createPartAggregate() const
+{
+    return std::make_shared<MergeTreeIndexPartAggregateMinMax>(index.sample_block);
+}
+
+const Block & MergeTreeIndexMinMax::getSampleBlock() const
+{
+    return index.sample_block;
+}
+
 
 MergeTreeIndexPtr minmaxIndexCreator(
     const IndexDescription & index)

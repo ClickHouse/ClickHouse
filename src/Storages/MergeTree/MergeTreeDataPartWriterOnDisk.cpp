@@ -24,6 +24,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsBool allow_experimental_skip_index_part_aggregation;
 }
 
 namespace ErrorCodes
@@ -245,6 +246,22 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
+    /// Initialize part-level aggregations if the setting is enabled
+    bool aggregate_enabled = (*storage_settings)[MergeTreeSetting::allow_experimental_skip_index_part_aggregation];
+    if (aggregate_enabled && !skip_index_part_aggregations)
+    {
+        skip_index_part_aggregations = std::make_shared<IMergeTreeDataPart::SkipIndexPartAggregations>();
+        for (const auto & skip_index : skip_indices)
+        {
+            if (skip_index->supportsPartLevelAggregation())
+            {
+                auto aggregate = skip_index->createPartAggregate();
+                if (aggregate)
+                    skip_index_part_aggregations->aggregates[skip_index->index.name] = std::move(aggregate);
+            }
+        }
+    }
+
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -256,6 +273,15 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
                 auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
+
+                /// Update part-level aggregation before serializing granule
+                if (skip_index_part_aggregations)
+                {
+                    auto it = skip_index_part_aggregations->aggregates.find(index_helper->index.name);
+                    if (it != skip_index_part_aggregations->aggregates.end() && it->second)
+                        it->second->update(index_granule);
+                }
+
                 index_granule->serializeBinaryWithMultipleStreams(index_streams);
                 skip_index_accumulated_marks[i] = 0;
             }
@@ -353,15 +379,44 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
 
 void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
+    /// Initialize part-level aggregations if the setting is enabled
+    bool aggregate_enabled = (*storage_settings)[MergeTreeSetting::allow_experimental_skip_index_part_aggregation];
+    if (aggregate_enabled && !skip_index_part_aggregations)
+    {
+        skip_index_part_aggregations = std::make_shared<IMergeTreeDataPart::SkipIndexPartAggregations>();
+        for (const auto & skip_index : skip_indices)
+        {
+            if (skip_index->supportsPartLevelAggregation())
+            {
+                auto aggregate = skip_index->createPartAggregate();
+                if (aggregate)
+                    skip_index_part_aggregations->aggregates[skip_index->index.name] = std::move(aggregate);
+            }
+        }
+    }
+
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
         if (!skip_indices_aggregators[i]->empty())
         {
             auto & index_streams = skip_indices_streams[i];
             auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
+
+            /// Update part-level aggregation before serializing granule
+            if (skip_index_part_aggregations)
+            {
+                auto it = skip_index_part_aggregations->aggregates.find(skip_indices[i]->index.name);
+                if (it != skip_index_part_aggregations->aggregates.end() && it->second)
+                    it->second->update(index_granule);
+            }
+
             index_granule->serializeBinaryWithMultipleStreams(index_streams);
         }
     }
+
+    /// Mark aggregations as initialized if we have any
+    if (skip_index_part_aggregations && !skip_index_part_aggregations->aggregates.empty())
+        skip_index_part_aggregations->initialized = true;
 
     for (const auto & streams : skip_indices_streams)
     {

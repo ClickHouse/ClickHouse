@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -11,6 +10,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_experimental_skip_index_part_aggregation;
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
@@ -98,6 +102,32 @@ MergedColumnOnlyOutputStream::fillChecksums(
             projection_name + ".proj",
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
+
+    /// Store skip index part aggregations files if enabled
+    if ((*storage_settings)[MergeTreeSetting::allow_experimental_skip_index_part_aggregation])
+    {
+        auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
+        if (writer_on_disk)
+        {
+            auto skip_index_aggs = writer_on_disk->getSkipIndexPartAggregations();
+            if (skip_index_aggs && skip_index_aggs->initialized)
+            {
+                auto skip_indices = metadata_snapshot->getSecondaryIndices();
+                MergeTreeIndices indices;
+                for (const auto & index : skip_indices)
+                    indices.push_back(MergeTreeIndexFactory::instance().get(index));
+
+                auto files = skip_index_aggs->store(new_part->getDataPartStorage(), checksums, indices);
+                for (auto & file : files)
+                    file->finalize();
+
+                if (new_part->skip_index_part_aggs)
+                    new_part->skip_index_part_aggs->merge(*skip_index_aggs);
+                else
+                    new_part->skip_index_part_aggs = skip_index_aggs;
+            }
+        }
+    }
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
