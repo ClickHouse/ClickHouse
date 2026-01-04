@@ -4,10 +4,12 @@
 
 #if USE_PARQUET
 
+#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -95,18 +97,21 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
-        //LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
-        if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
+        auto ctx = CurrentThread::getQueryContext();
+        if (ctx)
         {
-            auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
-            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-            reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
-            });
-        }
-        else
-        {
-            reader->reader.file_metadata = Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+            auto maybe_key = ctx->getParquetMetadataCacheKey();
+            if (metadata_cache && maybe_key.has_value())
+            {
+                ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(maybe_key.value().first, maybe_key.value().second);
+                reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                    return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+                });
+            }
+            else
+            {
+                reader->reader.file_metadata = Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
+            }
         }
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
         reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
@@ -126,18 +131,21 @@ Chunk ParquetV3BlockInputFormat::read()
         parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
-        //LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
-        if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
+        auto ctx = CurrentThread::getQueryContext();
+        if (ctx)
         {
-            auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
-            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                return Parquet::Reader::readFileMetaData(temp_prefetcher);
-            });
-        }
-        else
-        {
-            file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+            auto maybe_key = ctx->getParquetMetadataCacheKey();
+            if (metadata_cache && maybe_key.has_value())
+            {
+                ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(maybe_key.value().first, maybe_key.value().second);
+                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                    return Parquet::Reader::readFileMetaData(temp_prefetcher);
+                });
+            }
+            else
+            {
+                file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+            }
         }
 
         auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
@@ -197,25 +205,22 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
     auto log = getLogger("ParquetMetadataCache");
-    if (format_settings.parquet.metadata_cache_key)
+    auto ctx = CurrentThread::getQueryContext();
+    if (ctx)
     {
-        LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
-    }
-    else
-    {
-        LOG_DEBUG(log, "cache key is not set");
-    }
-    if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
-    {
-        auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-            return Parquet::Reader::readFileMetaData(prefetcher);
-        });
-    }
-    else
-    {
-        file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
+        auto maybe_key = ctx->getParquetMetadataCacheKey();
+        if (metadata_cache && maybe_key.has_value())
+        {
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(maybe_key.value().first, maybe_key.value().second);
+            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return Parquet::Reader::readFileMetaData(prefetcher);
+            });
+        }
+        else
+        {
+            LOG_DEBUG(log, "cache is disabled or cache key is not set");
+            file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
+        }
     }
     initialized = true;
 }

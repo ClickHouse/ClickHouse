@@ -4083,6 +4083,18 @@ void Context::clearParquetMetadataCache() const
     if (cache)
         cache->clear();
 }
+
+void Context::setParquetMetadataCacheKey(const std::string & file_path, const std::string & etag) const
+{
+    std::lock_guard lock(mutex);
+    parquet_metadata_cache_key = std::make_pair(file_path, etag);
+}
+
+std::optional<std::pair<std::string, std::string>> Context::getParquetMetadataCacheKey() const
+{
+    std::lock_guard lock(mutex);
+    return parquet_metadata_cache_key;
+}
 #endif
 
 void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
