@@ -651,11 +651,19 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             {
                 /// Remove "materialize" from index analysis.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+
+                /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
+                /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
+                handled_inversion = true;
             }
             else if (isTrivialCast(node))
             {
                 /// Remove trivial cast and keep its first argument.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+
+                /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
+                /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT CAST(x = 0, 'UInt8')` -> `not(notEquals(x, 0))`.
+                handled_inversion = true;
             }
             else if (need_inversion && (name == "and" || name == "or"))
             {
@@ -1034,6 +1042,11 @@ bool applyFunctionChainToColumn(
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
+    }
+    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    {
+        /// We cannot apply castColumnAccurateOrNull() because it will throw exception
+        return false;
     }
     // If column cannot be cast accurate, casting with OrNull, and in case all
     // values has been cast (no nulls), unpacking nested column from nullable.
@@ -2250,6 +2263,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 if (tryPrepareSetIndexForHas(func, info, out, allow_constant_transformation))
                 {
+                    /// Found empty array constant in has([], x) -> always false
+                    if (out.function == RPNElement::ALWAYS_FALSE)
+                        return true;
+
                     const auto atom_it = atom_map.find(func_name);
                     bool valid_atom = atom_it->second(out, const_value);
                     if (valid_atom && out.relaxed)
