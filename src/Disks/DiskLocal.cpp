@@ -194,8 +194,8 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
             /// Check min_bytes constraint
             if (constraints->min_bytes > 0 && free_bytes_after < constraints->min_bytes)
             {
-                LOG_TRACE(logger, "Could not reserve {} on disk {}. Free space after reservation ({}) would be less than min_bytes ({})",
-                    ReadableSize(bytes), backQuote(name), ReadableSize(free_bytes_after), ReadableSize(constraints->min_bytes));
+                LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_bytes {} bytes ({})",
+                    ReadableSize(bytes), bytes, backQuote(name), free_bytes_after, ReadableSize(free_bytes_after), constraints->min_bytes, ReadableSize(constraints->min_bytes));
                 return {};
             }
 
@@ -205,8 +205,8 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
                 UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (*total_space));
                 if (free_bytes_after < min_bytes_from_ratio)
                 {
-                    LOG_TRACE(logger, "Could not reserve {} on disk {}. Free space after reservation ({}) would be less than min_ratio requirement ({})",
-                        ReadableSize(bytes), backQuote(name), ReadableSize(free_bytes_after), ReadableSize(min_bytes_from_ratio));
+                    LOG_TRACE(logger, "Could not reserve {} ({} bytes) on disk {}. Free space after reservation {} bytes ({}) would be less than min_ratio requirement {} bytes ({}) (ratio: {}, total: {} bytes)",
+                        ReadableSize(bytes), bytes, backQuote(name), free_bytes_after, ReadableSize(free_bytes_after), min_bytes_from_ratio, ReadableSize(min_bytes_from_ratio), constraints->min_ratio, *total_space);
                     return {};
                 }
             }
