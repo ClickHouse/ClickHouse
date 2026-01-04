@@ -6,6 +6,8 @@ select groupFormat('JSONEachRow')(number, toString(number)) from numbers(3);
 set format_csv_delimiter=';';
 select groupFormat('CSVWithNamesAndTypes')(number, toString(number)) from numbers(2);
 
+select groupFormat('JSONCompactColumns')(number, toString(number)) from numbers(2);
+
 set output_format_json_quote_64bit_integers=1;
 select groupFormat('JSONEachRow')(number) from numbers(2);
 set output_format_json_quote_64bit_integers=0;
