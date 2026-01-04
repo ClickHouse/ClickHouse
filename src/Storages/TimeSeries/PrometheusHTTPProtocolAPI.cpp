@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -98,12 +97,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!sql_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert PromQL to SQL");
 
-    auto query_context = getContext();
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId(toString(thread_local_rng()));
-    query_context->setSetting("allow_experimental_time_series_aggregate_functions", Field(1));
-
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);
     Block result_block;
