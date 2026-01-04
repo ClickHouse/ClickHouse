@@ -20,6 +20,12 @@ node2 = cluster.add_instance(
     macros={"replica": "b", "shard": "shard1"},
 )
 
+node3 = cluster.add_instance(
+    "node3",
+    user_configs=["config/config.xml"],
+    main_configs=["config/disable_stats_merge.xml"],
+    with_zookeeper=True,
+)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -206,3 +212,19 @@ def test_replicated_db(started_cluster):
     )
     node2.query("ALTER TABLE test.test_stats MODIFY COLUMN b Float64")
     node2.query("ALTER TABLE test.test_stats MODIFY STATISTICS b TYPE tdigest")
+
+
+def test_setting_materialize_statistics_on_merge(started_cluster):
+    node3.query("CREATE TABLE test_stat (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY()")
+    node3.query("SYSTEM STOP MERGES")
+    node3.query("insert into test_stat values(1,2)")
+    node3.query("insert into test_stat values(2,3)")
+    check_stat_file_on_disk(node3, "test_stat", "all_1_1_0", "a", True)
+    check_stat_file_on_disk(node3, "test_stat", "all_1_1_0", "b", True)
+    check_stat_file_on_disk(node3, "test_stat", "all_2_2_0", "a", True)
+    check_stat_file_on_disk(node3, "test_stat", "all_2_2_0", "b", True)
+    node3.query("SYSTEM START MERGES")
+    node3.query("OPTIMIZE TABLE test_stat FINAL");
+    check_stat_file_on_disk(node3, "test_stat", "all_1_2_1", "a", False)
+    check_stat_file_on_disk(node3, "test_stat", "all_1_2_1", "b", False)
+    node3.query("DROP TABLE test_stat")
