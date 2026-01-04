@@ -146,17 +146,25 @@ struct CrossTabData
 
             const Float64 value_ab = value_ab_uint;
 
-            sum += (value_ab / value_a) * (value_ab / value_b);
+            /// (ab/a) * (ab/b) == ab^2 / (a * b), but with one division
+            sum += (value_ab * value_ab) / (value_a * value_b);
         }
 
         Float64 phi_squared = sum - 1.0;
 
-        // Numerical errors might lead to a very small negative number
-        if (phi_squared < 0.0)
-        {
-            assert(phi_squared > -1e-10);
-            phi_squared = 0.0;
-        }
+        /// Numerical errors might lead to a very small negative number
+        chassert(phi_squared > -1e-6);
+        phi_squared = std::max(phi_squared, 0.0);
+
+        /// Theoretical bound: phi^2 <= min(|A|, |B|) - 1
+        const UInt64 q = std::min<UInt64>(count_a.size(), count_b.size());
+        if (q <= 1)
+            return 0.0;
+
+        const Float64 max_phi_squared = static_cast<Float64>(q - 1);
+        chassert(phi_squared <= max_phi_squared + 1e-6);
+
+        phi_squared = std::min(phi_squared, max_phi_squared);
 
         return phi_squared;
     }
