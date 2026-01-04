@@ -269,7 +269,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 {
-    LOG_TRACE(log, "useBucketsForProcessing buckets_num: {}", buckets_num);
     return mode == ObjectStorageQueueMode::ORDERED && (buckets_num > 1);
 }
 
