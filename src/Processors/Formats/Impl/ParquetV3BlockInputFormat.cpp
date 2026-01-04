@@ -193,6 +193,7 @@ NativeParquetSchemaReader::NativeParquetSchemaReader(
     ParquetMetadataCachePtr metadata_cache_)
     : ISchemaReader(in_)
     , read_options(convertReadOptions(format_settings_))
+    , format_settings(format_settings_)
     , metadata_cache(metadata_cache_)
 {
 }
