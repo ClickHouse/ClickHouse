@@ -31,6 +31,7 @@ SET allow_experimental_database_iceberg = 1;
 SET allow_experimental_database_unity_catalog = 1;
 SET allow_experimental_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
+SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
 
 Databases with the `DataLakeCatalog` engine can be created using the following syntax:
@@ -58,6 +59,8 @@ The following settings are supported:
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
 | `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
+| `dlf_access_key_id`     | Access key ID for DLF access                                                            |
+| `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 
 ## Examples {#examples}
 
