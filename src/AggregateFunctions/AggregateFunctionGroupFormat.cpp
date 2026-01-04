@@ -9,7 +9,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/VarInt.h>
-#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
 
@@ -137,23 +137,24 @@ public:
         auto & state = data(place);
         auto & column_string = assert_cast<ColumnString &>(to);
 
-        WriteBufferFromOwnString buffer;
+        ColumnString::Chars & chars = column_string.getChars();
+        ColumnString::Offsets & offsets = column_string.getOffsets();
+        const size_t old_size = chars.size();
+
+        WriteBufferFromVector<ColumnString::Chars> buffer(chars, AppendModeTag{});
         auto output = FormatFactory::instance().getOutputFormat(format_name, buffer, header, context, format_settings);
 
         if (!state.columns.empty())
         {
-            Columns columns;
-            columns.reserve(state.columns.size());
-            for (const auto & column : state.columns)
-                columns.emplace_back(column->getPtr());
-            auto block = header.cloneWithColumns(columns);
+            MutableColumns columns = state.columns;
+            auto block = header.cloneWithColumns(std::move(columns));
             if (block.rows())
                 output->write(block);
         }
 
         output->finalize();
-        auto result_view = buffer.stringView();
-        column_string.insertData(result_view.data(), result_view.size());
+        buffer.finalize();
+        offsets.push_back(old_size + buffer.count());
     }
 
 private:
