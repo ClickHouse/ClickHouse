@@ -297,6 +297,16 @@ def test_https_non_ssl_auth():
     # TODO: Add non-flaky tests for:
     # - sending wrong cert
 
+def test_mixed_san_password_support():
+    assert (
+        execute_query_https("SELECT currentUser()", user="trurl", cert_name="client4")
+        == "trurl\n"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", enable_ssl_auth=False, user="trurl", password="mixed_sha_pass")
+        == "trurl\n"
+    )
+    
 
 def test_create_user():
     instance.query("DROP USER IF EXISTS emma")

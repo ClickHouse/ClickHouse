@@ -1,0 +1,52 @@
+<!-- Users with multiple authentication methods -->
+<clickhouse>
+    <users>
+        <!-- User with multiple plaintext passwords -->
+        <multi_plaintext_user>
+            <password>
+                <pass1>plain_pass_1</pass1>
+                <pass2>plain_pass_2</pass2>
+            </password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_plaintext_user>
+
+        <!-- User with multiple SHA256 passwords -->
+        <multi_double_sha1_user>
+            <password_double_sha1_hex>
+                <!-- Hash of "double_sha1_pass_1" -->
+                <hash1>eafbd9c4b3c8b40d509308e767b41671ee5bac68</hash1>
+                <!-- Hash of "double_sha1_pass_2" -->
+                <hash2>7e4ca4bb0df85c1106f39516a0753013b79b32ff</hash2>
+            </password_double_sha1_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_double_sha1_user>
+
+        <!-- User with mixed authentication methods -->
+        <mixed_auth_user>
+            <password>
+                <pass1>mixed_plain_pass_1</pass1>
+                <pass2>mixed_plain_pass_2</pass2>
+            </password>
+            <password_double_sha1_hex>
+                <!-- Hash of "mixed_double_sha1_pass_1" -->
+                <hash1>e5b41b7221154c33435d1789ff712acd975c70f4</hash1>
+                <!-- Hash of "mixed_double_sha1_pass_2" -->
+                <hash2>9fb59b3e8b7617e645652b097d0bf111c597f120</hash2>
+            </password_double_sha1_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </mixed_auth_user>
+
+    </users>
+</clickhouse>
