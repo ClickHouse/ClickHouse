@@ -1,4 +1,5 @@
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -109,6 +110,21 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             database = table;
             if (!name_p.parse(pos, table, expected))
                 return false;
+
+            /// Support db.namespace.table for DataLakeCatalog databases
+            /// Join the third part (if present) into the table name
+            if (s_dot.ignore(pos, expected))
+            {
+                ASTPtr third_part;
+                if (!name_p.parse(pos, third_part, expected))
+                    return false;
+
+                String namespace_name;
+                String table_name;
+                tryGetIdentifierNameInto(table, namespace_name);
+                tryGetIdentifierNameInto(third_part, table_name);
+                table = std::make_shared<ASTIdentifier>(namespace_name + "." + table_name);
+            }
         }
     }
 

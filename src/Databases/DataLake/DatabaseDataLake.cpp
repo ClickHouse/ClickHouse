@@ -372,6 +372,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (!lightweight && with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
+    /// parseTableName throws if name doesn't contain a dot, but tryGetTable should return nullptr (because we may have 3-part identifiers)
+    if (name.find('.') == std::string::npos)
+        return nullptr;
+
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
