@@ -119,7 +119,13 @@ Clears the text index postings cache.
 
 ## SYSTEM DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index header cache, dictionary cache, and postings cache.
+Clears the text index's header, dictionary and postings caches.
+
+If you like to drop one of these caches individually, you can run
+
+- `SYSTEM DROP TEXT INDEX HEADER CACHE`,
+- `SYSTEM DROP TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM DROP TEXT INDEX POSTINGS CACHE`
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
