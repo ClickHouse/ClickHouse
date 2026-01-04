@@ -1213,14 +1213,29 @@ if __name__ == "__main__":
     res = False
     try:
         if command == "logs_export_config":
-            res = ch.create_log_export_config()
+            if not Info().is_local_run:
+                # Disable log export for local runs - ideally this command wouldn't be triggered,
+                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                res = ch.create_log_export_config()
+            else:
+                res = True
         elif command == "logs_export_start":
             # FIXME: the start_time must be preserved globally in ENV or something like that
             # to get the same values in different DBs
             # As a wild idea, it could be stored in a Info.check_start_timestamp
-            res = ch.start_log_exports(check_start_time=Utils.timestamp())
+            if not Info().is_local_run:
+                # Disable log export for local runs - ideally this command wouldn't be triggered,
+                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                res = ch.start_log_exports(check_start_time=Utils.timestamp())
+            else:
+                res = True
         elif command == "logs_export_stop":
-            res = ch.stop_log_exports()
+            if not Info().is_local_run:
+                # Disable log export for local runs - ideally this command wouldn't be triggered,
+                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                res = ch.stop_log_exports()
+            else:
+                res = True
         elif command == "start_minio":
             param = sys.argv[2]
             assert param in ["stateless"]
