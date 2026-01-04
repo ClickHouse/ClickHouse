@@ -152,6 +152,102 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
+/// For the case when there is one packed string key.
+template <
+    typename Value,
+    typename Mapped,
+    bool place_string_to_arena = true,
+    bool use_cache = true,
+    bool need_offset = false,
+    bool nullable = false>
+struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
+                              HashMethodPackedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>,
+                              Value,
+                              Mapped,
+                              use_cache,
+                              need_offset,
+                              nullable>
+{
+    static_assert(!need_offset);
+    static_assert(!nullable);
+    using Self = HashMethodPackedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+    WeakHash32 hashes{0};
+
+    /// Hashing strategy:
+    /// - Empty string (len == 0):
+    ///   Use hash = 0. Empty keys are handled as a special case and do not participate
+    ///   in the unified encoding path to keep the main comparison logic simple.
+    ///
+    /// - String length <= UInt32 max:
+    ///   Use StringViewHash() to compute a 32-bit hash from string content.
+    ///   This hash is later combined with the string length (32-bit) to form a compact
+    ///   64-bit inline key metadata (hash | len), allowing:
+    ///     * Fast hash comparison
+    ///     * Length comparison without extra memory access
+    ///     * Reduced Cell size in the hash table
+    ///
+    /// - String length > UInt32 max:
+    ///   Such keys are extremely rare in practice. For these oversized strings,
+    ///   we fall back to using the low 32 bits of the string length as hash value.
+    ///   This intentionally sacrifices hash quality in exchange for:
+    ///     * Avoiding extra hashing cost
+    ///     * Preserving a uniform Cell layout
+    ///   Collisions are acceptable here due to the very low occurrence rate, and
+    ///   full string comparison is still used as the final equality check.
+    ///
+    /// Notes:
+    /// - 32-bit hash is sufficient for in-memory aggregation hash tables.
+    /// - A separate 64-bit hash is used only in external aggregation scenarios
+    ///   and is generated via a dedicated conversion path.
+    /// - This length-aware hashing scheme is a key building block for compact
+    ///   Cell design and cache-friendly probing in the optimized String Hash Table.
+    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : Base(key_columns[0])
+    {
+        const IColumn * column = key_columns[0];
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
+        auto & data = hashes.getData();
+        size_t rows = column_string.size();
+        data.resize_exact(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto str = column_string.getDataAt(i);
+            if (str.empty())
+                data[i] = 0;
+            else if (str.size() <= std::numeric_limits<UInt32>::max())
+                data[i] = StringViewHash()(str);
+            else
+                data[i] = static_cast<UInt32>(str.size());
+        }
+    }
+
+    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
+    {
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaPackedStringHolder{
+                PackedStringRef::build(
+                    reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes.getData()[row]),
+                pool};
+        }
+        else
+        {
+            return PackedStringRef::build(
+                reinterpret_cast<const char *>(chars + offsets[row - 1]), offsets[row] - offsets[row - 1], hashes.getData()[row]);
+        }
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+};
 
 /// For the case when there is one fixed-length string key.
 template <
