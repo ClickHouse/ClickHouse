@@ -395,6 +395,7 @@ std::string normalizeUuid(const std::string & uuid)
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
+    UInt64 last_modify_time,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
@@ -427,7 +428,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     String metadata_json_str;
     if (metadata_cache && table_uuid.has_value())
         metadata_json_str = metadata_cache->getOrSetTableMetadata(
-            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
+            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path, std::to_string(last_modify_time)), create_fn);
     else
         metadata_json_str = create_fn();
 
@@ -898,17 +899,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
-    for (const auto & path : metadata_files)
+    for (const auto & file : metadata_files)
     {
+        const String & path = file->relative_path;
         String filename = std::filesystem::path(path).filename();
         if (isTemporaryMetadataFile(filename))
             continue;
-        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+        auto [version, metadata_file_path, last_modify_time,compression_method] = getMetadataFileAndVersion(path);
 
         if (need_all_metadata_files_parsing)
         {
+            const auto last_modified_time = file->metadata.has_value()
+                ? static_cast<UInt64>(file->metadata->last_modified.epochTime())
+                : -1;
             auto metadata_file_object = getMetadataJSONObject(
-                metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                metadata_file_path, last_modified_time, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
             if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -974,7 +979,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
         }
     }();
-    return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+    return {
+        latest_metadata_file_info.version,
+        latest_metadata_file_info.path,
+        latest_metadata_file_info.last_updated_ms,
+        getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
