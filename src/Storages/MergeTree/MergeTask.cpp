@@ -108,7 +108,7 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const SettingsBool materialize_statistics_on_merge;
+    extern const ServerSettingsBool materialize_statistics_on_merge;
 }
 
 namespace MergeTreeSetting
@@ -158,8 +158,7 @@ ColumnsStatistics getStatisticsForColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context)
 {
-    const auto & global_settings = context->getSettingsRef();
-    if (!global_settings[ServerSetting::materialize_statistics_on_merge])
+    if (!context->getServerSettings()[ServerSetting::materialize_statistics_on_merge])
         return {};
     ColumnsStatistics all_statistics;
     const auto & all_columns = metadata_snapshot->getColumns();
