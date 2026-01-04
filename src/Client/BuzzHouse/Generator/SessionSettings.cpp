@@ -268,6 +268,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_for_top_k", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
+       {"use_primary_key_indexes", trueOrFalseSetting},
        {"use_statistics_cache", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
@@ -1562,6 +1563,34 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         }
         hotSettings.insert({entry, next});
     }
+
+    if (!fc.settings_oracle_settings.empty())
+    {
+        std::unordered_set<String> uniq;
+        for (const auto & entry : fc.settings_oracle_settings)
+        {
+            if (!uniq.emplace(entry).second)
+            {
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Duplicate settings_oracle_settings entry: {}", entry);
+            }
+            if (!serverSettings.contains(entry))
+            {
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown settings oracle setting: {}", entry);
+            }
+            const auto & next = serverSettings.at(entry);
+            if (next.oracle_values.size() < 2)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BUZZHOUSE, "Server setting {} can't be used for settings oracle (not enough oracle values)", entry);
+            }
+            if (fc.compare_success_results && next.changes_behavior)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BUZZHOUSE, "Server setting {} changes behavior and can't be used for compare_success_results", entry);
+            }
+        }
+    }
+
     for (const auto & [key, value] : serverSettings)
     {
         if (!value.oracle_values.empty())

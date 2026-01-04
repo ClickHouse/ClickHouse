@@ -3,6 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -609,49 +611,103 @@ void QueryOracle::generateImportQuery(
 /// Run query with different settings oracle
 bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
-    const bool use_settings = rg.nextMediumNumber() < 86;
+    const bool force_settings = !fc.settings_oracle_settings.empty();
+    const bool use_settings = force_settings || rg.nextMediumNumber() < 86;
 
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        std::uniform_int_distribution<uint32_t> settings_range(1, 20);
-        const uint32_t nsets = settings_range(rg.generator);
+        const uint32_t forced_size = force_settings ? static_cast<uint32_t>(fc.settings_oracle_settings.size()) : 0;
+        const uint32_t min_sets
+            = force_settings && forced_size < 20 && queryOracleSettings.size() > forced_size ? forced_size + 1 : forced_size;
+        const uint32_t target_nsets = force_settings
+            ? (forced_size >= 20 ? forced_size : std::uniform_int_distribution<uint32_t>(min_sets, 20)(rg.generator))
+            : std::uniform_int_distribution<uint32_t>(1, 20)(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
+        std::unordered_set<String> forced_settings_set;
+        if (force_settings)
+        {
+            for (const auto & setting : fc.settings_oracle_settings)
+            {
+                forced_settings_set.emplace(setting);
+            }
+        }
+
+        std::vector<String> selected_settings;
+        selected_settings.reserve(target_nsets);
+
+        std::unordered_set<String> selected_set;
+        if (force_settings)
+        {
+            for (const auto & setting : fc.settings_oracle_settings)
+            {
+                selected_settings.emplace_back(setting);
+                selected_set.emplace(setting);
+            }
+        }
+        while (selected_settings.size() < target_nsets && selected_set.size() < queryOracleSettings.size())
+        {
+            const auto & toPickFrom = (hotSettings.empty() || rg.nextMediumNumber() < 94) ? queryOracleSettings : hotSettings;
+            const String & picked = rg.pickRandomly(toPickFrom);
+
+            if (selected_set.emplace(picked).second)
+            {
+                selected_settings.emplace_back(picked);
+            }
+        }
+
+        const uint32_t nsets = static_cast<uint32_t>(selected_settings.size());
         nsettings.clear();
         for (uint32_t i = 0; i < nsets; i++)
         {
-            const auto & toPickFrom = (hotSettings.empty() || rg.nextMediumNumber() < 94) ? queryOracleSettings : hotSettings;
-            const String & setting = rg.pickRandomly(toPickFrom);
+            const String & setting = selected_settings[i];
             const CHSetting & chs = queryOracleSettings.at(setting);
             SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
+            const bool toggle_setting = !force_settings || forced_settings_set.contains(setting);
 
             setv->set_property(setting);
             if (chs.oracle_values.size() == 2)
             {
-                if (setting == "enable_analyzer")
+                if (toggle_setting && setting == "enable_analyzer")
                 {
                     /// For the analyzer, always run the old first, so we can minimize the usage of it
                     setv->set_value("0");
                     nsettings.push_back("1");
                 }
+                else if (toggle_setting && setting == "use_primary_key_indexes")
+                {
+                    /// Run without primary key indexes first, then with them.
+                    setv->set_value("0");
+                    nsettings.push_back("1");
+                }
+                else if (!toggle_setting)
+                {
+                    const String & fvalue = rg.pickRandomly(chs.oracle_values);
+                    setv->set_value(fvalue);
+                    nsettings.push_back(fvalue);
+                }
                 else if (rg.nextBool())
                 {
-                    setv->set_value(*chs.oracle_values.begin());
-                    nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
+                    std::vector<String> vals(chs.oracle_values.begin(), chs.oracle_values.end());
+                    std::sort(vals.begin(), vals.end());
+                    setv->set_value(vals[0]);
+                    nsettings.push_back(vals[1]);
                 }
                 else
                 {
-                    setv->set_value(*std::next(chs.oracle_values.begin(), 1));
-                    nsettings.push_back(*(chs.oracle_values.begin()));
+                    std::vector<String> vals(chs.oracle_values.begin(), chs.oracle_values.end());
+                    std::sort(vals.begin(), vals.end());
+                    setv->set_value(vals[1]);
+                    nsettings.push_back(vals[0]);
                 }
             }
             else
             {
                 const String & fvalue = rg.pickRandomly(chs.oracle_values);
-                String svalue = rg.pickRandomly(chs.oracle_values);
+                String svalue = toggle_setting ? rg.pickRandomly(chs.oracle_values) : fvalue;
 
-                for (uint32_t j = 0; j < 4 && fvalue == svalue; j++)
+                for (uint32_t j = 0; j < 4 && toggle_setting && fvalue == svalue; j++)
                 {
                     /// Pick another value until they are different
                     svalue = rg.pickRandomly(chs.oracle_values);
@@ -659,7 +715,10 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
                 setv->set_value(fvalue);
                 nsettings.push_back(svalue);
             }
-            can_test_oracle_result &= !chs.changes_behavior;
+            if (toggle_setting)
+            {
+                can_test_oracle_result &= !chs.changes_behavior;
+            }
         }
     }
     return use_settings;
@@ -895,6 +954,12 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
 {
     sq2.CopyFrom(sq1);
     chassert(!compare_explain);
+
+    if (!fc.settings_oracle_settings.empty())
+    {
+        return;
+    }
+
     if (rg.nextBool())
     {
         /// Swap query parts
