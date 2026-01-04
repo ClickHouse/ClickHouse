@@ -7,12 +7,12 @@ namespace DB
 {
 
 class IObjectStorage;
-std::vector<String> listFiles(
+std::vector<RelativePathWithMetadataPtr> listFiles(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix, const String & suffix);
 
-std::vector<String> listFiles(
+std::vector<RelativePathWithMetadataPtr> listFiles(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix,
