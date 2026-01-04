@@ -25,34 +25,49 @@ struct CramersVBiasCorrectedData : CrossTabData
 
         Float64 phi = getPhiSquared();
 
-        Float64 a_size_adjusted = count_a.size() - 1;
-        Float64 b_size_adjusted = count_b.size() - 1;
-        Float64 count_adjusted = count - 1;
+        Float64 a_size = static_cast<Float64>(count_a.size());
+        Float64 b_size = static_cast<Float64>(count_b.size());
+
+        Float64 a_size_adjusted = a_size - 1;
+        Float64 b_size_adjusted = b_size - 1;
+        Float64 count_adjusted = static_cast<Float64>(count - 1);
 
         Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
-        Float64 correction_a = count_a.size() - a_size_adjusted * a_size_adjusted / count_adjusted;
-        Float64 correction_b = count_b.size() - b_size_adjusted * b_size_adjusted / count_adjusted;
+        Float64 correction_a = a_size - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = b_size - b_size_adjusted * b_size_adjusted / count_adjusted;
 
         res /= std::min(correction_a, correction_b) - 1;
         return sqrt(res);
     }
 };
 
-struct CramersVBiasCorrectedWindowData : CramersVBiasCorrectedData
+struct CramersVBiasCorrectedWindowData : CrossTabWindowPhiSquaredData
 {
     static const char * getName()
     {
         return "cramersVBiasCorrectedWindow";
     }
 
-    void add(UInt64 hash1, UInt64 hash2)
-    {
-        CramersVBiasCorrectedData::add(hash1, hash2);
-    }
-
     Float64 getResult() const
     {
-        return CramersVBiasCorrectedData::getResult();
+        if (count < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        Float64 phi = getPhiSquared();
+
+        Float64 a_size = static_cast<Float64>(a_marginal_count.size());
+        Float64 b_size = static_cast<Float64>(b_marginal_count.size());
+
+        Float64 a_size_adjusted = a_size - 1;
+        Float64 b_size_adjusted = b_size - 1;
+        Float64 count_adjusted = static_cast<Float64>(count - 1);
+
+        Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
+        Float64 correction_a = a_size - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = b_size - b_size_adjusted * b_size_adjusted / count_adjusted;
+
+        res /= std::min(correction_a, correction_b) - 1;
+        return sqrt(res);
     }
 };
 
@@ -110,6 +125,8 @@ FROM
         documentation
     });
 
+    /// This version that will be used in window context. The rewrite happens via `rewriteAggregateFunctionNameForWindowIfNeeded`
+    /// in `resolveFunction.cpp`.
     factory.registerFunction(CramersVBiasCorrectedWindowData::getName(),
     {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)

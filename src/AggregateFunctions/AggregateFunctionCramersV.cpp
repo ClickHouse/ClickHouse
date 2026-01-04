@@ -28,21 +28,20 @@ struct CramersVData : CrossTabData
     }
 };
 
-struct CramersVWindowData : CramersVData
+struct CramersVWindowData : CrossTabWindowPhiSquaredData
 {
     static const char * getName()
     {
         return "cramersVWindow";
     }
 
-    void add(UInt64 hash1, UInt64 hash2)
-    {
-        CramersVData::add(hash1, hash2);
-    }
-
     Float64 getResult() const
     {
-        return CramersVData::getResult();
+        if (count < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        UInt64 q = std::min(a_marginal_count.size(), b_marginal_count.size());
+        return sqrt(getPhiSquared() / (q - 1));
     }
 };
 
@@ -123,6 +122,8 @@ FROM
         documentation
     });
 
+    /// This version that will be used in window context. The rewrite happens via `rewriteAggregateFunctionNameForWindowIfNeeded`
+    /// in `resolveFunction.cpp`.
     factory.registerFunction(CramersVWindowData::getName(),
     {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)

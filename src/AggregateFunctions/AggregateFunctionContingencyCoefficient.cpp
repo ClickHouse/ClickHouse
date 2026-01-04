@@ -43,21 +43,21 @@ struct ContingencyData : CrossTabData
     }
 };
 
-struct ContingencyWindowData : ContingencyData
+
+struct ContingencyWindowData : CrossTabWindowPhiSquaredData
 {
     static const char * getName()
     {
         return "contingencyWindow";
     }
 
-    void add(UInt64 hash1, UInt64 hash2)
-    {
-        ContingencyData::add(hash1, hash2);
-    }
-
     Float64 getResult() const
     {
-        return ContingencyData::getResult();
+        if (count < 2)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        Float64 phi_sq = getPhiSquared();
+        return std::sqrt(phi_sq / (phi_sq + 1.0));
     }
 };
 
@@ -114,6 +114,8 @@ FROM
         documentation
     });
 
+    /// This version that will be used in window context. The rewrite happens via `rewriteAggregateFunctionNameForWindowIfNeeded`
+    /// in `resolveFunction.cpp`.
     factory.registerFunction(ContingencyWindowData::getName(),
     {
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
