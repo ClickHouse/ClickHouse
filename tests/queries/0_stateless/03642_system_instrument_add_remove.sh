@@ -21,15 +21,15 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM system.instrumentation;
 
     SELECT '-- Add one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'my log in finishQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' LOG ENTRY 'my log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Adding the same one again';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'another log in finishQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' LOG ENTRY 'another log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Add another one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'my log in startQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'my log in startQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 "
 
@@ -41,8 +41,8 @@ $CLICKHOUSE_CLIENT -q "
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Add 2 more';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'my other in startQuery';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG EXIT 'my other in finishQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'my other in startQuery';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' LOG EXIT 'my other in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Remove the entries with entry_type = Exit';
@@ -52,6 +52,23 @@ $CLICKHOUSE_CLIENT -q "
     SELECT '-- Remove with wrong arguments fails';
     SYSTEM INSTRUMENT REMOVE (SELECT id, function_id FROM system.instrumentation); -- { serverError BAD_ARGUMENTS }
     SYSTEM INSTRUMENT REMOVE (SELECT handler FROM system.instrumentation); -- { serverError BAD_ARGUMENTS }
+    SYSTEM INSTRUMENT REMOVE 3.2; -- { clientError SYNTAX_ERROR }
+
+    SELECT '-- Remove everything';
+    SYSTEM INSTRUMENT REMOVE ALL;
+    SELECT count() FROM system.instrumentation;
+"
+
+$CLICKHOUSE_CLIENT -q "
+    SELECT '-- Add several functions that match';
+    SYSTEM INSTRUMENT ADD 'executeQuery' LOG ENTRY 'my log in executeQuery';
+    SELECT count() > 10, function_name, handler, entry_type FROM system.instrumentation WHERE symbol ILIKE '%executeQuery%' GROUP BY function_name, handler, entry_type;
+
+    SELECT '-- Remove functions that match';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'my log in startQuery';
+    SYSTEM INSTRUMENT REMOVE 'unknown'; -- { serverError BAD_ARGUMENTS }
+    SYSTEM INSTRUMENT REMOVE 'executeQuery';
+    SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Remove everything';
     SYSTEM INSTRUMENT REMOVE ALL;

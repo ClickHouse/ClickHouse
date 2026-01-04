@@ -18,10 +18,10 @@ trap cleanup EXIT
 # Execute them in random order (not handler-ordered alphabetically) to make sure they're executed in this same order.
 $CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` PROFILE;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'this is an entry log';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 3;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'this is an exit log';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE;
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is an entry log';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 3;
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is an exit log';
 "
 
 $CLICKHOUSE_CLIENT --query-id=$query_id -q "SELECT 1 FORMAT Null;"

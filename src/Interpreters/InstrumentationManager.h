@@ -40,6 +40,8 @@ namespace Instrumentation
 EntryType fromXRayEntryType(XRayEntryType entry_type);
 String entryTypeToString(EntryType entry_type);
 
+struct All {};
+
 }
 
 struct TraceLogElement;
@@ -100,7 +102,7 @@ public:
     static InstrumentationManager & instance();
 
     [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters);
-    [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, bool> id);
+    [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, Instrumentation::All, String> id);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
     InstrumentedPoints getInstrumentedPoints() const;
