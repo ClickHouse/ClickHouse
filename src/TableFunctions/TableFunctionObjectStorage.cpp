@@ -270,7 +270,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             columns,
             ConstraintsDescription{},
             partition_by,
-            context);
+            context,
+            /* is_table_function */true);
 
         storage->startup();
         return storage;
@@ -416,6 +417,10 @@ template class TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>
 #if USE_HDFS
 template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
+#endif
+
+#if USE_AVRO
+template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3
