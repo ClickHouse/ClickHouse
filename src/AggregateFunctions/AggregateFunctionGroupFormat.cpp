@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -90,6 +91,85 @@ public:
         auto & state = data(place);
         for (size_t i = 0; i < state.columns.size(); ++i)
             state.columns[i]->insertFrom(*columns[i], row_num);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        if (row_begin >= row_end)
+            return;
+
+        auto & state = data(place);
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (flags[row])
+                {
+                    for (size_t col = 0; col < state.columns.size(); ++col)
+                        state.columns[col]->insertFrom(*columns[col], row);
+                }
+            }
+            return;
+        }
+
+        const size_t length = row_end - row_begin;
+        for (size_t col = 0; col < state.columns.size(); ++col)
+            state.columns[col]->insertRangeFrom(*columns[col], row_begin, length);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        if (row_begin >= row_end)
+            return;
+
+        auto & state = data(place);
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (!null_map[row] && flags[row])
+                {
+                    for (size_t col = 0; col < state.columns.size(); ++col)
+                        state.columns[col]->insertFrom(*columns[col], row);
+                }
+            }
+            return;
+        }
+
+        size_t row = row_begin;
+        while (row < row_end)
+        {
+            while (row < row_end && null_map[row])
+                ++row;
+
+            const size_t start = row;
+            while (row < row_end && !null_map[row])
+                ++row;
+
+            if (start < row)
+            {
+                const size_t length = row - start;
+                for (size_t col = 0; col < state.columns.size(); ++col)
+                    state.columns[col]->insertRangeFrom(*columns[col], start, length);
+            }
+        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
