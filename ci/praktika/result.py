@@ -58,6 +58,8 @@ class Result(MetaClasses.Serializable):
     class Label:
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
+        BLOCKER = "blocker"
+        ISSUE = "issue"
 
     name: str
     status: str
@@ -79,6 +81,7 @@ class Result(MetaClasses.Serializable):
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
+        labels=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -151,7 +154,7 @@ class Result(MetaClasses.Serializable):
             results=results or [],
             files=files or [],
             links=links or [],
-        )
+        ).set_label(labels or [])
 
     @staticmethod
     def get():
@@ -313,7 +316,11 @@ class Result(MetaClasses.Serializable):
     def set_label(self, label):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
-        self.ext["labels"].append(label)
+        if isinstance(label, list):
+            self.ext["labels"].extend(label)
+        else:
+            self.ext["labels"].append(label)
+        return self
 
     def get_labels(self):
         return self.ext.get("labels", [])
