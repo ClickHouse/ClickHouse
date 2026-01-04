@@ -99,6 +99,8 @@ public:
 
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
+    static String getKey(const String & table_uuid, const String & data_path, const String & etag) { return table_uuid + data_path + etag; }
+
     template <typename LoadFunc>
     String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
     {

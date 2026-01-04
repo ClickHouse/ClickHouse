@@ -60,6 +60,7 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
+    UInt64 last_modify_time,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
@@ -67,10 +68,21 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
 
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    UInt64 last_modify_time,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
+    IcebergMetadataFilesCachePtr cache_ptr,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method);
+
 struct MetadataFileWithInfo
 {
     Int32 version;
     String path;
+    UInt64 last_modify_time;
     CompressionMethod compression_method;
 };
 

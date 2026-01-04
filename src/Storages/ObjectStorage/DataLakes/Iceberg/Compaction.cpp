@@ -123,7 +123,7 @@ Plan getPlan(
     plan.generator = FileNamesGenerator(
         persistent_table_components.table_path, persistent_table_components.table_path, false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, last_modify_time, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -132,8 +132,15 @@ Plan getPlan(
         log.get(),
         persistent_table_components.table_uuid);
 
-    Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+    Poco::JSON::Object::Ptr initial_metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        last_modify_time,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        log,
+        compression_method,
+        persistent_table_components.table_uuid);
 
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
