@@ -1462,6 +1462,7 @@ void StorageObjectStorageQueue::alter(
         }
 
         files_metadata->updateSettings(changed_settings);
+        /// Reset streaming_iterator as it can hold state which we could have just altered.
         if (requires_detached_mv)
             streaming_file_iterator.reset();
 
