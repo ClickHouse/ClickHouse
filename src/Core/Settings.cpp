@@ -7233,6 +7233,16 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, kill_throw_if_noop, true, R"(
+Enables or disables throwing an exception if an [KILL](../../sql-reference/statements/kill.md) query didn't perform a kill.
+
+By default, `KILL` will throw an exception if `WHERE` expression matched zero rows either from `system.mutations` or `system.processes`. If it is set to false, no exception will be thrown even if it didn't do anything.
+
+Possible values:
+
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
+)", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
 Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.

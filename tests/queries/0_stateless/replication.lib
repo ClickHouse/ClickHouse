@@ -63,7 +63,7 @@ function check_replication_consistency()
     local t
     for t in "${tables_arr[@]}"
     do
-        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null ||:
+        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t' SETTINGS kill_throw_if_noop = false" > /dev/null 2>/dev/null ||:
     done
 
     # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
@@ -112,7 +112,7 @@ function check_replication_consistency()
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA $some_table PULL" 1>/dev/null 2>/dev/null ||:
 
     # Forcefully cancel mutations to avoid waiting for them to finish. Kills the remaining mutations
-    ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$table_name_prefix%'" > /dev/null
+    ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$table_name_prefix%' SETTINGS kill_throw_if_noop = false" > /dev/null
 
     # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
     wait_for_all_mutations "$table_name_prefix%"
