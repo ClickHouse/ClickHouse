@@ -546,9 +546,100 @@ SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'V0 V1');
 SELECT '-- -- -- key does not exist in granules';
 SELECT * FROM explain_index_has_all_tokens(use_idx_fixed = 1, filter = 'V3');
 
+SELECT '-- mapContains*Like support';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    map Map(String, String),
+    map_fixed Map(String, FixedString(5)),
+    INDEX map_keys mapKeys(map) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX map_values mapValues(map) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX map_keys_fixed mapKeys(map_fixed) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX map_values_fixed mapValues(map_fixed) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab VALUES (0, {'a b c':'d e f', 'g h i':'j k l'}, {'a b c':'d e f', 'g h i':'j k l'});
+INSERT INTO tab VALUES (1, {'g h i':'j k l', 'm n o':'p q r'}, {'g h i':'j k l', 'm n o':'p q r'});
+
+SELECT '-- -- query with String';
+
+SELECT count() from tab WHERE mapContainsKeyLike(map, '% b %');
+SELECT count() from tab WHERE mapContainsKeyLike(map, '% h %');
+SELECT count() from tab WHERE mapContainsKeyLike(map, '% n %');
+SELECT count() from tab WHERE mapContainsValueLike(map, '% e %');
+SELECT count() from tab WHERE mapContainsValueLike(map, '% k %');
+SELECT count() from tab WHERE mapContainsValueLike(map, '% q %');
+
+SELECT '-- -- query with FixedString';
+
+SELECT count() from tab WHERE mapContainsKeyLike(map_fixed, '% b %');
+SELECT count() from tab WHERE mapContainsKeyLike(map_fixed, '% h %');
+SELECT count() from tab WHERE mapContainsKeyLike(map_fixed, '% n %');
+SELECT count() from tab WHERE mapContainsValueLike(map_fixed, '% e %');
+SELECT count() from tab WHERE mapContainsValueLike(map_fixed, '% k %');
+SELECT count() from tab WHERE mapContainsValueLike(map_fixed, '% q %');
+
+-- 
+
+DROP VIEW IF EXISTS explain_index_key_like;
+CREATE VIEW explain_index_key_like AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE mapContainsKeyLike({col:Identifier}, {pattern:String})
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+DROP VIEW IF EXISTS explain_index_value_like;
+CREATE VIEW explain_index_value_like AS (
+    SELECT trimLeft(explain) AS explain FROM (
+        EXPLAIN indexes=1
+        SELECT count() FROM tab WHERE mapContainsValueLike({col:Identifier}, {pattern:String})
+    )
+    WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+    LIMIT 2, 3
+);
+
+SELECT '-- -- Check that the text index actually gets used (String)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_key_like(col = 'map', pattern = '% b %');
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_key_like(col = 'map', pattern = '% n %');
+SELECT '-- -- -- key exists in both granules';
+SELECT * FROM explain_index_key_like(col = 'map', pattern = '% h %');
+SELECT '-- -- -- value exists only in the first granule';
+SELECT * FROM explain_index_value_like(col = 'map', pattern = '% e %');
+SELECT '-- -- -- value exists only in the second granule';
+SELECT * FROM explain_index_value_like(col = 'map', pattern = '% q %');
+SELECT '-- -- -- value exists in both granules';
+SELECT * FROM explain_index_value_like(col = 'map', pattern = '% k %');
+
+SELECT '-- -- Check that the text index actually gets used (FixedString)';
+
+SELECT '-- -- -- key exists only in the first granule';
+SELECT * FROM explain_index_key_like(col = 'map_fixed', pattern = '% b %');
+SELECT '-- -- -- key exists only in the second granule';
+SELECT * FROM explain_index_key_like(col = 'map_fixed', pattern = '% n %');
+SELECT '-- -- -- key exists in both granules';
+SELECT * FROM explain_index_key_like(col = 'map_fixed', pattern = '% h %');
+SELECT '-- -- -- value exists only in the first granule';
+SELECT * FROM explain_index_value_like(col = 'map_fixed', pattern = '% e %');
+SELECT '-- -- -- value exists only in the second granule';
+SELECT * FROM explain_index_value_like(col = 'map_fixed', pattern = '% q %');
+SELECT '-- -- -- value exists in both granules';
+SELECT * FROM explain_index_value_like(col = 'map_fixed', pattern = '% k %');
+
 DROP VIEW explain_index_mapContains;
 DROP VIEW explain_index_equals;
 DROP VIEW explain_index_has;
 DROP VIEW explain_index_has_any_tokens;
 DROP VIEW explain_index_has_all_tokens;
+DROP VIEW explain_index_key_like;
+DROP VIEW explain_index_value_like;
 DROP TABLE tab;

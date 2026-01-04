@@ -321,6 +321,17 @@ SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
 SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
 ```
 
+#### `mapContainsKeyLike` and `mapContainsValueLike` {#functions-example-mapcontainslike}
+
+The functions [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike) and [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) match a pattern against all keys or values (respectively) of a map.
+
+Example:
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKeyLike(map, '% clickhouse %');
+SELECT count() FROM tab WHERE mapContainsValueLike(map, '% clickhouse %');
+```
+
 #### `operator[]` {#functions-example-access-operator}
 
 Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values.
@@ -421,6 +432,9 @@ SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 
 -- Finds all logs from a specific IP:
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
+
+-- Finds all logs where any attribute includes an error:
+SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
 ## Performance Tuning {#performance-tuning}
