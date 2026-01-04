@@ -1,0 +1,3 @@
+<clickhouse>
+    <materialize_statistics_on_merge>0</materialize_statistics_on_merge>
+</clickhouse>

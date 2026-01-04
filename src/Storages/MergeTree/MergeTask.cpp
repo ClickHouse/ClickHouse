@@ -8,6 +8,7 @@
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -105,6 +106,11 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
 }
 
+namespace ServerSetting
+{
+    extern const SettingsBool materialize_statistics_on_merge;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
@@ -149,8 +155,12 @@ namespace
 
 ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
 {
+    const auto & global_settings = context->getSettingsRef();
+    if (!global_settings[ServerSetting::materialize_statistics_on_merge])
+        return {};
     ColumnsStatistics all_statistics;
     const auto & all_columns = metadata_snapshot->getColumns();
 
@@ -763,7 +773,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_columns,
         /// indices,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
-        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
+        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot, global_ctx->context),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
@@ -1396,7 +1406,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
-        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
+        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot, global_ctx->context),
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,

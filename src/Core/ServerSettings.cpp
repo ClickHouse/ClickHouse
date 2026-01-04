@@ -76,6 +76,7 @@ namespace DB
     DECLARE(UInt64, max_io_thread_pool_free_size, 0, R"(
     If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
     )", 0) \
+    DECLARE(Bool, materialize_statistics_on_merge, true, R"(materialize statistics during merge)", 0) \
     DECLARE(UInt64, io_thread_pool_queue_size, 10000, R"(
     The maximum number of jobs that can be scheduled on the IO Thread pool.
 
