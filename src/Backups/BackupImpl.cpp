@@ -239,7 +239,8 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
+        archive_writer = createArchiveWriter(
+            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }
