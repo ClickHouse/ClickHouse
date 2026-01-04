@@ -93,18 +93,20 @@ def ensure_sink_schema(_url_ignored=None):
         ORDER BY (run_id, scenario, node, stage, name, ts)
         TTL ts + INTERVAL 30 DAY DELETE""",
     ]
+    ok = True
     for ddl in ddls:
-        last_exc = None
+        d_ok = False
         for attempt in range(2):
             try:
                 r = requests.post(url, params={"query": ddl}, headers=auth, timeout=20)
                 r.raise_for_status()
-                last_exc = None
+                d_ok = True
                 break
-            except Exception as e:
-                last_exc = e
+            except Exception:
                 time.sleep(0.5 * (attempt + 1))
-    _SEEDED = True
+        ok = ok and d_ok
+    if ok:
+        _SEEDED = True
 
 
 def sink_clickhouse(_url_ignored, table, rows):
@@ -118,10 +120,7 @@ def sink_clickhouse(_url_ignored, table, rows):
     if helper is None:
         return
     ensure_sink_schema()
-    db = (
-        os.environ.get("KEEPER_METRICS_DB", "keeper_stress_tests").strip()
-        or "keeper_stress_tests"
-    )
+    db = os.environ.get("KEEPER_METRICS_DB", "keeper_stress_tests")
     t = table if "." in table else f"{db}.{table}"
     # Chunk rows to reduce request size and improve retry behavior
     chunk_size = 1000

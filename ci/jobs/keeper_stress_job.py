@@ -284,24 +284,12 @@ def main():
     # Prepare env for pytest
     env = os.environ.copy()
     try:
-        need_url = not env.get("CI_DB_URL")
-        need_user = not env.get("CI_DB_USER")
-        need_pass = not env.get("CI_DB_PASSWORD")
-        if need_url or need_user or need_pass:
+        if not env.get("CI_DB_URL"):
             try:
                 from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-
                 _h = ClickHouseHelper()
-                if need_url and getattr(_h, "url", None):
+                if getattr(_h, "url", None):
                     env["CI_DB_URL"] = _h.url
-                if need_user and isinstance(getattr(_h, "auth", None), dict):
-                    u = _h.auth.get("X-ClickHouse-User")
-                    if u:
-                        env["CI_DB_USER"] = u
-                if need_pass and isinstance(getattr(_h, "auth", None), dict):
-                    k = _h.auth.get("X-ClickHouse-Key")
-                    if k:
-                        env["CI_DB_PASSWORD"] = k
             except Exception:
                 pass
     except Exception:
@@ -463,30 +451,22 @@ def main():
             helper = None
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
         try:
-            cidb_url = env.get("CI_DB_URL") or env.get("CLICKHOUSE_TEST_STAT_URL") or ""
-            cidb_user = env.get("CI_DB_USER") or env.get("CLICKHOUSE_TEST_STAT_LOGIN") or ""
-            cidb_pass = env.get("CI_DB_PASSWORD") or env.get("CLICKHOUSE_TEST_STAT_PASSWORD") or ""
-            auth = (
-                {"X-ClickHouse-User": cidb_user, "X-ClickHouse-Key": cidb_pass}
-                if cidb_user and cidb_pass
-                else None
-            )
-            if (not cidb_url or not auth) and helper is not None:
-                if not cidb_url:
-                    cidb_url = getattr(helper, "url", "") or cidb_url
-                if not auth and isinstance(getattr(helper, "auth", None), dict):
-                    auth = {
-                        "X-ClickHouse-User": helper.auth.get("X-ClickHouse-User", ""),
-                        "X-ClickHouse-Key": helper.auth.get("X-ClickHouse-Key", ""),
-                    }
+            # Resolve CIDB endpoint from env (URL-only) or helper; credentials come from helper
+            cidb_url = (env.get("CI_DB_URL") or (getattr(helper, "url", "") if helper is not None else ""))
+            auth = getattr(helper, "auth", None) if helper is not None else None
             if cidb_url and auth:
+                db_code = tbl_code = None
+                db_err = tbl_err = ""
                 try:
-                    requests.post(
+                    r1 = requests.post(
                         cidb_url,
                         params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
                         headers=auth,
                         timeout=20,
                     )
+                    db_code = r1.status_code
+                    if not r1.ok:
+                        db_err = (r1.text or "").strip()[:200]
                     table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
                         ts DateTime DEFAULT now(),
                         run_id String,
@@ -503,11 +483,23 @@ def main():
                     ) ENGINE=MergeTree
                     ORDER BY (run_id, scenario, node, stage, name, ts)
                     TTL ts + INTERVAL 30 DAY DELETE"""
-                    requests.post(
+                    r2 = requests.post(
                         cidb_url,
                         params={"query": table_ddl},
                         headers=auth,
                         timeout=20,
+                    )
+                    tbl_code = r2.status_code
+                    if not r2.ok:
+                        tbl_err = (r2.text or "").strip()[:200]
+                except Exception as e:
+                    db_err = db_err or (str(e)[:200])
+                try:
+                    results.append(
+                        Result.from_commands_run(
+                            name=f"CIDB DDL (post-run): create_db={db_code} err='{db_err}' create_tbl={tbl_code} err='{tbl_err}'",
+                            command=["true"],
+                        )
                     )
                 except Exception:
                     pass
@@ -558,12 +550,14 @@ def main():
                         pass
                     if len(rows) >= 1000:
                         body = "\n".join(rows)
-                        ClickHouseHelper.insert_json_str(helper.url, helper.auth, metrics_db, "keeper_metrics_ts", body)
+                        url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
+                        ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
                         pushed_rows += len(rows)
                         rows = []
             if rows:
                 body = "\n".join(rows)
-                ClickHouseHelper.insert_json_str(helper.url, helper.auth, metrics_db, "keeper_metrics_ts", body)
+                url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
+                ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
                 pushed_rows += len(rows)
         results.append(
             Result.from_commands_run(
@@ -628,36 +622,24 @@ def main():
         backends_counts = {}
         bench_rows = 0
         checks_rows = 0
-        # Resolve CIDB URL/auth from environment first, fall back to ClickHouseHelper (SSM)
-        cidb_url = (
-            env.get("CI_DB_URL") or env.get("CLICKHOUSE_TEST_STAT_URL") or ""
-        )
-        cidb_user = (
-            env.get("CI_DB_USER") or env.get("CLICKHOUSE_TEST_STAT_LOGIN") or ""
-        )
-        cidb_pass = (
-            env.get("CI_DB_PASSWORD")
-            or env.get("CLICKHOUSE_TEST_STAT_PASSWORD")
-            or ""
-        )
-        auth = (
-            {"X-ClickHouse-User": cidb_user, "X-ClickHouse-Key": cidb_pass}
-            if cidb_user and cidb_pass
-            else None
-        )
-        if not (cidb_url and auth):
+        # Resolve CIDB endpoint: prefer env CI_DB_URL override for URL, credentials via ClickHouseHelper
+        try:
+            from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
+            _h = None
             try:
-                from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-
-                _h = ClickHouseHelper()
-                cidb_url = getattr(_h, "url", "") or cidb_url
-                if not auth and isinstance(getattr(_h, "auth", None), dict):
-                    auth = {
-                        "X-ClickHouse-User": _h.auth.get("X-ClickHouse-User", ""),
-                        "X-ClickHouse-Key": _h.auth.get("X-ClickHouse-Key", ""),
-                    }
+                _h = helper if 'helper' in locals() else None
             except Exception:
-                pass
+                _h = None
+            if _h is None:
+                try:
+                    _h = ClickHouseHelper()
+                except Exception:
+                    _h = None
+            cidb_url = env.get("CI_DB_URL") or (getattr(_h, "url", "") if _h is not None else "")
+            auth = getattr(_h, "auth", None) if _h is not None else None
+        except Exception:
+            cidb_url = ""
+            auth = None
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
         if have_cidb:
@@ -667,13 +649,18 @@ def main():
             except Exception:
                 pass
             # Idempotent safety: ensure DB/table via HTTP regardless of helper behavior
+            db_code_v = tbl_code_v = None
+            db_err_v = tbl_err_v = ""
             try:
-                requests.post(
+                r1 = requests.post(
                     cidb_url,
                     params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
                     headers=auth,
                     timeout=30,
                 )
+                db_code_v = r1.status_code
+                if not r1.ok:
+                    db_err_v = (r1.text or "").strip()[:200]
                 table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
                     ts DateTime DEFAULT now(),
                     run_id String,
@@ -690,11 +677,23 @@ def main():
                 ) ENGINE=MergeTree
                 ORDER BY (run_id, scenario, node, stage, name, ts)
                 TTL ts + INTERVAL 30 DAY DELETE"""
-                requests.post(
+                r2 = requests.post(
                     cidb_url,
                     params={"query": table_ddl},
                     headers=auth,
                     timeout=30,
+                )
+                tbl_code_v = r2.status_code
+                if not r2.ok:
+                    tbl_err_v = (r2.text or "").strip()[:200]
+            except Exception as e:
+                db_err_v = db_err_v or (str(e)[:200])
+            try:
+                results.append(
+                    Result.from_commands_run(
+                        name=f"CIDB DDL (verify): create_db={db_code_v} err='{db_err_v}' create_tbl={tbl_code_v} err='{tbl_err_v}'",
+                        command=["true"],
+                    )
                 )
             except Exception:
                 pass
