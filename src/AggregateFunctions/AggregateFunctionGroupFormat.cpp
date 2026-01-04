@@ -243,8 +243,7 @@ public:
         {
             MutableColumns columns = state.columns;
             auto block = header.cloneWithColumns(std::move(columns));
-            if (block.rows())
-                output->write(block);
+            output->write(block);
         }
 
         output->finalize();
