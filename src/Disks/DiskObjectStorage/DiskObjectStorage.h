@@ -147,6 +147,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
@@ -256,7 +258,7 @@ private:
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    bool tryReserve(UInt64 bytes);
+    bool tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints = std::nullopt);
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
     mutable std::mutex resource_mutex;
