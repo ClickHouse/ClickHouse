@@ -1,7 +1,7 @@
 false	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
 true	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
+1970-01-01 04:00:00.000	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
 2001-01-01 01:01:01.111	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
-0	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
 s	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
 0	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
 1	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
@@ -9,8 +9,8 @@ s	Variant(Bool, DateTime64(3), IPv6, String, UInt32)
 
 false	Bool
 true	Bool
+1970-01-01 04:00:00.000	DateTime64(3)
 2001-01-01 01:01:01.111	DateTime64(3)
-0	String
 s	String
 0	UInt32
 1	UInt32
