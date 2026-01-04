@@ -16,7 +16,7 @@ namespace DB
 ///     3. The allocation succeeds (potentially, OS overcommits memory)
 ///     4. We go over the limit
 ///     5. OOM killer rightfully kills the server process
-/// To prevent this, we provide these `Safe-` aliases to standard containers that use the
+/// To prevent this, we provide these `Strict-` aliases to standard containers that use the
 /// `AllocatorWithMemoryTracking`, which tracks memory using throwing methods of the `MemoryTracker`.
 
 template <typename T>
