@@ -8,12 +8,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event ExternalJoinWritePart;
     extern const Event ExternalJoinMerge;
-    extern const Event ExternalJoinCompressedBytes;
-    extern const Event ExternalJoinUncompressedBytes;
-    extern const Event ExternalProcessingCompressedBytesTotal;
-    extern const Event ExternalProcessingUncompressedBytesTotal;
 }
 
 namespace DB
@@ -27,24 +22,11 @@ namespace ErrorCodes
 namespace
 {
 
-void updateProfileEvents(TemporaryDataBuffer::Stat stat)
-{
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
-
-    ProfileEvents::increment(ProfileEvents::ExternalJoinCompressedBytes, stat.compressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalJoinUncompressedBytes, stat.uncompressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalJoinWritePart);
-}
-
 TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & block)
 {
     TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data);
     stream_holder->write(block);
-
-    auto stat = stream_holder.finishWriting();
-    updateProfileEvents(stat);
-
+    stream_holder.finishWriting();
     return stream_holder;
 }
 
@@ -60,9 +42,7 @@ TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_d
     while (executor.pull(block))
         stream_holder->write(block);
 
-    auto stat = stream_holder.finishWriting();
-    updateProfileEvents(stat);
-
+    stream_holder.finishWriting();
     return stream_holder;
 }
 
@@ -241,7 +221,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
         files.emplace_back(flush(blocks));
 
     Pipes pipes;
-    pipes.reserve(num_files_for_merge);
+    pipes.reserve(std::min(num_files_for_merge, files.size()));
 
     /// Merge by parts to save memory. It's possible to exchange disk I/O and memory by num_files_for_merge.
     {
