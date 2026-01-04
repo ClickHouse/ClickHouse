@@ -366,9 +366,6 @@ static void explainStep(
             column.dumpStructure(out);
         else
             column.dumpNameAndType(out);
-
-        if (column.column && isColumnLazy(*column.column.get()))
-            out << " (Lazy)";
     };
 
     if (options.header)
