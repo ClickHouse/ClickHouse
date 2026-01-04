@@ -45,6 +45,10 @@ if (OS_LINUX)
     # See: https://github.com/ClickHouse/ClickHouse/pull/80245
     # https://github.com/jemalloc/jemalloc/pull/2842
     set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
+elseif (OS_DARWIN)
+    # On macOS, dirty_decay_ms is set to 0 to immediately purge dirty pages and prevent RSS bloat,
+    # and MEMORY_LIMIT errors as its consequence
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:0,lg_extent_max_active_fit:8")
 else()
     set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,lg_extent_max_active_fit:8")
 endif()
