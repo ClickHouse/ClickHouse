@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool parallel_view_processing;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool enable_memory_based_pipeline_throttling;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
