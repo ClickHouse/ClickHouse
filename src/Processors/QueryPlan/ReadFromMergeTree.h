@@ -104,8 +104,10 @@ public:
     struct DistributedIndexStat
     {
         std::string address;
-        size_t num_parts_receive;
-        size_t num_granules_receive;
+        size_t num_parts_send;
+        size_t num_parts_received;
+        size_t num_granules_send;
+        size_t num_granules_received;
         /// Note, probably need to include the following as well:
         /// - search_algorithm
     };

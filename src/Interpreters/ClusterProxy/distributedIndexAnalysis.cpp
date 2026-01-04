@@ -353,10 +353,6 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         res[local_replica_index].second.insert_range(std::move(parts_ranges));
     }
 
-    /// And now we can remove empty ranges
-    for (auto & [_, parts_ranges] : res)
-        std::erase_if(parts_ranges, [&](const auto & ranges) { return ranges.second.empty(); });
-
     return res;
 }
 

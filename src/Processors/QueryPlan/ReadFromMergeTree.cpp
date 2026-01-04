@@ -2261,21 +2261,31 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
                 size_t received_granules = 0;
                 size_t received_parts = 0;
-                for (const auto & [replica_address, parts_on_replica] : distributed_index_analysis)
+                for (auto & [replica_address, parts_on_replica] : distributed_index_analysis)
                 {
-                    size_t replica_granules = 0;
+                    size_t replica_granules_received = 0;
                     for (const auto & [_, marks] : parts_on_replica)
-                        replica_granules += marks.getNumberOfMarks();
+                        replica_granules_received += marks.getNumberOfMarks();
+
+                    size_t replica_granules_send = 0;
+                    for (const auto & [part, _] : parts_on_replica)
+                        replica_granules_send += parts_ranges_map.at(std::string(part))->getMarksCount();
+
+                    size_t num_parts_send = parts_on_replica.size();
+                    std::erase_if(parts_on_replica, [&](const auto & ranges) { return ranges.second.empty(); });
 
                     distributed_index_stats.emplace_back(DistributedIndexStat{
                         .address = replica_address,
-                        .num_parts_receive = parts_on_replica.size(),
-                        .num_granules_receive = replica_granules,
+                        .num_parts_send = num_parts_send,
+                        .num_parts_received = parts_on_replica.size(),
+                        .num_granules_send = replica_granules_send,
+                        .num_granules_received = replica_granules_received,
                     });
-                    analyzed_parts_ranges.insert_range(parts_on_replica);
 
-                    received_granules += replica_granules;
+                    received_granules += replica_granules_received;
                     received_parts += parts_on_replica.size();
+
+                    analyzed_parts_ranges.insert_range(std::move(parts_on_replica));
                 }
 
                 auto index_description = indexes->key_condition.getDescription();
@@ -3542,8 +3552,10 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
                 for (const auto & node_stat : stat.distributed)
                 {
                     format_settings.out << prefix << indent << indent << indent << "Address: " << node_stat.address << '\n';
-                    format_settings.out << prefix << indent << indent << indent << "Parts received: " << node_stat.num_parts_receive << '\n';
-                    format_settings.out << prefix << indent << indent << indent << "Granules received: " << node_stat.num_granules_receive << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Parts send: " << node_stat.num_parts_send << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Parts received: " << node_stat.num_parts_received << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Granules send: " << node_stat.num_granules_send << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Granules received: " << node_stat.num_granules_received << '\n';
                 }
             }
         }
@@ -3614,8 +3626,10 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
                 {
                     auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
                     node_stat_map->add("Address", node_stat.address);
-                    node_stat_map->add("Parts received", node_stat.num_parts_receive);
-                    node_stat_map->add("Granules received", node_stat.num_granules_receive);
+                    node_stat_map->add("Parts send", node_stat.num_parts_send);
+                    node_stat_map->add("Parts received", node_stat.num_parts_received);
+                    node_stat_map->add("Granules send", node_stat.num_granules_send);
+                    node_stat_map->add("Granules received", node_stat.num_granules_received);
                     distributed_index_array->add(std::move(node_stat_map));
                 }
 
