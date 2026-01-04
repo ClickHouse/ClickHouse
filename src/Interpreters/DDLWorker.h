@@ -61,6 +61,7 @@ public:
         ContextPtr context_,
         const Poco::Util::AbstractConfiguration * config,
         const String & prefix,
+        const String & zookeeper_name_ = "default",
         const String & logger_name = "DDLWorker",
         const CurrentMetrics::Metric * max_entry_metric_ = nullptr,
         const CurrentMetrics::Metric * max_pushed_entry_metric_ = nullptr);
@@ -184,6 +185,7 @@ protected:
     std::string replicas_dir;
 
     mutable std::mutex zookeeper_mutex;
+    const std::string zookeeper_name;
     ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
 
     /// Save state of executed task to avoid duplicate execution on ZK error

@@ -521,7 +521,7 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual ObjectStoragePtr getObjectStorage()
+    virtual ObjectStoragePtr getObjectStorage() const
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
