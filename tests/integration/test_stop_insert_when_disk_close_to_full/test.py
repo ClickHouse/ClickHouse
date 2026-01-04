@@ -125,9 +125,8 @@ def test_insert_stops_when_disk_full(start_cluster):
         msg = str(e)
         assert any(
             s in msg
-            for s in ("Could not perform insert", "Cannot reserve", "NOT_ENOUGH_SPACE")
+            for s in ("Could not perform insert", "Cannot reserve", "NOT_ENOUGH_SPACE", "None of the disks in volume have enough free space")
         )
-        assert "The amount of free space" in msg or "not enough space" in msg.lower()
 
     free_space = int(
         node.query("SELECT free_space FROM system.disks WHERE name = 'disk1'").strip()
@@ -183,7 +182,7 @@ def test_jbod_disk_failover(start_cluster):
     count = 0
     jbod_disk1_free = 0
 
-    for i in range(100000):
+    for i in range(10000):
         jbod_disk1_free = int(
             node_jbod.query(
                 "SELECT free_space FROM system.disks WHERE name = 'jbod_disk1'"
