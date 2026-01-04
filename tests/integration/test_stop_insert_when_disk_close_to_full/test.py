@@ -181,6 +181,7 @@ def test_jbod_disk_failover(start_cluster):
 
     count = 0
     jbod_disk1_free = 0
+    approx_one_insert_reservation = 15 * 1024
 
     for i in range(10000):
         jbod_disk1_free = int(
@@ -189,7 +190,7 @@ def test_jbod_disk_failover(start_cluster):
             ).strip()
         )
 
-        if jbod_disk1_free < min_free_bytes:
+        if jbod_disk1_free < (min_free_bytes + approx_one_insert_reservation):
             break
 
         try:
@@ -207,8 +208,8 @@ def test_jbod_disk_failover(start_cluster):
     )
 
     assert (
-        jbod_disk1_free < min_free_bytes
-    ), f"jbod_disk1 should be below threshold: {jbod_disk1_free} < {min_free_bytes}"
+        jbod_disk1_free < (min_free_bytes + approx_one_insert_reservation)
+    ), f"jbod_disk1 should be below threshold: {jbod_disk1_free} < {min_free_bytes + approx_one_insert_reservation}"
     assert (
         jbod_disk2_free > min_free_bytes
     ), f"jbod_disk2 should be above threshold: {jbod_disk2_free} > {min_free_bytes}"
@@ -242,8 +243,8 @@ def test_jbod_disk_failover(start_cluster):
         ).strip()
     )
     assert (
-        jbod_disk1_free_after < min_free_bytes
-    ), f"jbod_disk1 should still be below threshold ({jbod_disk1_free_after} < {min_free_bytes})"
+        jbod_disk1_free_after < (min_free_bytes + approx_one_insert_reservation)
+    ), f"jbod_disk1 should still be below threshold ({jbod_disk1_free_after} < {min_free_bytes + approx_one_insert_reservation})"
     # Allow small difference due to metadata
     assert (
         abs(jbod_disk1_free_after - jbod_disk1_free) < 100 * 1024
