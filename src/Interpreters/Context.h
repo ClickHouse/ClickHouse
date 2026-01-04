@@ -642,9 +642,6 @@ protected:
     mutable std::mutex mutex_shared_context;    /// mutex to avoid accessing destroyed shared context pointer
                                                 /// some Context methods can be called after the shared context is destroyed
                                                 /// example, Context::handleCrash() method - called from signal handler
-#if USE_PARQUET
-    mutable std::optional<std::pair<std::string, std::string>> parquet_metadata_cache_key;
-#endif
 };
 
 /** A set of known objects that can be used in the query.
@@ -1340,8 +1337,6 @@ public:
     void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
-    void setParquetMetadataCacheKey(const std::string & file_path, const std::string & etag) const;
-    std::optional<std::pair<std::string, std::string>> getParquetMetadataCacheKey() const;
 #endif
 
     void setAllowedDisksForTableEngines(std::unordered_set<String> && allowed_disks_) { allowed_disks = std::move(allowed_disks_); }
