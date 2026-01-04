@@ -1,2 +1,5 @@
 ---
 total_memory_profiler_step: 100Mi
+# FIXME: we cannot modify this settings, because in current implementation of sampling, it will override per-query setting
+# total_memory_tracker_sample_probability: 0.001
+# total_memory_profiler_sample_min_allocation_size: 4Mi
