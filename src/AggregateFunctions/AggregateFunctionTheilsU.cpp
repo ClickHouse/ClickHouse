@@ -74,8 +74,7 @@ void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 The `theilsU` function calculates the [Theil's U uncertainty coefficient](https://en.wikipedia.org/wiki/Contingency_table#Uncertainty_coefficient), a value that measures the association between two columns in a table.
-Its values range from −1.0 (100% negative association, or perfect inversion) to +1.0 (100% positive association, or perfect agreement).
-A value of 0.0 indicates the absence of association.
+Its values range from 0.0 (no association) to 1.0 (perfect agreement).
     )";
     FunctionDocumentation::Syntax syntax = R"(
 theilsU(column1, column2)
@@ -85,7 +84,7 @@ theilsU(column1, column2)
         {"column2", "Second column to be compared.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns a value between -1 and 1.", {"Float64"}
+        "Returns a value between 0 and 1.", {"Float64"}
     };
     FunctionDocumentation::Examples examples = {
     {
@@ -102,7 +101,7 @@ FROM (
         )",
         R"(
 ┌────────theilsU(a, b)─┐
-│ -0.30195720557678846 │
+│  0.30195720557678846 │
 └──────────────────────┘
         )"
     }
