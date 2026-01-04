@@ -16,8 +16,8 @@ public:
     /// The scalar type is used to represent floating-point values, for example -539.8 or 1736046605.
     using ScalarType = Float64;
 
-    /// The interval type is used to represent time intervals, for example 1d30m.
-    using IntervalType = DecimalField<Decimal64>;
+    /// The duration type is used to represent durations or offsets, for example "1d30m" or "-2h".
+    using DurationType = DecimalField<Decimal64>;
 
     enum class MatcherType { EQ /* = */, NE /* != */, RE /* =~ */, NRE /* !~ */};
 
@@ -37,9 +37,9 @@ public:
 
     enum class NodeType
     {
-        StringLiteral,
         ScalarLiteral,
-        IntervalLiteral,
+        StringLiteral,
+        Duration,
         InstantSelector,
         RangeSelector,
         Subquery,
@@ -79,16 +79,6 @@ public:
         String dumpTree(size_t indent) const override;
     };
 
-    /// An offset written in the format 2h30m or -1d.
-    class IntervalLiteral : public Node
-    {
-    public:
-        IntervalType interval;
-        IntervalLiteral() { node_type = NodeType::IntervalLiteral; result_type = ResultType::SCALAR; }
-        Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpTree(size_t indent) const override;
-    };
-
     /// A string literal.
     /// Example: "abc"
     class StringLiteral : public Node
@@ -96,6 +86,16 @@ public:
     public:
         String string;
         StringLiteral() { node_type = NodeType::StringLiteral; result_type = ResultType::STRING; }
+        Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
+        String dumpTree(size_t indent) const override;
+    };
+
+    /// A duration or an offset written in the format 2h30m or -1d.
+    class Duration : public Node
+    {
+    public:
+        DurationType duration;
+        Duration() { node_type = NodeType::Duration; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpTree(size_t indent) const override;
     };

@@ -1,43 +1,152 @@
 #include <Storages/StoragePrometheusQuery.h>
 
 #include <Common/logger_useful.h>
+#include <Core/TimeSeries/TimeSeriesDecimalUtils.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(ASTs & args, ContextPtr context, bool over_range)
+{
+    std::string_view function_name = over_range ? "prometheusQueryRange" : "prometheusQuery";
+    size_t min_num_args = 3 + over_range * 2;
+    size_t max_num_args = 4 + over_range * 2;
+
+    if ((args.size() < min_num_args) || (args.size() > max_num_args))
+    {
+        std::string_view expected_args = over_range ? "[database, ] time_series_table, promql_query, start_time, end_time, step"
+                                                    : "[database, ] time_series_table, promql_query, evaluation_time";
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function '{}' requires {}..{} arguments: {}([database, ] time_series_table, promql_query, {})",
+                        function_name, min_num_args, max_num_args, function_name, expected_args);
+    }
+
+    size_t argument_index = 0;
+
+    StorageID time_series_storage_id = StorageID::createEmpty();
+
+    if (args.size() == min_num_args)
+    {
+        /// prometheusQuery( [my_db.]my_time_series_table, ... )
+        if (const auto * id = args[argument_index]->as<ASTIdentifier>())
+        {
+            if (auto table_id = id->createTable())
+            {
+                time_series_storage_id = table_id->getTableId();
+                ++argument_index;
+            }
+        }
+    }
+
+    if (time_series_storage_id.empty())
+    {
+        if (args.size() == min_num_args)
+        {
+            /// prometheusQuery( 'my_time_series_table', ... )
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
+        }
+        else
+        {
+            /// prometheusQuery( 'mydb', 'my_time_series_table', ... )
+            auto database_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (database_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a literal with type String, got {}", database_name_field.getType());
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.database_name = database_name_field.safeGet<String>();
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
+        }
+    }
+
+    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr();
+    auto time_scale = PrometheusQueryToSQL::getResultTimeScale(data_table_metadata);
+
+    auto promql_query_field = evaluateConstantExpression(args[argument_index++], context).first;
+    if (promql_query_field.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'promql_query' must be a literal with type String, got {}", promql_query_field.getType());
+
+    PrometheusQueryTree promql_tree{promql_query_field.safeGet<String>()};
+
+    std::optional<DecimalField<DateTime64>> evaluation_time;
+    std::optional<PrometheusQueryEvaluationRange> evaluation_range;
+
+    if (over_range)
+    {
+        auto [start_time_field, start_time_type] = evaluateConstantExpression(args[argument_index++], context);
+        auto [end_time_field, end_time_type] = evaluateConstantExpression(args[argument_index++], context);
+        auto [step_field, step_type] = evaluateConstantExpression(args[argument_index++], context);
+
+        evaluation_range.emplace();
+        evaluation_range->start_time = getTimeseriesTime(start_time_field, start_time_type, time_scale);
+        evaluation_range->end_time = getTimeseriesTime(end_time_field, end_time_type, time_scale);
+        evaluation_range->step = getTimeseriesDuration(step_field, step_type, time_scale);
+    }
+    else
+    {
+        auto [evaluation_time_field, evaluation_time_type] = evaluateConstantExpression(args[argument_index++], context);
+        evaluation_time = getTimeseriesTime(evaluation_time_field, evaluation_time_type, time_scale);
+    }
+
+    chassert(argument_index == args.size());
+
+    Configuration configuration;
+    auto & evaluation_settings = configuration.evaluation_settings;
+
+    configuration.promql_tree = std::make_shared<PrometheusQueryTree>(std::move(promql_tree));
+    evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
+    evaluation_settings.data_table_metadata = data_table_metadata;
+    evaluation_settings.evaluation_time = evaluation_time;
+    evaluation_settings.evaluation_range = evaluation_range;
+
+    return configuration;
+}
+
+
 StoragePrometheusQuery::StoragePrometheusQuery(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    const StorageID & time_series_storage_id_,
-    const PrometheusQueryTree & promql_query_)
+    const Configuration & configuration_)
     : IStorage{table_id_}
-    , time_series_storage_id{time_series_storage_id_}
-    , promql_query{promql_query_}
+    , configuration(configuration_)
     , log(getLogger("StoragePrometheusQuery"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-}
-
-void StoragePrometheusQuery::setEvaluationTime(const Field & time_)
-{
-    evaluation_time = time_;
-    evaluation_range = {};
-}
-
-void StoragePrometheusQuery::setEvaluationRange(const PrometheusQueryEvaluationRange & range_)
-{
-    evaluation_range = range_;
-    evaluation_time = Field{};
 }
 
 void StoragePrometheusQuery::read(
@@ -50,23 +159,19 @@ void StoragePrometheusQuery::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table = time_series_storage->getTargetTable(ViewTarget::Data, context);
-    auto data_table_metadata = data_table->getInMemoryMetadataPtr();
-    PrometheusQueryToSQLConverter::TimeSeriesTableInfo time_series_table_info;
-    time_series_table_info.storage_id = time_series_storage_id;
-    time_series_table_info.timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    time_series_table_info.value_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
-
-    LOG_INFO(log, "Building SQL to evaluate promql: {}", promql_query);
-    PrometheusQueryToSQLConverter converter{promql_query, time_series_table_info, 5*60, 15};
-    if (!evaluation_time.isNull())
-        converter.setEvaluationTime(evaluation_time);
-    else if (!evaluation_range.isNull())
-        converter.setEvaluationRange(evaluation_range);
+    LOG_INFO(log, "Building SQL to evaluate promql query: {}", *configuration.promql_tree);
+    PrometheusQueryToSQL::Converter converter{configuration.promql_tree, configuration.evaluation_settings};
     ASTPtr select_query = converter.getSQL();
 
-    LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
+    LOG_INFO(log, "Will execute query:\n{}",
+        select_query->formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/false,
+            /*show_secrets=*/false,
+            /*print_pretty_type_names=*/true,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
+
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
     InterpreterSelectQueryAnalyzer interpreter(select_query, context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
