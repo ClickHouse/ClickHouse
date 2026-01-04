@@ -795,6 +795,30 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         )
     )
+    # Nightly Keeper stress job (simple pytest suite in integration-tests-runner)
+    keeper_stress_job = Job.Config(
+        name="Keeper Stress",
+        runs_on=RunnerLabels.AMD_LARGE,
+        command=(
+            "python3 ./ci/jobs/keeper_stress_job.py"
+        ),
+        run_in_docker=(
+            f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+"
+            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker"
+        ),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/keeper_stress_job.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                "./tests/stress/keeper/",
+                "./tests/stress/keeper/tests",
+                "./tests/stress/keeper/framework/",
+                "./tests/stress/keeper/faults/",
+                "./tests/stress/keeper/workloads/",
+                "./tests/integration/helpers/",
+            ],
+        ),
+    )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
         runs_on=[],  # from parametrize()
