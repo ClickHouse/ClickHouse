@@ -510,6 +510,11 @@ target_link_libraries(dbms PUBLIC
     ch_contrib::pdqsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
+
+if (TARGET ch_contrib::simdcomp)
+    target_link_libraries (dbms PRIVATE ch_contrib::simdcomp)
+endif()
+
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::zstd)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::xz)
 

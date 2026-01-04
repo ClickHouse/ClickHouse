@@ -48,6 +48,7 @@ CREATE TABLE tab
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
                                 [, bloom_filter_false_positive_rate = R]
+                                [, posting_list_codec = 'none' | 'bitpacking' ]
                             ) [GRANULARITY 64]
 )
 ENGINE = MergeTree
@@ -148,7 +149,6 @@ ORDER BY tuple();
 
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
-
 **Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
@@ -168,6 +168,11 @@ Optional parameter `dictionary_block_frontcoding_compression` (default: 1) speci
 Optional parameter `max_cardinality_for_embedded_postings` (default: 16) specifies the cardinality threshold below which posting lists should be embedded into dictionary blocks.
 
 Optional parameter `bloom_filter_false_positive_rate` (default: 0.1) specifies the false-positive rate of the dictionary bloom filter.
+
+Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
+- `none` - the posting lists are stored without additional compression.
+- `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
+
 </details>
 
 Text indexes can be added to or removed from a column after the table has been created:
