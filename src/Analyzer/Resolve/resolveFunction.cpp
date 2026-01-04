@@ -91,7 +91,7 @@ std::string rewriteAggregateFunctionNameForWindowIfNeeded(const std::string & ag
     /// This allows different implementations for GROUP BY and window contexts.
     /// For example, in `src/AggregateFunctions/AggregateFunctionCramersV.cpp`, the `CramersVWindowData`
     /// variant is used for window functions and is optimized for frequent calls to `add` and `getResult`.
-    /// `CramersVWindowData` has on average O(log n) complexity for both `add` and `getResult`,
+    /// `CramersVWindowData` has on average expected O(logn) complexity for `add` and O(1) complexity for `getResult`,
     /// while `CramersVData` has O(1) complexity for `add` and O(n) complexity for `getResult`.
     /// This makes `CramersVData` optimal for GROUP BY, but suboptimal for window functions because
     /// `getResult` is called on almost every row in the window frame. That's why the `CramersVWindow` variant is needed.
