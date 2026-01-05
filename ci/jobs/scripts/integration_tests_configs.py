@@ -956,8 +956,8 @@ def get_tests_execution_time(info: Info, job_options: str) -> dict[str, int]:
     client = CIDBCluster()
     print(query)
     try:
-        res = client.do_select_query(query, retries=3)
-    except RuntimeError as e:
+        res = client.do_select_query(query, retries=5, timeout=20)
+    except Exception as e:
         print(e)
         print(traceback.format_exc())
         return {}
