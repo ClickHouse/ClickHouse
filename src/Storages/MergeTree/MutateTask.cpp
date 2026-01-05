@@ -2221,6 +2221,7 @@ private:
 
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->all_gathered_data);
+            ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
