@@ -20,7 +20,7 @@ public:
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
-        const std::string & description_,
+        const std::string & description_ = "none",
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
         LRUFileCachePriority::StatePtr protected_state_ = nullptr);
 
@@ -104,6 +104,12 @@ protected:
     size_t getHoldSize() override { return protected_queue.getHoldSize() + probationary_queue.getHoldSize(); }
 
     size_t getHoldElements() override { return protected_queue.getHoldElements() + probationary_queue.getHoldElements(); }
+
+    void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard> guard) override
+    {
+        probationary_queue.setCacheUsageStatGuard(guard);
+        protected_queue.setCacheUsageStatGuard(guard);
+    }
 
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;

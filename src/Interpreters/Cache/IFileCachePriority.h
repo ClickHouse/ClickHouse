@@ -17,6 +17,8 @@ struct FileCacheReserveStat;
 class EvictionCandidates;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
+struct CacheUsageStatGuard;
+
 
 class IFileCachePriority : private boost::noncopyable
 {
@@ -55,11 +57,11 @@ public:
         void setEvictingFlag(const LockedKey &) const
         {
             auto prev = evicting.exchange(true, std::memory_order_relaxed);
-            chassert(!prev);
+            chassert(!prev, fmt::format("Evicting flag not reset for key {} offset {}", key, offset));
             UNUSED(prev);
         }
 
-        void setRemoved(const CachePriorityGuard::WriteLock &) { removed = true; }
+        void setRemoved(const CachePriorityGuard::WriteLock &) { removed = true; evicting = false; }
         bool isRemoved(const CachePriorityGuard::WriteLock &) const { return removed; }
 
         void resetEvictingFlag() const
@@ -129,6 +131,8 @@ public:
 
     size_t getElementsLimit(const CacheStateGuard::Lock &) const { return max_elements; }
     size_t getElementsLimitApprox() const { return max_elements.load(std::memory_order_relaxed); }
+
+    virtual bool isOvercommitEviction() const { return false; }
 
     virtual size_t getSize(const CacheStateGuard::Lock &) const = 0;
     virtual size_t getSizeApprox() const = 0;
@@ -283,6 +287,8 @@ public:
     virtual size_t getHoldSize() = 0;
 
     virtual size_t getHoldElements() = 0;
+
+    virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

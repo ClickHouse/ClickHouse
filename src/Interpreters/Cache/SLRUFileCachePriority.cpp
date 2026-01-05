@@ -432,8 +432,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// because we cannot know how much space we will need to downgrade
     /// (because downgraded space >= space to reserve in protected).
     auto probationary_eviction_info = probationary_queue.collectEvictionInfo(
-        stat.total_stat.releasable_size,
-        stat.total_stat.releasable_count,
+        downgrade_stat.total_stat.releasable_size,
+        downgrade_stat.total_stat.releasable_count,
         /* reservee */nullptr,
         /* is_total_space_cleanup */false,
         /* is_dynamic_resize */false,
@@ -519,13 +519,18 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 auto entry = slru_iterator->getEntry();
                 chassert(entry->size > 0);
 
+                /// Add a new empty queue entry,
+                /// save pointers to a new empty entry and old non-empty entry.
+                /// Once we have state lock, we will increment size for new entry
+                /// and reset size for the old entry,
+                /// thus size will be transferred from one entry to another.
                 auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata);
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
-                    iterator,
-                    entry->size,
-                    slru_iterator->lru_iterator,
-                    new_iterator
+                    .slru_iterator = iterator,
+                    .entry_size = entry->size,
+                    .prev_nested_iterator = slru_iterator->lru_iterator,
+                    .new_nested_iterator = new_iterator
                 });
                 key_candidates.candidates.pop_back();
             }
@@ -533,7 +538,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     });
 
     /// Set incrementing size callback, as explained in the previous comment.
-    res.setAfterEvictStateFunc([=](const CacheStateGuard::Lock & lk)
+    res.setAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
     {
         chassert(downgraded_entries->getSize() > 0);
         while (true)
@@ -555,6 +560,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             }
             iterator->setIterator(std::move(info->new_nested_iterator), /* is_protected */false, lk);
             info->prev_nested_iterator.invalidate();
+            check(lk);
+            info->slru_iterator->check(lk);
         }
     });
 
@@ -598,6 +605,14 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
 
     EntryPtr entry = iterator.getEntry();
+
+    {
+        auto locked_key = entry->key_metadata->lock();
+        if (entry->isEvicting(*locked_key))
+            return false;
+
+        entry->setEvictingFlag(*locked_key);
+    }
 
     /// Entry is in probationary queue.
     /// Check if there is enough space in protected queue to move entry there.
@@ -675,8 +690,9 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             throw;
         }
         iterator.setIterator(std::move(new_iterator), /* is_protected */true, lock);
+        prev_iterator.invalidate();
+        check(lock);
     }
-    prev_iterator.invalidate();
 
     return true;
 }
@@ -790,6 +806,7 @@ void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const Cache
 {
     assertValid();
     lru_iterator.incrementSize(size, lock);
+    check(lock);
 }
 
 void SLRUFileCachePriority::SLRUIterator::decrementSize(size_t size)

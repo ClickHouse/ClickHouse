@@ -39,6 +39,7 @@ std::string QueueEvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
     wb << "description: " << description;
+    wb << ", " << "user: " << user_id;
     wb << ", " << "size to evict: " << size_to_evict;
     wb << ", " << "elements to evict: " << elements_to_evict;
     if (hold_space)

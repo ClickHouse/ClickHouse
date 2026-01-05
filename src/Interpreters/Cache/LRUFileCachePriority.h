@@ -3,6 +3,7 @@
 #include <list>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/UserCacheUsage.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/Guards.h>
 
@@ -146,6 +147,11 @@ protected:
 
     size_t getHoldElements() override { return total_hold_elements; }
 
+    void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard> guard) override
+    {
+        cache_usage_stat_guard = guard;
+    }
+
 private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
@@ -166,6 +172,7 @@ private:
     /// (updated in holdImpl, releaseImpl).
     std::atomic<size_t> total_hold_size = 0;
     std::atomic<size_t> total_hold_elements = 0;
+    std::shared_ptr<CacheUsageStatGuard> cache_usage_stat_guard;
 
     bool canFit(
         size_t size,

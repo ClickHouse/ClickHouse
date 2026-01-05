@@ -274,6 +274,16 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
+        if (metadata->isEvictingOrRemoved(*locked_key))
+        {
+            /// Skip queue entries which are in evicting state.
+            /// We threat them the same way as deleted entries.
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
+            ++it;
+            continue;
+        }
+
         auto result = func(*locked_key, metadata);
         switch (result)
         {
@@ -324,10 +334,10 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
     bool is_dynamic_resize,
-    const IFileCachePriority::UserInfo &,
+    const IFileCachePriority::UserInfo & user_info,
     const CacheStateGuard::Lock & lock)
 {
-    auto info = std::make_unique<QueueEvictionInfo>(description);
+    auto info = std::make_unique<QueueEvictionInfo>(description, user_info.user_id);
     if (!size && !elements)
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 
@@ -682,17 +692,21 @@ void LRUFileCachePriority::holdImpl(
     total_hold_size += size;
     total_hold_elements += elements;
 
-    // LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
+    LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
 }
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
+    auto lock = cache_usage_stat_guard
+        ? std::optional<CacheUsageStatGuard::Lock>(cache_usage_stat_guard->lock())
+        : std::nullopt;
+
     state->sub(size, elements);
 
     total_hold_size -= size;
     total_hold_elements -= elements;
 
-    // LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+    LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(const CachePriorityGuard::ReadLock &) const

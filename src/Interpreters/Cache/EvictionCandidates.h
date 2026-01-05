@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/UserCacheUsage.h>
 #include <Interpreters/Cache/UserInfo.h>
 #include <deque>
 
@@ -14,13 +15,16 @@ namespace DB
 /// held space will be automatically released in destructor of HoldSpacePtr.
 struct QueueEvictionInfo
 {
-    explicit QueueEvictionInfo(const std::string & description_) : description(description_) {}
+    explicit QueueEvictionInfo(
+        const std::string & description_,
+        const FileCacheUserInfo::UserID & user_id_) : description(description_), user_id(user_id_) {}
+
+    const std::string description;
+    const FileCacheUserInfo::UserID user_id;
+
     size_t size_to_evict = 0;
     size_t elements_to_evict = 0;
     IFileCachePriority::HoldSpacePtr hold_space;
-    std::string description;
-
-    FileCacheUserInfo::UserID user_id;
 
     std::string toString() const;
     /// Whether actual eviction is needed to be done.
@@ -53,6 +57,8 @@ public:
     /// Throws exception if eviction info with the same queue_id already exists.
     void add(EvictionInfoPtr && info);
 
+    size_t getSizeToEvict() const { return size_to_evict; }
+    size_t getElementsToEvict() const { return elements_to_evict; }
     /// Whether actual eviction is needed to be done.
     bool requiresEviction() const { return size_to_evict || elements_to_evict; }
     /// Whether we "hold" some space.
@@ -62,11 +68,16 @@ public:
 
     std::string toString() const;
 
+    void setCacheUsage(std::vector<CacheUsagePtr> && usage) { sorted_cache_usage = std::move(usage); }
+    std::vector<CacheUsagePtr> getCacheUsage() const { return sorted_cache_usage; }
+
 private:
     void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
+
+    std::vector<CacheUsagePtr> sorted_cache_usage;
 };
 
 class EvictionCandidates : private boost::noncopyable
