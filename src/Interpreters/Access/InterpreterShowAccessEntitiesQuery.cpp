@@ -114,6 +114,28 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             break;
         }
 
+        case AccessEntityType::MASKING_POLICY:
+        {
+            origin = "masking_policies";
+            expr = "name";
+
+            if (!query.short_name.empty())
+                filter = "short_name = " + quoteString(query.short_name);
+
+            if (query.database_and_table_name)
+            {
+                const String & database = query.database_and_table_name->first;
+                const String & table_name = query.database_and_table_name->second;
+                if (!database.empty())
+                    filter += String{filter.empty() ? "" : " AND "} + "database = " + quoteString(database);
+                if (!table_name.empty())
+                    filter += String{filter.empty() ? "" : " AND "} + "table = " + quoteString(table_name);
+                if (!database.empty() && !table_name.empty())
+                    expr = "short_name";
+            }
+            break;
+        }
+
         case AccessEntityType::MAX:
             break;
     }

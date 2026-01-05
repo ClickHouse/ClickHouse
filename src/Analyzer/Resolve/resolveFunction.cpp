@@ -940,7 +940,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (get_scalar_const_arg && scope.context->hasQueryContext())
             {
                 auto query_context = scope.context->getQueryContext();
-                auto scalar_string = toString(get_scalar_const_arg->getValue());
+                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);

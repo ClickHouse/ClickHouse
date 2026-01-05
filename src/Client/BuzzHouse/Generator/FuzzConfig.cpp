@@ -312,7 +312,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"shared", allow_shared},
            {"datalakecatalog", allow_datalakecatalog},
            {"arrowflight", allow_arrowflight},
-           {"alias", allow_alias}};
+           {"alias", allow_alias},
+           {"kafka", allow_kafka}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -375,6 +376,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"set_smt_disk", [&](const JSONObjectType & value) { set_smt_disk = value.getBool(); }},
         {"allow_query_oracles", [&](const JSONObjectType & value) { allow_query_oracles = value.getBool(); }},
         {"allow_health_check", [&](const JSONObjectType & value) { allow_health_check = value.getBool(); }},
+        {"enable_compatibility_settings", [&](const JSONObjectType & value) { enable_compatibility_settings = value.getBool(); }},
         {"max_reconnection_attempts",
          [&](const JSONObjectType & value)
          { max_reconnection_attempts = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
@@ -396,6 +398,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
+        {"kafka", [&](const JSONObjectType & value) { kafka_server = loadServerCredentials(value, "kafka", 19092); }},
         {"dolor", [&](const JSONObjectType & value) { dolor_server = loadServerCredentials(value, "dolor", 8080); }},
         {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
         {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},

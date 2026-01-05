@@ -50,8 +50,34 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const IColumn::Filter & filter, size_t filter_bytes)
+static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
 {
+    if (!column)
+        return true;
+
+    if (filter_column == column)
+        return false;
+
+    if (column->use_count() > 1)
+        return false;
+
+    bool can_inplace = true;
+    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        if (!can_inplace)
+            return;
+
+        if (!canInplaceFilter(subcolumn, filter_column))
+            can_inplace = false;
+    });
+
+    return can_inplace;
+}
+
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
+{
+    const auto & filter_data = filter.getData();
+
     for (auto & column : columns)
     {
         if (column)
@@ -60,7 +86,18 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter, siz
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            column = column->filter(filter, filter_bytes);
+            if (canInplaceFilter(column, filter.getColumn()))
+            {
+                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
+                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
+                auto mutable_column = IColumn::mutate(std::move(column));
+                mutable_column->filter(filter_data);
+                column = std::move(mutable_column);
+            }
+            else
+            {
+                column = column->filter(filter_data, filter.countBytesInFilter());
+            }
 
             if (column->empty())
             {
@@ -85,7 +122,7 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
         return;
     }
 
-    DB::filterColumns(columns, filter.getData(), filter.countBytesInFilter());
+    DB::filterColumns(columns, filter);
 }
 
 void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter)
@@ -516,7 +553,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     LOG_TEST(log, "ReadResult::applyFilter() num_rows after: {}", num_rows);
 }
 
-void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules)
+void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules, bool must_apply_filter)
 {
     checkInternalConsistency();
 
@@ -646,7 +683,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             applyFilter(current_filter);
         }
         /// Another guess, if it's worth filtering at PREWHERE
-        else if (filter.countBytesInFilter() < 0.6 * filter.size())
+        else if (must_apply_filter || (filter.countBytesInFilter() < 0.6 * filter.size()))
         {
             applyFilter(filter);
         }
@@ -1052,7 +1089,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             auto current_filter = FilterWithCachedCount(result.columns.front());
             result.columns.clear();
-            result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
+            result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules(), merge_tree_reader->mustApplyFilter());
         }
         else
         {
@@ -1461,7 +1498,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// to only output those rows from this reader to the next Sorting step.
     bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
-        result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules());
+        result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules(), false);
 
     if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
         return;
@@ -1541,7 +1578,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
+        result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules(), false);
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
         {
