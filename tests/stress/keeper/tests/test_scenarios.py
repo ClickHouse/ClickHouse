@@ -612,19 +612,26 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 except Exception:
                     ops = 0.0
                 rps = (ops / dur) if (dur and dur > 0) else 0.0
+                has_lat = bool(s.get("has_latency"))
+                err = float(s.get("errors") or 0)
                 names_vals = {
                     "ops": ops,
-                    "errors": float(s.get("errors") or 0),
-                    "p50_ms": float(s.get("p50_ms") or 0),
-                    "p95_ms": float(s.get("p95_ms") or 0),
-                    "p99_ms": float(s.get("p99_ms") or 0),
+                    "errors": err,
                     "reads": float(s.get("reads") or 0),
                     "writes": float(s.get("writes") or 0),
                     "read_ratio": float(s.get("read_ratio") or 0),
                     "write_ratio": float(s.get("write_ratio") or 0),
                     "duration_s": dur,
                     "rps": float(rps),
+                    "error_rate": (err / ops) if (ops and ops > 0) else 0.0,
+                    "bench_has_latency": 1.0 if has_lat else 0.0,
                 }
+                if has_lat:
+                    names_vals.update({
+                        "p50_ms": float(s.get("p50_ms") or 0),
+                        "p95_ms": float(s.get("p95_ms") or 0),
+                        "p99_ms": float(s.get("p99_ms") or 0),
+                    })
                 rows = []
                 for nm, val in names_vals.items():
                     try:

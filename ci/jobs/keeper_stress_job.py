@@ -440,6 +440,8 @@ def main():
     # Post-run: push keeper metrics from pytest stdout using CI DB creds like integration does
     try:
         pushed_rows = 0
+        extracted_rows = 0
+        push_err = ""
         helper = None
         try:
             from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
@@ -525,43 +527,86 @@ def main():
                     pass
         except Exception:
             pass
-        if helper is not None and Path(pytest_log_file).exists():
+        if Path(pytest_log_file).exists():
             rows = []
             inside = False
-            with open(pytest_log_file, "r", encoding="utf-8", errors="ignore") as lf:
-                for line in lf:
-                    s = line.strip()
-                    if s == "[keeper][push-metrics] begin":
-                        inside = True
-                        continue
-                    if s == "[keeper][push-metrics] end":
-                        inside = False
-                        continue
-                    if not inside:
-                        continue
-                    if not s or s[0] != "{" or "value" not in s:
-                        continue
-                    try:
-                        # validate JSON and required keys
-                        obj = json.loads(s)
-                        if all(k in obj for k in ("run_id", "commit_sha", "backend", "scenario", "node", "stage", "source", "name", "value")):
-                            rows.append(s)
-                    except Exception:
-                        pass
-                    if len(rows) >= 1000:
-                        body = "\n".join(rows)
+            extracted_path = f"{temp_dir}/keeper_metrics_extracted.jsonl"
+            try:
+                ef = open(extracted_path, "w", encoding="utf-8")
+            except Exception:
+                ef = None
+            try:
+                with open(pytest_log_file, "r", encoding="utf-8", errors="ignore") as lf:
+                    for line in lf:
+                        s = line.strip()
+                        if s == "[keeper][push-metrics] begin":
+                            inside = True
+                            continue
+                        if s == "[keeper][push-metrics] end":
+                            inside = False
+                            continue
+                        if not inside:
+                            continue
+                        if not s or s[0] != "{" or "value" not in s:
+                            continue
+                        try:
+                            obj = json.loads(s)
+                            if all(k in obj for k in ("run_id", "commit_sha", "backend", "scenario", "node", "stage", "source", "name", "value")):
+                                rows.append(s)
+                                extracted_rows += 1
+                                if ef:
+                                    try:
+                                        ef.write(s + "\n")
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        if len(rows) >= 1000:
+                            body = "\n".join(rows)
+                            if helper is not None:
+                                url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
+                                try:
+                                    ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
+                                    pushed_rows += len(rows)
+                                except Exception as e:
+                                    if not push_err:
+                                        push_err = str(e)[:200]
+                            rows = []
+                if rows:
+                    body = "\n".join(rows)
+                    if helper is not None:
                         url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
-                        ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
-                        pushed_rows += len(rows)
-                        rows = []
-            if rows:
-                body = "\n".join(rows)
-                url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
-                ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
-                pushed_rows += len(rows)
+                        try:
+                            ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
+                            pushed_rows += len(rows)
+                        except Exception as e:
+                            if not push_err:
+                                push_err = str(e)[:200]
+            finally:
+                try:
+                    if ef:
+                        ef.close()
+                except Exception:
+                    pass
+            try:
+                files_to_attach.append(extracted_path)
+            except Exception:
+                pass
+            try:
+                results.append(
+                    Result.from_commands_run(
+                        name="Keeper Metrics Extracted Preview",
+                        command=(
+                            "bash -lc \"echo '==== Keeper metrics (extracted) preview ===='; "
+                            f"sed -n '1,200p' '{extracted_path}'\""
+                        ),
+                    )
+                )
+            except Exception:
+                pass
         results.append(
             Result.from_commands_run(
-                name=f"CIDB Push (post-run): keeper_metrics rows={pushed_rows}",
+                name=f"CIDB Push (post-run): keeper_metrics extracted={extracted_rows} pushed={pushed_rows} err='{push_err}'",
                 command=["true"],
             )
         )

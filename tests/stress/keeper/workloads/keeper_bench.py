@@ -199,6 +199,7 @@ class KeeperBench:
             "p50_ms": 0,
             "p95_ms": 0,
             "p99_ms": 0,
+            "has_latency": False,
         }
         try:
             data = json.loads(out_text or "{}")
@@ -217,11 +218,12 @@ class KeeperBench:
                 p95 = _pick(lat, "p95", "95%")
                 p99 = _pick(lat, "p99", "99%")
                 if p50 is not None:
-                    s["p50_ms"] = int(float(p50))
+                    s["p50_ms"] = float(p50)
                 if p95 is not None:
-                    s["p95_ms"] = int(float(p95))
+                    s["p95_ms"] = float(p95)
                 if p99 is not None:
-                    s["p99_ms"] = int(float(p99))
+                    s["p99_ms"] = float(p99)
+                s["has_latency"] = any(x is not None for x in (p50, p95, p99))
         except Exception:
             pass
         return s
@@ -401,6 +403,7 @@ class KeeperBench:
             "p95_ms": 0,
             "p99_ms": 0,
             "duration_s": self.duration_s,
+            "has_latency": False,
         }
         try:
             adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE") or os.environ.get("KEEPER_ADAPTIVE")
@@ -449,9 +452,10 @@ class KeeperBench:
                     summary["ops"] += int(st.get("ops") or 0)
                     summary["errors"] += int(st.get("errors") or 0)
                     summary["duration_s"] += int(st.get("duration_s") or 0)
-                    summary["p50_ms"] = max(int(summary.get("p50_ms") or 0), int(st.get("p50_ms") or 0))
-                    summary["p95_ms"] = max(int(summary.get("p95_ms") or 0), int(st.get("p95_ms") or 0))
-                    summary["p99_ms"] = max(int(summary.get("p99_ms") or 0), int(st.get("p99_ms") or 0))
+                    summary["p50_ms"] = max(float(summary.get("p50_ms") or 0), float(st.get("p50_ms") or 0))
+                    summary["p95_ms"] = max(float(summary.get("p95_ms") or 0), float(st.get("p95_ms") or 0))
+                    summary["p99_ms"] = max(float(summary.get("p99_ms") or 0), float(st.get("p99_ms") or 0))
+                    summary["has_latency"] = bool(summary.get("has_latency")) or bool(st.get("has_latency"))
                 except Exception:
                     pass
                 try:
@@ -520,7 +524,7 @@ class KeeperBench:
         try:
             parsed = self._parse_output_json(out.get("out", ""))
             for k, v in parsed.items():
-                summary[k] = v if k in ("ops", "errors", "p50_ms", "p95_ms", "p99_ms") else summary.get(k, v)
+                summary[k] = v if k in ("ops", "errors", "p50_ms", "p95_ms", "p99_ms", "has_latency") else summary.get(k, v)
         except Exception:
             pass
         # Fallback: if ops still zero, estimate by znode_count delta on this node
