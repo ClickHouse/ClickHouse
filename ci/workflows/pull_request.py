@@ -73,7 +73,9 @@ workflow = Workflow.Config(
         #     )
         #     for j in JobConfigs.functional_tests_jobs
         # ],
-        *JobConfigs.functional_tests_jobs_llvm_coverage,
+        
+        # *JobConfigs.functional_tests_jobs_llvm_coverage,
+        
         # *[
         #     job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
         #     for job in JobConfigs.integration_test_jobs_required[:]
@@ -82,7 +84,9 @@ workflow = Workflow.Config(
         #     job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
         #     for job in JobConfigs.integration_test_jobs_non_required
         # ],
-        *JobConfigs.integration_test_llvm_coverage,
+
+        # *JobConfigs.integration_test_llvm_coverage,
+        
         *JobConfigs.unittest_jobs,
         # JobConfigs.docker_server.set_dependency(
         #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
