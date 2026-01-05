@@ -76,6 +76,7 @@ def test_url_cluster_secure():
     assert 'leaked_secret_test' in result
     assert 'secretPasswordick' not in result
 
+    node1.query("DROP TABLE leaked_secret_test")
 
 def test_url_cluster_with_named_collection():
     result = node1.query(
