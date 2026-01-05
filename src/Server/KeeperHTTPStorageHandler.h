@@ -49,21 +49,21 @@ public:
         std::shared_ptr<KeeperHTTPClient> keeper_client_,
         size_t max_request_size_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
     static std::optional<Coordination::OpNum> getOperationFromRequest(
-        const HTTPServerRequest & request, HTTPServerResponse & response);
+        const HTTPServerRequest & request, HTTPServerResponseBase & response);
 
     void performZooKeeperRequest(
-        Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
+        Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponseBase & response) const;
 
-    void performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response) const;
-    void performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponse & response) const;
-    void performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const;
-    void performZooKeeperSetRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
-    void performZooKeeperCreateRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const;
-    void performZooKeeperRemoveRequest(const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponse & response) const;
+    void performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponseBase & response) const;
+    void performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponseBase & response) const;
+    void performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponseBase & response) const;
+    void performZooKeeperSetRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponseBase & response) const;
+    void performZooKeeperCreateRequest(const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponseBase & response) const;
+    void performZooKeeperRemoveRequest(const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponseBase & response) const;
 
     LoggerPtr log;
     std::shared_ptr<KeeperHTTPClient> keeper_client;

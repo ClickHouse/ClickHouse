@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Common/Exception.h>
 
@@ -37,10 +36,10 @@ namespace ErrorCodes
 
 struct ResponseOutput
 {
-    std::unique_ptr<WriteBufferFromHTTPServerResponse> response_holder;
+    std::unique_ptr<WriteBufferFromHTTPServerResponseBase> response_holder;
     std::unique_ptr<WriteBuffer> compression_holder;
 
-    explicit ResponseOutput(std::unique_ptr<WriteBufferFromHTTPServerResponse> && buf)
+    explicit ResponseOutput(std::unique_ptr<WriteBufferFromHTTPServerResponseBase> && buf)
         : response_holder(std::move(buf))
     {
     }
@@ -60,9 +59,9 @@ struct ResponseOutput
     }
 };
 
-static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response)
+static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
-    auto result = ResponseOutput(std::make_unique<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD));
+    auto result = ResponseOutput(response.makeUniqueStream());
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -80,7 +79,7 @@ static inline ResponseOutput responseWriteBuffer(HTTPServerRequest & request, HT
     return result;
 }
 
-void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
@@ -97,7 +96,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
                             "The Transfer-Encoding is not chunked and there "
                             "is no Content-Length header for POST request");
 
-        setResponseDefaultHeaders(response);
+        response.setResponseDefaultHeaders();
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
         writeResponse(*response_output.get());
         response_output.get()->finalize();
@@ -105,8 +104,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     catch (...)
     {
         tryLogCurrentException("StaticRequestHandler");
-        response_output.response_holder->cancelWithException(
-            request, getCurrentExceptionCode(), getCurrentExceptionMessage(false, true), response_output.compression_holder.get());
+        response_output.response_holder->cancelWithException(getCurrentExceptionCode(), getCurrentExceptionMessage(false, true), response_output.compression_holder.get());
     }
 }
 

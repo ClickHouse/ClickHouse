@@ -42,7 +42,7 @@ class KeeperHTTPReadinessHandler : public HTTPRequestHandler, WithContext
 public:
     explicit KeeperHTTPReadinessHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
     LoggerPtr log;
@@ -56,7 +56,7 @@ public:
         std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
         std::shared_ptr<KeeperHTTPClient> keeper_client_);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
     LoggerPtr log;

@@ -1,5 +1,8 @@
 #include <Server/HTTP/deferHTTP100Continue.h>
-#include <Server/HTTP/HTTPServerConnection.h>
+#include <Server/HTTP/HTTP1/HTTP1ServerConnection.h>
+#include <Server/HTTP/HTTP1/HTTP1ServerResponse.h>
+#include <Server/HTTP/HTTP1/buildRequest.h>
+#include <Server/HTTP/HTTP1/ReadHeaders.h>
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
@@ -17,11 +20,24 @@ namespace ProfileEvents
     extern const Event HTTPServerConnectionsReset;
 }
 
-
 namespace DB
 {
 
-HTTPServerConnection::HTTPServerConnection(
+namespace
+{
+
+void sendErrorResponse(HTTP1ServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status)
+{
+    response.setVersion(Poco::Net::HTTPMessage::HTTP_1_1);
+    response.setStatusAndReason(status);
+    response.setKeepAlive(false);
+    response.getSession().setKeepAlive(false);
+    response.makeStream()->finalize();
+}
+
+}
+
+HTTP1ServerConnection::HTTP1ServerConnection(
     HTTPContextPtr context_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
@@ -34,13 +50,15 @@ HTTPServerConnection::HTTPServerConnection(
     poco_check_ptr(factory);
 }
 
-void HTTPServerConnection::run()
+void HTTP1ServerConnection::run()
 {
+    /// FIXME: server seems to be always empty
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
     ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsCreated);
 
+    /// FIXME: stopped seems to be always false
     while (!stopped && tcp_server.isOpen() && session.connected())
     {
         const bool is_first_request = params->getMaxKeepAliveRequests() == session.getMaxKeepAliveRequests();
@@ -66,8 +84,9 @@ void HTTPServerConnection::run()
             std::lock_guard lock(mutex);
             if (!stopped && tcp_server.isOpen() && session.connected())
             {
-                HTTPServerResponse response(session);
-                HTTPServerRequest request(context, response, session, read_event);
+                HTTPServerRequest request = buildRequest(context, session, read_event);
+                HTTP1ServerResponse response(session, write_event);
+                response.attachRequest(&request);
 
                 Poco::Timestamp now;
 
@@ -92,7 +111,7 @@ void HTTPServerConnection::run()
                 {
                     if (!tcp_server.isOpen())
                     {
-                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+                        sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
                         break;
                     }
                     std::unique_ptr<HTTPRequestHandler> handler(factory->createRequestHandler(request));
@@ -100,9 +119,9 @@ void HTTPServerConnection::run()
                     if (handler)
                     {
                         if (!shouldDeferHTTP100Continue(request) && request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-                            response.sendContinue();
+                            response.send100Continue();
 
-                        handler->handleRequest(request, response, write_event);
+                        handler->handleRequest(request, response);
 
                         bool keep_alive = false;
                         if (!params->getKeepAlive() || !request.canKeepAlive())
@@ -133,16 +152,16 @@ void HTTPServerConnection::run()
                     }
                     else
                     {
-                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED);
+                        sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED);
                     }
                 }
                 catch (Poco::Exception &)
                 {
-                    if (!response.sent())
+                    if (!response.sendStarted())
                     {
                         try
                         {
-                            sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                            sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                         }
                         catch (...) // NOLINT(bugprone-empty-catch)
                         {
@@ -158,15 +177,16 @@ void HTTPServerConnection::run()
         }
         catch (const Poco::Net::MessageException & e)
         {
-            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
-            sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTP1ServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
+            HTTP1ServerResponse response(session, write_event);
+            sendErrorResponse(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
         catch (const Poco::Net::NetException & e)
         {
             /// Do not spam logs with messages related to connection reset by peer.
             if (e.code() == POCO_ENOTCONN)
             {
-                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
+                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTP1ServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
                 break;
             }
 
@@ -185,18 +205,6 @@ void HTTPServerConnection::run()
                 throw;
         }
     }
-}
-
-// static
-void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status)
-{
-    HTTPServerResponse response(session);
-    response.setVersion(Poco::Net::HTTPMessage::HTTP_1_1);
-    response.setStatusAndReason(status);
-    response.setKeepAlive(false);
-    response.send();
-    session.setKeepAlive(false);
-    ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsReset);
 }
 
 }

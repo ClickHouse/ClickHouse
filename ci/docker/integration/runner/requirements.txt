@@ -42,6 +42,7 @@ grpcio-tools==1.60.0
 grpcio==1.60.0
 gssapi==1.8.3
 httplib2==0.22.0
+httpx[http2]==0.28.1
 idna==3.7
 iniconfig==2.0.0
 isodate==0.6.1

@@ -19,7 +19,6 @@ namespace DB
 {
 
 class IServer;
-class WriteBufferFromHTTPServerResponse;
 
 class InterserverIOHTTPHandler : public HTTPRequestHandler
 {
@@ -30,17 +29,17 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
-    using OutputPtr = std::shared_ptr<WriteBufferFromHTTPServerResponse>;
+    using OutputPtr = std::shared_ptr<WriteBufferFromHTTPServerResponseBase>;
 
     IServer & server;
     LoggerPtr log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 
-    void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr used_output);
+    void processQuery(HTTPServerRequest & request, HTTPServerResponseBase & response, OutputPtr used_output);
 
     std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
 };

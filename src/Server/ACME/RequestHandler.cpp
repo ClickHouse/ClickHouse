@@ -5,7 +5,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <Server/ACME/Client.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 
@@ -13,22 +12,24 @@
 namespace DB
 {
 
-void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     auto challenge = ACME::Client::instance().requestChallenge(request.getURI());
 
     if (challenge.empty())
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
+        const char * msg = "Not found.\n";
+        response.makeStream()->sendBufferAndFinalize(msg, strlen(msg));
+        return;
     }
 
-    setResponseDefaultHeaders(response);
+    response.setResponseDefaultHeaders();
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
 
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(challenge.data(), challenge.size());
-    wb.finalize();
+    auto wb = response.makeStream();
+    wb->write(challenge.data(), challenge.size());
+    wb->finalize();
 }
 
 

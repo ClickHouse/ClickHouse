@@ -10,7 +10,7 @@
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTP/HTTPServerResponse.h>
+#include <Server/HTTP/HTTPServerResponseBase.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -114,7 +114,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
+void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponseBase & response)
 {
     // nothing to read from body
     body.reset();

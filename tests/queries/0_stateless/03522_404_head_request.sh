@@ -12,7 +12,7 @@ set -eu
 URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/does_not_exist"
 
 echo HEAD does not have a message
-${CLICKHOUSE_CURL} -H 'Connection: close' -X HEAD "${URL}" -D - | grep -v 'Date:'
+${CLICKHOUSE_CURL} -H 'Connection: close' -X HEAD "${URL}" -D - | grep -vi 'Date:' | grep -vi 'X-ClickHouse-Exception-Tag'
 
 echo GET has a message
 ${CLICKHOUSE_CURL} -H 'Connection: close' -X GET "${URL}" -D - | grep 'There is no handle /does_not_exist'

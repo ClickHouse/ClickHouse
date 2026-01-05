@@ -11,10 +11,10 @@ namespace DB
 {
 class TCPServer;
 
-class HTTPServerConnection : public Poco::Net::TCPServerConnection
+class HTTP1ServerConnection : public Poco::Net::TCPServerConnection
 {
 public:
-    HTTPServerConnection(
+    HTTP1ServerConnection(
         HTTPContextPtr context,
         TCPServer & tcp_server,
         const Poco::Net::StreamSocket & socket,
@@ -23,7 +23,7 @@ public:
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
-    HTTPServerConnection(
+    HTTP1ServerConnection(
         HTTPContextPtr context_,
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
@@ -32,15 +32,12 @@ public:
         const String & forwarded_for_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end())
-    : HTTPServerConnection(context_, tcp_server_, socket_, params_, factory_, read_event_, write_event_)
+    : HTTP1ServerConnection(context_, tcp_server_, socket_, params_, factory_, read_event_, write_event_)
     {
         forwarded_for = forwarded_for_;
     }
 
     void run() override;
-
-protected:
-    static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
 
 private:
     HTTPContextPtr context;

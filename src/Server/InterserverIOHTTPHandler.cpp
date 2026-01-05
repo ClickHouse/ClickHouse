@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
@@ -52,7 +51,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponseBase & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
@@ -82,7 +81,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     DB::setThreadName(ThreadName::INTERSERVER_HANDLER);
 
@@ -90,8 +89,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    auto output = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
+    auto output = response.makeStream();
 
     try
     {
@@ -105,7 +103,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         else
         {
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
-            output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
+            output->cancelWithException(ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }
     catch (Exception & e)
@@ -118,14 +116,14 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         else
             LOG_INFO(log, message);
 
-        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
+        output->cancelWithException(getCurrentExceptionCode(), message.text, nullptr);
     }
     catch (...)
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
         LOG_ERROR(log, message);
 
-        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
+        output->cancelWithException(getCurrentExceptionCode(), message.text, nullptr);
     }
 }
 

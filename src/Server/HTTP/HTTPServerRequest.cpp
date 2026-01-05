@@ -1,20 +1,5 @@
-#include <memory>
 #include <Server/HTTP/HTTPServerRequest.h>
-
-#include <IO/EmptyReadBuffer.h>
-#include <IO/HTTPChunkedReadBuffer.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
-#include <Server/HTTP/HTTPServerResponse.h>
-#include <Server/HTTP/ReadHeaders.h>
-
-#include <Poco/Net/HTTPHeaderStream.h>
-#include <Poco/Net/HTTPStream.h>
-#include <Poco/Net/NetException.h>
-
-#include <Common/logger_useful.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
@@ -22,65 +7,27 @@
 #include <Common/Crypto/X509Certificate.h>
 #endif
 
-static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
-
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
-    : max_uri_size(context->getMaxUriSize())
-    , max_fields_number(context->getMaxFields())
-    , max_field_name_size(context->getMaxFieldNameSize())
-    , max_field_value_size(context->getMaxFieldValueSize())
+
+HTTPServerRequest::HTTPServerRequest(
+    HTTPRequest request_,
+    ReadBufferPtr stream_,
+    bool stream_is_bounded_,
+    const Poco::Net::SocketAddress & client_address_,
+    const Poco::Net::SocketAddress & server_address_,
+    bool secure_,
+    Poco::Net::SocketImpl * socket_)
+    : HTTPRequest(std::move(request_))
+    , stream(std::move(stream_))
+    , stream_is_bounded(stream_is_bounded_)
+    , client_address(client_address_)
+    , server_address(server_address_)
+    , secure(secure_)
+    , socket(socket_)
 {
-    response.attachRequest(this);
-
-    /// Now that we know socket is still connected, obtain addresses
-    client_address = session.clientAddress();
-    server_address = session.serverAddress();
-    secure = session.socket().secure();
-
-    auto receive_timeout = context->getReceiveTimeout();
-    auto send_timeout = context->getSendTimeout();
-
-    session.socket().setReceiveTimeout(receive_timeout);
-    session.socket().setSendTimeout(send_timeout);
-
-    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
-    socket = session.socket().impl();
-
-    readRequest(*in);  /// Try parse according to RFC7230
-
-    /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
-    /// So we will get 0 from recv(...) and will not be able to understand that something went wrong (well, we probably
-    /// will get RST later on attempt to write to the socket that closed on the other side, but it will happen when the query is finished).
-    /// If we are extremely unlucky and data format is TSV, for example, then we may stop parsing exactly between rows
-    /// and decide that it's EOF (but it is not). It may break deduplication, because clients cannot control it
-    /// and retry with exactly the same (incomplete) set of rows.
-    /// That's why we have to check body size if it's provided.
-    if (getChunkedTransferEncoding())
-    {
-        stream = std::make_shared<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
-        stream_is_bounded = true;
-    }
-    else if (hasContentLength())
-    {
-        size_t content_length = getContentLength();
-        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
-        stream_is_bounded = true;
-    }
-    else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
-    {
-        stream = std::move(in);
-        if (!startsWith(getContentType(), "multipart/form-data"))
-            LOG_WARNING(LogFrequencyLimiter(getLogger("HTTPServerRequest"), 10), "Got an HTTP request with no content length "
-                "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
-    }
-    else
-    {
-        /// We have to distinguish empty buffer and nullptr.
-        stream = std::make_shared<EmptyReadBuffer>();
-        stream_is_bounded = true;
-    }
+    if (stream_is_bounded)
+        get_stream_mutex.emplace();
 }
 
 bool HTTPServerRequest::checkPeerConnected() const
@@ -127,60 +74,6 @@ X509Certificate HTTPServerRequest::peerCertificate() const
     return X509Certificate(secure_socket->peerCertificate());
 }
 #endif
-
-void HTTPServerRequest::readRequest(ReadBuffer & in)
-{
-    char ch;
-    std::string method;
-    std::string uri;
-    std::string version;
-
-    method.reserve(16);
-    uri.reserve(64);
-    version.reserve(16);
-
-    if (in.eof())
-        throw Poco::Net::NoMessageException();
-
-    skipWhitespaceIfAny(in);
-
-    if (in.eof())
-        throw Poco::Net::MessageException("No HTTP request header");
-
-    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && method.size() <= MAX_METHOD_LENGTH)
-        method += ch;
-
-    if (method.size() > MAX_METHOD_LENGTH)
-        throw Poco::Net::MessageException("HTTP request method invalid or too long");
-
-    skipWhitespaceIfAny(in);
-
-    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= max_uri_size)
-        uri += ch;
-
-    if (uri.size() > max_uri_size)
-        throw Poco::Net::MessageException("HTTP request URI invalid or too long");
-
-    skipWhitespaceIfAny(in);
-
-    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && version.size() <= MAX_VERSION_LENGTH)
-        version += ch;
-
-    if (version.size() > MAX_VERSION_LENGTH)
-        throw Poco::Net::MessageException(fmt::format("Invalid HTTP version string: {}", version));
-
-    // since HTTP always use Windows-style EOL '\r\n' we always can safely skip to '\n'
-
-    skipToNextLineOrEOF(in);
-
-    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size);
-
-    skipToNextLineOrEOF(in);
-
-    setMethod(method);
-    setURI(uri);
-    setVersion(version);
-}
 
 std::string HTTPServerRequest::toStringForLogging() const
 {

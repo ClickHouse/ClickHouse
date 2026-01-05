@@ -677,5 +677,19 @@ bool SecureSocketImpl::getBlocking() const
     return _pSocket->getBlocking();
 }
 
+std::string SecureSocketImpl::getAlpnSelected() const
+{
+	std::lock_guard<std::recursive_mutex> lock(_mutex);
+	if (_pSSL)
+	{
+		const unsigned char * alpn = nullptr;
+		unsigned int alpnlen = 0;
+		SSL_get0_alpn_selected(_pSSL, &alpn, &alpnlen);
+		if (alpn == nullptr)
+			return {};
+		return std::string{alpn, alpn + alpnlen};
+	}
+	return {};
+}
 
 } } // namespace Poco::Net

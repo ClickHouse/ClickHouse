@@ -215,6 +215,9 @@ endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
 endif()
+if (ENABLE_NGHTTP2)
+    set(USE_NGHTTP2 1)
+endif()
 set (USE_YTSAURUS 1)
 
 

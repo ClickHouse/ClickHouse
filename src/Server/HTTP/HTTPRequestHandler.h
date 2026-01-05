@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/HTTP/HTTPServerRequest.h>
-#include <Server/HTTP/HTTPServerResponse.h>
+#include <Server/HTTP/HTTPServerResponseBase.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -13,8 +13,7 @@ class HTTPRequestHandler : private boost::noncopyable
 public:
     virtual ~HTTPRequestHandler() = default;
 
-    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) = 0;
-    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) { handleRequest(request, response, ProfileEvents::end()); }
+    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) = 0;
 };
 
 }
