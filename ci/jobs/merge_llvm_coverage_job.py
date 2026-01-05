@@ -1,3 +1,4 @@
+import os
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
@@ -5,9 +6,14 @@ current_directory = Utils.cwd()
 temp_dir = f"{current_directory}/ci/tmp/"
 
 if __name__ == "__main__":
+    # Pass workspace path to the shell script
+    env = os.environ.copy()
+    env["WORKSPACE_PATH"] = current_directory
+    
     result = Result.from_commands_run(
         name="Merge LLVM Coverage",
         command=["bash ci/jobs/merge_llvm_coverage.sh"],
+        env=env,
     )
     
     attached_files = []

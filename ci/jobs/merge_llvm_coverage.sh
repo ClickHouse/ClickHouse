@@ -100,7 +100,16 @@ echo "Generating coverage report..."
 # The coverage data references paths like "ci/tmp/build/base/base/..."
 # We created symlinks so those paths now resolve to actual source files
 # Ignore contrib files (coverage is disabled for them)
-llvm-cov-21 show   \
+
+# Detect workspace path - use WORKSPACE_PATH if set, otherwise try to detect
+if [ -z "$WORKSPACE_PATH" ]; then
+    # Go back to workspace root (we're in ci/tmp)
+    WORKSPACE_PATH=$(cd ../.. && pwd)
+fi
+
+echo "Using workspace path: $WORKSPACE_PATH"
+
+"$LLVM_COV" show   \
         -instr-profile=merged.profdata   \
         -object ./clickhouse   \
         -object ./unit_tests_dbms   \
@@ -108,5 +117,5 @@ llvm-cov-21 show   \
         -output-dir=llvm_coverage_html_report   \
         -show-line-counts-or-regions   \
         -show-expansions \
-        -path-equivalence=ci/tmp/build,/home/ubuntu/ClickHouse \
+        -path-equivalence=ci/tmp/build,"$WORKSPACE_PATH" \
         -ignore-filename-regex='contrib'
