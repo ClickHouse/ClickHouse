@@ -2804,6 +2804,9 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
 
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+        return false;
+
     return true;
 }
 

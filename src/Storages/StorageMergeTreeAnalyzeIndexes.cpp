@@ -171,9 +171,6 @@ protected:
             query_info,
             metadata_snapshot);
 
-        ContextMutablePtr new_context = Context::createCopy(context);
-        new_context->setSetting("use_skip_indexes_on_data_read", false);
-
         /// TODO: we may also want to support query condition cache here as well
 
         ReadFromMergeTree::AnalysisResult analysis_result;
@@ -182,7 +179,7 @@ protected:
             metadata_snapshot,
             snapshot_data.mutations_snapshot,
             query_info,
-            new_context,
+            context,
             indexes->key_condition,
             indexes->part_offset_condition,
             indexes->total_offset_condition,
@@ -195,6 +192,7 @@ protected:
             analysis_result.index_stats,
             indexes->use_skip_indexes,
             indexes->use_skip_indexes_for_disjunctions,
+            /* supports_skip_indexes_on_data_read= */ false,
             /* find_exact_ranges= */ false,
             /* is_final_query= */ false,
             /* is_parallel_reading_from_replicas= */ false,
