@@ -206,7 +206,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
             projection_part->checksums.getTotalChecksumUInt128());
     }
 
-    new_part->minmax_idx = std::move(gathered_data.part_statistics.minmax_idx);
+    if (gathered_data.part_statistics.minmax_idx)
+        new_part->minmax_idx = gathered_data.part_statistics.minmax_idx;
 
     NameSet files_to_remove_after_sync;
     if (reset_columns)
