@@ -159,8 +159,10 @@ Test output:
     def can_process(cls, job_result, test_result):
         if any(key in job_result.name for key in ("Unit",)):
             return True
-        if job_result.is_error() or test_result.is_error():
-            print(f"Cannot handle error status in job [{job_result.name}] - skip")
+        if job_result.is_error() or test_result.is_error() or job_result.is_dropped():
+            print(
+                f"Cannot handle dropped or error status in job [{job_result.name}] - skip"
+            )
             return False
         if len(job_result.results) > 4:
             print("Cannot handle more than 4 test failures in one job - skip")
@@ -197,7 +199,7 @@ Test output:
         # so we truncate from the bottom to preserve the initial context.
         res += result.get_info_truncated(
             truncate_from_top=result.status == Result.Status.ERROR,
-            max_info_lines_cnt=20,
+            max_info_lines_cnt=50,
             max_line_length=200,
         )
         res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"

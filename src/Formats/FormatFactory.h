@@ -194,7 +194,10 @@ public:
         // allows to do: buf -> parallel read -> decompression,
         // because parallel read after decompression is not possible
         CompressionMethod compression = CompressionMethod::None,
-        bool need_only_count = false) const;
+        bool need_only_count = false,
+        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
+        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(

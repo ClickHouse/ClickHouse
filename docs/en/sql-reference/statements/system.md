@@ -101,21 +101,15 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
-## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
-
-Clears the text index dictionary cache.
-
-## SYSTEM DROP TEXT INDEX HEADER CACHE {#drop-text-index-header-cache}
-
-Clears the text index header cache.
-
-## SYSTEM DROP TEXT INDEX POSTINGS CACHE {#drop-text-index-postings-cache}
-
-Clears the text index postings cache.
-
 ## SYSTEM DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index header cache, dictionary cache, and postings cache.
+Clears the text index's header, dictionary and postings caches.
+
+If you like to drop one of these caches individually, you can run
+
+- `SYSTEM DROP TEXT INDEX HEADER CACHE`,
+- `SYSTEM DROP TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM DROP TEXT INDEX POSTINGS CACHE`
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -252,8 +246,8 @@ where `FUNCTION` is any function or substring of a function such as `QueryMetric
 Prints the text provided as an argument and the stack trace either on `ENTRY` or `EXIT` of the function.
 
 ```sql
-SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG ENTRY 'this is a log printed at entry'
-SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG EXIT 'this is a log printed at exit'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
 ```
 
 #### SLEEP {#instrument-add-sleep}
@@ -261,13 +255,13 @@ SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG EXIT 'this is a log print
 Sleeps for a number of fix amount of seconds either on `ENTRY` or `EXIT`:
 
 ```sql
-SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5
 ```
 
 or for a uniformly distributed random amount of seconds providing min and max separated by a whitespace:
 
 ```sql
-SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0 1
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
 ```
 
 #### PROFILE {#instrument-add-profile}
@@ -277,7 +271,7 @@ The result of the profiling is stored in [`system.trace_log`](../../operations/s
 to [Chrome Event Trace Format](../../operations/system-tables/trace_log.md#chrome-event-trace-format).
 
 ```sql
-SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` PROFILE
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
 ```
 
 ### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
@@ -294,13 +288,19 @@ all of them using the `ALL` parameter:
 SYSTEM INSTRUMENT REMOVE ALL
 ```
 
-or a set of IDs from a subquery:
+a set of IDs from a subquery:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
 ```
 
-The instrumentation point ID can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
+or all instrumentation points that match a given function_name:
+
+```sql
+SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
+```
+
+The instrumentation point information can be collected from [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
 
 ## Managing Distributed Tables {#managing-distributed-tables}
 
