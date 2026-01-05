@@ -18,8 +18,7 @@ services:
                     --node-count 1
                     --queue-agent-count 1
                     --address-resolver-config '{enable_ipv4=%true;enable_ipv6=%false;}'
-                    --port-range-start ${YTSAURUS_INTERNAL_PORTS_START}
-                    --node-port-set-size ${YTSAURUS_INTERNAL_PORTS_SIZE}
+                    --listen-port-pool ${YTSAURUS_INTERNAL_PORTS_LIST}
                     --native-client-supported
                     --id primary -c '{name=query-tracker}'
                     --enable-auth

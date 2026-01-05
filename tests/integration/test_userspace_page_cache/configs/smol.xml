@@ -1,14 +1,6 @@
 <clickhouse>
-    <page_cache_min_size>8000000</page_cache_min_size>
-    <page_cache_max_size>67108864</page_cache_max_size>
-    <max_server_memory_usage>800000000</max_server_memory_usage>
-    <page_cache_history_window_ms>10000</page_cache_history_window_ms>
-    <page_cache_lookahead_blocks>64</page_cache_lookahead_blocks>
+    <page_cache_min_size>10000000</page_cache_min_size>
+    <max_server_memory_usage>3000000000</max_server_memory_usage>
+    <page_cache_history_window_ms>0</page_cache_history_window_ms>
     <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
-    <use_uncompressed_cache>false</use_uncompressed_cache>
-    <uncompressed_cache_size>16777216</uncompressed_cache_size>
-    <mark_cache_size>8388608</mark_cache_size>
-    <max_threads>2</max_threads>
-    <background_pool_size>2</background_pool_size>
-    <background_move_pool_size>1</background_move_pool_size>
 </clickhouse>

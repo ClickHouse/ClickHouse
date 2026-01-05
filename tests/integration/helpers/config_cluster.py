@@ -3,8 +3,7 @@ mysql_user = "root"
 mysql_pass = "ClickHouse_MySQL_P@ssw0rd"
 
 # Dremio CREDENTIALS
-# Dremio OSS 26.0 image uses 'admin' with password set via DREMIO_ROOT_PASSWORD in compose
-dremio_user = "admin"
+dremio_user = "user"
 dremio_pass = "ClickHouse_Dremio_P@ssw0rd"
 
 # POSTGRES CREDENTIALS

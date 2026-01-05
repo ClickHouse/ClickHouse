@@ -19,9 +19,5 @@
         </policies>
     </storage_configuration>
 
-    <page_cache_max_size>134217728</page_cache_max_size>
-    <max_server_memory_usage>1000000000</max_server_memory_usage>
-    <use_uncompressed_cache>false</use_uncompressed_cache>
-    <uncompressed_cache_size>33554432</uncompressed_cache_size>
-    <mark_cache_size>16777216</mark_cache_size>
+    <page_cache_max_size>10000000000</page_cache_max_size>
 </clickhouse>
