@@ -1,5 +1,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
@@ -133,6 +134,8 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
 
 struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 {
+    TestKeeperExistsRequest() = default;
+    explicit TestKeeperExistsRequest(const ExistsRequest & base) : ExistsRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -205,6 +208,15 @@ struct TestKeeperGetACLRequest final : GetACLRequest, TestKeeperRequest
 
 struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperRequest
 {
+    std::optional<bool> is_multi_read = std::nullopt;
+    void specifyType(bool is_read)
+    {
+        if (!is_multi_read)
+            is_multi_read = is_read;
+
+        chassert(is_multi_read.value() == is_read);
+    }
+
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
         : TestKeeperMultiRequest(std::span(generic_requests))
     {}
@@ -217,32 +229,43 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
         {
             if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
-                auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
-                requests.push_back(create);
+                specifyType(/*is_read=*/false);
+                requests.push_back(std::make_shared<TestKeeperCreateRequest>(*concrete_request_create));
             }
             else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
+                specifyType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
             else if (const auto * concrete_request_remove_recursive = dynamic_cast<const RemoveRecursiveRequest *>(generic_request.get()))
             {
+                specifyType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperRemoveRecursiveRequest>(*concrete_request_remove_recursive));
             }
             else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
+                specifyType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
+                specifyType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
             {
+                specifyType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
             }
             else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
             {
+                specifyType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperListRequest>(*concrete_request_list));
+            }
+            else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(generic_request.get()))
+            {
+                specifyType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -257,6 +280,8 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
 
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    std::pair<ResponsePtr, Undo> processMultiWrite(TestKeeper::Container & container, int64_t zxid) const;
+    std::pair<ResponsePtr, Undo> processMultiRead(TestKeeper::Container & container, int64_t zxid) const;
 };
 
 
@@ -268,7 +293,10 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
 
     if (container.contains(path))
     {
-        response.error = Error::ZNODEEXISTS;
+        if (not_exists)
+            response.error = Error::ZOK;
+        else
+            response.error = Error::ZNODEEXISTS;
     }
     else
     {
@@ -544,22 +572,62 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     return { std::make_shared<ListResponse>(response), {} };
 }
 
+namespace
+{
+
+bool checkNodeStat(const Coordination::Stat & verifiable, const Coordination::Stat & validator)
+{
+    if (validator.czxid != -1 && validator.czxid != verifiable.czxid)
+        return false;
+    else if (validator.mzxid != -1 && validator.mzxid != verifiable.mzxid)
+        return false;
+    else if (validator.ctime != -1 && validator.ctime != verifiable.ctime)
+        return false;
+    else if (validator.mtime != -1 && validator.mtime != verifiable.mtime)
+        return false;
+    else if (validator.version != -1 && validator.version != verifiable.version)
+        return false;
+    else if (validator.cversion != -1 && validator.cversion != verifiable.cversion)
+        return false;
+    else if (validator.aversion != -1 && validator.aversion != verifiable.aversion)
+        return false;
+    else if (validator.ephemeralOwner != -1 && validator.ephemeralOwner != verifiable.ephemeralOwner)
+        return false;
+    else if (validator.dataLength != -1 && validator.dataLength != verifiable.dataLength)
+        return false;
+    else if (validator.numChildren != -1 && validator.numChildren != verifiable.numChildren)
+        return false;
+    else if (validator.pzxid != -1 && validator.pzxid != verifiable.pzxid)
+        return false;
+
+    return true;
+}
+
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     CheckResponse response;
     response.zxid = zxid;
     auto it = container.find(path);
-    if (it == container.end())
+
+    if (not_exists)
     {
-        response.error = Error::ZNONODE;
-    }
-    else if (version != -1 && version != it->second.stat.version)
-    {
-        response.error = Error::ZBADVERSION;
+        if (it != container.end() && (version == -1 || version == it->second.stat.version))
+            response.error = Error::ZNODEEXISTS;
+        else
+            response.error = Error::ZOK;
     }
     else
     {
-        response.error = Error::ZOK;
+        if (it == container.end())
+            response.error = Error::ZNONODE;
+        else if (version != -1 && version != it->second.stat.version)
+            response.error = Error::ZBADVERSION;
+        else if (stat_to_check && !checkNodeStat(it->second.stat, stat_to_check.value()))
+            response.error = Error::ZBADVERSION;
+        else
+            response.error = Error::ZOK;
     }
 
     return { std::make_shared<CheckResponse>(response), {} };
@@ -595,6 +663,16 @@ std::pair<ResponsePtr, Undo> TestKeeperGetACLRequest::process(TestKeeper::Contai
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    chassert(is_multi_read.has_value());
+
+    if (is_multi_read.value())
+        return processMultiRead(container, zxid);
+    else
+        return processMultiWrite(container, zxid);
+}
+
+std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::processMultiWrite(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
     response.zxid = zxid;
@@ -646,6 +724,28 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
     }
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::processMultiRead(TestKeeper::Container & container, int64_t zxid) const
+{
+    MultiResponse response;
+    response.zxid = zxid;
+    response.error = Error::ZOK;
+    response.responses.reserve(requests.size());
+
+    for (const auto & request : requests)
+    {
+        const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
+        auto [ cur_response, _ ] = concrete_request.process(container, zxid);
+
+        response.responses.emplace_back(cur_response);
+
+        /// Set error for the whole transaction.
+        if (response.error == Error::ZOK && cur_response->error != Error::ZOK)
+            response.error = cur_response->error;
+    }
+
+    return { std::make_shared<MultiResponse>(response), {} };
+}
+
 ResponsePtr TestKeeperCreateRequest::createResponse() const { return std::make_shared<CreateResponse>(); }
 ResponsePtr TestKeeperRemoveRequest::createResponse() const { return std::make_shared<RemoveResponse>(); }
 ResponsePtr TestKeeperRemoveRecursiveRequest::createResponse() const { return std::make_shared<RemoveRecursiveResponse>(); }
@@ -670,6 +770,12 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
         if (args.chroot.back() == '/')
             args.chroot.pop_back();
     }
+
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::REMOVE_RECURSIVE);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -861,6 +967,15 @@ void TestKeeper::pushRequest(RequestInfo && request)
     }
 }
 
+bool TestKeeper::isFeatureEnabled(DB::KeeperFeatureFlag flag) const
+{
+    return keeper_feature_flags.isEnabled(flag);
+}
+
+const DB::KeeperFeatureFlags * TestKeeper::getKeeperFeatureFlags() const
+{
+    return &keeper_feature_flags;
+}
 
 void TestKeeper::create(
     const String & path,
