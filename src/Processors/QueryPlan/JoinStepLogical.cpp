@@ -1244,9 +1244,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             auto input_it = name_to_nodes.find(column.name);
 
-            if (input_it == name_to_nodes.end())
+            if (input_it == name_to_nodes.end() || input_it->second.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in {}",
+                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in\n{}",
                     column.name,
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
@@ -1409,7 +1409,7 @@ void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMappi
 
 ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
 {
-    ActionsDAG dag(stream_header->getColumnsWithTypeAndName());
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
 
     ActionsDAG::NodeMapping node_map;
     auto second_dag = ActionsDAG::cloneSubDAG(keys, node_map, false);

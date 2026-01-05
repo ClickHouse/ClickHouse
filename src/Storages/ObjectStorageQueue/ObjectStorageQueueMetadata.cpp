@@ -137,7 +137,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
-    size_t keeper_multiread_batch_size_)
+    size_t keeper_multiread_batch_size_,
+    bool is_path_with_hive_partitioning_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
@@ -150,6 +151,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
+    , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
 {
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
@@ -251,6 +253,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                is_path_with_hive_partitioning,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -398,8 +401,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.buckets == value)
             {
-                LOG_TRACE(log, "Setting `buckets` already equals {}. "
-                        "Will do nothing", value);
+                LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
             if (table_metadata.buckets > 1)
@@ -435,9 +437,12 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
+
+    LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
+
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
-    buckets_num = value;
     table_metadata.buckets = value;
+    buckets_num = table_metadata.getBucketsNum();
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
@@ -447,6 +452,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const std::string & format,
     const ContextPtr & context,
     bool is_attach,
+    bool is_path_with_hive_partitioning,
     LoggerPtr log)
 {
     ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
@@ -541,6 +547,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    is_path_with_hive_partitioning,
                     log).prepareProcessedAtStartRequests(requests);
             }
 
@@ -1239,7 +1246,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             zk_retries.resetFailures();
             zk_retries.retryLoop([&]
             {
-                response = zk_client->tryGet(paths);
+                response = getZooKeeper(log)->tryGet(paths);
             });
 
             for (size_t i = 0; i < response.size(); ++i)
@@ -1296,7 +1303,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     const auto remove_nodes = [&](bool node_limit)
     {
-        code = zk_client->tryMulti(remove_requests, remove_responses);
+        zk_retries.retryLoop([&]
+        {
+            code = getZooKeeper(log)->tryMulti(remove_requests, remove_responses);
+        });
 
         if (code == Coordination::Error::ZOK)
         {
