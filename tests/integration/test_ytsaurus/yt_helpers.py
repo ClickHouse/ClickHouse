@@ -157,15 +157,3 @@ class YtsaurusURIHelper:
         self.token = token
         self.ytcluster_name = ytcluster_name
         self.uri = f"http://{self.host}:{self.port}"
-
-
-def ensure_ytsaurus_ready(cluster, instance, host, port, ytcluster_name=None, timeout_s=120):
-    start = time.time()
-    cli = YTsaurusCLI(cluster, instance, host, port, ytcluster_name)
-    while time.time() - start < float(timeout_s):
-        try:
-            cli.exec("yt list //", retry_count=0, time_to_sleep=0)
-            return True
-        except Exception:
-            time.sleep(1.0)
-    return False
