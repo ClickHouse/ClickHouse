@@ -131,3 +131,14 @@ Positions: 1
                 ReadType: Default
                 Parts: 1
                 Granules: 1
+        JoinLogical (JOIN to generate result stream)
+        Type: INNER
+                JoinLogical
+                Type: INNER
+                    ReadFromMergeTree (default.lineitem)
+                  ReadFromCommonBuffer
+          SaveSubqueryResultToBuffer
+              JoinLogical
+              Type: INNER
+                  ReadFromMergeTree (default.part)
+                  ReadFromMergeTree (default.lineitem)

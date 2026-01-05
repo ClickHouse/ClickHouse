@@ -9,6 +9,7 @@ SET correlated_subqueries_use_in_memory_buffer = 1;
 SET enable_parallel_replicas = 0;
 
 SET query_plan_optimize_join_order_algorithm = 'dpsize';
+SET query_plan_join_swap_table = 'auto';
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,
@@ -38,3 +39,22 @@ WHERE
         WHERE
             l_partkey = p_partkey
     );
+
+SELECT explain FROM (
+EXPLAIN actions = 1, keep_logical_steps = 1
+SELECT
+    sum(l_extendedprice) / 7.0 AS avg_yearly
+FROM
+    (SELECT l_quantity, p_partkey, l_extendedprice FROM lineitem, part WHERE p_partkey = l_partkey) AS lp
+WHERE
+    l_quantity < (
+        SELECT
+            0.2 * avg(l_quantity)
+        FROM
+            lineitem
+        WHERE
+            l_partkey = p_partkey
+    )
+)
+WHERE explain ilike '%ReadFrom%' or explain ilike '%JoinLogical%' or explain ilike '% Type: %' or explain ilike '%Save%';
+
