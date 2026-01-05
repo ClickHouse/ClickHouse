@@ -855,7 +855,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
                         status=Result.StatusExtended.FAIL,
-                        labels=[Rsult.Label.BLOCKER],  # to explicitly block the merge
+                        labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
             else:
@@ -873,7 +873,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                             status=Result.StatusExtended.FAIL,
                             files=files,
                             labels=[
-                                Rsult.Label.BLOCKER
+                                Result.Label.BLOCKER
                             ],  # to explicitly block the merge
                         )
                     )
@@ -884,7 +884,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                             info=traceback.format_exc(),
                             status=Result.StatusExtended.FAIL,
                             labels=[
-                                Rsult.Label.BLOCKER
+                                Result.Label.BLOCKER
                             ],  # to explicitly block the merge
                         )
                     )
