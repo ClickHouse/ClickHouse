@@ -1128,7 +1128,7 @@ class JobConfigs:
         name=JobNames.LLVM_COVERAGE_MERGE,
         runs_on=RunnerLabels.AMD_MEDIUM,
         run_in_docker="clickhouse/test-base",
-        requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD, ArtifactNames.UNITTEST_LLVM_COVERAGE, #*LLVM_ARTIFACTS_LIST
+        requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD, ArtifactNames.UNITTEST_LLVM_COVERAGE, ArtifactNames.LLVM_COVERAGE_FILE #*LLVM_ARTIFACTS_LIST
                   ],
         provides=[ArtifactNames.LLVM_COVERAGE_HTML_REPORT],
         command="python3 ./ci/jobs/merge_llvm_coverage_job.py",
