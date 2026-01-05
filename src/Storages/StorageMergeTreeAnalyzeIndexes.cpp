@@ -192,7 +192,7 @@ protected:
             analysis_result.index_stats,
             indexes->use_skip_indexes,
             indexes->use_skip_indexes_for_disjunctions,
-            /* supports_skip_indexes_on_data_read= */ false,
+            /* use_skip_indexes_on_data_read= */ false,
             /* find_exact_ranges= */ false,
             /* is_final_query= */ false,
             /* is_parallel_reading_from_replicas= */ false,
