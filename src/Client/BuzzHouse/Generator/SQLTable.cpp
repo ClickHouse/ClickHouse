@@ -1748,6 +1748,7 @@ void StatementGenerator::addTableColumn(
     }
     addTableColumnInternal(rg, t, cname, modify, is_pk, special, col, cd);
 
+    to_add.erase(cname);
     to_add[cname] = std::move(col);
     this->next_type_mask = type_mask_backup;
 }
