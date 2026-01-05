@@ -97,7 +97,12 @@ FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
-    batch_num: int, total_batches: int, args_test: List[str], workers: int
+    batch_num: int,
+    total_batches: int,
+    args_test: List[str],
+    workers: int,
+    job_options: str,
+    info: Info,
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -111,7 +116,7 @@ def get_parallel_sequential_tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+        test_files, total_batches, batch_num, workers, job_options, info
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -322,6 +327,8 @@ def main():
             total_batches,
             args.test or targeted_tests or changed_test_modules,
             workers,
+            args.options,
+            info
         )
     )
 
