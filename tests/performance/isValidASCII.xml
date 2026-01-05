@@ -23,7 +23,7 @@
             repeat('ääääääääääääääää', 1),
             repeat('ääääääääääääääää', 16),
             repeat('ääääääääääääääää', 16 * 16),
-        FROM numbers(1.000.000)
+        FROM numbers(1000000)
     </fill_query>
 
     <query>SELECT isValidASCII(empty) FROM tab FORMAT Null</query>
