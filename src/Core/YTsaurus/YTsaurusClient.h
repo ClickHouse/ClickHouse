@@ -60,7 +60,8 @@ public:
 
     ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
 
-    ReadBufferPtr selectRows(const String & cypress_path);
+    ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
+    ReadBufferPtr selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns);
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
 
