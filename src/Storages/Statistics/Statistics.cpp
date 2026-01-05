@@ -383,6 +383,15 @@ void ColumnsStatistics::build(const Block & block)
         stat->build(block.getByName(column_name).column);
 }
 
+void ColumnsStatistics::buildIfExists(const Block & block)
+{
+    for (const auto & [column_name, stat] : *this)
+    {
+        if (block.has(column_name))
+            stat->build(block.getByName(column_name).column);
+    }
+}
+
 void ColumnsStatistics::merge(const ColumnsStatistics & other)
 {
     for (const auto & [column_name, stat] : other)

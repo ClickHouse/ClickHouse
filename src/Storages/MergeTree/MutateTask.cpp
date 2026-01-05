@@ -2142,7 +2142,6 @@ private:
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
-        ctx->all_gathered_data.checksums = ctx->source_part->checksums;
         ctx->all_gathered_data.part_statistics.statistics = ctx->source_part->loadStatistics();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;

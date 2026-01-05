@@ -115,7 +115,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
-    new_part->checksums = all_gathered_data.checksums;
     return checksums;
 }
 

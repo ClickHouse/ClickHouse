@@ -25,7 +25,7 @@ void PartLevelStatistics::update(const Block & block, const StorageMetadataPtr &
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
 
     if (!statistics.empty())
-        statistics.build(block);
+        statistics.buildIfExists(block);
 
     if (minmax_idx)
         minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
