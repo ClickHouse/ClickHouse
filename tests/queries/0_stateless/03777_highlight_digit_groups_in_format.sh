@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1, -1, -1.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 12, -12, -12.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 123, -123, -123.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1234, -1234, -1234.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 12345, -12345, -12345.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 123456, -123456, -123456.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1234567, -1234567, -1234567.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 12345678, -12345678, -12345678.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 123456789, -123456789, -123456789.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1234567890, -1234567890, -1234567890.000001";
+${CLICKHOUSE_FORMAT} --hilite --query "SELECT 1_234_567_890, 0x123456, 123456e78";

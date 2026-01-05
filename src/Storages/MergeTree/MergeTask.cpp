@@ -37,6 +37,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -175,7 +176,7 @@ public:
     static constexpr auto FILE_ID = "rows_sources";
 
     explicit RowsSourcesTemporaryFile(TemporaryDataOnDiskScopePtr temporary_data_on_disk_)
-        : temporary_data_on_disk(temporary_data_on_disk_->childScope(CurrentMetrics::TemporaryFilesForMerge))
+        : temporary_data_on_disk(temporary_data_on_disk_->childScope({CurrentMetrics::TemporaryFilesForMerge}))
     {
     }
 
@@ -968,7 +969,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_to_squash = projection.calculate(block, global_ctx->context);
+        Block block_with_required_columns;
+        for (const auto & name : projection.getRequiredColumns())
+            if (name != "_part_offset")
+                block_with_required_columns.insert(block.getByName(name));
+        Block block_to_squash = projection.calculate(block_with_required_columns, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
             return;
@@ -2137,11 +2142,12 @@ private:
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
-class BuildTextIndexStep : public ITransformingStep
+class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
-    BuildTextIndexStep(SharedHeader input_header_, SharedHeader output_header_, std::shared_ptr<BuildTextIndexTransform> transform_)
+    BuildTextIndexStep(SharedHeader input_header_, SharedHeader output_header_, std::shared_ptr<BuildTextIndexTransform> transform_, ContextPtr context_)
         : ITransformingStep(input_header_, output_header_, getTraits())
+        , WithContext(context_)
         , transform(std::move(transform_))
     {
     }
@@ -2149,6 +2155,23 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
         pipeline.addTransform(transform);
+
+        /// Remove possible temporary columns added by index expression.
+        if (!isCompatibleHeader(*pipeline.getSharedHeader(), *getOutputHeader()))
+        {
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                pipeline.getSharedHeader()->getColumnsWithTypeAndName(),
+                getOutputHeader()->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                getContext());
+
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, std::move(converting_actions));
+            });
+        }
     }
 
     void updateOutputHeader() override
@@ -2258,7 +2281,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.
-    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(plan.getCurrentHeader(), original_header, transform);
+    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(plan.getCurrentHeader(), original_header, transform, global_ctx->context);
 
     /// Save transform to the context to be able to take segments for merging from it later.
     global_ctx->build_text_index_transforms[data_part.name].push_back(std::move(transform));
