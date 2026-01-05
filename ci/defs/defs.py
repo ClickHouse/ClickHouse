@@ -344,6 +344,7 @@ class JobNames:
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
+    BUZZHOUSE_CORRECTNESS_PRIMARY_KEY_ANALYSIS = "BuzzHouse Correctness (use_primary_key_indexes)"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
     BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
