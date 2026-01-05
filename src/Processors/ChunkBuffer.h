@@ -5,6 +5,13 @@
 #include <mutex>
 #include <queue>
 
+namespace ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
 namespace DB
 {
 
