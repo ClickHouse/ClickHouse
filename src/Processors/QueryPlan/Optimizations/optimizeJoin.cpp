@@ -1148,7 +1148,6 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         || kind == JoinKind::Paste
         || kind == JoinKind::Full
         || !join_operator.residual_filter.empty()
-        || (join_step->mayUseInMemoryInputStorage() && optimization_settings.correlated_subqueries_use_in_memory_buffer)
     )
     {
         join_step->setOptimized();

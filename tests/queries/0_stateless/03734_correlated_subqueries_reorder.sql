@@ -1,9 +1,5 @@
 SET enable_analyzer = 1;
 
-SET param__internal_join_table_stat_hints = '{
-    "lineitem": { "cardinality": 100, "distinct_keys": { "l_extendedprice": 100, "l_partkey": 1000, "l_quantity": 100 } },
-    "part": { "cardinality": 1000, "distinct_keys": { "p_partkey": 1000, "p_name": 100, "p_brand": 1000 } }
-}';
 SET query_plan_optimize_join_order_limit = 10;
 SET allow_statistics_optimize = 1;
 
@@ -12,40 +8,21 @@ SET correlated_subqueries_use_in_memory_buffer = 1;
 
 SET enable_parallel_replicas = 0;
 
+SET query_plan_optimize_join_order_algorithm = 'dpsize';
+
 CREATE TABLE lineitem (
     l_orderkey       Int32,
     l_partkey        Int32,
-    l_suppkey        Int32,
-    l_linenumber     Int32,
     l_quantity       Decimal(15,2),
-    l_extendedprice  Decimal(15,2),
-    l_discount       Decimal(15,2),
-    l_tax            Decimal(15,2),
-    l_returnflag     String,
-    l_linestatus     String,
-    l_shipdate       Date,
-    l_commitdate     Date,
-    l_receiptdate    Date,
-    l_shipinstruct   String,
-    l_shipmode       String,
-    l_comment        String)
-ORDER BY (l_orderkey, l_linenumber);
-INSERT INTO lineitem SELECT * FROM generateRandom() LIMIT 1;
+    l_extendedprice  Decimal(15,2),)
+ORDER BY (l_orderkey)
+SETTINGS auto_statistics_types = 'uniq';
+INSERT INTO lineitem SELECT 1 as l_orderkey, number % 10 as l_partkey, toDecimal64(number % 100, 2) as l_quantity, toDecimal64(number % 1000, 2) as l_extendedprice FROM numbers(100);
 
-CREATE TABLE part (
-    p_partkey     Int32,
-    p_name        String,
-    p_mfgr        String,
-    p_brand       String,
-    p_type        String,
-    p_size        Int32,
-    p_container   String,
-    p_retailprice Decimal(15,2),
-    p_comment     String)
-ORDER BY (p_partkey);
-INSERT INTO part SELECT * FROM generateRandom() LIMIT 1;
+CREATE TABLE part (p_partkey Int32) ORDER BY (p_partkey) SETTINGS auto_statistics_types = 'uniq';
+INSERT INTO part SELECT * FROM numbers(10000);
 
-EXPLAIN actions = 1
+EXPLAIN actions = 1, keep_logical_steps = 1
 SELECT
     sum(l_extendedprice) / 7.0 AS avg_yearly
 FROM

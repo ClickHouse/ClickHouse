@@ -61,9 +61,10 @@ namespace Setting
 {
 
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
+extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
+extern const SettingsBool join_use_nulls;
 extern const SettingsBool use_variant_as_common_type;
 extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
-extern const SettingsBool join_use_nulls;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsNonZeroUInt64 max_block_size;
 
@@ -577,11 +578,22 @@ QueryPlan buildLogicalJoin(
         JoinSettings(settings),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
+
     /// Depending on correlated_subqueries_use_in_memory_buffer setting,
     /// the RHS input stream can be buffered in memory.
     /// In this case, we cannot reorder JOIN to ensure correlated subquery input
     /// is evaluated before the subquery itself.
-    result_join->setMayUseInMemoryInputStorage();
+    if (settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    {
+        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
+        /// Remove algorithms that are not compatible with in-memory buffering
+        /// of correlated subquery input.
+        /// We must be sure that the input stream is fully evaluated
+        /// before the correlated subquery is executed.
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
+        result_join->setOptimized();
+    }
 
     QueryPlan result_plan;
 
