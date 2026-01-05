@@ -143,6 +143,29 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
         __xray_unpatch_function(function_id);
 }
 
+bool InstrumentationManager::shouldPatchFunction(String function_to_patch, String full_qualified_function)
+{
+    size_t found_pos = full_qualified_function.find(function_to_patch);
+    if (found_pos != std::string::npos)
+    {
+        /// Once we find a possible match, we need to ensure the match is not within a template argument
+        std::stack<bool> brackets;
+        for (size_t pos = 0; pos < found_pos; ++pos)
+        {
+            if (full_qualified_function[pos] == '<')
+                brackets.push(true);
+            else if (full_qualified_function[pos] == '>')
+                brackets.pop();
+        }
+
+        if (brackets.empty())
+            return true;
+
+        LOG_INFO(logger, "Not instrumenting function '{}' because the match is within a template argument: '{}'", function_to_patch, full_qualified_function);
+    }
+    return false;
+}
+
 void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
@@ -172,7 +195,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
         /// Otherwise, search if the provided function_name can be found as a substr of every member.
         for (const auto & [id, function] : functions_container)
         {
-            if (function.find(function_name) != std::string::npos)
+            if (shouldPatchFunction(function_name, function))
                 functions_to_patch.emplace_back(id, function);
         }
     }
