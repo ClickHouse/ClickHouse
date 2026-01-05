@@ -1,10 +1,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -43,7 +45,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -60,7 +62,12 @@ public:
 
         ColumnPtr result;
 
-        if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
+        /// Handle Geometry (Variant) type
+        if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(column.get()))
+        {
+            result = executeForVariant(column_variant, result_type);
+        }
+        else if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
             result = executeForPoint(column);
         }
@@ -84,6 +91,62 @@ public:
     }
 
 private:
+    ColumnPtr executeForVariant(const ColumnVariant * column_variant, const DataTypePtr & result_type) const
+    {
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(result_type.get());
+        if (!variant_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Variant result type for Geometry");
+
+        /// Create a result Variant column with the same structure
+        auto result_column = result_type->createColumn();
+        auto & result_variant = assert_cast<ColumnVariant &>(*result_column);
+
+        const auto & variant_types = variant_type->getVariants();
+
+        /// Process each variant type and flip its coordinates
+        const auto & variants = column_variant->getVariants();
+        MutableColumns result_variants;
+        result_variants.reserve(variants.size());
+
+        for (size_t i = 0; i < variants.size(); ++i)
+        {
+            const auto & variant_column = variants[i];
+            auto global_discr = column_variant->globalDiscriminatorByLocal(i);
+            const auto & variant_data_type = variant_types[global_discr];
+
+            ColumnPtr flipped_variant;
+            if (checkAndGetDataType<DataTypeTuple>(variant_data_type.get()))
+            {
+                flipped_variant = executeForPoint(variant_column);
+            }
+            else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(variant_data_type.get()))
+            {
+                flipped_variant = executeForArray(variant_column, array_type);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Unexpected variant type {} in Geometry",
+                    variant_data_type->getName());
+            }
+            result_variants.push_back(flipped_variant->assumeMutable());
+        }
+
+        /// Share discriminators and offsets from the input variant since they don't change.
+        result_variant.getLocalDiscriminatorsPtr() = column_variant->getLocalDiscriminatorsPtr();
+        result_variant.getOffsetsPtr() = column_variant->getOffsetsPtr();
+
+        /// Set the variant columns in the result
+        auto & result_variant_columns = result_variant.getVariants();
+        for (size_t i = 0; i < result_variants.size(); ++i)
+        {
+            result_variant_columns[i] = std::move(result_variants[i]);
+        }
+
+        return result_column;
+    }
+
     ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
@@ -153,12 +216,18 @@ private:
 
 REGISTER_FUNCTION(FlipCoordinates)
 {
-    FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
+    FunctionDocumentation::Description description = R"(
+Flips the x and y coordinates of geometric objects. This operation swaps latitude and longitude, which is useful for converting between different coordinate systems or correcting coordinate order.
+
+For a Point, it swaps the x and y coordinates. For complex geometries (LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
+
+The function supports both individual geometry types (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
+)";
     FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
+        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "Ring", "Polygon", "MultiPolygon"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The return type matches the input type.", {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}};
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",
@@ -168,7 +237,13 @@ REGISTER_FUNCTION(FlipCoordinates)
          "[(2.0, 1.0), (4.0, 3.0)]"},
         {"polygon",
          "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
-         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"}
+         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"},
+        {"geometry_wkt",
+         "SELECT flipCoordinates(readWkt('POINT(10 20)'));",
+         "(20, 10)"},
+        {"geometry_polygon_wkt",
+         "SELECT flipCoordinates(readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));",
+         "[[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

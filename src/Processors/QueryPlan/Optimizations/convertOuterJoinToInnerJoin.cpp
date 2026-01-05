@@ -172,9 +172,16 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     QueryPlan::Node * child_node = parent_node->children.front();
     auto & child = child_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
-    if (!join)
+    if (!join || !join->typeChangingSides().empty() || child_node->children.size() != 2)
         return 0;
-    if (!join->typeChangingSides().empty())
+
+    auto isStorageJoin = [](auto & step)
+    {
+        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
+        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
+    };
+    /// Storage Join expects particular join kind, so we cannot change it
+    if (isStorageJoin(child_node->children.back()->step))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
