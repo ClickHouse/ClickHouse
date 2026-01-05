@@ -343,10 +343,7 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
-    // Build Hive-style AST (already includes toString wrapping)
     auto hive_ast = buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns());
-
-    // Use base class helper (handles caching/rebuilding)
     auto actions_with_column = getPartitionExpressionActions(hive_ast);
 
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
