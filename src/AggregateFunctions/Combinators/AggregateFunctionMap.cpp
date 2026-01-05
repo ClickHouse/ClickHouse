@@ -15,7 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 
 
 namespace DB
@@ -34,7 +34,7 @@ template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    SafeUnorderedMap<KeyType, AggregateDataPtr> merged_maps;
+    StrictUnorderedMap<KeyType, AggregateDataPtr> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
@@ -52,7 +52,7 @@ struct AggregateFunctionMapCombinatorData<String>
     };
 
     using SearchType = std::string_view;
-    SafeUnorderedMap<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
+    StrictUnorderedMap<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
     static void writeKey(String key, WriteBuffer & buf)
     {
@@ -77,7 +77,7 @@ struct AggregateFunctionMapCombinatorData<IPv6>
     };
 
     using SearchType = IPv6;
-    SafeUnorderedMap<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+    StrictUnorderedMap<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
 
     static void writeKey(const IPv6 & key, WriteBuffer & buf)
     {
@@ -299,7 +299,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
 
         // sort the keys
-        SafeVector<KeyType> keys;
+        StrictVector<KeyType> keys;
         keys.reserve(merged_maps.size());
         for (auto & it : merged_maps)
         {

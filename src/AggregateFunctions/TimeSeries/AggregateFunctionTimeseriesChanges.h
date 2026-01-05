@@ -111,7 +111,7 @@ public:
     }
 
 private:
-    void fillResultValue(const SafeDeque<std::pair<TimestampType, ValueType>> & samples_in_window,
+    void fillResultValue(const StrictDeque<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         if (samples_in_window.empty())
@@ -171,8 +171,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        SafeDeque<std::pair<TimestampType, ValueType>> samples_in_window;
-        SafeVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        StrictDeque<std::pair<TimestampType, ValueType>> samples_in_window;
+        StrictVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets

@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 
 namespace DB
 {
@@ -59,9 +59,9 @@ public:
 
     String getName() const override;
 
-    static const SafeVector<std::string> & getNameAndAliases()
+    static const StrictVector<std::string> & getNameAndAliases()
     {
-        static const SafeVector<std::string> aliases = {"groupConcat", "group_concat"};
+        static const StrictVector<std::string> aliases = {"groupConcat", "group_concat"};
         return aliases;
     }
 

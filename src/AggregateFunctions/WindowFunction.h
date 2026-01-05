@@ -2,7 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 
 
 namespace DB
@@ -54,7 +54,7 @@ struct WindowFunctionWorkspace
     mutable AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
-    SafeVector<const IColumn *> argument_columns;
+    StrictVector<const IColumn *> argument_columns;
     UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
 };
 

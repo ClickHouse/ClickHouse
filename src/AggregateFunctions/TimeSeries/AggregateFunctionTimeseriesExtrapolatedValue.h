@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -114,7 +114,7 @@ public:
 
 private:
     void fillResultValue(const TimestampType current_timestamp,
-        const SafeDeque<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const StrictDeque<std::pair<TimestampType, ValueType>> & samples_in_window,
         Float64 accumulated_resets_in_window,
         ValueType & result, UInt8 & null) const
     {
@@ -229,8 +229,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        SafeDeque<std::pair<TimestampType, ValueType>> samples_in_window;
-        SafeVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        StrictDeque<std::pair<TimestampType, ValueType>> samples_in_window;
+        StrictVector<std::pair<TimestampType, ValueType>> timestamps_buffer;
         Float64 accumulated_resets_in_window = 0;
 
         /// Resets must be take into account for `rate` function because it expects counter timeseries that only increase.

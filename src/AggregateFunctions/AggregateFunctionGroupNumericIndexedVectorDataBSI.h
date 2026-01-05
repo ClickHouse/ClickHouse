@@ -108,7 +108,7 @@ private:
      * data_array stores all indexes and values whose value is not 0 using roaringBitmap and Bit-Sliced Index.
      */
     std::shared_ptr<Roaring> zero_indexes = std::make_shared<Roaring>();
-    SafeVector<std::shared_ptr<Roaring>> data_array;
+    StrictVector<std::shared_ptr<Roaring>> data_array;
 
     /// The only way NaN and Inf values can enter BSI is if user adds them as they cannot appear in BSI by any permitted operation.
     /// Do not allow user to do this as it achieves nothing and is very likely by mistake.
@@ -625,8 +625,8 @@ public:
 
     /// Set Roaring containers to RoaringBitmapWithSmallSet
     static inline void setContainers(
-        SafeVector<roaring::internal::container_t *> & ctns,
-        SafeVector<UInt8> & types,
+        StrictVector<roaring::internal::container_t *> & ctns,
+        StrictVector<UInt8> & types,
         UInt32 container_id,
         BSINumericIndexedVector & vector)
     {
@@ -673,8 +673,8 @@ public:
                 length,
                 static_cast<UInt32>(roaring::internal::DEFAULT_MAX_SIZE));
 
-        SafeVector<roaring::internal::container_t *> ctns(total_bit_num);
-        SafeVector<UInt8> types(total_bit_num);
+        StrictVector<roaring::internal::container_t *> ctns(total_bit_num);
+        StrictVector<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = roaring::internal::array_container_create_given_capacity(length);
@@ -694,9 +694,9 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        SafeVector<SafeVector<UInt16>> bit_buffer(64, SafeVector<UInt16>(k_batch_size, 0));
+        StrictVector<StrictVector<UInt16>> bit_buffer(64, StrictVector<UInt16>(k_batch_size, 0));
         /// number of keys in each bitmap of vector.
-        SafeVector<UInt16> cnt(64);
+        StrictVector<UInt16> cnt(64);
 
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
@@ -781,8 +781,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        SafeVector<roaring::internal::container_t *> ctns(total_bit_num);
-        SafeVector<UInt8> types(total_bit_num);
+        StrictVector<roaring::internal::container_t *> ctns(total_bit_num);
+        StrictVector<UInt8> types(total_bit_num);
 
         for (size_t i = 0; i < total_bit_num; ++i)
         {
@@ -791,7 +791,7 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        SafeVector<UInt32> bit_buffer(64 * k_batch_size, 0);
+        StrictVector<UInt32> bit_buffer(64 * k_batch_size, 0);
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
@@ -865,8 +865,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        SafeVector<roaring::internal::container_t *> ctns(total_bit_num);
-        SafeVector<UInt8> types(total_bit_num);
+        StrictVector<roaring::internal::container_t *> ctns(total_bit_num);
+        StrictVector<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = array_container_create_given_capacity(roaring::internal::DEFAULT_MAX_SIZE);
@@ -874,8 +874,8 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        SafeVector<SafeVector<UInt16>> bit_buffer(total_bit_num, SafeVector<UInt16>(k_batch_size, 0));
-        SafeVector<UInt16> cnt(total_bit_num);
+        StrictVector<StrictVector<UInt16>> bit_buffer(total_bit_num, StrictVector<UInt16>(k_batch_size, 0));
+        StrictVector<UInt16> cnt(total_bit_num);
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             memset(cnt.data(), 0, sizeof(UInt16) * total_bit_num);
@@ -1058,7 +1058,7 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        SafeSet<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
+        StrictSet<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = and_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1122,7 +1122,7 @@ public:
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        SafeSet<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
+        StrictSet<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = lhs_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1794,7 +1794,7 @@ public:
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
 
-        SafeMap<IndexType, UInt64> index2value;
+        StrictMap<IndexType, UInt64> index2value;
 
         PaddedPODArray<IndexType> zero_indexes_array;
         zero_indexes->rb_to_array(zero_indexes_array);

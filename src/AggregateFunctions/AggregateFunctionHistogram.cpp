@@ -8,7 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 #include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -137,9 +137,9 @@ private:
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
-        SafeVector<UInt32> previous(size + 1);
-        SafeVector<UInt32> next(size + 1);
-        SafeVector<bool> active(size + 1, true);
+        StrictVector<UInt32> previous(size + 1);
+        StrictVector<UInt32> next(size + 1);
+        StrictVector<bool> active(size + 1, true);
         active[size] = false;
 
         auto delete_node = [&](UInt32 i)
@@ -160,7 +160,7 @@ private:
 
         using QueueItem = std::pair<Mean, UInt32>;
 
-        SafeVector<QueueItem> storage(2 * size - max_bins);
+        StrictVector<QueueItem> storage(2 * size - max_bins);
 
         std::priority_queue<QueueItem, PriorityQueueStorage<QueueItem>, std::greater<>> queue{
             std::greater<>(), PriorityQueueStorage<QueueItem>(storage.data())};

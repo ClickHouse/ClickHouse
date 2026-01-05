@@ -234,7 +234,7 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    SafeUnorderedSet<size_t> getArgumentsThatCanBeOnlyNull() const override
+    StrictUnorderedSet<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
         return {num_arguments - 1};
     }

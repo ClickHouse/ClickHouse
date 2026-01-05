@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 #include <Common/assert_cast.h>
 
 #include <absl/container/inlined_vector.h>
@@ -576,7 +576,7 @@ public:
         ssize_t if_argument_pos) const final
     {
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
-        SafeVector<const UInt8 *> nullable_filters;
+        StrictVector<const UInt8 *> nullable_filters;
         absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
 
         std::unique_ptr<UInt8[]> final_flags;
@@ -678,7 +678,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        SafeVector<llvm::Value *> is_null_values;
+        StrictVector<llvm::Value *> is_null_values;
         is_null_values.reserve(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)

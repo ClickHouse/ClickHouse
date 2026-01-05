@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -59,7 +59,7 @@ public:
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        SafeUnorderedMap<size_t, Bucket> buckets;
+        StrictUnorderedMap<size_t, Bucket> buckets;
     };
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,

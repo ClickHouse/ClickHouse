@@ -12,7 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-#include <Common/OutOfMemorySafeContainers.h>
+#include <Common/StrictContainers.h>
 #include <Common/assert_cast.h>
 
 #include <bitset>
@@ -330,7 +330,7 @@ protected:
     template <typename EventEntry>
     bool dfaMatch(EventEntry & events_it, const EventEntry events_end) const
     {
-        using ActiveStates = SafeVector<bool>;
+        using ActiveStates = StrictVector<bool>;
 
         /// Those two vectors keep track of which states should be considered for the current
         /// event as well as the states which should be considered for the next event.
@@ -384,7 +384,7 @@ protected:
     }
 
     template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, SafeVector<T> * best_matched_events = nullptr) const
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, StrictVector<T> * best_matched_events = nullptr) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -397,8 +397,8 @@ protected:
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
-        SafeVector<T> current_matched_events;
-        SafeVector<decltype(action_it)> current_matched_actions;
+        StrictVector<T> current_matched_events;
+        StrictVector<decltype(action_it)> current_matched_actions;
 
         const auto do_push_event = [&]
         {
@@ -554,10 +554,10 @@ protected:
     }
 
     template <typename EventEntry>
-    SafeVector<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
+    StrictVector<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
     {
 
-        SafeVector<T> best_matched_events;
+        StrictVector<T> best_matched_events;
         backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
 
         return best_matched_events;
@@ -656,7 +656,7 @@ private:
         DFATransition transition;
     };
 
-    using DFAStates = SafeVector<DFAState>;
+    using DFAStates = StrictVector<DFAState>;
 
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
@@ -743,9 +743,9 @@ public:
     }
 
 private:
-    SafeVector<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    StrictVector<T> getEvents(ConstAggregateDataPtr __restrict place) const
     {
-        SafeVector<T> res;
+        StrictVector<T> res;
         const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);
