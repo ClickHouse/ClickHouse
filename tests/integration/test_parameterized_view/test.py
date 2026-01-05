@@ -28,6 +28,6 @@ def test_parameterized_view_restart():
     instance.restart_clickhouse()
 
     assert (instance.query("SELECT * FROM `Catalog View 2` (name = 'Pen')") == "Pen	10	3\n")
-    assert (instance.query("DROP VIEW `Catalog View 2`\n")
-    assert (instance.query("DROP VIEW `Catalog View`\n")
-    assert (instance.query("DROP TABLE table_Catalog\n")
+    instance.query("DROP VIEW `Catalog View 2`\n")
+    instance.query("DROP VIEW `Catalog View`\n")
+    instance.query("DROP TABLE table_Catalog\n")
