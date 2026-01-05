@@ -708,7 +708,7 @@ class Utils:
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
                 archive_name = f"{name}.tar.zst"
-                
+
                 # Determine output path based on dest_path
                 if dest_path is None:
                     path_out = f"{parent}/{archive_name}"
@@ -720,7 +720,7 @@ class Utils:
                     else:
                         # dest_path is a file path
                         path_out = str(dest_path)
-                
+
                 Shell.check(
                     f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
                     verbose=True,
@@ -738,7 +738,7 @@ class Utils:
                     else:
                         # dest_path is a file path
                         path_out = str(dest_path)
-                
+
                 Shell.check(
                     f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
@@ -794,7 +794,7 @@ class Utils:
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
                 archive_name = f"{name}.tar.gz"
-                
+
                 # Determine output path based on dest_path
                 if dest_path is None:
                     path_out = f"{parent}/{archive_name}"
@@ -806,7 +806,7 @@ class Utils:
                     else:
                         # dest_path is a file path
                         path_out = str(dest_path)
-                
+
                 Shell.check(
                     f"cd {quote(parent)} && tar -cf - {quote(name)} | gzip > {quote(path_out)}",
                     verbose=True,
@@ -824,7 +824,7 @@ class Utils:
                     else:
                         # dest_path is a file path
                         path_out = str(dest_path)
-                
+
                 Shell.check(
                     f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
