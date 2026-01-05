@@ -233,6 +233,30 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 }
 
 
+bool CertificateReloader::registerAdditionalContext(SSL_CTX * ctx, const std::string & prefix)
+{
+    if (!ctx)
+        return false;
+
+    std::lock_guard lock{data_mutex};
+
+    auto it = data_index.find(prefix);
+    if (it == data_index.end())
+    {
+        LOG_WARNING(log, "Cannot register additional context for prefix '{}': prefix not found. "
+            "Call tryLoad() first to register the primary context.", prefix);
+        return false;
+    }
+
+    MultiData * pdata = &*(it->second);
+
+    SSL_CTX_set_cert_cb(ctx, callSetCertificate, reinterpret_cast<void *>(pdata));
+
+    LOG_DEBUG(log, "Registered additional SSL context for prefix '{}'", prefix);
+    return true;
+}
+
+
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {
