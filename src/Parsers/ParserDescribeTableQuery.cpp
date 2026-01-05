@@ -1,5 +1,5 @@
-#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/CommonParsers.h>
