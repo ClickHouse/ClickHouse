@@ -18,7 +18,8 @@ INSERT INTO enum_table VALUES (0, NULL); -- input_format_null_as_default is enab
 SELECT val FROM enum_table;
 
 SELECT '-- treat NULL as non-default value';
-INSERT INTO enum_table SETTINGS input_format_null_as_default = 0 VALUES (0, NULL); -- { clientError TYPE_MISMATCH }
+INSERT INTO enum_table SETTINGS input_format_null_as_default = 0, async_insert = 0 VALUES (0, NULL); -- { clientError TYPE_MISMATCH }
+INSERT INTO enum_table SETTINGS input_format_null_as_default = 0, async_insert = 1 VALUES (0, NULL); -- { serverError TYPE_MISMATCH }
 
 SELECT 'Non-null values';
 
