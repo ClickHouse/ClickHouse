@@ -7,7 +7,10 @@ title: 'KILL Statements'
 doc_type: 'reference'
 ---
 
-There are two kinds of kill statements: to kill a query and to kill a mutation
+There are two kinds of kill statements: to kill a query and to kill a mutation.
+
+By default, `KILL` will throw an exception if `WHERE` expression matched zero rows either from `system.mutations` or `system.processes`.
+To disable this, change the [kill_throw_if_noop](/operations/settings/settings#kill_throw_if_noop) setting to false.
 
 ## KILL QUERY {#kill-query}
 
