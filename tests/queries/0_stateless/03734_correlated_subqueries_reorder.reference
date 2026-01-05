@@ -142,3 +142,15 @@ Positions: 1
               Type: INNER
                   ReadFromMergeTree (default.part)
                   ReadFromMergeTree (default.lineitem)
+-- No join order optimization --
+        JoinLogical (JOIN to generate result stream)
+        Type: INNER
+                JoinLogical (JOIN to evaluate correlated expression)
+                Type: INNER
+                    ReadFromMergeTree (default.lineitem)
+                  ReadFromCommonBuffer
+          SaveSubqueryResultToBuffer
+              JoinLogical
+              Type: INNER
+                  ReadFromMergeTree (default.lineitem)
+                  ReadFromMergeTree (default.part)
