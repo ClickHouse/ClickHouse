@@ -1518,7 +1518,7 @@ void Context::setFilesystemCacheUser(const String & user)
 static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
 try
 {
-    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
+    LOG_DEBUG(log, "Setting up temporary data storage at disk '{}' with path '{}'", disk->getName(), disk->getPath());
 
     if (disk->existsDirectory(""))
     {

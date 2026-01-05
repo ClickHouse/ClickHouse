@@ -529,7 +529,10 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         return;
     }
 
+    /// all iterators are invalidated after push_back,
+    /// so we create part_tag reference after push_back as the reference will not be invalidated
     multipart_tags.push_back({});
+    auto & part_tag = multipart_tags.back();
     size_t part_number = multipart_tags.size();
     LOG_TEST(limited_log, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, part_number);
 
@@ -601,10 +604,10 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         }
 
-        multipart_tags[part_number-1] = outcome.GetResult().GetETag();
+        part_tag = outcome.GetResult().GetETag();
 
         LOG_TEST(limited_log, "Write part succeeded {}, part size {}, part number {}, etag {}",
-                 getShortLogDetails(), data_size, part_number, multipart_tags[part_number-1]);
+                 getShortLogDetails(), data_size, part_number, part_tag);
     };
 
     task_tracker->add(std::move(upload_worker));
