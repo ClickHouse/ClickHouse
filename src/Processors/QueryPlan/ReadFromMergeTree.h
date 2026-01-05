@@ -298,7 +298,8 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
-        bool allow_query_condition_cache_);
+        bool allow_query_condition_cache_,
+        bool supports_skip_indexes_on_data_read);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 

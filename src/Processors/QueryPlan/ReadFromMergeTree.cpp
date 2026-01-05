@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
@@ -1808,7 +1809,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         indexes,
         find_exact_ranges,
         is_parallel_reading_from_replicas,
-        allow_query_condition_cache);
+        allow_query_condition_cache,
+        supportsSkipIndexesOnDataRead());
 
     return analyzed_result_ptr;
 }
@@ -2047,7 +2049,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     std::optional<Indexes> & indexes,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
-    bool allow_query_condition_cache_)
+    bool allow_query_condition_cache_,
+    bool supports_skip_indexes_on_data_read)
 {
     AnalysisResult result;
     RangesInDataParts res_parts;
@@ -2164,6 +2167,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.index_stats,
             indexes->use_skip_indexes,
             indexes->use_skip_indexes_for_disjunctions,
+            supports_skip_indexes_on_data_read,
             find_exact_ranges,
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_,
@@ -2782,10 +2786,16 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
 
-    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
-        return false;
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (query_info.query_tree)
+    {
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
 
-    if (is_parallel_reading_from_replicas)
+        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+            return false;
+    }
+
+    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         return false;
 
     /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
