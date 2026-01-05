@@ -5232,14 +5232,14 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     {
                         const uint32_t top_col = getIdentifierFromString(ati.add_column().new_col().col().col().column());
 
-                        if (t.cols.find(top_col) != t.cols.end())
+                        if (t.cols.contains(top_col))
                         {
                             NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
 
                             ntp->subtypes.pop_back();
                         }
                     }
-                    else if (!is_nested && t.staged_cols.find(cname) != t.staged_cols.end())
+                    else if (!is_nested && t.staged_cols.contains(cname))
                     {
                         if (success)
                         {
@@ -5289,13 +5289,16 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     const ColumnPath & path = ati.rename_column().old_name();
                     const uint32_t old_cname = getIdentifierFromString(path.col().column());
 
-                    if (path.sub_cols_size() == 0 && t.cols.find(old_cname) != t.cols.end())
+                    if (path.sub_cols_size() == 0)
                     {
-                        const uint32_t new_cname = getIdentifierFromString(ati.rename_column().new_name().col().column());
+                        if (t.cols.contains(old_cname))
+                        {
+                            const uint32_t new_cname = getIdentifierFromString(ati.rename_column().new_name().col().column());
 
-                        t.cols[new_cname] = std::move(t.cols[old_cname]);
-                        t.cols[new_cname].cname = new_cname;
-                        t.cols.erase(old_cname);
+                            t.cols[new_cname] = std::move(t.cols[old_cname]);
+                            t.cols[new_cname].cname = new_cname;
+                            t.cols.erase(old_cname);
+                        }
                     }
                     else
                     {
@@ -5331,7 +5334,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     {
                         const uint32_t top_col = getIdentifierFromString(ati.modify_column().new_col().col().col().column());
 
-                        if (success && t.staged_cols.find(cname) != t.staged_cols.end())
+                        if (success && t.staged_cols.contains(cname))
                         {
                             NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
 
@@ -5349,7 +5352,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                             }
                         }
                     }
-                    else if (success && t.staged_cols.find(cname) != t.staged_cols.end())
+                    else if (success && t.staged_cols.contains(cname))
                     {
                         t.cols.erase(cname);
                         t.cols[cname] = std::move(t.staged_cols[cname]);
@@ -5372,7 +5375,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 {
                     const uint32_t iname = getIdentifierFromString(ati.add_index().new_idx().idx().index());
 
-                    if (success && t.staged_idxs.find(iname) != t.staged_idxs.end())
+                    if (success && t.staged_idxs.contains(iname))
                     {
                         t.idxs[iname] = std::move(t.staged_idxs[iname]);
                     }
