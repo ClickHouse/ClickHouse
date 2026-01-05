@@ -1019,10 +1019,10 @@ def get_optimal_test_batch(
     # Compute group durations as sum of known test durations within the group
     # TODO: fix in private
     #   ERROR: Failed to get secret [PRIVATE_CI_DB_URL]
-    # durations = get_tests_execution_time(info, job_options) if info else {}
-    # if not durations:
-    #     print("WARNING: CIDB durations not found, using static TEST_DURATIONS")
-    durations = TEST_DURATIONS
+    durations = get_tests_execution_time(info, job_options) if info else {}
+    if not durations:
+        print("WARNING: CIDB durations not found, using static TEST_DURATIONS")
+        durations = TEST_DURATIONS
 
     def groups_with_durations(groups: dict[str, list[str]]):
         known_groups: list[tuple[str, int]] = []  # (prefix, duration)
