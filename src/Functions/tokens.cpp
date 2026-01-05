@@ -258,18 +258,18 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Syntax syntax = R"(
 tokens(value)
 tokens(value, tokenizer)
-tokens(value, 'ngrams'[, ngrams])
+tokens(value, 'ngrams'[, n])
 tokens(value, 'splitByString'[, separators])
-tokens(value, 'sparse_grams'[, min_length, max_length[, min_cutoff_length]])
+tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
-        {"ngrams", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
+        {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
-        {"min_length", "Only relevant if argument `tokenizer` is `sparse_grams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
-        {"max_length", "Only relevant if argument `tokenizer` is `sparse_grams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
-        {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparse_grams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}}
+        {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
+        {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
+        {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {
