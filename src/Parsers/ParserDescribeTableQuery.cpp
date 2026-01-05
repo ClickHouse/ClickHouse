@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Common/typeid_cast.h>
