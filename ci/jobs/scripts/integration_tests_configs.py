@@ -1,6 +1,8 @@
 import dataclasses
+import traceback
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
+from ci.praktika.info import Info
 
 
 @dataclasses.dataclass
@@ -919,10 +921,9 @@ def _parse_raw_durations(raw: str) -> dict[str, int]:
 TEST_DURATIONS: dict[str, int] = _parse_raw_durations(RAW_TEST_DURATIONS)
 
 
-def get_tests_execution_time(info: any, job_options: str) -> dict[str, int]:
-    start_time_filter = "toStartOfDay(now())"
-    if hasattr(info, "updated_at") and info.updated_at:
-        start_time_filter = f"parseDateTimeBestEffort('{info.updated_at}')"
+def get_tests_execution_time(info: Info, job_options: str) -> dict[str, int]:
+    assert info.updated_at
+    start_time_filter = f"parseDateTimeBestEffort('{info.updated_at}')"
 
     build = job_options.split(',', 1)[0]
 
@@ -948,14 +949,19 @@ def get_tests_execution_time(info: any, job_options: str) -> dict[str, int]:
         )
         GROUP BY file
         ORDER BY ALL
-        SETTINGS use_query_cache = 1, query_cache_ttl = 216000, query_cache_nondeterministic_function_handling = 'save', query_cache_share_between_users = 1
+        SETTINGS use_query_cache = 1, query_cache_ttl = 432000, query_cache_nondeterministic_function_handling = 'save', query_cache_share_between_users = 1
         FORMAT JSON
     """
 
     client = CIDBCluster()
     print(query)
+    try:
+        res = client.do_select_query(query, retries=3)
+    except RuntimeError as e:
+        print(e)
+        print(traceback.format_exc())
+        return {}
 
-    res = client.do_select_query(query, retries=3)
     if not res:
         return {}
     try:
@@ -972,7 +978,7 @@ def get_optimal_test_batch(
     batch_num: int,
     num_workers: int,
     job_options: str,
-    info: any = None,
+    info: Info = None,
 ) -> tuple[list[str], list[str]]:
     """
     @tests - all tests to run
@@ -1016,13 +1022,16 @@ def get_optimal_test_batch(
     parallel_groups = group_by_prefix(parallel_test_modules)
     sequential_groups = group_by_prefix(sequential_test_modules)
 
+    durations = TEST_DURATIONS
+
     # Compute group durations as sum of known test durations within the group
     # TODO: fix in private
     #   ERROR: Failed to get secret [PRIVATE_CI_DB_URL]
-    durations = get_tests_execution_time(info, job_options) if info else {}
-    if not durations:
-        print("WARNING: CIDB durations not found, using static TEST_DURATIONS")
-        durations = TEST_DURATIONS
+    if info and not info.is_local_run:
+        durations = get_tests_execution_time(info, job_options)
+        if not durations:
+            print("WARNING: CIDB durations not found, using static TEST_DURATIONS")
+            durations = TEST_DURATIONS
 
     def groups_with_durations(groups: dict[str, list[str]]):
         known_groups: list[tuple[str, int]] = []  # (prefix, duration)
