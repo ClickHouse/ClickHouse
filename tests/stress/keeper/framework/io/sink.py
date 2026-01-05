@@ -6,6 +6,13 @@ import time
 
 _SEEDED = False
 
+def _autocreate_enabled() -> bool:
+    try:
+        v = os.environ.get("KEEPER_AUTOCREATE_SCHEMA", "").strip().lower()
+        return v in ("1", "true", "yes", "on")
+    except Exception:
+        return False
+
 
 def _get_helper():
     try:
@@ -59,6 +66,9 @@ def ensure_sink_schema(_url_ignored=None):
     """
     global _SEEDED
     if _SEEDED:
+        return
+    # Align with other tests: do not auto-create unless explicitly enabled
+    if not _autocreate_enabled():
         return
     try:
         import requests
