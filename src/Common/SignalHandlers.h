@@ -62,13 +62,26 @@ public:
     static constexpr int StdTerminate = -1;
     static constexpr int StopThread = -2;
 
-    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_);
+    /// Called on signals like SIGTERM, if setupCommonTerminateRequestSignalHandlers() was called.
+    /// The first time such signal is received, the callback is called with `crashing = false`,
+    /// then waitForTerminationRequest is unblocked.
+    /// The second time, the callback is called with `crashing = true`, then we crash.
+    using TerminateRequestCallback = std::function<void(int signal_id, bool crashing)>;
+
+    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_ = nullptr);
     void run() override;
+
+    bool waitForTerminationRequest(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
     std::function<String()> build_id;
+    TerminateRequestCallback terminate_request_callback;
+
+    std::mutex terminate_request_mutex;
+    std::condition_variable terminate_request_cv;
+    size_t terminate_requested = 0;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 

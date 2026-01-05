@@ -1,17 +1,22 @@
 #include <gtest/gtest.h>
 
-#include <thread>
-#include <fmt/ranges.h>
-
 #include <absl/log/globals.h>
+#include <boost/program_options.hpp>
+#include <fmt/ranges.h>
+#include <thread>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/logger_useful.h>
+#include <Common/SignalHandlers.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ThreadStatus.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
@@ -20,6 +25,7 @@
 #include <Storages/StorageGenerateRandom.h>
 
 using namespace DB;
+namespace po = boost::program_options;
 
 namespace DB::ErrorCodes
 {
@@ -73,10 +79,49 @@ namespace DB::ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
     extern const int UNICODE_ERROR;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
 namespace
 {
+
+struct Options
+{
+    int num_threads = -1;
+    int duration_seconds = 60;
+
+    /// avoid_* are flags to ignore some known issues.
+    /// Would be good to fix the issues and disable the flags.
+
+    /// Some functions return ColumnNullable where null_map says some value is null, but nested column
+    /// has non-default value for that row. Some other functions break when receiving such column
+    /// as input (e.g. maybe they look at the nested column, see invalid value, and throw exception
+    /// before checking the null map; or maybe a hash function hashes the nested column value even
+    /// if null_map says null).
+    bool avoid_nondefault_null = true;
+
+    /// Some IFunction implementations expect one IFunction instance to be used for only one overload
+    /// and from only one thread. E.g. see `mutable bool to_nullable` in FunctionsConversion.h.
+    /// But FunctionToOverloadResolverAdaptor uses one IFunction to resolve any overload.
+    /// So currently there's a weird unspoken rule that one instance of IFunctionOverloadResolver
+    /// must be used to resolve at most one overload, from one thread. This rule is probably not
+    /// consistently followed.
+    bool avoid_reusing_overload_resolver = true;
+
+    void parse(int argc, const char * const * argv)
+    {
+        po::options_description desc("gtest_functions_stress");
+        desc.add_options()
+            ("threads", po::value<int>(&num_threads)->default_value(num_threads), "how many instances of the test to run in parallel, -1 for num cores")
+            ("duration", po::value<int>(&duration_seconds)->default_value(duration_seconds), "run for this many seconds, -1 to run forever")
+            ("avoid-nondefault-null", po::value<bool>(&avoid_nondefault_null)->default_value(avoid_nondefault_null), "avoid using Nullable values where the null_map says the value is NULL, but the nested column has nondefault value; if a function returns such value, fix it up before passing it to other functions; this makes the test unrealistic, we should ideally fix all cases where this breaks functions and disable this option")
+            ("avoid-reusing-overload-resolver", po::value<bool>(&avoid_reusing_overload_resolver)->default_value(avoid_reusing_overload_resolver), "create a new instance of IFunctionOverloadResolver for every overload resolution");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+    }
+};
 
 /// Errors that are allowed for IFunctionOverloadResolver::build and IFunctionBase::prepare.
 static const std::unordered_set<int> early_typecheck_errors = {
@@ -117,6 +162,7 @@ static const std::unordered_set<int> late_typecheck_errors = {
     ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
     ErrorCodes::TYPE_MISMATCH,
     ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
 };
 
 /// Errors that are allowed for IExecutableFunction::execute.
@@ -157,6 +203,7 @@ static const std::unordered_set<int> execution_errors = {
     ErrorCodes::UNKNOWN_TYPE,
     ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX,
     ErrorCodes::UNICODE_ERROR,
+    ErrorCodes::ILLEGAL_COLUMN,
 };
 
 const std::unordered_set<std::string_view> excluded_functions = {
@@ -358,18 +405,17 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "structureToProtobufSchema",
     "structureToCapnProtoSchema",
     "generateRandomStructure",
+
+    // Needs query context.
+    "__applyFilter",
 };
 
-/// Normally we check that:
-///  * If a function succeeded on some args, it should also succeed if we change some of these args
-///    from non-const to const.
-///  * If a function is deterministic, the output shouldn't change if we change some of the args
-///    from non-const to const.
-/// These functions are exempt from these checks.
-const std::unordered_set<std::string_view> functions_with_const_dependent_behavior = {
-    /// Different semantics: const string is type name, non-const string is example value.
-    "getTypeSerializationStreams",
-
+/// Normally, if a function succeeded on some args, it should also succeed if we change some of
+/// these args from non-const to const. These functions are exceptions, usually due to sloppy type
+/// checking (checked at execution time instead of query analysis time).
+/// But when these functions happen to still succeed after changing constness, we check that the
+/// return value didn't change.
+const std::unordered_set<std::string_view> functions_with_const_dependent_error_checks = {
     /// FunctionsRound.h is sloppy about range checking and overflows.
     /// Stricter range check in const case:
     ///   select ceil(materialize(0), materialize(18446744073709535122)) -- succeeds
@@ -415,6 +461,14 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_behavi
     /// Different overflow checks for const vs non-const.
     /// Some overflow checks while resolving overload if args are const.
     "minus",
+};
+
+/// Normally, we expect a deterministic function to return the same result on the same arguments
+/// even if we change some of these arguments from non-const to const.
+/// These functions are weird exceptions.
+const std::unordered_set<std::string_view> functions_with_const_dependent_semantics = {
+    /// Different semantics: const string is type name, non-const string is example value.
+    "getTypeSerializationStreams",
 };
 
 static constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
@@ -464,8 +518,9 @@ struct FunctionInfo
     /// TODO: maybe put hardcoded ArgConstraints here
 };
 
-std::vector<FunctionInfo> testable_functions;
+Options options;
 LoggerPtr logger;
+std::vector<FunctionInfo> testable_functions;
 
 void listTestableFunctions()
 {
@@ -493,6 +548,9 @@ void listTestableFunctions()
             throw;
         }
 
+        if (options.avoid_reusing_overload_resolver)
+            resolver.reset();
+
         testable_functions.push_back(FunctionInfo {.name = name, .overload_resolver = resolver});
     }
 
@@ -507,6 +565,7 @@ enum Stat
     S_EXEC_ROW_ATTEMPTS,
     S_EXEC_ROW_OK,
     S_EXEC_LATE_TYPECHECK_ERRORS,
+    S_NONDEFAULT_NULL,
     S_TIME_TOTAL_NS,
     S_TIME_MAX_NS,
     S_MEMORY_BALANCE,
@@ -584,38 +643,67 @@ struct Operation
     size_t row_idx = 0; // if ExecutingFunctionOnOneRow or ReExecutingFunctionOnOneRow
 
 
-    /// Returns a string that fits in the sentence "... while {}", e.g. "executing function f(42)".
-    String describe() const
+    /// Returns a string that fits in the sentence "... while {}", e.g. "executing function: SELECT f(42)".
+    /// If `multirow_query_only`, returns just the query (without "executing function: ") and includes
+    /// an ARRAY JOIN with all rows even if `step` is ExecutingFunctionOnOneRow.
+    String describe(bool multirow_query_only = false) const
     {
         WriteBufferFromOwnString buf;
 
-        switch (step)
+        /// What argument values to print.
+        enum class Mode
         {
-            case Step::None:
-                return "unknown";
-            case Step::GeneratingArguments:
-                writeString("picking arguments for function", buf);
-                break;
-            case Step::ResolvingOverload:
-                writeString("resolving overload", buf);
-                break;
-            case Step::ExecutingFunctionInBulk:
-                writeString("executing function on multiple rows (non-const args are printed as default values)", buf);
-                break;
-            case Step::ExecutingFunctionOnOneRow:
-                writeString("executing", buf);
-                break;
-            case Step::ReExecutingFunctionOnOneRow:
-                writeString("re-resolving and re-executing", buf);
-                break;
+            OnlyConstants,
+            OneRow,
+            AllRows,
+        };
+
+        Mode mode = Mode::OnlyConstants;
+        if (multirow_query_only)
+        {
+            mode = Mode::AllRows;
+        }
+        else
+        {
+            switch (step)
+            {
+                case Step::None:
+                    return "unknown";
+                case Step::GeneratingArguments:
+                    writeString("picking arguments for function ", buf);
+                    writeString(testable_functions.at(function_idx).name, buf);
+                    return std::move(buf.str());
+                case Step::ResolvingOverload:
+                    writeString("resolving overload", buf);
+                    mode = Mode::OnlyConstants;
+                    break;
+                case Step::ExecutingFunctionInBulk:
+                    writeString("executing function on multiple rows", buf);
+                    mode = Mode::AllRows;
+                    break;
+                case Step::ExecutingFunctionOnOneRow:
+                    writeString("executing", buf);
+                    mode = Mode::OneRow;
+                    break;
+                case Step::ReExecutingFunctionOnOneRow:
+                    writeString("re-resolving and re-executing", buf);
+                    mode = Mode::OneRow;
+                    break;
+            }
+            writeString(": ", buf);
         }
 
-        writeString(" ", buf);
+        writeString("SELECT ", buf);
         writeString(testable_functions.at(function_idx).name, buf);
 
-        if (step == Step::GeneratingArguments)
-            return std::move(buf.str());
+        auto gen_name = [](size_t i) -> String
+        {
+            if (i < 26)
+                return String(1, char('a' + i));
+            return fmt::format("c{}", i);
+        };
 
+        bool need_array_join = false;
         writeString("(", buf);
         for (size_t i = 0; i < args.size(); ++i)
         {
@@ -625,16 +713,23 @@ struct Operation
                 writeString(", ", buf);
 
             bool is_const = arg.column->isConst();
+
+            if (!is_const && mode == Mode::AllRows)
+            {
+                need_array_join = true;
+                writeString(gen_name(i), buf);
+                continue;
+            }
+
             if (!is_const)
                 writeString("materialize(", buf);
             writeString("CAST(", buf);
 
             /// Make a non-const non-sparse etc column (for ISerialization) with one value.
             MutableColumnPtr mutable_column = arg.column->cloneEmpty();
-            if (is_const || step == Step::ExecutingFunctionOnOneRow || step == Step::ReExecutingFunctionOnOneRow)
+            if (is_const || mode == Mode::OneRow)
                 mutable_column->insertRangeFrom(*arg.column, row_idx, 1);
             else
-                /// If we haven't picked the value yet, print a default value instead of a random one.
                 arg.type->insertDefaultInto(*mutable_column);
             ColumnPtr column = std::move(mutable_column);
             column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
@@ -650,6 +745,42 @@ struct Operation
                 writeString(")", buf); // materialize(
         }
         writeString(")", buf);
+
+        if (need_array_join)
+        {
+            writeString(" FROM system.one ARRAY JOIN ", buf);
+            bool first = true;
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                const auto & arg = args[i];
+                if (arg.column->isConst())
+                    continue;
+                if (!first)
+                    writeString(", ", buf);
+                first = false;
+
+                writeString("CAST(", buf);
+
+                /// Wrap the column value in array.
+                DataTypePtr array_type = std::make_shared<DataTypeArray>(arg.type);
+                ColumnPtr column = arg.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+                MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+                MutableColumnPtr offsets_column = ColumnArray::ColumnOffsets::create();
+                offsets_column->insert(UInt64(mutable_column->size()));
+                ColumnPtr array_column = ColumnArray::create(std::move(mutable_column), std::move(offsets_column));
+
+                auto serialization = array_type->getDefaultSerialization();
+                serialization->serializeTextQuoted(*array_column, /*row_num=*/ 0, buf, FormatSettings());
+
+                writeString(" AS ", buf);
+                writeString(array_type->getName(), buf);
+                writeString(") AS ", buf);
+                writeString(gen_name(i), buf);
+            }
+        }
+
+        writeString(";", buf);
+
         return std::move(buf.str());
     }
 };
@@ -689,6 +820,8 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
 
         if (stats.get(S_EXEC_LATE_TYPECHECK_ERRORS) != 0)
             function_lists["type checking during execution"].push_back(name);
+        if (stats.get(S_NONDEFAULT_NULL) != 0)
+            function_lists["produces nondefault values behind NULLs"].push_back(name);
 
         by_time_max.emplace_back(stats.get(S_TIME_MAX_NS), name);
         by_time_total.emplace_back(stats.get(S_TIME_TOTAL_NS), name);
@@ -750,6 +883,45 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
 
     return totals.get(S_CRITICAL_ERRORS) == 0 && stuck_threads == 0;
 }
+
+/// Quirk in string vs enum comparison when the string value is not in the enum:
+/// for non-const strings it does string comparison, but for const string
+/// the comparison result is just 0.
+///   select '' as x, 0::Enum8('a' = 0) as y, x < y, materialize(x) < y
+///      ┌─x─┬─y─┬─less(x, y)─┬─less(materialize(x), y)─┐
+///   1. │   │ a │          0 │                       1 │
+///      └───┴───┴────────────┴─────────────────────────┘
+/// Currently we suppress the error about this in this test, but it would be nice to fix the function instead.
+bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWithTypeAndName & args)
+{
+    static const std::unordered_set<String> names = {"less", "greater", "lessOrEquals", "greaterOrEquals"};
+    if (!names.contains(function_name) || args.size() != 2)
+        return false;
+    bool found_const_string = false;
+    bool found_enum = false;
+    for (const auto & arg : args)
+    {
+        bool has_string = false;
+        arg.type->forEachChild([&](const IDataType & type)
+            {
+                has_string |= isStringOrFixedString(type);
+                found_enum |= isEnum(type);
+            });
+        found_const_string |= has_string && arg.column->isConst();
+    }
+    return found_const_string && found_enum;
+}
+
+/// This fails:
+///   select modulo(if(number=0,null,0), CAST(number AS IPv4)) from numbers(2)
+/// But if you do it for one row at a time (numbers(1) and numbers(1, 1)), it succeeds.
+bool isNullableDivisionQuirk(const String & function_name, const ColumnsWithTypeAndName & args, int error_code)
+{
+    if (error_code != ErrorCodes::ILLEGAL_DIVISION || (function_name != "intDiv" && function_name != "modulo"))
+        return false;
+    return args.size() == 2 && isIPv4(args[1].type);
+}
+
 }
 
 struct FunctionsStressTestThread
@@ -761,6 +933,7 @@ struct FunctionsStressTestThread
     bool thread_stopped = false;
 
     std::optional<ThreadStatus> thread_status;
+    ThreadGroupPtr thread_group;
 
     ContextMutablePtr context;
 
@@ -792,12 +965,14 @@ struct FunctionsStressTestThread
 
     Operation operation;
 
-
     void run()
     {
         thread_status.emplace();
         chassert(current_thread == &*thread_status);
         context = makeContext();
+        thread_group = std::make_shared<ThreadGroup>(context, 0, [&] { onCrash(); });
+        CurrentThread::attachToGroup(thread_group);
+
         function_stats.resize(testable_functions.size());
 
         while (!thread_should_stop.load(std::memory_order_relaxed))
@@ -851,7 +1026,16 @@ struct FunctionsStressTestThread
             {
                 handle_unexpected_exception();
             }
-            chassert(current_thread == &*thread_status);
+            if (current_thread != &*thread_status)
+            {
+                LOG_FATAL(logger, "current_thread changed while {}", operation.describe());
+                std::abort();
+            }
+            if (current_thread->getThreadGroup() != thread_group)
+            {
+                LOG_FATAL(logger, "ThreadGroup changed while {}", operation.describe());
+                std::abort();
+            }
 
             auto end_time = std::chrono::steady_clock::now();
             Int64 ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - operation.iteration_start_time).count();
@@ -877,6 +1061,8 @@ struct FunctionsStressTestThread
             }
         }
 
+        thread_status.reset(); // must be done from this thread
+
         {
             std::unique_lock lock(mutex);
             chassert(operation.step == Operation::Step::None);
@@ -885,13 +1071,25 @@ struct FunctionsStressTestThread
         thread_stop_cv.notify_all();
     }
 
+    void onCrash()
+    {
+        LOG_FATAL(logger, "(while {})", operation.describe());
+    }
+
+    FunctionOverloadResolverPtr getOverloadResolver(const FunctionInfo & function_info)
+    {
+        if (function_info.overload_resolver)
+            return function_info.overload_resolver;
+        return FunctionFactory::instance().get(function_info.name, context);
+    }
+
     bool tryGenerateRandomOverload()
     {
         const FunctionInfo & function_info = testable_functions[operation.function_idx];
         FunctionStats & stats = function_stats[operation.function_idx];
-        const IFunctionOverloadResolver & resolver = *function_info.overload_resolver;
-        size_t num_args = resolver.isVariadic() ? generateRandomNumberOfArgs() : resolver.getNumberOfArguments();
-        ColumnNumbers always_const_args = resolver.getArgumentsThatAreAlwaysConstant();
+        FunctionOverloadResolverPtr resolver = getOverloadResolver(function_info);
+        size_t num_args = resolver->isVariadic() ? generateRandomNumberOfArgs() : resolver->getNumberOfArguments();
+        ColumnNumbers always_const_args = resolver->getArgumentsThatAreAlwaysConstant();
         ColumnsWithTypeAndName args;
         for (size_t i = 0; i < num_args; ++i)
         {
@@ -917,12 +1115,12 @@ struct FunctionsStressTestThread
 
         try
         {
-            resolved_function = resolver.build(args_without_non_const_columns);
+            resolved_function = resolver->build(args_without_non_const_columns);
         }
         catch (Exception & e)
         {
             if (early_typecheck_errors.contains(e.code()) ||
-                (variadic_typecheck_errors.contains(e.code()) && resolver.isVariadic()))
+                (variadic_typecheck_errors.contains(e.code()) && resolver->isVariadic()))
             {
                 return false;
             }
@@ -932,6 +1130,9 @@ struct FunctionsStressTestThread
             }
         }
 
+        if (resolved_function->isDeterministic() && !resolved_function->isDeterministicInScopeOfQuery())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "isDeterministic is true, but isDeterministicInScopeOfQuery is false");
+
         try
         {
             executable_function = resolved_function->prepare(args_without_non_const_columns);
@@ -940,7 +1141,8 @@ struct FunctionsStressTestThread
         {
             /// This function does pieces of typechecking everywhere for some reason:
             /// `build`, `prepare`, and `execute` can all throw type errors.
-            if (function_info.name == "CAST" && early_typecheck_errors.contains(e.code()))
+            if ((function_info.name == "CAST" || function_info.name == "_CAST" || function_info.name == "accurateCast") &&
+                early_typecheck_errors.contains(e.code()))
                 return false;
             else
                 throw;
@@ -964,6 +1166,9 @@ struct FunctionsStressTestThread
         res.type = DataTypeFactory::instance().get(type_name);
 
         res.column = fillColumnWithRandomData(res.type, ROWS_PER_BATCH, /*max_array_length=*/ 4, /*max_string_length=*/ 80, thread_local_rng, /*fuzzy=*/ true);
+
+        if (options.avoid_nondefault_null)
+            checkAndFixupColumn(res.column, res.type.get(), ROWS_PER_BATCH, nullptr);
 
         return res;
     }
@@ -999,6 +1204,57 @@ struct FunctionsStressTestThread
         return res;
     }
 
+    void checkAndFixupColumn(ColumnPtr & column, const IDataType * data_type, size_t expected_rows, FunctionStats * stats)
+    {
+        if (!column)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned nullptr column");
+        if (column->size() != expected_rows)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned unexpected number of rows: {} instead of {}", column->size(), expected_rows);
+        if (column->getDataType() != data_type->getColumnType())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", magic_enum::enum_name<TypeIndex>(column->getDataType()), magic_enum::enum_name<TypeIndex>(data_type->getColumnType()));
+
+        auto apply = [&](IColumn & col)
+        {
+            if (auto * nullable = typeid_cast<ColumnNullable *>(&col))
+            {
+                const auto & null_map = nullable->getNullMapData();
+                const auto & nested = nullable->getNestedColumn();
+                if (!typeid_cast<const ColumnNothing *>(&nested))
+                {
+                    MutableColumnPtr fixed_nested;
+                    for (size_t i = 0; i < null_map.size(); ++i)
+                    {
+                        if (null_map[i] && !nested.isDefaultAt(i))
+                        {
+                            if (stats)
+                                stats->add(S_NONDEFAULT_NULL, 1);
+
+                            if (options.avoid_nondefault_null)
+                            {
+                                if (!fixed_nested)
+                                {
+                                    fixed_nested = nested.cloneEmpty();
+                                }
+                                if (i > fixed_nested->size())
+                                    fixed_nested->insertRangeFrom(nested, fixed_nested->size(), i - fixed_nested->size());
+                                fixed_nested->insertDefault();
+                            }
+                        }
+                    }
+                    if (fixed_nested)
+                    {
+                        fixed_nested->insertRangeFrom(nested, fixed_nested->size(), null_map.size() - fixed_nested->size());
+                        nullable->getNestedColumnPtr() = std::move(fixed_nested);
+                    }
+                }
+            }
+        };
+        MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+        apply(*mutable_column);
+        mutable_column->forEachMutableSubcolumnRecursively([&](IColumn & col) { apply(col); });
+        column = std::move(mutable_column);
+    }
+
     /// Run function on multiple rows together and separately. Sometimes run it multiple times,
     /// sometimes with different constness of args. Check determinism across such repeated runs.
     /// If the function succeeded on one or more rows, leaves the inputs and outputs for those rows
@@ -1019,6 +1275,7 @@ struct FunctionsStressTestThread
         }
 
         std::exception_ptr bulk_exception;
+        std::optional<int> bulk_error_code;
         chassert(!result && valid_args.empty());
         try
         {
@@ -1028,6 +1285,7 @@ struct FunctionsStressTestThread
         {
             if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 throw;
+            bulk_error_code = e.code();
             bulk_exception = std::current_exception();
         }
         catch (...)
@@ -1035,10 +1293,12 @@ struct FunctionsStressTestThread
             bulk_exception = std::current_exception();
         }
 
+        if (!bulk_exception)
+            checkAndFixupColumn(result, result_type.get(), ROWS_PER_BATCH, &stats);
+
         /// If bulk run succeeded, sometimes still proceed to single-row runs to check that the outputs match.
         if (!bulk_exception && thread_local_rng() % 16 != 0)
         {
-            chassert(result);
             valid_args = operation.args;
             return true;
         }
@@ -1091,13 +1351,13 @@ struct FunctionsStressTestThread
                     /// Note: we avoid throwing LOGICAL_ERROR in this test because then debug executable
                     ///       crashes without reaching our outer `catch` that prints more information,
                     ///       e.g. function name and argument list.
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "function succeeded when executed on multiple rows, but failed when executed on one of those rows");
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "function succeeded when executed on multiple rows, but failed when executed on one of those rows; multi-row query: {}", operation.describe(true));
 
                 any_failed_row = row_idx;
                 continue;
             }
-            chassert(row_result);
-            chassert(row_result->size() == 1);
+
+            checkAndFixupColumn(row_result, result_type.get(), 1, &stats);
 
             /// Check that the value from single-row run matches the value from multi-row run.
             if (resolved_function->isDeterministicInScopeOfQuery() && !bulk_exception)
@@ -1112,7 +1372,7 @@ struct FunctionsStressTestThread
                 int compare_result = 1;
                 if (result->isConst() != row_result->isConst())
                 {
-                    if (!functions_with_const_dependent_behavior.contains(function_info.name))
+                    if (!functions_with_const_dependent_semantics.contains(function_info.name))
                         throw Exception(ErrorCodes::INCORRECT_DATA, "function result had different const-ness when run on many rows vs one row (with same constness of inputs)");
 
                     ColumnPtr left_column = result;
@@ -1131,11 +1391,7 @@ struct FunctionsStressTestThread
 
                 if (compare_result != 0)
                 {
-                    //asdqwe
-                    if (function_info.name == "sparseGramsUTF8")
-                        std::abort();
-
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "function returned different result on the same input row when executed on one row vs multiple rows: {} vs {}", valueToString(result_type, row_result, 0), valueToString(result_type, result, row_idx));
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "function returned different result on the same input row when executed on one row vs multiple rows: {} vs {}; multi-row query: {}", valueToString(result_type, row_result, 0), valueToString(result_type, result, row_idx), operation.describe(true));
                 }
             }
 
@@ -1143,14 +1399,14 @@ struct FunctionsStressTestThread
             /// re-resolving overload. Check that return type doesn't change and no exception is thrown
             /// (even for nondeterministic functions we expect this level of determinism).
             /// If the function is deterministic, additionally check that the return value matches.
-            if (thread_local_rng() % 64 == 0)
+            if (thread_local_rng() % 32 == 0)
             {
                 {
                     std::unique_lock lock(mutex);
                     operation.step = Operation::Step::ReExecutingFunctionOnOneRow;
                 }
 
-                bool can_change_constness = !functions_with_const_dependent_behavior.contains(function_info.name);
+                bool can_change_constness = !functions_with_const_dependent_semantics.contains(function_info.name);
                 bool changed_constness = false;
 
                 ColumnsWithTypeAndName new_args = row_args;
@@ -1169,9 +1425,6 @@ struct FunctionsStressTestThread
                     new_args_without_non_const_columns.push_back(std::move(arg_without_non_const_column));
                 }
 
-                auto new_resolved_function = function_info.overload_resolver->build(new_args_without_non_const_columns);
-                auto new_result_type = new_resolved_function->getResultType();
-
                 /// Changing arg constness may change result type to LowCardinality, e.g. if one arg
                 /// is low-cardinality and all other args became const.
                 auto unwrap_type = [](DataTypePtr type) -> DataTypePtr
@@ -1185,16 +1438,22 @@ struct FunctionsStressTestThread
                     return column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
                 };
 
-                if (is_deterministic && !unwrap_type(new_result_type)->equals(*unwrap_type(result_type)))
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "result type changed {}: {} to {}",
-                        changed_constness ? "after making more arguments const" : "when re-resolving overload",
-                        result_type->getName(), new_result_type->getName());
-
-                auto new_executable_function = new_resolved_function->prepare(new_args_without_non_const_columns);
+                ExecutableFunctionPtr new_executable_function;
                 ColumnPtr new_result;
+
                 try
                 {
+                    auto new_resolver = getOverloadResolver(function_info);
+                    auto new_resolved_function = new_resolver->build(new_args_without_non_const_columns);
+                    auto new_result_type = new_resolved_function->getResultType();
+
+                    if (is_deterministic && !unwrap_type(new_result_type)->equals(*unwrap_type(result_type)))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "result type changed {}: {} to {}",
+                            changed_constness ? "after making more arguments const" : "when re-resolving overload",
+                            result_type->getName(), new_result_type->getName());
+
+                    new_executable_function = new_resolved_function->prepare(new_args_without_non_const_columns);
                     new_result = new_executable_function->execute(new_args, result_type, /*input_rows_count=*/ 1, /*dry_run=*/ false);
                 }
                 catch (Exception & e)
@@ -1209,20 +1468,28 @@ struct FunctionsStressTestThread
                     /// time, this means that making args const can make the function fail.
                     /// Ignore this for now.
                     bool ok = false;
-                    if (new_executable_function->useDefaultImplementationForConstants() &&
+                    if (new_executable_function &&
+                        new_executable_function->useDefaultImplementationForConstants() &&
                         new_executable_function->useDefaultImplementationForNulls() &&
                         late_typecheck_errors.contains(e.code()))
+                        ok = true;
+                    if (changed_constness &&
+                        functions_with_const_dependent_error_checks.contains(function_info.name))
                         ok = true;
                     if (!ok)
                         throw;
                 }
 
                 if (new_result && is_deterministic && unwrap_column(new_result)->compareAt(0, 0, *unwrap_column(row_result), /*nan_direction_hint=*/ 1) != 0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "function returned different result on the same input{}: {} vs {}",
-                        changed_constness ? " after making more arguments const" : "",
-                        valueToString(unwrap_type(result_type), unwrap_column(row_result), 0),
-                        valueToString(unwrap_type(result_type), unwrap_column(new_result), 0));
+                {
+                    bool ignore = changed_constness && isStringEnumComparisonQuirk(function_info.name, new_args);
+                    if (!ignore)
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "function returned different result on the same input{}: {} vs {}",
+                            changed_constness ? " after making more arguments const" : "",
+                            valueToString(unwrap_type(result_type), unwrap_column(row_result), 0),
+                            valueToString(unwrap_type(result_type), unwrap_column(new_result), 0));
+                }
             }
 
             if (!mutable_result)
@@ -1251,11 +1518,14 @@ struct FunctionsStressTestThread
             }
             if (bulk_exception)
             {
-                LOG_ERROR(logger, "function failed when executed on multiple rows (see stack trace below), but succeeded when executed on each of those rows separately");
-                std::rethrow_exception(bulk_exception);
+                if (!bulk_error_code.has_value() || !isNullableDivisionQuirk(function_info.name, operation.args, bulk_error_code.value()))
+                {
+                    LOG_ERROR(logger, "function failed when executed on multiple rows (see stack trace below), but succeeded when executed on each of those rows separately");
+                    std::rethrow_exception(bulk_exception);
+                }
             }
             else
-                throw Exception(ErrorCodes::INCORRECT_DATA, "function succeeded when executed on multiple rows, but failed when executed on one of those rows");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "function succeeded when executed on multiple rows, but failed when executed on one of those rows; multirow query: {}", operation.describe(true));
         }
 
         if (mutable_result)
@@ -1299,25 +1569,45 @@ struct FunctionsStressTestThread
                 additional_random_values[thread_local_rng() % additional_random_values.size()] = std::move(c);
         }
 
-        //asdqwe check monotonicity (query on full or half-infinite range sometimes) and injectivity
+        // TODO: check monotonicity (query on full or half-infinite range sometimes) and injectivity
     }
 };
 
-TEST(FunctionsStress, stress)
+TEST(FunctionsStress, DISABLED_stress)
 {
     chassert(!logger);
     logger = getLogger("stress");
+
+    options.parse(getTestCommandLineOptions().argc, getTestCommandLineOptions().argv);
+
+    int num_threads = options.num_threads;
+    if (num_threads <= 0)
+        num_threads = std::thread::hardware_concurrency();
+    if (num_threads <= 0)
+        num_threads = 1;
+    std::vector<FunctionsStressTestThread> threads(static_cast<size_t>(num_threads));
+    const std::chrono::seconds stop_timeout(5);
+
+    auto request_shutdown = [&]
+        {
+            for (auto & t : threads)
+                t.thread_should_stop.store(true);
+        };
+
+    /// Print stack trace and function name on crash.
+    HandledSignals::instance().setupTerminateHandler();
+    HandledSignals::instance().setupCommonDeadlySignalHandlers();
+    /// Print test results before quitting on ctrl-C.
+    HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
+    SignalListener signal_listener(nullptr, logger, [&](int, bool) { request_shutdown(); });
+    std::thread signal_listener_thread([&] { signal_listener.run(); });
+
     tryRegisterFunctions();
     listTestableFunctions();
     absl::SetMinLogLevel(absl::LogSeverityAtLeast::kFatal);
 
-    /// TODO: print stack trace on fatal signal
-    /// TODO: take parameters from command line
-    std::vector<FunctionsStressTestThread> threads(100);
-    const std::chrono::seconds test_duration(1000);
-    const std::chrono::seconds stop_timeout(5);
 
-    LOG_INFO(logger, "Will run in {} threads on {} functions for {} seconds", threads.size(), testable_functions.size(), test_duration.count());
+    LOG_INFO(logger, "Will run in {} threads on {} functions for {} seconds", threads.size(), testable_functions.size(), options.duration_seconds);
 
     for (size_t i = 0; i < threads.size(); ++i)
     {
@@ -1325,7 +1615,7 @@ TEST(FunctionsStress, stress)
         threads[i].thread = std::thread([t = &threads[i]] { t->run(); });
     }
 
-    std::this_thread::sleep_for(test_duration);
+    signal_listener.waitForTerminationRequest(std::chrono::seconds(options.duration_seconds));
 
     for (auto & t : threads)
         t.thread_should_stop.store(true);
@@ -1360,9 +1650,13 @@ TEST(FunctionsStress, stress)
 
     if (!reportResults(total_stats, stuck_threads))
         _Exit(1);
+
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    HandledSignals::instance().reset();
 }
 
-//asdqwe:
+// TODO:
 // * generateRandom and GenerateRandomStructure support for Interval types and JSON; also add it to appendFuzzyRandomString
 // * better float/double distribution in generateRandom
 // * maybe test constant folding

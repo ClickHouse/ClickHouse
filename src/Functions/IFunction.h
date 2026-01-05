@@ -319,7 +319,8 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
   * Warning: One instance of IFunctionOverloadResolver can only be used to resolve one overload.
   *          To resolve a different overload, get a new IFunctionOverloadResolver from the factory.
   *          Calling `build` again with different arguments will subtly break things in some cases.
-  *          asdqwe
+  *          TODO: Fix this. Known offenders are IFunction implementations with mutable fields,
+  *                e.g. see `mutable bool to_nullable` in FunctionsConversion.h
   */
 class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
 {
