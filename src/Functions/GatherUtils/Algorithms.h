@@ -692,11 +692,10 @@ inline void checkAreLowCardinalityInsertable(const Source & source, const Generi
     const bool can_insert =
         // Check same type
         source_elements.structureEquals(sink.elements)
-            // insertRangeFrom casts numeric types if they are different, so it can insert them.
-            || (sink.elements.lowCardinality()
-                && source_elements.lowCardinality()
-                && sink.elements.isNumeric()
-                && source_elements.isNumeric());
+        // insertRangeFrom casts numeric types if they are different, so it can insert them.
+        || (source_elements.lowCardinality() &&
+            sink.elements.lowCardinality() &&
+            (source_elements.getDataType() == sink.elements.getDataType()));
 
     if (!can_insert)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
