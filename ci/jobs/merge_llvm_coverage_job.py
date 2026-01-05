@@ -1,6 +1,9 @@
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
+current_directory = Utils.cwd()
+temp_dir = f"{current_directory}/ci/tmp/"
+
 if __name__ == "__main__":
     result = Result.from_commands_run(
         name="Merge LLVM Coverage",
@@ -11,11 +14,11 @@ if __name__ == "__main__":
     
     # Compress coverage artifacts
     coverage_files = [
-        "./ci/tmp/merged.profdata",
-        "./ci/tmp/llvm_coverage_html_report",
+        f"{temp_dir}/merged.profdata",
+        f"{temp_dir}/llvm_coverage_html_report",
     ]
     attached_files.append(
-        Utils.compress_files_gz(coverage_files, "./ci/tmp/llvm_coverage_html_report.tar.gz")
+        Utils.compress_files_gz(coverage_files, f"{temp_dir}/llvm_coverage_html_report.tar.gz")
     )
     
     Result.create_from(

@@ -50,7 +50,7 @@ echo "Merging profdata files..."
 cd ci/tmp || { echo "ERROR: ci/tmp directory not found"; exit 1; }
 
 # List available profdata files for debugging
-echo "Available profdata files:"
+echo "Available profdata files in $(pwd):"
 ls -lh *.profdata 2>/dev/null || echo "No profdata files found"
 
 echo "Checking for binaries..."
