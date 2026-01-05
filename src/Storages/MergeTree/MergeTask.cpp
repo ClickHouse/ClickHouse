@@ -1129,6 +1129,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
+        if (global_ctx->merge_may_reduce_rows)
+            global_ctx->gathered_data.part_statistics.update(block, global_ctx->metadata_snapshot);
+
         calculateProjections(block);
 
         UInt64 result_rows = 0;
