@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import requests
+import traceback
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
 try:
@@ -839,4 +840,20 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        try:
+            err_txt = f"{e}\n{traceback.format_exc()}"
+            tmp_dir = "./ci/tmp"
+            os.makedirs(tmp_dir, exist_ok=True)
+            err_path = f"{tmp_dir}/keeper_job_fatal_error.txt"
+            with open(err_path, "w", encoding="utf-8") as f:
+                f.write(err_txt)
+            Result.create_from(
+                results=[Result.from_commands_run(name="Keeper Stress fatal error", command=["true"])],
+                stopwatch=Utils.Stopwatch(),
+                files=[err_path],
+            ).complete_job()
+        except Exception:
+            raise
