@@ -90,8 +90,7 @@ def ensure_sink_schema(_url_ignored=None):
             value Float64,
             labels_json String DEFAULT '{{}}'
         ) ENGINE=MergeTree
-        ORDER BY (run_id, scenario, node, stage, name, ts)
-        TTL ts + INTERVAL 30 DAY DELETE""",
+        ORDER BY (run_id, scenario, node, stage, name, ts)""",
     ]
     ok = True
     for ddl in ddls:
