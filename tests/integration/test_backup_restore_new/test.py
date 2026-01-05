@@ -1124,15 +1124,13 @@ def test_materialized_view_with_target_table():
 
 
 def test_skip_rmv_backup():
-    instance.query("DROP DATABASE IF EXISTS test SYNC")
-    instance.query("DROP DATABASE IF EXISTS restored SYNC")
     size = 100
     create_and_fill_table(n=size)
     instance.query(
-        "CREATE TABLE test.target(x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE test.target(x Int64) ENGINE=MergeTree ORDER BY tuple()"
     )
     instance.query(
-        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS TO test.target AS SELECT y, x FROM test.table"
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS TO test.target AS SELECT x FROM test.table"
     )
 
     backup_name = new_backup_name()
@@ -1142,6 +1140,7 @@ def test_skip_rmv_backup():
         f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
     )
     instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
+    instance.query("SYSTEM REFRESH VIEW restored.view");
 
     assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
 
