@@ -28,10 +28,12 @@ void SaveSubqueryResultToBufferTransform::transform(Chunk & chunk)
     for (size_t index : columns_to_save_indices)
         columns_to_save.push_back(chunk.getColumns()[index]);
 
-    {
-        std::lock_guard lock(chunk_buffer->mutex);
-        chunk_buffer->chunks.push_back(Chunk(std::move(columns_to_save), chunk.getNumRows()));
-    }
+    chunk_buffer->append(Chunk(std::move(columns_to_save), chunk.getNumRows()));
+}
+
+void SaveSubqueryResultToBufferTransform::onFinish()
+{
+    chunk_buffer->onInputFinish();
 }
 
 }

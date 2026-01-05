@@ -24,6 +24,8 @@ public:
     String getName() const override { return "SaveSubqueryResultToBuffer"; }
     void transform(Chunk & chunk) override;
 
+    void onFinish() override;
+
 private:
     ChunkBufferPtr chunk_buffer;
     std::vector<size_t> columns_to_save_indices;

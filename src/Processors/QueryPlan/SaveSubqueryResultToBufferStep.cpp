@@ -2,7 +2,6 @@
 
 #include <Processors/Transforms/SaveSubqueryResultToBufferTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 
 #include <cstddef>
 
@@ -49,6 +48,9 @@ void SaveSubqueryResultToBufferStep::transformPipeline(QueryPipelineBuilder & pi
         auto index = input_header->getPositionByName(column);
         columns_to_save_indices.push_back(index);
     }
+    /// No need to lock here, as this method is called during pipeline building,
+    /// before the execution starts.
+    chunk_buffer->setInputsNumber(pipeline.getNumStreams());
 
     pipeline.addSimpleTransform(
         [this, &columns_to_save_indices](const SharedHeader & in_header)

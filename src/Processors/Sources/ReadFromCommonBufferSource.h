@@ -17,17 +17,7 @@ public:
 
     String getName() const override { return "ReadFromCommonBufferSource"; }
 
-    Chunk generate() override
-    {
-        std::lock_guard lock(chunk_buffer->mutex);
-        if (chunk_buffer->index >= chunk_buffer->chunks.size())
-        {
-            chunk_buffer->chunks.clear();
-            return {};
-        }
-
-        return std::move(chunk_buffer->chunks[chunk_buffer->index++]);
-    }
+    Chunk generate() override { return chunk_buffer->extractNext(); }
 
 private:
     ChunkBufferPtr chunk_buffer;
