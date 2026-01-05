@@ -1,4 +1,5 @@
--- Tags: stateful
+-- Tags: stateful, long, no-asan, no-tsan, no-ubsan, no-msan
+-- no-asan, no-tsan, no-ubsan, no-msan: Too slow
 
 WITH URLDomain AS a, URLDomain AS b
 SELECT round(cramersVWindow(a, b), 2), round(cramersVBiasCorrectedWindow(a, b), 2), round(theilsUWindow(a, b), 2), round(theilsUWindow(b, a), 2), round(contingencyWindow(a, b), 2) FROM test.hits;
