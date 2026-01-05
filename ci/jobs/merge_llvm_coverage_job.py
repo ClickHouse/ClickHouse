@@ -15,8 +15,11 @@ if __name__ == "__main__":
         "./ci/tmp/llvm_coverage_html_report",
     ]
     attached_files.append(
-        Utils.compress_files_gz(coverage_files, "./ci/tmp/llvm_coverage.tar.gz")
+        Utils.compress_files_gz(coverage_files, "./ci/tmp/llvm_coverage_html_report.tar.gz")
     )
     
-    result.set_files(attached_files)
-    result.complete_job()
+    Result.create_from(
+        results=[result],
+        files=attached_files,
+        message="LLVM Coverage Merge Job Completed",
+    ).complete_job()
