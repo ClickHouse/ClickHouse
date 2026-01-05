@@ -437,7 +437,7 @@ def main():
         )
     except Exception:
         pass
-    # Post-run: push keeper metrics from pytest stdout using CI DB creds like integration does
+    # Post-run: extract keeper metrics from pytest stdout for artifacts only (tests handle CIDB push like other suites)
     try:
         pushed_rows = 0
         extracted_rows = 0
@@ -445,88 +445,11 @@ def main():
         helper = None
         try:
             from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-            from tests.stress.keeper.framework.io.sink import ensure_sink_schema  # type: ignore
-
             helper = ClickHouseHelper()
-            ensure_sink_schema()
         except Exception:
             helper = None
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
-        try:
-            # Resolve CIDB endpoint from env (URL-only) or helper; credentials come from helper
-            cidb_url = (env.get("CI_DB_URL") or (getattr(helper, "url", "") if helper is not None else ""))
-            auth = getattr(helper, "auth", None) if helper is not None else None
-            if cidb_url and auth:
-                db_code = tbl_code = None
-                db_err = tbl_err = ""
-                try:
-                    r1 = requests.post(
-                        cidb_url,
-                        params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
-                        headers=auth,
-                        timeout=20,
-                    )
-                    db_code = r1.status_code
-                    if not r1.ok:
-                        db_err = (r1.text or "").strip()[:200]
-                    table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
-                        ts DateTime DEFAULT now(),
-                        run_id String,
-                        commit_sha String,
-                        backend String,
-                        scenario String,
-                        topology Int32,
-                        node String,
-                        stage String,
-                        source LowCardinality(String),
-                        name LowCardinality(String),
-                        value Float64,
-                        labels_json String DEFAULT '{{}}'
-                    ) ENGINE=MergeTree
-                    ORDER BY (run_id, scenario, node, stage, name, ts)
-                    TTL ts + INTERVAL 30 DAY DELETE"""
-                    r2 = requests.post(
-                        cidb_url,
-                        params={"query": table_ddl},
-                        headers=auth,
-                        timeout=20,
-                    )
-                    tbl_code = r2.status_code
-                    if not r2.ok:
-                        tbl_err = (r2.text or "").strip()[:200]
-                except Exception as e:
-                    db_err = db_err or (str(e)[:200])
-                try:
-                    results.append(
-                        Result.from_commands_run(
-                            name=f"CIDB DDL (post-run): create_db={db_code} err='{db_err}' create_tbl={tbl_code} err='{tbl_err}'",
-                            command=["true"],
-                        )
-                    )
-                except Exception:
-                    pass
-                # Report existence for job logs
-                try:
-                    chk = requests.get(
-                        cidb_url,
-                        params={"query": f"EXISTS DATABASE {metrics_db} FORMAT TabSeparated"},
-                        headers=auth,
-                        timeout=15,
-                    )
-                    db_exists = ((chk.text or "").strip().splitlines()[0] == "1")
-                except Exception:
-                    db_exists = False
-                try:
-                    results.append(
-                        Result.from_commands_run(
-                            name=f"CIDB Ensure Schema (post-run): db={metrics_db} exists={(1 if db_exists else 0)}",
-                            command=["true"],
-                        )
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # No job-level DDL or post-run insert; schema is pre-provisioned and tests push via ClickHouseHelper when creds are present
         if Path(pytest_log_file).exists():
             rows = []
             inside = False
@@ -562,26 +485,9 @@ def main():
                         except Exception:
                             pass
                         if len(rows) >= 1000:
-                            body = "\n".join(rows)
-                            if helper is not None:
-                                url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
-                                try:
-                                    ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
-                                    pushed_rows += len(rows)
-                                except Exception as e:
-                                    if not push_err:
-                                        push_err = str(e)[:200]
                             rows = []
                 if rows:
-                    body = "\n".join(rows)
-                    if helper is not None:
-                        url_ins = env.get("CI_DB_URL") or getattr(helper, "url", "")
-                        try:
-                            ClickHouseHelper.insert_json_str(url_ins, helper.auth, metrics_db, "keeper_metrics_ts", body)
-                            pushed_rows += len(rows)
-                        except Exception as e:
-                            if not push_err:
-                                push_err = str(e)[:200]
+                    rows = []
             finally:
                 try:
                     if ef:
@@ -606,7 +512,7 @@ def main():
                 pass
         results.append(
             Result.from_commands_run(
-                name=f"CIDB Push (post-run): keeper_metrics extracted={extracted_rows} pushed={pushed_rows} err='{push_err}'",
+                name=f"Keeper Metrics Extract (post-run): extracted={extracted_rows} (tests push to CIDB)",
                 command=["true"],
             )
         )
@@ -688,80 +594,6 @@ def main():
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
         if have_cidb:
-            try:
-                from tests.stress.keeper.framework.io.sink import ensure_sink_schema  # type: ignore
-                ensure_sink_schema()
-            except Exception:
-                pass
-            # Idempotent safety: ensure DB/table via HTTP regardless of helper behavior
-            db_code_v = tbl_code_v = None
-            db_err_v = tbl_err_v = ""
-            try:
-                r1 = requests.post(
-                    cidb_url,
-                    params={"query": f"CREATE DATABASE IF NOT EXISTS {metrics_db}"},
-                    headers=auth,
-                    timeout=30,
-                )
-                db_code_v = r1.status_code
-                if not r1.ok:
-                    db_err_v = (r1.text or "").strip()[:200]
-                table_ddl = f"""CREATE TABLE IF NOT EXISTS {metrics_db}.keeper_metrics_ts (
-                    ts DateTime DEFAULT now(),
-                    run_id String,
-                    commit_sha String,
-                    backend String,
-                    scenario String,
-                    topology Int32,
-                    node String,
-                    stage String,
-                    source LowCardinality(String),
-                    name LowCardinality(String),
-                    value Float64,
-                    labels_json String DEFAULT '{{}}'
-                ) ENGINE=MergeTree
-                ORDER BY (run_id, scenario, node, stage, name, ts)
-                TTL ts + INTERVAL 30 DAY DELETE"""
-                r2 = requests.post(
-                    cidb_url,
-                    params={"query": table_ddl},
-                    headers=auth,
-                    timeout=30,
-                )
-                tbl_code_v = r2.status_code
-                if not r2.ok:
-                    tbl_err_v = (r2.text or "").strip()[:200]
-            except Exception as e:
-                db_err_v = db_err_v or (str(e)[:200])
-            try:
-                results.append(
-                    Result.from_commands_run(
-                        name=f"CIDB DDL (verify): create_db={db_code_v} err='{db_err_v}' create_tbl={tbl_code_v} err='{tbl_err_v}'",
-                        command=["true"],
-                    )
-                )
-            except Exception:
-                pass
-            # Report existence for job logs
-            try:
-                chk = requests.get(
-                    cidb_url,
-                    params={"query": f"EXISTS DATABASE {metrics_db} FORMAT TabSeparated"},
-                    headers=auth,
-                    timeout=20,
-                )
-                db_exists = ((chk.text or "").strip().splitlines()[0] == "1")
-            except Exception:
-                db_exists = False
-            try:
-                results.append(
-                    Result.from_commands_run(
-                        name=f"CIDB Ensure Schema (verify): db={metrics_db} exists={(1 if db_exists else 0)}",
-                        command=["true"],
-                    )
-                )
-            except Exception:
-                pass
             try:
                 if sha and sha != "local":
                     filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
@@ -908,30 +740,14 @@ def main():
             files_to_attach.append(cidb_txt)
         except Exception:
             pass
+        # Do not fail or gate on CIDB availability; align with other tests (best-effort reporting only)
         try:
-            if have_cidb and sha and sha != "local":
-                gate_cmd = (
-                    "bash -lc \"" \
-                    f"echo 'CIDB Sanity Gate: sha={sha} bench_rows={bench_rows} checks_rows={checks_rows}'; " \
-                    f"test {bench_rows} -gt 0 -a {checks_rows} -gt 0\""
+            results.append(
+                Result.from_commands_run(
+                    name=f"CIDB Note: sha={sha} have_cidb={(1 if have_cidb else 0)} bench_rows={bench_rows} checks_rows={checks_rows}",
+                    command=["true"],
                 )
-                results.append(
-                    Result.from_commands_run(
-                        name="CIDB Sanity Gate (non-zero metrics and checks)",
-                        command=gate_cmd,
-                        with_info_on_failure=True,
-                    )
-                )
-            elif sha and sha != "local" and not have_cidb:
-                results.append(
-                    Result.from_commands_run(
-                        name="CIDB Sanity Gate (missing credentials)",
-                        command=[
-                            "bash -lc 'echo ERROR: missing CI DB credentials/helper; false'"
-                        ],
-                        with_info_on_failure=True,
-                    )
-                )
+            )
         except Exception:
             pass
     except Exception:
