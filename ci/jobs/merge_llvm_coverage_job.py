@@ -21,5 +21,5 @@ if __name__ == "__main__":
     Result.create_from(
         results=[result],
         files=attached_files,
-        message="LLVM Coverage Merge Job Completed",
+        info="LLVM Coverage Merge Job Completed",
     ).complete_job()
