@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -66,6 +67,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsDouble check_cache_probability;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsUInt64 background_download_threads;
@@ -113,6 +115,21 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releas
     }
 }
 
+double normalizeProbability(double probability)
+{
+    if (probability < 0.0)
+        probability = .0;
+    else if (probability > 1.0)
+        probability = 1.0;
+    return probability;
+}
+
+FileCache::CheckCacheProbability::CheckCacheProbability(double probability, UInt64 seed)
+    : rndgen(seed == 0 ? randomSeed() : seed)
+    , distribution(normalizeProbability(probability))
+{
+}
+
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
@@ -131,6 +148,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
                write_cache_per_user_directory)
+    , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
     switch (settings[FileCacheSetting::cache_policy].value)
     {
@@ -810,6 +828,7 @@ FileCache::getOrSet(
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
+    assertCacheCorrectnessWithProbability();
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
@@ -848,6 +867,7 @@ FileSegmentsHolderPtr FileCache::get(
         }
     }
 
+    assertCacheCorrectnessWithProbability();
     return std::make_unique<FileSegmentsHolder>(FileSegments{
         std::make_shared<FileSegment>(key, offset, size, FileSegment::State::DETACHED)});
 }
@@ -1320,10 +1340,7 @@ void FileCache::removePathIfExists(const String & path, const UserID & user_id)
 void FileCache::removeAllReleasable(const UserID & user_id)
 {
     assertInitialized();
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
-#endif
 
     metadata.removeAllKeys(/* if_releasable */true, user_id);
 }
@@ -1429,9 +1446,7 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
-#endif
 }
 
 void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
@@ -1597,9 +1612,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 FileCache::~FileCache()
 {
     deactivateBackgroundOperations();
-#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
-#endif
 }
 
 void FileCache::deactivateBackgroundOperations()
@@ -1618,9 +1631,7 @@ void FileCache::deactivateBackgroundOperations()
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
 {
     assertInitialized();
-#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
-#endif
 
     std::vector<FileSegment::Info> file_segments;
     metadata.iterate([&](const LockedKey & locked_key)
@@ -1694,8 +1705,19 @@ size_t FileCache::getFileSegmentsNum() const
     return main_priority->getElementsCountApprox();
 }
 
+void FileCache::assertCacheCorrectnessWithProbability()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (check_cache_probability.doCheck())
+    {
+        assertCacheCorrectness();
+    }
+#endif
+}
+
 void FileCache::assertCacheCorrectness()
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
     metadata.iterate([&](LockedKey & locked_key)
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
@@ -1710,6 +1732,7 @@ void FileCache::assertCacheCorrectness()
         return IFileCachePriority::IterationResult::CONTINUE;
     },
     lockCache());
+#endif
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
@@ -1862,10 +1885,8 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
                 result_limits.max_elements = max_elements;
             }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
             cache_lock.unlock();
             assertCacheCorrectness();
-#endif
             throw;
         }
     }
@@ -1893,10 +1914,7 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
     chassert(main_priority->getSizeLimit(lockCache()) == result_limits.max_size);
     chassert(main_priority->getElementsLimit(lockCache()) == result_limits.max_elements);
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
-#endif
-
     return result_limits;
 }
 
