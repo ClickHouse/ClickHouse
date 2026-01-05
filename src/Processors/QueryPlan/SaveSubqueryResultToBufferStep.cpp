@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 
+#include <Processors/ChunkBuffer.h>
 #include <Processors/Transforms/SaveSubqueryResultToBufferTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 

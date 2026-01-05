@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Processors/ChunkBuffer.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 
 namespace DB
 {

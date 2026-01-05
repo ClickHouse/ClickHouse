@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Planner/Utils.h>
+#include <Processors/ChunkBuffer.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
