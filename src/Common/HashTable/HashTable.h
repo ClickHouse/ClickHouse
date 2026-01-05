@@ -936,7 +936,7 @@ public:
     };
 
 
-    template<bool prefetch = false>
+    template <bool prefetch = false>
     auto begin() const
     {
         using ConstIterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, const_prefetching_iterator, const_iterator>;
@@ -954,10 +954,10 @@ public:
         return ConstIterator(this, ptr);
     }
 
-    template<bool prefetch = false>
+    template <bool prefetch = false>
     auto cbegin() const { return begin<prefetch>(); }
 
-    template<bool prefetch = false>
+    template <bool prefetch = false>
     auto begin()
     {
         using Iterator = std::conditional_t<prefetch && CouldPrefetchKey<cell_type>, prefetching_iterator, iterator>;
@@ -983,7 +983,7 @@ public:
         return ConstIterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
-    template<bool prefetch = false>
+    template <bool prefetch = false>
     auto cend() const
     {
         return end<prefetch>();

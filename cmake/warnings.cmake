@@ -51,3 +51,6 @@ if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning
     no_warning(gnu-statement-expression-from-macro-expansion)
 endif ()
+# For __COUNTER__ support (now it is part of C2y)
+# Note: right now cmake 4.2.1 does not recognize "set (CMAKE_C_STANDARD 2y)"
+no_warning(c2y-extensions)

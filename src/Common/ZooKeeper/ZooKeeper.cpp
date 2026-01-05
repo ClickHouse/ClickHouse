@@ -227,6 +227,12 @@ ZooKeeper::ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_l
     init(std::move(args_), /*existing_impl*/ {});
 }
 
+ZooKeeper::ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl)
+{
+    log = getLogger("ZooKeeper");
+    impl = std::move(existing_impl);
+}
+
 
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl)
     : availability_zones(std::move(availability_zones_))
@@ -1114,10 +1120,28 @@ ZooKeeperPtr ZooKeeper::create(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeepe
     return res;
 }
 
+ZooKeeperPtr ZooKeeper::create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory)
+{
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(factory()));
+    res->args.zookeeper_name = "internal";
+    res->impl_factory = std::move(factory);
+    res->initSession();
+    return res;
+}
+
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
     if (reconnect_task)
         (*reconnect_task)->deactivate();
+
+    if (impl_factory)
+    {
+        auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(impl_factory()));
+        res->args = args;
+        res->impl_factory = impl_factory;
+        res->initSession();
+        return res;
+    }
 
     auto args_copy = args;
     args_copy.last_zxid_seen = impl->getLastZXIDSeen();

@@ -31,8 +31,8 @@ $CLICKHOUSE_CLIENT --query "SYSTEM WAIT VIEW rmv_test" 2> /dev/null
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
 SELECT
-    countIf(query LIKE '%INSERT INTO $CLICKHOUSE_DATABASE.\`.tmp.inner_id.%' AND type = 'QueryStart'),
-    countIf(query LIKE '%INSERT INTO $CLICKHOUSE_DATABASE.\`.tmp.inner_id.%' AND type = 'QueryFinish'),
+    countIf(query LIKE '%INSERT INTO $CLICKHOUSE_DATABASE.\`.tmp.inner_id.%' AND type = 'QueryStart') > 0,
+    countIf(query LIKE '%INSERT INTO $CLICKHOUSE_DATABASE.\`.tmp.inner_id.%' AND type = 'QueryFinish') > 0,
     countIf(query = '(create target table)' AND type = 'ExceptionBeforeStart') > 0
 FROM system.query_log
 WHERE is_internal = 1 AND current_database IN [currentDatabase(), 'default']

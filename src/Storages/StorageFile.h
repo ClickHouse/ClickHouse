@@ -10,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
+#include <Common/Logger.h>
 
 #include <atomic>
 #include <shared_mutex>

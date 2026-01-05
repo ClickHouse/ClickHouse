@@ -280,6 +280,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->fail_point_name = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
@@ -287,6 +296,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->fail_point_name = ast->as<ASTIdentifier &>().name();
             else
                 return false;
+
+            /// Optional PAUSE or RESUME keyword
+            if (ParserKeyword(Keyword::PAUSE).ignore(pos, expected))
+                res->fail_point_action = ASTSystemQuery::FailPointAction::PAUSE;
+            else if (ParserKeyword(Keyword::RESUME).ignore(pos, expected))
+                res->fail_point_action = ASTSystemQuery::FailPointAction::RESUME;
+
             break;
         }
 
@@ -769,26 +785,37 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 break;
             }
 
-            if (!ParserLiteral{}.parse(pos, temporary_identifier, expected))
+            if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
             {
-                if (!ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+                const auto field = temporary_identifier->as<ASTLiteral &>().value;
+                switch (field.getType())
+                {
+                    case Field::Types::Which::String:
+                        res->instrumentation_point = field.safeGet<String>();
+                        break;
+                    case Field::Types::Which::UInt64:
+                        res->instrumentation_point = field.safeGet<UInt64>();
+                        break;
+                    default:
+                        return false;
+                }
+            }
+            else if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
+            {
+                String identifier = temporary_identifier->as<ASTIdentifier &>().name();
+                if (Poco::toLower(identifier) == "all")
+                    res->instrumentation_point = Instrumentation::All{};
+                else
                     return false;
-
-                if (Poco::toLower(temporary_identifier->as<ASTIdentifier &>().name()) != "all")
-                    return false;
-
-                res->instrumentation_point_id = true;
-                break;
             }
 
-            res->instrumentation_point_id = temporary_identifier->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
         case Type::INSTRUMENT_ADD:
         {
             ASTPtr temporary_identifier;
-            if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
-                res->instrumentation_function_name = temporary_identifier->as<ASTIdentifier &>().name();
+            if (ParserLiteral{}.parse(pos, temporary_identifier, expected))
+                res->instrumentation_function_name = temporary_identifier->as<ASTLiteral &>().value.safeGet<String>();
             else
                 return false;
 

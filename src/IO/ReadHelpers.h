@@ -9,7 +9,7 @@
 
 #include <type_traits>
 
-#include <Common/StackTrace.h>
+#include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -1563,7 +1563,7 @@ inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
     readPODBinary(x.high64, buf);
 }
 
-inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
