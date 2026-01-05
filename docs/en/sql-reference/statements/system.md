@@ -704,6 +704,11 @@ Disable periodic refreshing of the given view or all refreshable views. If a ref
 
 If the view is in a Replicated or Shared database, `STOP VIEW` only affects the current replica, while `STOP REPLICATED VIEW` affects all replicas.
 
+:::note
+The stopped state does not persist across server restarts. After a restart, views will resume their configured refresh schedules.
+In Replicated or Shared databases, `SYSTEM STOP VIEW` only affects the current replica. Use `SYSTEM STOP REPLICATED VIEW` to stop refreshes on all replicas.
+:::
+
 ```sql
 SYSTEM STOP VIEW [db.]name
 ```
