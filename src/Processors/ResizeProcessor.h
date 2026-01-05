@@ -72,6 +72,9 @@ private:
     std::vector<OutputPortWithStatus> output_ports;
 };
 
+/// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
+/// This is an attempt to keep thread locality of data, but support rebalance when some inputs are finished earlier.
+/// Usually, it's N to N mapping. Probably, we can simplify the implementation because of it.
 class StrictResizeProcessor : public IProcessor
 {
 public:

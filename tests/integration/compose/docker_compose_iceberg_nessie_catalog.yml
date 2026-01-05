@@ -25,6 +25,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    cpus: 3
 
   # TODO: can we simply use with_minio=True instead?
   minio:
@@ -41,6 +42,7 @@ services:
       - "9001:9001"
       - "9002:9000"
     command: ["server", "/data", "--console-address", ":9001"]
+    cpus: 3
 
   # TODO: move this code to cluster.py
   mc:
@@ -60,3 +62,4 @@ services:
       /usr/bin/mc policy set public minio/warehouse-rest;
       tail -f /dev/null
       "
+    cpus: 3

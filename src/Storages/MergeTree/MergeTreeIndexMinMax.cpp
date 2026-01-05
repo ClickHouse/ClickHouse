@@ -196,10 +196,10 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::ALWAYS_FALSE});
 }
 
-bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types).can_be_true;
+    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
 
@@ -228,6 +228,106 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTree
     if (checksums.files.contains(relative_path_prefix + ".idx"))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
     return {0 /* unknown */, {}};
+}
+
+MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_, int direction_, size_t size_hint_, bool store_map_) :
+    index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+    , direction(direction_)
+    , store_map(store_map_)
+{
+    const DataTypePtr & type = index_sample_block.getByPosition(0).type;
+    serialization = type->getDefaultSerialization();
+    granules.reserve(size_hint_);
+}
+
+void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+{
+    Field value;
+    Field scratch;
+
+    /// The order in which values are read depends on 'direction':
+    /// If direction == ASC, we need only min value, discard max value
+    /// If direction == DESC, we need only max value, discard min value
+    if (direction == 1)
+    {
+        serialization->deserializeBinary(value, istr, format_settings);
+        serialization->deserializeBinary(scratch, istr, format_settings);
+    }
+    else
+    {
+        serialization->deserializeBinary(scratch, istr, format_settings);
+        serialization->deserializeBinary(value, istr, format_settings);
+    }
+    granules.emplace_back(MinMaxGranule{granule_num, value});
+    if (store_map)
+        granules_map.emplace(granule_num, granules.size() - 1);
+    empty = false;
+}
+
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result)
+{
+    if (n >= granules.size())
+    {
+        result.insert(result.end(), granules.begin(), granules.end());
+        return;
+    }
+
+    std::priority_queue<MinMaxGranuleItem> queue;
+
+    for (const auto & granule : granules)
+    {
+        MinMaxGranuleItem item{direction, 0, granule.granule_num, granule.min_or_max_value};
+        if (queue.size() < n)
+            queue.push({direction, 0, granule.granule_num, granule.min_or_max_value});
+        else if ((direction == 1 && granule.min_or_max_value < queue.top().min_or_max_value) ||
+                    (direction == -1 && granule.min_or_max_value > queue.top().min_or_max_value))
+        {
+            queue.pop();
+            queue.push({direction, 0, granule.granule_num, granule.min_or_max_value});
+        }
+    }
+
+    while (!queue.empty())
+    {
+        result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
+        queue.pop();
+    }
+}
+
+/// This routine is for top-N of top-N granules from all parts
+void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
+                                                    size_t n,
+                                                    const std::vector<std::vector<MinMaxGranule>> & parts,
+                                                    std::vector<MarkRanges> & result)
+{
+    std::priority_queue<MinMaxGranuleItem> queue;
+
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+    {
+        for (const auto & granule : parts[part_index])
+        {
+            if (queue.size() < n)
+                queue.push({direction, part_index, granule.granule_num, granule.min_or_max_value});
+            else if ((direction == 1 && granule.min_or_max_value < queue.top().min_or_max_value) ||
+                        (direction == -1 && granule.min_or_max_value > queue.top().min_or_max_value))
+            {
+                queue.pop();
+                queue.push({direction, part_index, granule.granule_num, granule.min_or_max_value});
+            }
+        }
+    }
+
+    result.resize(parts.size(), {});
+    while (!queue.empty())
+    {
+        const auto & item = queue.top();
+        result[item.part_index].push_back({item.granule_num, item.granule_num + 1});
+        queue.pop();
+    }
+
+    for (auto & part_ranges : result)
+        std::sort(part_ranges.begin(), part_ranges.end());
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

@@ -230,6 +230,8 @@ public:
 
     void setDownloadFailed();
 
+    bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
+
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;

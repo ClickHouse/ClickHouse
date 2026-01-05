@@ -131,7 +131,7 @@ UInt64 ColumnSparse::get64(size_t n) const
     return values->get64(getValueIndex(n));
 }
 
-StringRef ColumnSparse::getDataAt(size_t n) const
+std::string_view ColumnSparse::getDataAt(size_t n) const
 {
     return values->getDataAt(getValueIndex(n));
 }
@@ -159,34 +159,24 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return values->getSerializedValueSize(getValueIndex(n));
-}
-
-void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in); });
-}
-
-void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertAggregationStateValueFromArena(in); });
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
 void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
@@ -399,6 +389,56 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
+}
+
+void ColumnSparse::filter(const Filter & filt)
+{
+    if (_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
+
+    if (offsets->empty())
+    {
+        _size = countBytesInFilter(filt);
+        return;
+    }
+
+    auto & res_offsets_data = getOffsetsData();
+    size_t res_offsets_pos = 0;
+
+    Filter values_filter;
+    values_filter.reserve_exact(values->size());
+    values_filter.push_back(1);
+
+    size_t res_offset = 0;
+    auto offset_it = begin();
+    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
+    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
+    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    {
+        if (!offset_it.isDefault())
+        {
+            if (filt[i])
+            {
+                res_offsets_data[res_offsets_pos] = res_offset;
+                values_filter.push_back(1);
+                ++res_offsets_pos;
+                ++res_offset;
+            }
+            else
+            {
+                values_filter.push_back(0);
+            }
+            offset_it.increaseCurrentOffset();
+        }
+        else
+        {
+            res_offset += filt[i] != 0;
+        }
+    }
+
+    values->filter(values_filter);
+    res_offsets_data.resize_assume_reserved(res_offsets_pos);
+    _size = res_offset;
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)

@@ -290,7 +290,7 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        runner([this, ticket_number]()
+        runner.enqueueAndKeepTrack([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });

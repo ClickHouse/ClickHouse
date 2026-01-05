@@ -62,6 +62,8 @@ struct ExplainPlanOptions
     bool distributed = false;
     /// Add input headers to step.
     bool input_headers = false;
+    /// Print structure of columns instead of just their names and types.
+    bool column_structure = false;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -139,7 +141,7 @@ public:
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
-    void replaceNodeWithPlan(Node * node, QueryPlanPtr plan);
+    void replaceNodeWithPlan(Node * node, QueryPlan plan);
 
     QueryPlan extractSubplan(Node * subplan_root);
     void cloneInplace(Node * node_to_replace, Node * subplan_root);

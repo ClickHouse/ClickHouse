@@ -95,7 +95,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
 {
     return lockImpl(/* read= */true);
@@ -138,6 +137,11 @@ StoragePtr StorageBuffer::getDestinationTable() const
     return destination;
 }
 
+
+std::string StorageBuffer::Thresholds::toString() const
+{
+    return fmt::format("time={}, rows={}, bytes={}", time, rows, bytes);
+}
 
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
@@ -182,7 +186,9 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
+
+    LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
 
 
@@ -742,7 +748,7 @@ public:
         insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
         least_busy_lock.unlock();
 
-        storage.reschedule();
+        storage.reschedule(0);
     }
 private:
     StorageBuffer & storage;
@@ -932,7 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            (*runner)([&]()
+            runner->enqueueAndKeepTrack([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
@@ -1113,13 +1119,14 @@ void StorageBuffer::backgroundFlush()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    reschedule();
+    reschedule(BACKGROUND_RESCHEDULE_MIN_DELAY);
 }
 
-void StorageBuffer::reschedule()
+void StorageBuffer::reschedule(size_t min_delay)
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
-    time_t rows = 0;
+    size_t rows = 0;
+    size_t processed_buffers = 0;
 
     for (auto & buffer : buffers)
     {
@@ -1135,6 +1142,7 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
+            ++processed_buffers;
             if (!buffer.data.empty())
             {
                 min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
@@ -1145,15 +1153,37 @@ void StorageBuffer::reschedule()
 
     /// will be rescheduled via INSERT
     if (!rows)
+    {
+        LOG_TRACE(log, "Skipping reschedule (processed buffers: {})", processed_buffers);
         return;
+    }
 
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
-    size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 1);
-    flush_handle->scheduleAfter(std::min({min, max, flush}) * 1000);
+    /// checkThresholdsImpl() uses strict comparison (> not >=), so we need to add offset to original time values
+    static constexpr time_t THRESHOLD_COMPARISON_OFFSET = 1;
+
+    /// For minimal threshold min_delay is ignored, since otherwise it will be triggered too frequently, once it is reached
+    /// (while the Buffer cannot be flushed due to other min thresholds).
+    size_t min = std::max<ssize_t>(min_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, 1);
+    size_t max = std::max<ssize_t>(max_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
+    size_t reschedule_sec = 0;
+    if (flush_thresholds.time)
+    {
+        size_t flush = std::max<ssize_t>(flush_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
+        reschedule_sec = std::min({min, max, flush});
+    }
+    else
+    {
+        reschedule_sec = std::min({min, max});
+    }
+    /// Schedule flush in background immediately, otherwise in case of frequent INSERTs we will never schedule the background flush
+    if (reschedule_sec == 0)
+        flush_handle->schedule();
+    else
+        flush_handle->scheduleAfter(reschedule_sec * 1000);
+    LOG_TRACE(log, "Reschedule in {} sec (processed buffers: {}, rows in processed buffers: {}, time passed: {})", reschedule_sec, processed_buffers, rows, time_passed);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
