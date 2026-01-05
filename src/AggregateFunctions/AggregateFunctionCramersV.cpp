@@ -24,6 +24,10 @@ struct CramersVData : CrossTabData
             return std::numeric_limits<Float64>::quiet_NaN();
 
         UInt64 q = std::min(count_a.size(), count_b.size());
+
+        if (q <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         return sqrt(getPhiSquared() / (q - 1));
     }
 };
@@ -41,6 +45,10 @@ struct CramersVWindowData : CrossTabWindowPhiSquaredData
             return std::numeric_limits<Float64>::quiet_NaN();
 
         UInt64 q = std::min(a_marginal_count.size(), b_marginal_count.size());
+
+        if (q <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         return sqrt(getPhiSquared() / (q - 1));
     }
 };

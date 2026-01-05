@@ -36,7 +36,11 @@ struct CramersVBiasCorrectedData : CrossTabData
         Float64 correction_a = a_size - a_size_adjusted * a_size_adjusted / count_adjusted;
         Float64 correction_b = b_size - b_size_adjusted * b_size_adjusted / count_adjusted;
 
-        res /= std::min(correction_a, correction_b) - 1;
+        const Float64 denom = std::min(correction_a, correction_b) - 1.0;
+        if (denom <= 0.0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        res /= denom;
         return sqrt(res);
     }
 };
@@ -66,7 +70,11 @@ struct CramersVBiasCorrectedWindowData : CrossTabWindowPhiSquaredData
         Float64 correction_a = a_size - a_size_adjusted * a_size_adjusted / count_adjusted;
         Float64 correction_b = b_size - b_size_adjusted * b_size_adjusted / count_adjusted;
 
-        res /= std::min(correction_a, correction_b) - 1;
+        const Float64 denom = std::min(correction_a, correction_b) - 1.0;
+        if (denom <= 0.0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
+        res /= denom;
         return sqrt(res);
     }
 };
