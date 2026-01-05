@@ -91,6 +91,7 @@ if (ENABLE_FUZZING)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
     set (ENABLE_BENCHMARKS 0)
+    set (ENABLE_CLICKHOUSE_KEEPER 0)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
@@ -625,7 +626,8 @@ if (FUZZER)
             endif()
             if (target STREQUAL "clickhouse")
                 message(STATUS "${target} instrumented with fuzzer")
-                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
+                #target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
+                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
                 # Add to fuzzers bundle
                 add_dependencies(fuzzers ${target})
             endif()

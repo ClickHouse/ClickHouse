@@ -108,6 +108,10 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+#if USE_FUZZING_MODE
+int clickhouseMain(int argc_, char ** argv_);
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -3844,39 +3848,65 @@ fs::path ClientBase::getHistoryFilePath()
 
 
 #if USE_FUZZING_MODE
-extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
-ClientBase * app;
+std::mutex mutex;
+std::condition_variable cv;
+bool started = false;
+bool finished = false;
+
+std::thread init;
+
+extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv)
+{
+    {
+        std::unique_lock lock(mutex);
+        init = std::thread(clickhouseMain, *argc, *argv);
+        cv.wait(lock, []{ return started; });
+    }
+
+    int ret = std::atexit([](){
+        {
+            std::lock_guard lock(mutex);
+            finished = true;
+        }
+        cv.notify_one();
+        init.join();
+    });
+    return ret;
+}
+
+std::function<bool(const String & text)> doProcessQueryText;
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+    try
+    {
+        auto worker = ThreadFromGlobalPool([&]()
+        {
+            String query(reinterpret_cast<const char *>(data), size);
+            doProcessQueryText(query);
+        });
+        worker.join();
+    }
+    catch (...)
+    {
+        return -1;
+    }
+
+    return 0;
+}
 
 void ClientBase::runLibFuzzer()
 {
-    app = this;
-    std::vector<String> fuzzer_args_holder;
+    doProcessQueryText = [this](const String & text){ return this->processQueryText(text); };
 
-    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
-        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
-
-    std::vector<char *> fuzzer_args;
-    fuzzer_args.push_back(argv0);
-    for (auto & arg : fuzzer_args_holder)
-        fuzzer_args.emplace_back(arg.data());
-
-    int fuzzer_argc = static_cast<int>(fuzzer_args.size());
-    char ** fuzzer_argv = fuzzer_args.data();
-
-    LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
     {
-        try
-        {
-            String query(reinterpret_cast<const char *>(data), size);
-            app->processQueryText(query);
-        }
-        catch (...)
-        {
-            return -1;
-        }
+        std::lock_guard lock(mutex);
+        started = true;
+    }
+    cv.notify_one();
 
-        return 0;
-    });
+    std::unique_lock lock(mutex);
+    cv.wait(lock, []{ return finished; });
 }
 #else
 void ClientBase::runLibFuzzer() {}
