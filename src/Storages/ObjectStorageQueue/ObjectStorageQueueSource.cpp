@@ -1477,17 +1477,19 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    HiveLastProcessedFileInfoMap file_map;
-    // `created_nodes` is nullptr here, because it is required only in mutithread case,
-    // when `requests` is filled with several `prepareCommitRequests` calls.
-    prepareCommitRequests(
-        requests,
-        insert_succeeded,
-        successful_objects,
-        file_map,
-        /* created_nodes */ nullptr,
-        exception_message);
-    prepareHiveProcessedRequests(requests, file_map);
+    {
+        HiveLastProcessedFileInfoMap file_map;
+        // `created_nodes` is nullptr here, because it is required only in mutithread case,
+        // when `requests` is filled with several `prepareCommitRequests` calls.
+        prepareCommitRequests(
+            requests,
+            insert_succeeded,
+            successful_objects,
+            file_map,
+            /* created_nodes */ nullptr,
+            exception_message);
+        prepareHiveProcessedRequests(requests, file_map);
+    }
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
@@ -1505,24 +1507,50 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     Coordination::Responses responses;
 
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-    const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code;
-    size_t try_num = 0;
-    zk_retry.retryLoop([&]
-    {
-        if (zk_retry.isRetry())
-        {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
-        }
-        ++try_num;
-        code = zk_client->tryMulti(requests, responses);
-    });
+    size_t retry_count = 0;
+    constexpr size_t retry_limit = 5;
 
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperMultiException(code, requests, responses);
+    while (true)
+    {
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+        const auto & settings = getContext()->getSettingsRef();
+        Coordination::Error code;
+        size_t try_num = 0;
+        zk_retry.retryLoop([&]
+        {
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            code = zk_client->tryMulti(requests, responses);
+        });
+
+        if (code == Coordination::Error::ZBADVERSION && retry_count < retry_limit)
+        {
+            ++retry_count;
+            LOG_INFO(log, "Keeper Bad Version error, other node wrote something, retry {}", retry_count);
+            /// Need to recreate requests list based on new keeper state
+            requests.clear();
+            StoredObjects dummy_successful_objects;
+            HiveLastProcessedFileInfoMap file_map;
+            prepareCommitRequests(
+                requests,
+                insert_succeeded,
+                successful_objects,
+                file_map,
+                /* created_nodes */ nullptr,
+                exception_message);
+            prepareHiveProcessedRequests(requests, file_map);
+            continue;
+        }
+
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperMultiException(code, requests, responses);
+        break;
+    }
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

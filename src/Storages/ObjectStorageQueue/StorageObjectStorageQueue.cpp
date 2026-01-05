@@ -965,11 +965,14 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
-    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
-    for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
-    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+
+    {
+        ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
+        LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
+        for (auto & source : sources)
+            source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+        ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+    }
 
     size_t retry_count = 0;
     constexpr size_t retry_limit = 5;
@@ -1032,8 +1035,11 @@ void StorageObjectStorageQueue::commit(
             LOG_INFO(log, "Keeper Bad Version error, other node wrote something, retry {}", retry_count);
             /// Need to recreate requests list based on new keeper state
             requests.clear();
+            StoredObjects dummy_successful_objects;
+            ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
+            LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
             for (auto & source : sources)
-                source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+                source->prepareCommitRequests(requests, insert_succeeded, dummy_successful_objects, file_map, created_nodes, exception_message, error_code);
             ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
             continue;
         }
