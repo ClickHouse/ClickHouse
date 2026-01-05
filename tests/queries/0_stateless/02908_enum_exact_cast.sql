@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 --- GitHub issue 56144 
 --- Tests number values of enum are validated during insertion.
 
