@@ -21,6 +21,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace CurrentMetrics
 {
 extern const Metric BackgroundSchedulePoolSize;
@@ -1249,20 +1254,15 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         "max_local_write_bandwidth_for_server",
     };
 
-    auto load_setting = [&](const std::string & name)
-    {
-        if (config.has(name))
-            set(name, config.getString(name));
-        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
-            set(name, config.getString("profiles.default." + name));
-    };
-
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
         try
         {
-            load_setting(name);
+            if (config.has(name))
+                set(name, config.getString(name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
+                set(name, config.getString("profiles.default." + name));
         }
         catch (Exception & e)
         {
@@ -1277,9 +1277,23 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     {
         for (const auto & alias : aliases)
         {
+            const std::string alias_string = std::string(alias);
+            const std::string setting_string = std::string(setting);
+
             try
             {
-                load_setting(std::string(alias));
+                if (config.has(alias_string))
+                {
+                    if (config.has(setting_string))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config contain both setting {} and alias {}", setting, alias_string);
+                    set(alias_string, config.getString(alias_string));
+                }
+                else if (settings_from_profile_allowlist.contains(alias_string) && config.has("profiles.default." + alias_string))
+                {
+                    if (config.has("profiles.default." + setting_string))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config contain both setting profiles.default.{} and alias profiles.default.{}", setting, alias_string);
+                    set(alias_string, config.getString("profiles.default." + alias_string));
+                }
             }
             catch (Exception & e)
             {
