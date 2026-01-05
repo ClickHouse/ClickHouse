@@ -87,6 +87,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
+    other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
 
@@ -251,17 +252,31 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
-    if (!projection_definition->query)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "QUERY is required for projection");
-
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
+    if (projection_definition->index)
+    {
+        chassert(projection_definition->type);
+        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
+        if (projection_definition->with_settings)
+            result.loadSettings(projection_definition->with_settings->changes);
+        return result;
+    }
+
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
+    return result;
+}
+
+void ProjectionDescription::fillProjectionDescriptionByQuery(
+    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
+{
+    auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
 
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
@@ -304,7 +319,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         /// Aggregate projections cannot hold parent part offset.
         can_hold_parent_part_offset = false;
 
-        if (query.orderBy())
+        if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
@@ -343,8 +358,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -384,7 +399,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    return result;
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
@@ -496,6 +510,13 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 }
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
+{
+    if (index)
+        return index->calculate(*this, block, context, perm_ptr);
+    return calculateByQuery(block, context, perm_ptr);
+}
+
+Block ProjectionDescription::calculateByQuery(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.

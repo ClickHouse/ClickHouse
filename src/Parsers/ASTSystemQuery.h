@@ -107,6 +107,7 @@ public:
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
         WAIT_FAILPOINT,
+        NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
@@ -181,6 +182,14 @@ public:
 
     String fail_point_name;
 
+    enum class FailPointAction
+    {
+        UNSPECIFIED,
+        PAUSE,
+        RESUME
+    };
+    FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
+
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     std::vector<String> src_replicas;
@@ -195,7 +204,7 @@ public:
     String instrumentation_function_name;
     String instrumentation_handler_name;
     Instrumentation::EntryType instrumentation_entry_type;
-    std::optional<std::variant<UInt64, bool>> instrumentation_point_id;
+    std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
     std::vector<InstrumentParameter> instrumentation_parameters;
     String instrumentation_subquery;
 #endif

@@ -57,6 +57,7 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            "./ci/praktika/cidb.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -85,7 +86,6 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    allow_merge_on_failure=True,
     timeout=3600 * 2,
 )
 common_integration_test_job_config = Job.Config(
@@ -95,12 +95,13 @@ common_integration_test_job_config = Job.Config(
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
+            "./ci/jobs/scripts/integration_tests_configs.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
-    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker",
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
 )
 
 BINARY_DOCKER_COMMAND = (
@@ -346,7 +347,7 @@ class JobConfigs:
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
+        command="python3 ./ci/jobs/install_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/install_check.py",
@@ -357,11 +358,23 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_debug",
+            parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[
-                ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.DEB_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.TGZ_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            requires=[
+                ArtifactNames.DEB_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
     )
@@ -690,7 +703,6 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
             ]
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_asan",
@@ -857,7 +869,6 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
             ],
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
