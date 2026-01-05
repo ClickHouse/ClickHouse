@@ -86,7 +86,6 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    allow_merge_on_failure=True,
     timeout=3600 * 2,
 )
 common_integration_test_job_config = Job.Config(
@@ -702,7 +701,6 @@ class JobConfigs:
     #     ),
     # )
     # might be heavy on azure - run only on master
-
     # stress_test_azure_jobs = common_stress_job_config.parametrize(
     #     Job.ParamSet(
     #         parameter="azure, amd_msan",
@@ -729,7 +727,6 @@ class JobConfigs:
     #             "./ci/jobs/scripts/log_parser.py",
     #         ]
     #     ),
-    #     allow_merge_on_failure=True,
     # ).parametrize(
     #     Job.ParamSet(
     #         parameter="amd_asan",
