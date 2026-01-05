@@ -7,17 +7,32 @@
 namespace DB
 {
 
-/// Represents a storage for table function timeSeriesSelector().
+/// Represents a storage for table function timeSeriesSelector() and timeSeriesSelectorToGrid().
 class StorageTimeSeriesSelector : public IStorage
 {
 public:
-    StorageTimeSeriesSelector(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const StorageID & time_series_storage_id_,
-        const PrometheusQueryTree & instant_selector_,
-        const Field & min_time_,
-        const Field & max_time_);
+    struct Configuration
+    {
+        PrometheusQueryTree selector;
+
+        StorageID time_series_storage_id = StorageID::createEmpty();
+        DataTypePtr id_type;
+        DataTypePtr timestamp_type;
+        DataTypePtr scalar_type;
+
+        DecimalField<DateTime64> start_time;
+        DecimalField<DateTime64> end_time;
+        DecimalField<Decimal64> step;
+        DecimalField<Decimal64> window;
+
+        /// If true the `window` is left-closed, otherwise it's left-opened.
+        /// As for the right boundary the `window` is always right-closed.
+        bool left_closed = false;
+    };
+
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, bool to_grid);
+
+    StorageTimeSeriesSelector(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
 
     std::string getName() const override { return "TimeSeriesSelector"; }
 
@@ -32,10 +47,7 @@ public:
         size_t num_streams) override;
 
 private:
-    StorageID time_series_storage_id;
-    PrometheusQueryTree instant_selector;
-    Field min_time;
-    Field max_time;
+    Configuration config;
 };
 
 }

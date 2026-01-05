@@ -37,17 +37,17 @@ namespace
     }
 }
 
-Node * PrometheusQueryTree::StringLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
-{
-    return cloneNodeImpl(this, node_list_);
-}
-
 Node * PrometheusQueryTree::ScalarLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
 {
     return cloneNodeImpl(this, node_list_);
 }
 
-Node * PrometheusQueryTree::IntervalLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
+Node * PrometheusQueryTree::StringLiteral::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
+{
+    return cloneNodeImpl(this, node_list_);
+}
+
+Node * PrometheusQueryTree::Duration::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
 {
     return cloneNodeImpl(this, node_list_);
 }
@@ -150,14 +150,14 @@ String PrometheusQueryTree::ScalarLiteral::dumpTree(size_t indent) const
     return fmt::format("{}ScalarLiteral({})", makeIndent(indent), ::DB::toString(scalar));
 }
 
-String PrometheusQueryTree::IntervalLiteral::dumpTree(size_t indent) const
-{
-    return fmt::format("{}IntervalLiteral({})", makeIndent(indent), ::DB::toString(interval));
-}
-
 String PrometheusQueryTree::StringLiteral::dumpTree(size_t indent) const
 {
     return fmt::format("{}StringLiteral({})", makeIndent(indent), quoteString(string));
+}
+
+String PrometheusQueryTree::Duration::dumpTree(size_t indent) const
+{
+    return fmt::format("{}Duration({})", makeIndent(indent), ::DB::toString(duration));
 }
 
 String PrometheusQueryTree::InstantSelector::dumpTree(size_t indent) const
