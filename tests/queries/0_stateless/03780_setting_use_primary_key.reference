@@ -1,0 +1,47 @@
+-- { echo }
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (
+  id UInt64
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO tab
+SELECT number
+FROM numbers(100);
+SET use_primary_key = 0;
+SELECT count() FROM tab WHERE id = 5;
+1
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE id = 5;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 100/100
+          Ranges: 1
+SET use_primary_key = 1;
+SELECT count() FROM tab WHERE id = 5;
+1
+EXPLAIN indexes = 1
+SELECT count() FROM tab WHERE id = 5;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Keys:
+              id
+            Condition: (id in [5, 5])
+            Parts: 1/1
+            Granules: 2/100
+            Search Algorithm: binary search
+          Ranges: 1
