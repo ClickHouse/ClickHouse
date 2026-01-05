@@ -800,9 +800,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 bool left_is_null = isNullConstant(in_first_argument);
                 const auto & candidate_name = non_const_set_candidate->getFunctionName();
+                bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
+                                  function_name == "notNullIn" || function_name == "globalNotNullIn");
 
-                /// Case 1: array(..) node
-                if (candidate_name == "array")
+                /// Case 1: array(..) node or any function returning Array type
+                if (candidate_name == "array" || isArray(non_const_set_candidate->getResultType()))
                 {
                     /// convert to has() by swapping arguments
                     function_name = "has";
@@ -814,8 +816,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         auto [wrapped_node, proj_names] = makeNullSafeHas(
                             fn_args[0], fn_args[1], arguments_projection_names, scope);
+                        if (is_not_in)
+                        {
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(wrapped_node);
+                            resolveFunction(wrapped_node = not_fn, scope);
+                        }
                         node = wrapped_node;
                         return proj_names;
+                    }
+
+                    if (is_not_in)
+                    {
+                        /// Wrap has() result with NOT for notIn/globalNotIn
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        resolveFunction(node, scope);
+                        auto not_fn = std::make_shared<FunctionNode>("not");
+                        not_fn->getArguments().getNodes().push_back(node);
+                        node = not_fn;
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
                     }
                 }
                 /// Case 2: tuple(..) node - rewrite into an array
@@ -860,8 +880,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         {
                             auto [wrapped_node, proj_names] = makeNullSafeHas(
                                 fn_args[0], fn_args[1], arguments_projection_names, scope);
+                            if (is_not_in)
+                            {
+                                auto not_fn = std::make_shared<FunctionNode>("not");
+                                not_fn->getArguments().getNodes().push_back(wrapped_node);
+                                resolveFunction(wrapped_node = not_fn, scope);
+                            }
                             node = wrapped_node;
                             return proj_names;
+                        }
+
+                        if (is_not_in)
+                        {
+                            /// Wrap has() result with NOT for notIn/globalNotIn
+                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            resolveFunction(node, scope);
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(node);
+                            node = not_fn;
+                            resolveFunction(node, scope);
+                            return ProjectionNames{proj};
                         }
                     }
                 }

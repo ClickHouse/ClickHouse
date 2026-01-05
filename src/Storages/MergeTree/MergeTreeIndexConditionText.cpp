@@ -137,7 +137,9 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "equals"
         || function_name == "notEquals"
         || function_name == "mapContainsKey"
+        || function_name == "mapContainsKeyLike"
         || function_name == "mapContainsValue"
+        || function_name == "mapContainsValueLike"
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
@@ -174,9 +176,12 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return is_array_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
+
     if (function_name == "like"
         || function_name == "startsWith"
-        || function_name == "endsWith")
+        || function_name == "endsWith"
+        || function_name == "mapContainsKeyLike"
+        || function_name == "mapContainsValueLike")
     {
         return getHintOrNoneMode();
     }
@@ -483,18 +488,38 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
-        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
-        /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
-        bool is_supported_key_function = has_map_keys_column && (function_name == "mapContainsKey" || function_name == "has");
-        bool is_supported_value_function = has_map_values_column && function_name == "mapContainsValue";
-
-        if (is_supported_key_function || is_supported_value_function)
+        auto make_map_function = [&](RPNElement::Function function, auto tokens) -> bool
         {
-            auto tokens = stringToTokens(value_field);
-            out.function = RPNElement::FUNCTION_HAS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            out.function = function;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
+        };
+
+        /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
+        if (has_map_keys_column)
+        {
+            /// TODO: The functions used under these two conditions are inconsistent, but preserve backward compatibility.
+            /// This is because #89757 changed `mapContainsKey` and `has` with a text index to return no results when the
+            /// extracted tokens array is empty. Meanwhile, the desired behavior in `hint` mode is that the result set of
+            /// functions like `mapContains*Like` should not change just by adding a text index. Ideally, these should all
+            /// use `FUNCTION_EQUALS`, but that would be another backward-incompatible change.
+            if (function_name == "mapContainsKey" || function_name == "has")
+                return make_map_function(RPNElement::FUNCTION_HAS, stringToTokens(value_field));
+            if (function_name == "mapContainsKeyLike" && token_extractor->supportsStringLike())
+                return make_map_function(RPNElement::FUNCTION_EQUALS, stringLikeToTokens(value_field));
         }
+
+        /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
+        if (has_map_values_column)
+        {
+            /// TODO: See above in `if (has_map_keys_column)`.
+            if (function_name == "mapContainsValue")
+                return make_map_function(RPNElement::FUNCTION_HAS, stringToTokens(value_field));
+            if (function_name == "mapContainsValueLike" && token_extractor->supportsStringLike())
+                return make_map_function(RPNElement::FUNCTION_EQUALS, stringLikeToTokens(value_field));
+        }
+
         return false;
     }
     if (function_name == "notEquals")
