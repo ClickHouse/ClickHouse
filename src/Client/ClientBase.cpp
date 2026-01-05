@@ -3863,7 +3863,8 @@ extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv)
         cv.wait(lock, []{ return started; });
     }
 
-    int ret = std::atexit([](){
+    int ret = std::atexit([]()
+    {
         {
             std::lock_guard lock(mutex);
             finished = true;
