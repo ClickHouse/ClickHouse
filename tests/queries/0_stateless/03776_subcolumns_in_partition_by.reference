@@ -1,0 +1,23 @@
+{"d":"2020-01-01"}
+{"d":"2021-01-01"}
+{"d":"2022-01-01"}
+{"d":"2023-01-01"}
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test)
+    Indexes:
+      MinMax
+        Keys:
+          json.d
+        Condition: (json.d in [18262, 18262])
+        Parts: 1/4
+        Granules: 1/4
+      Partition
+        Keys:
+          json.d
+        Condition: (json.d in [18262, 18262])
+        Parts: 1/1
+        Granules: 1/1
+      Ranges: 1
+[]	1	2
+[1]	3	4

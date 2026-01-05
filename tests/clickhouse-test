@@ -1175,6 +1175,7 @@ class SettingsRandomizer:
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
+        "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         **randomize_external_sort_group_by(),
     }
 
@@ -1961,6 +1962,19 @@ class TestCase:
         )
 
         if result_is_different:
+            # If --record is enabled, copy stdout to reference file
+            if self.testcase_args.record:
+                import shutil
+                shutil.copy2(self.stdout_file, self.reference_file)
+                description += "\tReference file updated\n"
+                return TestResult(
+                    self.name,
+                    TestStatus.OK,
+                    None,
+                    total_time,
+                    description,
+                )
+
             with Popen(
                 [
                     "diff",
@@ -4029,6 +4043,12 @@ def parse_args():
     )
     parser.add_argument(
         "--no-long", action="store_true", dest="no_long", help="Do not run long tests"
+    )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        default=False,
+        help="Automatically update reference files when stdout differs from reference",
     )
     parser.add_argument(
         "--client-option", nargs="+", help="Specify additional client argument"
