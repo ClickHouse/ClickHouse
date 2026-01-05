@@ -118,8 +118,8 @@ public:
     explicit ColumnsStatistics(const ColumnsDescription & columns);
     ColumnsStatistics cloneEmpty() const;
 
-    // void serialize(WriteBuffer & buf) const;
-    // void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
     void build(const Block & block);
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;

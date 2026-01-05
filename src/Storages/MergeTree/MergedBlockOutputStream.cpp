@@ -350,7 +350,11 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     if (!gathered_data.part_statistics.statistics.empty())
     {
-        /// TODO: write statistics...
+        /// TODO: write compressed file.
+        write_hashed_file(String(ColumnsStatistics::FILENAME), [&](auto & buffer)
+        {
+            gathered_data.part_statistics.statistics.serialize(buffer);
+        });
     }
 
     write_plain_file("columns.txt", [&](auto & buffer)

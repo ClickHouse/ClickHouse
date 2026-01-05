@@ -904,38 +904,48 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
-    const auto & metadata_snaphost = storage.getInMemoryMetadata();
-    ColumnsStatistics result(metadata_snaphost.getColumns());
-    NameSet names_to_remove;
+    auto metadata_snaphost = getMetadataSnapshot();
+    ColumnsStatistics result(metadata_snaphost->getColumns());
 
-    for (const auto & [column_name, statistics] : result)
+    if (auto all_stats_file = readFileIfExists(String(ColumnsStatistics::FILENAME)))
     {
-        auto escaped_name = escapeForFileName(ColumnsStatistics::getStatisticName(column_name));
-        auto stream_name = getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, checksums);
-
-        if (!stream_name.has_value())
-        {
-            LOG_INFO(storage.log, "File for statistics with name '{}' is not found", escaped_name);
-            continue;
-        }
-
-        String file_name = *stream_name + STATS_FILE_SUFFIX;
-
-        if (auto stat_file = readFileIfExists(file_name))
-        {
-            CompressedReadBuffer compressed_buffer(*stat_file);
-            statistics->deserialize(compressed_buffer);
-        }
-        else
-        {
-            String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
-            LOG_INFO(storage.log, "Cannot read stats file {}", file_path);
-            names_to_remove.insert(column_name);
-        }
+        // CompressedReadBuffer compressed_buffer(*all_stats_file);
+        // result.deserialize(compressed_buffer);
+        result.deserialize(*all_stats_file);
     }
+    else
+    {
+        NameSet names_to_remove;
 
-    for (const auto & column_name : names_to_remove)
-        result.erase(column_name);
+        for (const auto & [column_name, statistics] : result)
+        {
+            auto escaped_name = escapeForFileName(ColumnsStatistics::getStatisticName(column_name));
+            auto stream_name = getStreamNameOrHash(escaped_name, STATS_FILE_SUFFIX, checksums);
+
+            if (!stream_name.has_value())
+            {
+                LOG_INFO(storage.log, "File for statistics with name '{}' is not found", escaped_name);
+                continue;
+            }
+
+            String file_name = *stream_name + STATS_FILE_SUFFIX;
+
+            if (auto stat_file = readFileIfExists(file_name))
+            {
+                CompressedReadBuffer compressed_buffer(*stat_file);
+                statistics->deserialize(compressed_buffer);
+            }
+            else
+            {
+                String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+                LOG_INFO(storage.log, "Cannot read stats file {}", file_path);
+                names_to_remove.insert(column_name);
+            }
+        }
+
+        for (const auto & column_name : names_to_remove)
+            result.erase(column_name);
+    }
 
     return result;
 }

@@ -1137,7 +1137,16 @@ void finalizeMutatedPart(
 
     if (!all_gathered_data.part_statistics.statistics.empty())
     {
-        /// TODO: write statistics...
+
+        /// TODO: write compressed file.
+        String filename(ColumnsStatistics::FILENAME);
+        auto out_statistics = new_data_part->getDataPartStorage().writeFile(filename, 4096, context->getWriteSettings());
+        HashingWriteBuffer out_hashing(*out_statistics);
+        all_gathered_data.part_statistics.statistics.serialize(out_hashing);
+        out_hashing.finalize();
+        new_data_part->checksums.files[filename].file_size = out_hashing.count();
+        new_data_part->checksums.files[filename].file_hash = out_hashing.getHash();
+        written_files.push_back(std::move(out_statistics));
     }
 
     {
@@ -1446,6 +1455,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         }
 
         ctx->out->write(cur_block);
+        ctx->all_gathered_data.part_statistics.update(cur_block, ctx->metadata_snapshot);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -1919,6 +1929,9 @@ private:
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
         }
+
+        ctx->all_gathered_data.part_statistics.minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->all_gathered_data.part_statistics.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,

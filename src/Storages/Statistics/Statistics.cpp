@@ -324,54 +324,56 @@ ColumnsStatistics ColumnsStatistics::cloneEmpty() const
     return result;
 }
 
-// void ColumnsStatistics::serialize(WriteBuffer & buf) const
-// {
-//     static constexpr UInt8 version = 0;
+/// TODO: change format to packed.
+void ColumnsStatistics::serialize(WriteBuffer & buf) const
+{
+    static constexpr UInt8 version = 0;
 
-//     writeIntBinary(version, buf);
-//     writeIntBinary(size(), buf);
+    writeIntBinary(version, buf);
+    writeIntBinary(size(), buf);
 
-//     for (const auto & [column_name, stat] : *this)
-//     {
-//         writeStringBinary(column_name, buf);
-//         stat->serialize(buf);
-//     }
-// }
+    for (const auto & [column_name, stat] : *this)
+    {
+        writeStringBinary(column_name, buf);
+        stat->serialize(buf);
+    }
+}
 
-// void ColumnsStatistics::deserialize(ReadBuffer & buf)
-// {
-//     UInt8 version;
-//     readIntBinary(version, buf);
+/// TODO: change format to packed.
+void ColumnsStatistics::deserialize(ReadBuffer & buf)
+{
+    UInt8 version;
+    readIntBinary(version, buf);
 
-//     if (version != 0)
-//         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown file format version: {}", UInt64(version));
+    if (version != 0)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown file format version: {}", UInt64(version));
 
-//     size_t size;
-//     readIntBinary(size, buf);
-//     NameSet loaded_stats;
+    size_t size;
+    readIntBinary(size, buf);
+    NameSet loaded_stats;
 
-//     for (size_t i = 0; i < size; ++i)
-//     {
-//         String column_name;
-//         readStringBinary(column_name, buf);
+    for (size_t i = 0; i < size; ++i)
+    {
+        String column_name;
+        readStringBinary(column_name, buf);
 
-//         auto it = find(column_name);
+        auto it = find(column_name);
 
-//         if (it == end())
-//             continue;
+        if (it == end())
+            continue;
 
-//         it->second->deserialize(buf);
-//         loaded_stats.insert(column_name);
-//     }
+        it->second->deserialize(buf);
+        loaded_stats.insert(column_name);
+    }
 
-//     for (auto it = begin(); it != end();)
-//     {
-//         if (loaded_stats.contains(it->first))
-//             ++it;
-//         else
-//             erase(it++);
-//     }
-// }
+    for (auto it = begin(); it != end();)
+    {
+        if (loaded_stats.contains(it->first))
+            ++it;
+        else
+            erase(it++);
+    }
+}
 
 void ColumnsStatistics::build(const Block & block)
 {
