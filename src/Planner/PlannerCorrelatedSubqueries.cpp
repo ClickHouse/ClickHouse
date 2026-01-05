@@ -195,6 +195,9 @@ struct DecorrelationContext
     /// Equivalence classes stack for subqeiries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
     std::vector<EquivalenceClasses> equivalence_class_stack;
+    /// Whether the input subplan is referenced during decorrelation.
+    /// This is necessary to identify if in-memory buffer would be used.
+    bool referenced_input_subplan = false;
 };
 
 /// Correlated subquery is represented by implicit dependent join operator.
@@ -253,6 +256,8 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
+        /// JOIN reordering might be disabled in such case.
+        context.referenced_input_subplan = true;
 
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;
@@ -520,7 +525,8 @@ QueryPlan buildLogicalJoin(
     const PlannerContextPtr & planner_context,
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
-    const CorrelatedSubquery & correlated_subquery
+    const CorrelatedSubquery & correlated_subquery,
+    bool referenced_input_subplan
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -583,7 +589,8 @@ QueryPlan buildLogicalJoin(
     /// the RHS input stream can be buffered in memory.
     /// In this case, we cannot reorder JOIN to ensure correlated subquery input
     /// is evaluated before the subquery itself.
-    if (settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    /// Do not disable reordering if the input subplan is not referenced (expression substitution happened).
+    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
     {
         auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
         /// Remove algorithms that are not compatible with in-memory buffering
@@ -731,7 +738,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery);
+                correlated_subquery,
+                context.referenced_input_subplan);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -774,7 +782,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery);
+                correlated_subquery,
+                context.referenced_input_subplan);
             break;
         }
     }
