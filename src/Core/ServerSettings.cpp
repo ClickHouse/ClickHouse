@@ -1249,20 +1249,43 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         "max_local_write_bandwidth_for_server",
     };
 
+    auto load_setting = [&](const std::string & name)
+    {
+        if (config.has(name))
+            set(name, config.getString(name));
+        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
+            set(name, config.getString("profiles.default." + name));
+    };
+
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
         try
         {
-            if (config.has(name))
-                set(name, config.getString(name));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
-                set(name, config.getString("profiles.default." + name));
+            load_setting(name);
         }
         catch (Exception & e)
         {
             e.addMessage("while parsing setting '{}' value", name);
             throw;
+        }
+    }
+
+    /// Try to load as an alias
+    auto settings_to_aliases = ServerSettingsTraits::settingsToAliases();
+    for (const auto & [setting, aliases] : settings_to_aliases)
+    {
+        for (const auto & alias : aliases)
+        {
+            try
+            {
+                load_setting(std::string(alias));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while parsing setting '{}' value", alias);
+                throw;
+            }
         }
     }
 }
