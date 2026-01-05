@@ -24,6 +24,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -812,7 +813,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
             if (!table || table->getName() != "MaterializedView")
                 return false;
 
-            const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get());
+            const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
             const auto & create_query = info.create_table_query->template as<const ASTCreateQuery &>();
             bool append = create_query.refresh_strategy && create_query.refresh_strategy->append;
             return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
