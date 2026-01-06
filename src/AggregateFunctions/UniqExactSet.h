@@ -34,10 +34,6 @@ public:
     template <typename Arg, SetLevelHint hint>
     auto ALWAYS_INLINE insert(Arg && arg)
     {
-        if (!empty() && arg == prev_value)
-            return;
-        prev_value = arg;
-
         if constexpr (hint == SetLevelHint::singleLevel)
         {
             asSingleLevel().insert(std::forward<Arg>(arg));
@@ -121,14 +117,10 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
-        if (empty())
+        if (size() == 0 && worthConvertingToTwoLevel(other.size()))
         {
-            prev_value = other.prev_value;
-            if (worthConvertingToTwoLevel(other.size()))
-            {
-                two_level_set = other.getTwoLevelSet();
-                return;
-            }
+            two_level_set = other.getTwoLevelSet();
+            return;
         }
 
         if (isSingleLevel() && other.isTwoLevel())
@@ -205,19 +197,17 @@ public:
                 x.read(in);
                 asTwoLevel().insert(x.getValue());
             }
-            prev_value = asTwoLevel().begin()->getValue();
         }
         else
         {
             asSingleLevel().reserve(new_size);
+
             for (size_t i = 0; i < new_size; ++i)
             {
                 typename SingleLevelSet::Cell x;
                 x.read(in);
                 asSingleLevel().insert(x.getValue());
             }
-            if (new_size > 0)
-                prev_value = asSingleLevel().begin()->getValue();
         }
     }
 
@@ -230,15 +220,7 @@ public:
             asTwoLevel().writeAsSingleLevel(out);
     }
 
-    size_t size() const
-    {
-        return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size();
-    }
-
-    bool empty() const
-    {
-        return isSingleLevel() && asSingleLevel().size() == 0;
-    }
+    size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
     /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
     std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
@@ -285,9 +267,5 @@ private:
 
     SingleLevelSet single_level_set;
     mutable std::shared_ptr<TwoLevelSet> two_level_set;
-
-    /// Consecutive keys optimization
-    value_type prev_value{};
 };
-
 }

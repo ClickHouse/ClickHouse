@@ -1384,18 +1384,27 @@ void StorageObjectStorageQueue::alter(
         }
         if (requires_detached_mv)
         {
+            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
+
             for (auto & task : streaming_tasks)
                 task->deactivate();
+
+            LOG_TRACE(log, "Deactivated streaming tasks");
         }
         SCOPE_EXIT({
             if (requires_detached_mv)
             {
                 for (auto & task : streaming_tasks)
                     task->activateAndSchedule();
+
+                LOG_TRACE(log, "Re-activated streaming tasks");
             }
         });
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+        LOG_TRACE(
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            new_metadata.settings_changes->formatForLogging(),
+            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -1453,6 +1462,9 @@ void StorageObjectStorageQueue::alter(
         }
 
         files_metadata->updateSettings(changed_settings);
+        /// Reset streaming_iterator as it can hold state which we could have just altered.
+        if (requires_detached_mv)
+            streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);

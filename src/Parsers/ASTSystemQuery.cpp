@@ -500,10 +500,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::INSTRUMENT_ADD:
         {
             if (!instrumentation_function_name.empty())
-            {
-                ostr << ' ';
-                print_identifier(instrumentation_function_name);
-            }
+                ostr << ' ' << quoteString(instrumentation_function_name);
 
             if (!instrumentation_handler_name.empty())
             {
@@ -543,12 +540,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (!instrumentation_subquery.empty())
                 ostr << " (" << instrumentation_subquery << ')';
-            else if (instrumentation_point_id)
+            else if (instrumentation_point)
             {
-                if (std::holds_alternative<bool>(instrumentation_point_id.value()))
+                if (std::holds_alternative<Instrumentation::All>(instrumentation_point.value()))
                     ostr << " ALL";
+                else if (std::holds_alternative<String>(instrumentation_point.value()))
+                    ostr << ' ' << quoteString(std::get<String>(instrumentation_point.value()));
                 else
-                    ostr << ' ' << std::get<UInt64>(instrumentation_point_id.value());
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point.value());
             }
             break;
         }

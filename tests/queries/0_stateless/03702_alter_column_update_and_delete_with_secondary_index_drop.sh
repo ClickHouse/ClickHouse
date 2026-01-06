@@ -42,7 +42,7 @@ do
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY intDiv(id, 100)
-    SETTINGS alter_column_secondary_index_mode = 'drop', ${part_type_setting};
+    SETTINGS alter_column_secondary_index_mode = 'drop', ${part_type_setting}, index_granularity=8192;
 
     INSERT INTO test_table SELECT number, number FROM numbers(10);
 
