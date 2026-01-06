@@ -408,6 +408,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                     }
 
                     node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
+                    arguments[1] = node_to_ast[second_arg];
                 }
             }
         }
