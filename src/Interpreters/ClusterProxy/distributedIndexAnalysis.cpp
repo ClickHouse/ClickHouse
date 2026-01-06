@@ -131,7 +131,7 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
     return pools_to_use;
 }
 
-IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::string & filter, ContextPtr context, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
+IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::string & filter, ContextPtr context, const Tables & external_tables, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
 {
     const auto analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$')",
         storage_id.uuid,
@@ -158,7 +158,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     auto connection = pool->get(timeouts, settings);
 
-    RemoteQueryExecutor executor(*connection, analyze_index_query, sample_block, context);
+    RemoteQueryExecutor executor(*connection, analyze_index_query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
     executor.setLogger(logger);
     for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
     {
@@ -183,7 +183,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     return res;
 }
 
-ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_key_column_names, ContextMutablePtr & context)
+ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
     if (!query_info.filter_actions_dag)
         return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
@@ -192,7 +192,7 @@ ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_ke
     ASTPtr predicate = tryBuildAdditionalFilterAST(*query_info.filter_actions_dag,
         /*projection_names=*/ primary_key_columns_names_set,
         /*execution_name_to_projection_query_tree=*/ {},
-        /*external_tables=*/ nullptr,
+        /*external_tables=*/ external_tables,
         context);
     if (!predicate)
         return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
@@ -254,7 +254,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     res.resize(replicas);
 
     ContextMutablePtr execution_context = Context::createCopy(context);
-    auto filter_query = getFilterAST(query_info, primary_key_column_names, execution_context)->formatWithSecretsOneLine();
+    auto external_tables = execution_context->getExternalTables();
+    auto filter_query = getFilterAST(query_info, primary_key_column_names, execution_context, &external_tables)->formatWithSecretsOneLine();
 
     ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
                     CurrentMetrics::DistributedIndexAnalysisThreadsActive,
@@ -290,7 +291,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 try
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
-                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, execution_context, replica_parts, connection_pool);
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, execution_context, external_tables, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }
