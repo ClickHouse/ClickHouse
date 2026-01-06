@@ -28,6 +28,7 @@ struct PrometheusRequestHandlerConfig
     Type type = Type::ExposeMetrics;
 
     /// Settings for type ExposeMetrics:
+    bool expose_info = false;
     bool expose_metrics = false;
     bool expose_asynchronous_metrics = false;
     bool expose_events = false;
