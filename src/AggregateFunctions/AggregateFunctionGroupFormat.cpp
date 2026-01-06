@@ -241,8 +241,12 @@ public:
 
         if (!state.columns.empty())
         {
-            MutableColumns columns = state.columns;
-            auto block = header.cloneWithColumns(std::move(columns));
+            Columns columns;
+            columns.reserve(state.columns.size());
+            for (const auto & column : state.columns)
+                columns.emplace_back(column->getPtr());
+
+            auto block = header.cloneWithColumns(columns);
             output->write(block);
         }
 
