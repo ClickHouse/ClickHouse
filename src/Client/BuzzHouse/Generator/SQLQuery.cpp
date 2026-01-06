@@ -1263,6 +1263,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         if (allow_using && rg.nextSmallNumber() < 3)
         {
             /// Using clause
+            UsingExpr * uexpr = jc->mutable_using_expr();
             const SQLRelation & rel1 = rg.pickRandomly(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
             std::vector<DB::Strings> cols1;
@@ -1281,9 +1282,12 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
             }
             std::set_intersection(cols1.begin(), cols1.end(), cols2.begin(), cols2.end(), std::back_inserter(intersect));
 
-            if (!intersect.empty())
+            if (intersect.empty())
             {
-                UsingExpr * uexpr = jc->mutable_using_expr();
+                uexpr->add_columns()->mutable_path()->mutable_col()->set_column("c0");
+            }
+            else
+            {
                 const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), rg.nextLargeNumber() % static_cast<uint32_t>(intersect.size()));
 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
