@@ -1137,6 +1137,7 @@ ContextData::ContextData(const ContextData &o) :
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
     settings(std::make_unique<Settings>(*o.settings)),
+    current_table_prefix(o.current_table_prefix),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
     process_list_elem(o.process_list_elem),
