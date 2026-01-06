@@ -735,7 +735,7 @@ bool RestCatalog::getTableMetadataImpl(
                 /// The config keys follow the pattern: adls.sas-token.<account_name>
                 /// or adls.sas-token.<account_name>.dfs.core.windows.net
                 /// We look for any key starting with "adls.sas-token." and use the first one found.
-                std::string sas_token;
+                String sas_token;
                 std::vector<std::string> names;
                 config_object->getNames(names);
                 for (const auto & name : names)

@@ -73,6 +73,8 @@ void TableMetadata::setLocation(const std::string & location_)
 
     /// Location has format:
     /// s3://<bucket>/path/to/table/data.
+    /// We want to split s3://<bucket> and path/to/table/data.
+    
     /// For Azure ABFSS: abfss://<container>@<account>.dfs.core.windows.net/path/to/table/data
     /// We want to split the bucket/container and path.
 
@@ -95,7 +97,7 @@ void TableMetadata::setLocation(const std::string & location_)
 
     /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
     /// The bucket (container) is the part before '@', not the whole string before '/'
-    std::string bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
     auto at_pos = bucket_part.find('@');
     if (at_pos != std::string::npos)
     {
