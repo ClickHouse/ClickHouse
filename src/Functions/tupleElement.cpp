@@ -229,7 +229,7 @@ public:
                     result_column->reserve(res->size());
 
                     Field default_field = element_type->getDefault();
-                    
+
                     for (size_t i = 0; i < res->size(); ++i)
                     {
                         if (null_map[i])
