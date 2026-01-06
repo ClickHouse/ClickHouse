@@ -446,6 +446,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
 }
 
 zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
+{
 #ifndef NDEBUG
     /// asyncTryMultiNoThrow is not setup to handle faults with ephemeral nodes
     /// To do it we'd need to look at ops and save the indexes BEFORE the callback, as the ops are not
