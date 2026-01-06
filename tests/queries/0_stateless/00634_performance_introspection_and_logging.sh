@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
+# Tags: no-async-insert, long
 # no-async-insert: Test expects new part for each insert
+# long: Flaky check in private times out sometimes :(
 
 set -e
 
