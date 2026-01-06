@@ -517,7 +517,7 @@ def test_failure_in_the_middle(started_cluster):
             )
         ):
             break
-        sleep(1)
+        time.sleep(1)
 
     assert 0 < int(
         node.query(
