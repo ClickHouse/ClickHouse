@@ -329,7 +329,7 @@ FROM numbers(3)
 {"c1":1,"c2":"1"}
 {"c1":2,"c2":"2"}
             )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in{};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
