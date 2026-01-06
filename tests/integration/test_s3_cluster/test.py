@@ -11,6 +11,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
+from helpers.utility import random_string
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -515,31 +516,22 @@ def test_cluster_default_expression(started_cluster):
 def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
     node = started_cluster.instances["s0_0_0"]
 
+    data_path = f"root/data/hive_{allow_experimental_analyzer}/{random_string(6)}"
+
     for i in range(1, 5):
-        exists = node.query(
+        node.query(
             f"""
-            SELECT
-                count()
-                FROM s3('http://minio1:9001/root/data/hive/key={i}/*', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-                GROUP BY ALL
-                FORMAT TSV
+            INSERT
+                INTO FUNCTION s3('http://minio1:9001/{data_path}/key={i}/data.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+                SELECT {i}, {i}
             """
         )
-        if int(exists) == 0:
-            node.query(
-                f"""
-                INSERT
-                    INTO FUNCTION s3('http://minio1:9001/root/data/hive/key={i}/data.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-                    SELECT {i}, {i}
-                    SETTINGS use_hive_partitioning = 0
-                """
-            )
 
     query_id_full = str(uuid.uuid4())
     result = node.query(
         f"""
         SELECT count()
-            FROM s3('http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            FROM s3('http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
             WHERE key <= 2
             FORMAT TSV
             SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0, allow_experimental_analyzer={allow_experimental_analyzer}
@@ -553,7 +545,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
     result = node.query(
         f"""
         SELECT count()
-            FROM s3('http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            FROM s3('http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
             WHERE key <= 2
             FORMAT TSV
             SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1, allow_experimental_analyzer={allow_experimental_analyzer}
@@ -567,7 +559,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
     result = node.query(
         f"""
         SELECT count()
-            FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            FROM s3Cluster(cluster_simple, 'http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
             WHERE key <= 2
             FORMAT TSV
             SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0, allow_experimental_analyzer={allow_experimental_analyzer}
@@ -581,7 +573,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
     result = node.query(
         f"""
         SELECT count()
-            FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
+            FROM s3Cluster(cluster_simple, 'http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
             WHERE key <= 2
             FORMAT TSV
             SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1, allow_experimental_analyzer={allow_experimental_analyzer}
@@ -593,32 +585,33 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
 
     node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
 
+    event = "EngineFileLikeReadFiles"
+
     full_traffic = node.query(
         f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+        SELECT sum(ProfileEvents['{event}'])
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_full}'
             FORMAT TSV
         """
     )
     full_traffic = int(full_traffic)
-    assert full_traffic > 0  # 612*4
+    assert full_traffic == 4
 
     optimized_traffic = node.query(
         f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+        SELECT sum(ProfileEvents['{event}'])
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_optimized}'
             FORMAT TSV
         """
     )
     optimized_traffic = int(optimized_traffic)
-    assert optimized_traffic > 0  # 612*2
-    assert full_traffic > optimized_traffic
+    assert optimized_traffic == 2
 
     cluster_full_traffic = node.query(
         f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+        SELECT sum(ProfileEvents['{event}'])
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_full}'
             FORMAT TSV
@@ -629,7 +622,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
 
     cluster_optimized_traffic = node.query(
         f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
+        SELECT sum(ProfileEvents['{event}'])
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_optimized}'
             FORMAT TSV
