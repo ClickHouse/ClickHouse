@@ -90,7 +90,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         Functions/GatherUtils/createArraySink.cpp
         Functions/GatherUtils/resizeConstantSize.cpp
         Functions/GatherUtils/resizeDynamicSize.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
+        PROPERTIES COMPILE_FLAGS -g1)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
