@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import traceback
+import requests
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
 try:
@@ -51,6 +52,7 @@ def main():
                             os.environ[_k.strip()] = _v
     except Exception:
         pass
+    
     # Ensure weekly selection defaults depend on workflow: PR disables weekly, Nightly enables
     wf = os.environ.get("WORKFLOW_NAME", "")
     jn = os.environ.get("JOB_NAME", "")
@@ -102,6 +104,53 @@ def main():
     stop_watch = Utils.Stopwatch()
     results = []
     files_to_attach = []
+    # Host-side CIDB env and schema preflight (blocking)
+    try:
+        missing = []
+        for k in ("KEEPER_METRICS_CLICKHOUSE_URL", "CI_DB_USER", "CI_DB_PASSWORD"):
+            if not os.environ.get(k):
+                missing.append(k)
+        if missing:
+            msg = "Missing required CIDB env: " + ",".join(missing)
+            results.append(
+                Result.from_commands_run(
+                    name=f"CIDB Sanity Gate (blocking): {msg}",
+                    command=[f"bash -lc 'echo {msg}; exit 1'"],
+                )
+            )
+            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+            return
+        cidb_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
+        auth = {
+            "X-ClickHouse-User": os.environ.get("CI_DB_USER", ""),
+            "X-ClickHouse-Key": os.environ.get("CI_DB_PASSWORD", ""),
+        }
+        ok = True
+        try:
+            r = requests.get(cidb_url, params={"query": "SELECT 1 FORMAT TabSeparated"}, headers=auth, timeout=20)
+            ok = ok and r.ok and (r.text or "").strip().splitlines()[0] == "1"
+        except Exception:
+            ok = False
+        dbn = os.environ.get("KEEPER_METRICS_DB", "keeper_stress_tests")
+        if ok:
+            try:
+                q = f"EXISTS TABLE {dbn}.keeper_metrics_ts FORMAT TabSeparated"
+                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=20)
+                ok = ok and r.ok and (r.text or "").strip().splitlines()[0] == "1"
+            except Exception:
+                ok = False
+        if not ok:
+            msg = "CIDB preflight failed: connectivity or schema missing (keeper_metrics_ts)"
+            results.append(
+                Result.from_commands_run(
+                    name=f"CIDB Preflight (blocking): {msg}",
+                    command=[f"bash -lc 'echo {msg}; exit 1'"],
+                )
+            )
+            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+            return
+    except Exception:
+        pass
 
     # Ensure docker-in-docker is up for nested compose workloads
     os.makedirs("./ci/tmp", exist_ok=True)
@@ -284,14 +333,8 @@ def main():
     # Prepare env for pytest
     env = os.environ.copy()
     try:
-        if not env.get("CI_DB_URL"):
-            try:
-                from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-                _h = ClickHouseHelper()
-                if getattr(_h, "url", None):
-                    env["CI_DB_URL"] = _h.url
-            except Exception:
-                pass
+        if env.get("KEEPER_METRICS_CLICKHOUSE_URL"):
+            env["CI_DB_URL"] = env["KEEPER_METRICS_CLICKHOUSE_URL"]
     except Exception:
         pass
     env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
@@ -315,12 +358,20 @@ def main():
     env.setdefault("KEEPER_SCENARIO_FILE", "all")
     # Use default DB for Keeper metrics to avoid DB creation permissions issues
     env.setdefault("KEEPER_METRICS_DB", "keeper_stress_tests")
+    # Sidecar file for metrics rows emitted by tests; host will ingest post-run
+    env["KEEPER_METRICS_FILE"] = f"{temp_dir}/keeper_metrics.jsonl"
     # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
     repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
     cur_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = (
         repo_pythonpath if not cur_pp else f"{repo_pythonpath}:{cur_pp}"
     )
+    # Do not pass CIDB credentials/URL into test environment; host-only push handles it
+    for _k in ("CI_DB_USER", "CI_DB_PASSWORD", "KEEPER_METRICS_CLICKHOUSE_URL", "CI_DB_URL"):
+        try:
+            env.pop(_k, None)
+        except Exception:
+            pass
     # Propagate commit sha for tagging metrics/checks with robust fallbacks
     try:
         need = (not env.get("COMMIT_SHA")) or env.get("COMMIT_SHA") in ("", "local")
@@ -360,23 +411,22 @@ def main():
             pass
     except Exception:
         pass
-    # Light preflight to aid debugging: echo has_ci_sink and COMMIT_SHA
+    # Blocking sanity gate: require explicit CIDB credentials for single-path metrics push
     try:
-        pre_cmd = (
-            "python3 - <<'PY'\n"
-            "import os,sys\n"
-            f"sys.path.insert(0, '{repo_dir}')\n"
-            f"sys.path.insert(0, '{repo_dir}/ci')\n"
-            "try:\n"
-            "    from tests.stress.keeper.framework.io.sink import has_ci_sink\n"
-            "    print('keeper_preflight has_ci_sink=', has_ci_sink())\n"
-            "except Exception as e:\n"
-            "    print('keeper_preflight has_ci_sink=error', e)\n"
-            "print('keeper_preflight COMMIT_SHA=', os.environ.get('COMMIT_SHA'))\n"
-            "print('keeper_preflight GITHUB_SHA=', os.environ.get('GITHUB_SHA',''))\n"
-            "PY\n"
-        )
-        results.append(Result.from_commands_run(name="Keeper CIDB preflight", command=pre_cmd))
+        missing = []
+        for k in ("KEEPER_METRICS_CLICKHOUSE_URL", "CI_DB_USER", "CI_DB_PASSWORD"):
+            if not os.environ.get(k):
+                missing.append(k)
+        if missing:
+            msg = "Missing required CIDB env: " + ",".join(missing)
+            results.append(
+                Result.from_commands_run(
+                    name=f"CIDB Sanity Gate (blocking): {msg}",
+                    command=[f"bash -lc 'echo {msg}; exit 1'"],
+                )
+            )
+            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+            return
     except Exception:
         pass
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
@@ -454,87 +504,6 @@ def main():
         )
     except Exception:
         pass
-    # Post-run: extract keeper metrics from pytest stdout for artifacts only (tests handle CIDB push like other suites)
-    try:
-        pushed_rows = 0
-        extracted_rows = 0
-        push_err = ""
-        helper = None
-        try:
-            from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-            helper = ClickHouseHelper()
-        except Exception:
-            helper = None
-        metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
-        # No job-level DDL or post-run insert; schema is pre-provisioned and tests push via ClickHouseHelper when creds are present
-        if Path(pytest_log_file).exists():
-            rows = []
-            inside = False
-            extracted_path = f"{temp_dir}/keeper_metrics_extracted.jsonl"
-            try:
-                ef = open(extracted_path, "w", encoding="utf-8")
-            except Exception:
-                ef = None
-            try:
-                with open(pytest_log_file, "r", encoding="utf-8", errors="ignore") as lf:
-                    for line in lf:
-                        s = line.strip()
-                        if s == "[keeper][push-metrics] begin":
-                            inside = True
-                            continue
-                        if s == "[keeper][push-metrics] end":
-                            inside = False
-                            continue
-                        if not inside:
-                            continue
-                        if not s or s[0] != "{" or "value" not in s:
-                            continue
-                        try:
-                            obj = json.loads(s)
-                            if all(k in obj for k in ("run_id", "commit_sha", "backend", "scenario", "node", "stage", "source", "name", "value")):
-                                rows.append(s)
-                                extracted_rows += 1
-                                if ef:
-                                    try:
-                                        ef.write(s + "\n")
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
-                        if len(rows) >= 1000:
-                            rows = []
-                if rows:
-                    rows = []
-            finally:
-                try:
-                    if ef:
-                        ef.close()
-                except Exception:
-                    pass
-            try:
-                files_to_attach.append(extracted_path)
-            except Exception:
-                pass
-            try:
-                results.append(
-                    Result.from_commands_run(
-                        name="Keeper Metrics Extracted Preview",
-                        command=(
-                            "bash -lc \"echo '==== Keeper metrics (extracted) preview ===='; "
-                            f"sed -n '1,200p' '{extracted_path}'\""
-                        ),
-                    )
-                )
-            except Exception:
-                pass
-        results.append(
-            Result.from_commands_run(
-                name=f"Keeper Metrics Extract (post-run): extracted={extracted_rows} (tests push to CIDB)",
-                command=["true"],
-            )
-        )
-    except Exception:
-        pass
     try:
         for p in [pytest_log_file, report_file, junit_file]:
             try:
@@ -542,6 +511,182 @@ def main():
                     files_to_attach.append(str(p))
             except Exception:
                 pass
+    except Exception:
+        pass
+    # Host-side metrics push: stream sidecar JSONL into CIDB with run_id dedupe
+    try:
+        sidecar_path = env.get("KEEPER_METRICS_FILE", f"{temp_dir}/keeper_metrics.jsonl")
+        extracted_rows = 0
+        try:
+            if Path(sidecar_path).exists():
+                with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for _ in f:
+                        extracted_rows += 1
+        except Exception:
+            extracted_rows = 0
+        try:
+            results.append(
+                Result.from_commands_run(
+                    name=f"Keeper Metrics Extract (sidecar): extracted={extracted_rows}",
+                    command=["true"],
+                )
+            )
+        except Exception:
+            pass
+        try:
+            if Path(sidecar_path).exists():
+                files_to_attach.append(str(sidecar_path))
+                results.append(
+                    Result.from_commands_run(
+                        name="Keeper Metrics (sidecar) preview",
+                        command=(
+                            "bash -lc \"echo '==== Keeper metrics (sidecar) preview ===='; "
+                            f"sed -n '1,200p' '{sidecar_path}'\""
+                        ),
+                    )
+                )
+        except Exception:
+            pass
+        if extracted_rows > 0:
+            host_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
+            host_user = os.environ.get("CI_DB_USER", "")
+            host_key = os.environ.get("CI_DB_PASSWORD", "")
+            host_auth = {"X-ClickHouse-User": host_user, "X-ClickHouse-Key": host_key}
+            metrics_db_local = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
+            pushed = 0
+            skipped = 0
+            errors = 0
+            debug_lines = [
+                f"url_present={(1 if bool(host_url) else 0)}",
+                f"db={metrics_db_local}",
+                f"sidecar={sidecar_path}",
+            ]
+            if not host_url or not host_user or not host_key:
+                results.append(
+                    Result.from_commands_run(
+                        name=(
+                            "Keeper Metrics Host Push: skipped missing_config "
+                            f"url={'yes' if host_url else 'no'} user={'yes' if host_user else 'no'} key={'yes' if host_key else 'no'}"
+                        ),
+                        command=["true"],
+                    )
+                )
+            else:
+                try:
+                    run_ids = set()
+                    with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            s = line.strip()
+                            if not s:
+                                continue
+                            try:
+                                obj = json.loads(s)
+                                rid = str(obj.get("run_id") or "")
+                                if rid:
+                                    run_ids.add(rid)
+                            except Exception:
+                                pass
+                    have_existing = False
+                    existing = 0
+                    if run_ids:
+                        filt_in = ",".join("'" + r.replace("'", "''") + "'" for r in sorted(run_ids))
+                        q = (
+                            f"SELECT count() FROM {metrics_db_local}.keeper_metrics_ts "
+                            f"WHERE run_id IN ({filt_in}) AND ts > now() - INTERVAL 7 DAY FORMAT TabSeparated"
+                        )
+                        last_err = ""
+                        for attempt in range(1, 4):
+                            try:
+                                r = requests.get(host_url, params={"query": q}, headers=host_auth, timeout=30)
+                                t = (r.text or "").strip()
+                                existing = int(float(t.splitlines()[0])) if t else 0
+                                have_existing = existing > 0
+                                break
+                            except Exception as e:
+                                last_err = str(e)[:300]
+                                time.sleep(min(5, 2 ** attempt))
+                        debug_lines.append(f"run_ids={len(run_ids)} existing={existing} err='{last_err}'")
+                    if not have_existing:
+                        chunk = []
+                        chunk_size = 1000
+                        with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
+                            for line in f:
+                                s = line.strip()
+                                if not s:
+                                    continue
+                                chunk.append(s)
+                                if len(chunk) >= chunk_size:
+                                    body = "\n".join(chunk)
+                                    params = {
+                                        "database": metrics_db_local,
+                                        "query": f"INSERT INTO {metrics_db_local}.keeper_metrics_ts FORMAT JSONEachRow",
+                                        "date_time_input_format": "best_effort",
+                                        "send_logs_level": "warning",
+                                    }
+                                    posted = False
+                                    post_err = ""
+                                    for attempt in range(1, 4):
+                                        try:
+                                            rr = requests.post(url=host_url, params=params, data=body, headers=host_auth, timeout=60)
+                                            rr.raise_for_status()
+                                            posted = True
+                                            break
+                                        except Exception as e:
+                                            post_err = str(e)[:300]
+                                            time.sleep(min(10, 2 ** attempt))
+                                    if posted:
+                                        pushed += len(chunk)
+                                    else:
+                                        errors += len(chunk)
+                                        debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
+                                    chunk = []
+                        if chunk:
+                            body = "\n".join(chunk)
+                            params = {
+                                "database": metrics_db_local,
+                                "query": f"INSERT INTO {metrics_db_local}.keeper_metrics_ts FORMAT JSONEachRow",
+                                "date_time_input_format": "best_effort",
+                                "send_logs_level": "warning",
+                            }
+                            posted = False
+                            post_err = ""
+                            for attempt in range(1, 4):
+                                try:
+                                    rr = requests.post(url=host_url, params=params, data=body, headers=host_auth, timeout=60)
+                                    rr.raise_for_status()
+                                    posted = True
+                                    break
+                                except Exception as e:
+                                    post_err = str(e)[:300]
+                                    time.sleep(min(10, 2 ** attempt))
+                            if posted:
+                                pushed += len(chunk)
+                            else:
+                                errors += len(chunk)
+                                debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
+                    else:
+                        skipped = 1
+                except Exception as e:
+                    debug_lines.append(f"fatal='{str(e)[:300]}'")
+                try:
+                    dbg_path = f"{temp_dir}/keeper_metrics_push_debug.txt"
+                    with open(dbg_path, "w", encoding="utf-8") as df:
+                        df.write("\n".join(debug_lines) + "\n")
+                    files_to_attach.append(dbg_path)
+                except Exception:
+                    pass
+                try:
+                    results.append(
+                        Result.from_commands_run(
+                            name=(
+                                "Keeper Metrics Host Push: "
+                                f"extracted={extracted_rows} pushed={pushed} skipped_existing={skipped} errors={errors}"
+                            ),
+                            command=["true"],
+                        )
+                    )
+                except Exception:
+                    pass
     except Exception:
         pass
     try:
@@ -580,6 +725,146 @@ def main():
         )
     except Exception:
         pass
+    # Host-side push of per-test rows into default.checks (parse JUnit)
+    try:
+        from tests.ci.report import TestResult as _TR  # type: ignore
+        from tests.ci.clickhouse_helper import prepare_tests_results_for_clickhouse as _prep  # type: ignore
+        from tests.ci.pr_info import PRInfo as _PR  # type: ignore
+        test_results = []
+        total_time = 0.0
+        try:
+            p = Path(junit_file)
+            if p.exists():
+                root = ET.parse(str(p)).getroot()
+                suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+                for ts in suites:
+                    for tc in list(ts.findall("testcase")):
+                        name = tc.attrib.get("name", "")
+                        classname = tc.attrib.get("classname", "")
+                        file_attr = tc.attrib.get("file", "")
+                        try:
+                            tsec = float(tc.attrib.get("time", 0) or 0)
+                        except Exception:
+                            tsec = 0.0
+                        total_time += tsec
+                        status = "OK"
+                        if tc.findall("skipped"):
+                            status = "SKIPPED"
+                        if tc.findall("failure") or tc.findall("error"):
+                            status = "FAIL"
+                        if file_attr:
+                            tname = f"{file_attr}::{name}"
+                        elif classname:
+                            tname = f"{classname}::{name}"
+                        else:
+                            tname = name
+                        test_results.append(_TR(tname, status, time=tsec))
+        except Exception:
+            test_results = []
+        # Prepare rows and push only per-test entries (skip the first common check row)
+        inserted = 0
+        if test_results:
+            try:
+                pr = _PR()
+                check_status = "success" if pytest_result_ok else "failure"
+                check_start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(max(0, int(time.time() - total_time))))
+                report_url = ""
+                check_name = jn or "Keeper Stress"
+                events = _prep(pr, test_results, check_status, float(total_time), check_start_time, report_url, check_name)
+                # Slice off the first common row; we'll keep job-level row from the main aggregator to avoid duplication
+                per_test_events = events[1:] if len(events) > 1 else []
+            except Exception:
+                per_test_events = []
+            if per_test_events:
+                host_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
+                host_user = os.environ.get("CI_DB_USER", "")
+                host_key = os.environ.get("CI_DB_PASSWORD", "")
+                auth = {"X-ClickHouse-User": host_user, "X-ClickHouse-Key": host_key}
+                debug_lines = [
+                    f"url_present={(1 if bool(host_url) else 0)}",
+                    f"events={len(per_test_events)}",
+                    f"check_name={check_name}",
+                ]
+                if not host_url or not host_user or not host_key:
+                    results.append(
+                        Result.from_commands_run(
+                            name=(
+                                "Keeper Checks Push (per-test): skipped missing_config "
+                                f"url={'yes' if host_url else 'no'} user={'yes' if host_user else 'no'} key={'yes' if host_key else 'no'}"
+                            ),
+                            command=["true"],
+                        )
+                    )
+                else:
+                    chunk = []
+                    chunk_size = 1000
+                    for ev in per_test_events:
+                        try:
+                            chunk.append(json.dumps(ev, ensure_ascii=False))
+                        except Exception:
+                            pass
+                        if len(chunk) >= chunk_size:
+                            body = "\n".join(chunk)
+                            params = {
+                                "database": "default",
+                                "query": "INSERT INTO default.checks FORMAT JSONEachRow",
+                                "date_time_input_format": "best_effort",
+                                "send_logs_level": "warning",
+                            }
+                            posted = False
+                            post_err = ""
+                            for attempt in range(1, 4):
+                                try:
+                                    rr = requests.post(url=host_url, params=params, data=body, headers=auth, timeout=60)
+                                    rr.raise_for_status()
+                                    posted = True
+                                    break
+                                except Exception as e:
+                                    post_err = str(e)[:300]
+                                    time.sleep(min(10, 2 ** attempt))
+                            if posted:
+                                inserted += len(chunk)
+                            else:
+                                debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
+                            chunk = []
+                    if chunk:
+                        body = "\n".join(chunk)
+                        params = {
+                            "database": "default",
+                            "query": "INSERT INTO default.checks FORMAT JSONEachRow",
+                            "date_time_input_format": "best_effort",
+                            "send_logs_level": "warning",
+                        }
+                        posted = False
+                        post_err = ""
+                        for attempt in range(1, 4):
+                            try:
+                                rr = requests.post(url=host_url, params=params, data=body, headers=auth, timeout=60)
+                                rr.raise_for_status()
+                                posted = True
+                                break
+                            except Exception as e:
+                                post_err = str(e)[:300]
+                                time.sleep(min(10, 2 ** attempt))
+                        if posted:
+                            inserted += len(chunk)
+                        else:
+                            debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
+                    try:
+                        dbg_path = f"{temp_dir}/keeper_checks_push_debug.txt"
+                        with open(dbg_path, "w", encoding="utf-8") as df:
+                            df.write("\n".join(debug_lines) + "\n")
+                        files_to_attach.append(dbg_path)
+                    except Exception:
+                        pass
+        results.append(
+            Result.from_commands_run(
+                name=f"Keeper Checks Push (per-test): junit_tests={tests} inserted={inserted}",
+                command=["true"],
+            )
+        )
+    except Exception:
+        pass
     try:
         try:
             files_to_attach
@@ -590,32 +875,29 @@ def main():
         backends_counts = {}
         bench_rows = 0
         checks_rows = 0
-        # Resolve CIDB endpoint: prefer env CI_DB_URL override for URL, credentials via ClickHouseHelper
+        # Resolve CIDB endpoint from host env; we stripped these from pytest env earlier
         try:
             from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
             _h = None
-            try:
-                _h = helper if 'helper' in locals() else None
-            except Exception:
-                _h = None
-            if _h is None:
+            cidb_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
+            auth = None
+            if cidb_url and os.environ.get("CI_DB_USER") and os.environ.get("CI_DB_PASSWORD"):
+                auth = {"X-ClickHouse-User": os.environ.get("CI_DB_USER"), "X-ClickHouse-Key": os.environ.get("CI_DB_PASSWORD")}
+            if (not cidb_url or not auth) and _h is None:
                 try:
                     _h = ClickHouseHelper()
                 except Exception:
                     _h = None
-            cidb_url = env.get("CI_DB_URL") or (getattr(_h, "url", "") if _h is not None else "")
-            auth = getattr(_h, "auth", None) if _h is not None else None
+                if not cidb_url and _h is not None:
+                    cidb_url = getattr(_h, "url", "")
+                if not auth and _h is not None:
+                    auth = getattr(_h, "auth", None)
         except Exception:
             cidb_url = ""
             auth = None
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
-        # Lazy import requests after deps installation
-        try:
-            import requests  # type: ignore
-        except Exception:
-            requests = None  # type: ignore
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
-        if have_cidb and requests is not None:
+        if have_cidb:
             try:
                 if sha and sha != "local":
                     filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
