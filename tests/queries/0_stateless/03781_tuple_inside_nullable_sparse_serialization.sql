@@ -1,3 +1,5 @@
+-- Sparse serialization for Nullable(Tuple) columns not supported yet
+
 SET enable_multiple_prewhere_read_steps = 0;
 
 SET allow_experimental_nullable_tuple_type = 1;
