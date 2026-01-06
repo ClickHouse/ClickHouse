@@ -727,6 +727,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
            {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
            {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
            {"parallel_inserts", trueOrFalseSetting},
+           {"use_hive_partitioning", trueOrFalseSetting},
            {"use_persistent_processing_nodes", trueOrFalseSettingNoOracle}};
     s3QueueTableSettings.insert(s3Settings.begin(), s3Settings.end());
     s3QueueTableSettings.insert(queueSettings.begin(), queueSettings.end());

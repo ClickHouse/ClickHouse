@@ -2394,6 +2394,18 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += "')";
 }
 
+CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
+{
+    ret += "mergeTreeAnalyzeIndexes(";
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
+    if (mfunc.has_pred())
+    {
+        ret += ", ";
+        ExprToString(ret, mfunc.pred());
+    }
+    ret += ")";
+}
+
 CONV_FN(GenerateRandomFunc, grfunc)
 {
     ret += "generateRandom(";
@@ -2520,6 +2532,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kMtanindex:
+            MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
             break;
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());

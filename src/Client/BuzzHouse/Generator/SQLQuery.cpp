@@ -674,19 +674,20 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t system_table = 3 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t merge_udf = 3 * static_cast<uint32_t>(this->allow_engine_udf);
     const uint32_t cluster_udf = 8 * static_cast<uint32_t>(this->allow_engine_udf && !fc.clusters.empty() && can_recurse);
-    const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
+    const uint32_t merge_index_udf = 2 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(this->allow_engine_udf);
     const uint32_t dictionary = 25 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
     const uint32_t url_encoded_table = 3 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t table_engine_udf = 10 * static_cast<uint32_t>(has_replaceable_table && this->allow_engine_udf);
-    const uint32_t merge_projection_udf = 4 * static_cast<uint32_t>(has_projection_table && this->allow_engine_udf);
+    const uint32_t merge_projection_udf = 2 * static_cast<uint32_t>(has_projection_table && this->allow_engine_udf);
     const uint32_t random_table_func = 3 * static_cast<uint32_t>(this->allow_not_deterministic && this->allow_engine_udf);
+    const uint32_t merge_tree_idx_analyze_udf = 2 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
 
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf
-        + merge_projection_udf + random_table_func;
+        + merge_projection_udf + random_table_func + merge_tree_idx_analyze_udf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1164,6 +1165,32 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
         }
+        this->levels[this->current_level].rels.emplace_back(rel);
+    }
+    else if (
+        merge_tree_idx_analyze_udf
+        && nopt
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf
+               + merge_projection_udf + random_table_func + merge_tree_idx_analyze_udf + 1))
+    {
+        SQLRelation rel(rel_name);
+        MergeTreeAnalyzeIndexesFunc * mtudf = tof->mutable_tfunc()->mutable_mtanindex();
+        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
+
+        tt.setName(mtudf->mutable_est(), true);
+        if (rg.nextBool())
+        {
+            flatTableColumnPath(
+                to_remote_entries | flat_tuple | flat_nested | flat_json | collect_generated,
+                tt.cols,
+                [](const SQLColumn &) { return true; });
+            const ColumnPathChain entry = rg.pickRandomly(this->remote_entries);
+            this->remote_entries.clear();
+            colRefOrExpression(rg, createTableRelation(rg, true, "", tt), tt, entry, mtudf->mutable_pred());
+        }
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"ranges"}));
         this->levels[this->current_level].rels.emplace_back(rel);
     }
     else
