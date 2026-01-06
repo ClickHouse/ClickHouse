@@ -1550,8 +1550,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         static const auto & memorySetting = CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
-            { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(50) * UINT32_C(1024) * UINT32_C(1024))); },
-            {"'1M'", "'5M'", "'10M'", "'50M'", "'100M'"},
+            {
+                return std::to_string(rg.thresholdGenerator<uint64_t>(
+                    0.2, 0.2, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024), UINT32_C(100) * UINT32_C(1024) * UINT32_C(1024)));
+            },
+            {"'10M'", "'20M'", "'50M'", "'100M'"},
             false);
 
         serverSettings.insert(
