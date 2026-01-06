@@ -2,19 +2,27 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/TableJoin.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/Exception.h>
 #include <Storages/IStorage.h>
 
@@ -143,7 +151,7 @@ public:
         // Set Substrait version
         auto * version = substrait_plan.mutable_version();
         version->set_major_number(0);
-        version->set_minor_number(54);  // Latest Substrait version as of implementation
+        version->set_minor_number(54);
         version->set_patch_number(0);
         version->set_producer("ClickHouse");
 
@@ -164,42 +172,128 @@ public:
 
 private:
     /// Convert ClickHouse DataType to Substrait Type
-    void convertType(const DataTypePtr & ch_type, substrait::Type * substrait_type)
+    void convertType(const DataTypePtr & ch_type, substrait::Type * substrait_type,
+                     substrait::Type::Nullability nullability = substrait::Type::NULLABILITY_REQUIRED)
     {
-        TypeIndex type_id = ch_type->getTypeId();
-        
-        switch (type_id)
+        // unwrap and recurse with NULLABILITY_NULLABLE
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(ch_type.get()))
         {
+            convertType(nullable->getNestedType(), substrait_type, substrait::Type::NULLABILITY_NULLABLE);
+            return;
+        }
+        
+        switch (ch_type->getTypeId())
+        {
+            case TypeIndex::Int8:
+                substrait_type->mutable_i8()->set_nullability(nullability);
+                break;
+            case TypeIndex::Int16:
+                substrait_type->mutable_i16()->set_nullability(nullability);
+                break;
             case TypeIndex::Int32:
-                substrait_type->mutable_i32()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
+                substrait_type->mutable_i32()->set_nullability(nullability);
                 break;
             case TypeIndex::Int64:
-                substrait_type->mutable_i64()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
-                break;
-            case TypeIndex::UInt32:
-                // Substrait doesn't have unsigned types, map to signed with larger width
-                substrait_type->mutable_i64()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
-                break;
-            case TypeIndex::UInt64:
-                // Map UInt64 to Int64 (note: may lose precision for large values)
-                substrait_type->mutable_i64()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
-                break;
-            case TypeIndex::Float32:
-                substrait_type->mutable_fp32()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
-                break;
-            case TypeIndex::Float64:
-                substrait_type->mutable_fp64()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
+                substrait_type->mutable_i64()->set_nullability(nullability);
                 break;
             case TypeIndex::String:
-                substrait_type->mutable_string()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
+                substrait_type->mutable_string()->set_nullability(nullability);
                 break;
             case TypeIndex::UInt8:
-                // Bool in ClickHouse is represented as UInt8
+                // Bool is represented as UInt8
                 if (ch_type->getName() == "Bool")
-                    substrait_type->mutable_bool_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
+                    substrait_type->mutable_bool_()->set_nullability(nullability);
                 else
-                    substrait_type->mutable_i32()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
+                    // Substrait doesn't have unsigned types, map to signed with larger width
+                    substrait_type->mutable_i16()->set_nullability(nullability);
                 break;
+            case TypeIndex::UInt16:
+                substrait_type->mutable_i32()->set_nullability(nullability);
+                break;
+            case TypeIndex::UInt32:
+                substrait_type->mutable_i64()->set_nullability(nullability);
+                break;
+            case TypeIndex::UInt64:
+                // May lose precision for large values
+                substrait_type->mutable_i64()->set_nullability(nullability);
+                break;
+            case TypeIndex::Float32:
+                substrait_type->mutable_fp32()->set_nullability(nullability);
+                break;
+            case TypeIndex::Float64:
+                substrait_type->mutable_fp64()->set_nullability(nullability);
+                break;
+            case TypeIndex::BFloat16:
+                substrait_type->mutable_fp32()->set_nullability(nullability);
+                break;
+            case TypeIndex::Date:
+            {
+                // Days since Unix epoch
+                substrait_type->mutable_date()->set_nullability(nullability);
+                break;
+            }
+            case TypeIndex::DateTime:
+            {
+                // DateTime in seconds since epoch
+                auto * ts = substrait_type->mutable_precision_timestamp();
+                ts->set_precision(0);  // 0 = seconds precision
+                ts->set_nullability(nullability);
+                break;
+            }
+            case TypeIndex::DateTime64:
+            {
+                auto * ts = substrait_type->mutable_precision_timestamp();
+                const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(ch_type.get());
+                if (!dt64)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DateTime64 type but got {}", ch_type->getName());
+                ts->set_precision(dt64->getScale());
+                ts->set_nullability(nullability);
+                break;
+            }
+            case TypeIndex::Decimal32:
+            {
+                auto * decimal_type = substrait_type->mutable_decimal();
+                decimal_type->set_nullability(nullability);
+                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal32>>(ch_type.get());
+                if (!dec)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal32 type but got {}", ch_type->getName());
+                decimal_type->set_scale(dec->getScale());
+                decimal_type->set_precision(dec->getPrecision());
+                break;
+            }
+            case TypeIndex::Decimal64:
+            {
+                auto * decimal_type = substrait_type->mutable_decimal();
+                decimal_type->set_nullability(nullability);
+                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal64>>(ch_type.get());
+                if (!dec)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal64 type but got {}", ch_type->getName());
+                decimal_type->set_scale(dec->getScale());
+                decimal_type->set_precision(dec->getPrecision());
+                break;
+            }
+            case TypeIndex::Decimal128:
+            {
+                auto * decimal_type = substrait_type->mutable_decimal();
+                decimal_type->set_nullability(nullability);
+                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal128>>(ch_type.get());
+                if (!dec)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal128 type but got {}", ch_type->getName());
+                decimal_type->set_scale(dec->getScale());
+                decimal_type->set_precision(dec->getPrecision());
+                break;
+            }
+            case TypeIndex::Decimal256:
+            {
+                auto * decimal_type = substrait_type->mutable_decimal();
+                decimal_type->set_nullability(nullability);
+                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal256>>(ch_type.get());
+                if (!dec)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal256 type but got {}", ch_type->getName());
+                decimal_type->set_scale(dec->getScale());
+                decimal_type->set_precision(dec->getPrecision());
+                break;
+            }
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, 
                     "Type {} not yet supported for Substrait conversion", ch_type->getName());
@@ -345,7 +439,7 @@ private:
         substrait::Rel rel;
         
         // Handle different step types
-        if (step_name == "ReadFromMergeTree" || step_name.starts_with("ReadFrom"))
+        if (step_name.starts_with("ReadFrom"))
         {
             convertReadStep(step, &rel);
         }
@@ -365,6 +459,10 @@ private:
         {
             convertAggregatingStep(node, &rel);
         }
+        else if (step_name == "Join")
+        {
+            convertJoinStep(node, &rel);
+        }
         else
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, 
@@ -379,38 +477,49 @@ private:
         auto * read_rel = rel->mutable_read();
         
         // Get output header to determine schema
-        const auto & header_ptr = step.getOutputHeader();
-        const Block & header = *header_ptr;
+        const auto & header = *step.getOutputHeader();
         auto * base_schema = read_rel->mutable_base_schema();
         
         // Convert columns to Substrait schema
         for (const auto & column : header)
         {
             base_schema->add_names(column.name);
-            auto * type = base_schema->mutable_struct_()->add_types();
-            convertType(column.type, type);
+            convertType(column.type, base_schema->mutable_struct_()->add_types());
         }
         
         // Create a named table reference
         auto * named_table = read_rel->mutable_named_table();
-        
-        // Try to extract table name from ReadFromMergeTree step
-        if (step.getName() == "ReadFromMergeTree")
+        String table_name = "";
+
+        // Determine table name based on step type
+        if (const auto * read_from_mt = typeid_cast<const ReadFromMergeTree *>(&step))
         {
-            // Use static_cast since we've already verified the type by name
-            const auto * read_from_mt = static_cast<const ReadFromMergeTree *>(&step);
-            const auto & storage_id = read_from_mt->getStorageID();
-            if (!storage_id.database_name.empty())
-                named_table->add_names(storage_id.database_name);
-            if (!storage_id.table_name.empty())
-                named_table->add_names(storage_id.table_name);
-            else
-                named_table->add_names("table");  // Fallback if table_name is empty
+            StorageID storage_id = read_from_mt->getStorageID();
+            table_name = storage_id.getTableName();
+        }
+        else if (const auto * read_from_memory = typeid_cast<const ReadFromMemoryStorageStep *>(&step))
+        {
+            StorageID storage_id = read_from_memory->getStorage()->getStorageID();
+            table_name = storage_id.getTableName();
+        }
+        else if (const auto * read_from_storage = typeid_cast<const ReadFromStorageStep *>(&step))
+        {
+            StorageID storage_id = read_from_storage->getStorage()->getStorageID();
+            table_name = storage_id.getTableName();
+        }
+        else if (const auto * read_from_table = typeid_cast<const ReadFromTableStep *>(&step))
+        {
+            table_name = read_from_table->getTable();
+        }
+
+        // Add table name to named_table
+        if(!table_name.empty())
+        {
+            named_table->add_names(table_name);
         }
         else
         {
-            // Fallback for other read steps
-            named_table->add_names("table");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to determine table name for Read step");
         }
     }
 
@@ -453,12 +562,6 @@ private:
         if (node->children.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression step must have a child");
         
-        auto * project_rel = rel->mutable_project();
-        
-        // Convert child node
-        auto child_rel = convertNode(node->children[0]);
-        project_rel->mutable_input()->Swap(&child_rel);
-        
         // Cast to ExpressionStep to access the ActionsDAG
         const auto * expr_step = dynamic_cast<const ExpressionStep *>(node->step.get());
         if (!expr_step)
@@ -467,16 +570,81 @@ private:
         // Get the ActionsDAG containing the expressions
         const auto & actions_dag = expr_step->getExpression();
         
-        // Get input header from child node
+        // Get headers
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
         
-        // Convert each output column expression
+        // Convert child node
+        auto child_rel = convertNode(node->children[0]);
+        
+        // Detect if this ExpressionStep contains a filter condition
+        // Check for boolean outputs which indicate filter predicates
         const auto & outputs = actions_dag.getOutputs();
-        for (const auto * output_node : outputs)
+        const ActionsDAG::Node * filter_node = nullptr;
+        std::vector<const ActionsDAG::Node *> projection_outputs;
+        
+        // Analyze outputs to detect filter conditions
+        for (const auto * output : outputs)
         {
-            auto expr = convertExpression(output_node, input_header);
-            project_rel->add_expressions()->Swap(&expr);
+            // Boolean outputs from function calls are likely filters
+            bool is_boolean = output->result_type && 
+                            (output->result_type->getName() == "Bool" || 
+                             (output->result_type->getTypeId() == TypeIndex::UInt8 && 
+                              output->result_type->getName() != "UInt8"));
+            
+            if (is_boolean && output->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                // Found a boolean function - likely a comparison for filtering
+                filter_node = output;
+                // Don't add to projections - this is the filter condition
+            }
+            else
+            {
+                projection_outputs.push_back(output);
+            }
+        }
+        
+        // If we found a filter, emit FilterRel followed by ProjectRel
+        if (filter_node)
+        {
+            auto * filter_rel = rel->mutable_filter();
+            filter_rel->mutable_input()->Swap(&child_rel);
+            
+            // Convert the filter expression
+            auto filter_expr = convertExpression(filter_node, input_header);
+            filter_rel->mutable_condition()->Swap(&filter_expr);
+            
+            // If there are non-filter projections, add a project layer on top
+            if (!projection_outputs.empty())
+            {
+                // Save the filter rel we just created
+                substrait::Rel temp_rel = *rel;
+                rel->Clear();
+                
+                // Create project rel
+                auto * project_rel = rel->mutable_project();
+                project_rel->mutable_input()->Swap(&temp_rel);
+                
+                // Add projection expressions (using output header schema)
+                for (const auto * output_node : projection_outputs)
+                {
+                    auto expr = convertExpression(output_node, input_header);
+                    project_rel->add_expressions()->Swap(&expr);
+                }
+            }
+        }
+        else
+        {
+            // No filter detected - just project all outputs
+            auto * project_rel = rel->mutable_project();
+            project_rel->mutable_input()->Swap(&child_rel);
+            
+            // Convert each output column expression
+            for (const auto * output_node : outputs)
+            {
+                auto expr = convertExpression(output_node, input_header);
+                project_rel->add_expressions()->Swap(&expr);
+            }
         }
     }   
 
@@ -632,6 +800,205 @@ private:
                 direct_ref->mutable_struct_field()->set_field(field_index);
             }
         }
+    }
+
+    void convertJoinStep(const QueryPlan::Node * node, substrait::Rel * rel)
+    {
+        if (node->children.size() < 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step must have at least two children");
+
+        const auto join_step = dynamic_cast<const JoinStep *>(node->step.get());
+
+        // Cast to JoinStep to access join information
+        if (!join_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStep but got {}", node->step->getName());
+
+        const JoinPtr & join = join_step->getJoin();
+        if (!join)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep has no join algorithm set");
+
+        const TableJoin & table_join = join->getTableJoin();
+        const auto kind = table_join.kind();
+
+        // Handle CROSS JOIN as CrossRel
+        if (kind == JoinKind::Cross || kind == JoinKind::Comma)
+        {
+            auto * cross_rel = rel->mutable_cross();
+            auto left_child_rel = convertNode(node->children[0]);
+            auto right_child_rel = convertNode(node->children[1]);
+            cross_rel->mutable_left()->Swap(&left_child_rel);
+            cross_rel->mutable_right()->Swap(&right_child_rel);
+            return;
+        }
+
+        // Standard JoinRel
+        auto * join_rel = rel->mutable_join();
+
+        // Convert children nodes
+        auto left_child_rel = convertNode(node->children[0]);
+        auto right_child_rel = convertNode(node->children[1]);
+        join_rel->mutable_left()->Swap(&left_child_rel);
+        join_rel->mutable_right()->Swap(&right_child_rel);
+
+        // Get headers to resolve column indices
+        const auto & left_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & left_header = *left_header_ptr;
+        const auto & right_header_ptr = node->children[1]->step->getOutputHeader();
+        const Block & right_header = *right_header_ptr;
+        size_t left_fields = left_header.columns();
+
+        // Helper: build field selection expression for joined tuple (left + right fields)
+        auto buildFieldSelection = [&](int field_index) -> substrait::Expression {
+            substrait::Expression expr;
+            auto * sel = expr.mutable_selection();
+            auto * dr = sel->mutable_direct_reference();
+            dr->mutable_struct_field()->set_field(field_index);
+            return expr;
+        };
+
+        // Build join condition from TableJoin clauses
+        const auto & clauses = table_join.getClauses();
+        std::vector<substrait::Expression> clause_expressions;
+
+        for (const auto & clause : clauses)
+        {
+            std::vector<substrait::Expression> key_conjuncts;
+
+            // Build equality conditions for each join key pair
+            for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+            {
+                const auto & left_key = clause.key_names_left[i];
+                const auto & right_key = clause.key_names_right[i];
+
+                // Find left key column index
+                int left_idx = -1;
+                for (size_t j = 0; j < left_header.columns(); ++j)
+                {
+                    if (left_header.getByPosition(j).name == left_key)
+                    {
+                        left_idx = static_cast<int>(j);
+                        break;
+                    }
+                }
+                if (left_idx < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                        "Join key {} not found in left input", left_key);
+
+                // Find right key column index
+                int right_idx = -1;
+                for (size_t j = 0; j < right_header.columns(); ++j)
+                {
+                    if (right_header.getByPosition(j).name == right_key)
+                    {
+                        right_idx = static_cast<int>(j);
+                        break;
+                    }
+                }
+                if (right_idx < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                        "Join key {} not found in right input", right_key);
+
+                // Create equality expression: left_key = right_key
+                // Right fields are offset by left_fields in the joined tuple
+                auto left_sel = buildFieldSelection(left_idx);
+                auto right_sel = buildFieldSelection(static_cast<int>(left_fields + right_idx));
+
+                substrait::Expression eq_expr;
+                auto * scalar_func = eq_expr.mutable_scalar_function();
+                int ref_id = registerFunction("equals");
+                scalar_func->set_function_reference(ref_id);
+
+                auto * arg0 = scalar_func->add_arguments();
+                arg0->mutable_value()->CopyFrom(left_sel);
+                auto * arg1 = scalar_func->add_arguments();
+                arg1->mutable_value()->CopyFrom(right_sel);
+
+                key_conjuncts.push_back(std::move(eq_expr));
+            }
+
+            // Combine multiple key conditions with AND
+            if (!key_conjuncts.empty())
+            {
+                if (key_conjuncts.size() == 1)
+                {
+                    clause_expressions.push_back(std::move(key_conjuncts[0]));
+                }
+                else
+                {
+                    substrait::Expression and_expr;
+                    auto * and_func = and_expr.mutable_scalar_function();
+                    int and_ref = registerFunction("and");
+                    and_func->set_function_reference(and_ref);
+
+                    for (const auto & conj : key_conjuncts)
+                    {
+                        auto * arg = and_func->add_arguments();
+                        arg->mutable_value()->CopyFrom(conj);
+                    }
+
+                    clause_expressions.push_back(std::move(and_expr));
+                }
+            }
+        }
+
+        // Set join condition (combine clauses with OR if multiple)
+        if (!clause_expressions.empty())
+        {
+            if (clause_expressions.size() == 1)
+            {
+                join_rel->mutable_expression()->CopyFrom(clause_expressions[0]);
+            }
+            else
+            {
+                substrait::Expression or_expr;
+                auto * or_func = or_expr.mutable_scalar_function();
+                int or_ref = registerFunction("or");
+                or_func->set_function_reference(or_ref);
+
+                for (const auto & clause_expr : clause_expressions)
+                {
+                    auto * arg = or_func->add_arguments();
+                    arg->mutable_value()->CopyFrom(clause_expr);
+                }
+
+                join_rel->mutable_expression()->CopyFrom(or_expr);
+            }
+        }
+
+        // Map ClickHouse JoinKind and JoinStrictness to Substrait JoinType
+        const auto strictness = table_join.strictness();
+        substrait::JoinRel::JoinType join_type = substrait::JoinRel::JOIN_TYPE_INNER;
+
+        if (kind == JoinKind::Inner)
+        {
+            join_type = substrait::JoinRel::JOIN_TYPE_INNER;
+        }
+        else if (kind == JoinKind::Left)
+        {
+            if (strictness == JoinStrictness::Semi)
+                join_type = substrait::JoinRel::JOIN_TYPE_LEFT_SEMI;
+            else if (strictness == JoinStrictness::Anti)
+                join_type = substrait::JoinRel::JOIN_TYPE_LEFT_ANTI;
+            else
+                join_type = substrait::JoinRel::JOIN_TYPE_LEFT;
+        }
+        else if (kind == JoinKind::Right)
+        {
+            if (strictness == JoinStrictness::Semi)
+                join_type = substrait::JoinRel::JOIN_TYPE_RIGHT_SEMI;
+            else if (strictness == JoinStrictness::Anti)
+                join_type = substrait::JoinRel::JOIN_TYPE_RIGHT_ANTI;
+            else
+                join_type = substrait::JoinRel::JOIN_TYPE_RIGHT;
+        }
+        else if (kind == JoinKind::Full)
+        {
+            join_type = substrait::JoinRel::JOIN_TYPE_OUTER;
+        }
+
+        join_rel->set_type(join_type);
+
+        // TODO: Support ASOF joins, post-join filters, and other advanced join features
     }
 
 public:
