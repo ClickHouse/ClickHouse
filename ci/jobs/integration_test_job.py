@@ -335,10 +335,6 @@ def main():
         )
     )
 
-    # Reduce number of tests to speed up debuging
-    parallel_test_modules = parallel_test_modules[:16]
-    sequential_test_modules = sequential_test_modules[:16]
-
     if is_sequential:
         parallel_test_modules = []
         assert not is_parallel
@@ -365,7 +361,6 @@ def main():
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
-        # "LLVM_PROFILE_FILE" :f"it-{batch_num}.profraw"
     }
     if is_llvm_coverage:
         test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%m.profraw"
@@ -410,32 +405,31 @@ def main():
             has_error = True
             error_info.append(test_result_parallel.info)
 
-    # Comment this to speed up the debugging process
-    # fail_num = len([r for r in test_results if not r.is_ok()])
-    # if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-    #     for attempt in range(module_repeat_cnt):
-    #         log_file = f"{temp_path}/pytest_sequential.log"
-    #         test_result_sequential = Result.from_pytest_run(
-    #             command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
-    #             env=test_env,
-    #             cwd="./tests/integration/",
-    #             pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
-    #             logfile=log_file,
-    #         )
-    #         if is_flaky_check and not test_result_sequential.is_ok():
-    #             print(
-    #                 f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
-    #             )
-    #             break
-    #     test_results.extend(test_result_sequential.results)
-    #     failed_test_cases.extend(
-    #         [t.name for t in test_result_sequential.results if t.is_failure()]
-    #     )
-    #     if test_result_sequential.files:
-    #         failed_tests_files.extend(test_result_sequential.files)
-    #     if test_result_sequential.is_error():
-    #         has_error = True
-    #         error_info.append(test_result_sequential.info)
+    fail_num = len([r for r in test_results if not r.is_ok()])
+    if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
+        for attempt in range(module_repeat_cnt):
+            log_file = f"{temp_path}/pytest_sequential.log"
+            test_result_sequential = Result.from_pytest_run(
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
+                env=test_env,
+                cwd="./tests/integration/",
+                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+                logfile=log_file,
+            )
+            if is_flaky_check and not test_result_sequential.is_ok():
+                print(
+                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                )
+                break
+        test_results.extend(test_result_sequential.results)
+        failed_test_cases.extend(
+            [t.name for t in test_result_sequential.results if t.is_failure()]
+        )
+        if test_result_sequential.files:
+            failed_tests_files.extend(test_result_sequential.files)
+        if test_result_sequential.is_error():
+            has_error = True
+            error_info.append(test_result_sequential.info)
 
     # Collect logs before rerun
     attached_files = []

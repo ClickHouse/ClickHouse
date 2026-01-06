@@ -16,13 +16,13 @@ if __name__ == "__main__":
         unit_tests_path="./ci/tmp/unit_tests_dbms",
         command_launcher=command_launcher,
     )
-    
-    # Merge profraw files into profdata
-    print("Collecting and merging LLVM coverage files...")
+
     profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
     profraw_files = [f.strip() for f in profraw_files if f.strip()]
     
     if profraw_files:
+        # Merge profraw files into profdata
+        print("Collecting and merging LLVM coverage files...")
         print(f"Found {len(profraw_files)} .profraw files")
         
         # Auto-detect available LLVM profdata tool
@@ -49,8 +49,5 @@ if __name__ == "__main__":
                 print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
                 for corrupted in corrupted_files:
                     print(f"  {corrupted}")
-            
-    else:
-        print("No .profraw files found for coverage")
     
     R.complete_job()

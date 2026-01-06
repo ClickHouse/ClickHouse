@@ -451,7 +451,6 @@ class Runner:
 
         try:
             result = Result.from_fs(job.name)
-            print(f"DEBUG: Result read from fs - status: [{result.status}], info: [{result.info}], is_completed: [{result.is_completed()}]")
         except Exception as e:  # json.decoder.JSONDecodeError
             print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
             traceback.print_exc()
@@ -463,7 +462,6 @@ class Runner:
         if not result.is_completed():
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
-            print(f"DEBUG: Result was not completed - current status: [{result.status}], setting to ERROR with KILLED info")
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
         result.update_duration()

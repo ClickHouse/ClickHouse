@@ -591,7 +591,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"{BuildTypes.AMD_COVERAGE}, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
+                runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_COV_BIN],
             )
             for total_batches in (8,)
@@ -602,7 +602,7 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"llvm coverage, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL,
+                runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
             )

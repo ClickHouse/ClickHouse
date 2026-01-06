@@ -56,23 +56,6 @@ ls -lh *.profdata 2>/dev/null || echo "No profdata files found"
 echo "Checking for binaries..."
 ls -lh clickhouse unit_tests_dbms 2>/dev/null || echo "Warning: Some binaries not found"
 
-# Create build directory structure to match paths in coverage data
-# Coverage data was generated during build with paths like "ci/tmp/build/base/base/..."
-# We need to make those paths point to the actual source in the workspace
-# echo "Setting up source path mapping..."
-# mkdir -p build
-# cd build
-# # Link workspace root so that build/base points to ../../base, build/src points to ../../src, etc.
-# for dir in ../../*/; do
-#     dirname=$(basename "$dir")
-#     if [ "$dirname" != "ci" ] && [ ! -e "$dirname" ]; then
-#         ln -s "$dir" "$dirname"
-#     fi
-# done
-# echo "File structure in $(pwd):"
-# ls -lh
-# cd ..
-
 # Make binaries executable
 chmod +x clickhouse unit_tests_dbms 2>/dev/null || true
 

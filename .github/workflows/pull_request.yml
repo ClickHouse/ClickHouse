@@ -2578,7 +2578,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_1_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCAxLzgp') }}
     name: "Stateless tests (llvm coverage, 1/8)"
@@ -2618,7 +2618,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_2_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCAyLzgp') }}
     name: "Stateless tests (llvm coverage, 2/8)"
@@ -2658,7 +2658,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_3_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCAzLzgp') }}
     name: "Stateless tests (llvm coverage, 3/8)"
@@ -2698,7 +2698,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_4_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA0Lzgp') }}
     name: "Stateless tests (llvm coverage, 4/8)"
@@ -2738,7 +2738,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_5_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA1Lzgp') }}
     name: "Stateless tests (llvm coverage, 5/8)"
@@ -2778,7 +2778,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_6_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA2Lzgp') }}
     name: "Stateless tests (llvm coverage, 6/8)"
@@ -2818,7 +2818,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_7_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA3Lzgp') }}
     name: "Stateless tests (llvm coverage, 7/8)"
@@ -2858,7 +2858,7 @@ jobs:
           fi
 
   stateless_tests_llvm_coverage_8_8:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_llvm_coverage_build]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChsbHZtIGNvdmVyYWdlLCA4Lzgp') }}
     name: "Stateless tests (llvm coverage, 8/8)"
