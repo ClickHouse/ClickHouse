@@ -28,7 +28,7 @@ namespace
 /// 2^62, because VarInt supports only values < 2^63.
 constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
 
-struct DeserializeStateSparseShared : public ISerialization::DeserializeBinaryBulkState
+struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {
     /// Column offsets from previous read.
     /// Used only in SerializationSparseNullMap.
@@ -37,6 +37,7 @@ struct DeserializeStateSparseShared : public ISerialization::DeserializeBinaryBu
     size_t num_trailing_defaults = 0;
     /// Do we have non-default value after @num_trailing_defaults?
     bool has_value_after_defaults = false;
+    ISerialization::DeserializeBinaryBulkStatePtr nested;
 
     void reset()
     {
@@ -46,33 +47,7 @@ struct DeserializeStateSparseShared : public ISerialization::DeserializeBinaryBu
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
-        auto new_state = std::make_shared<DeserializeStateSparseShared>(*this);
-        return new_state;
-    }
-};
-
-/// Deserialization state for SerializationSparse.
-///
-/// Rationale for splitting the state:
-/// - `SparseOffsets` decoding is stateful (varints + end-of-granule markers) and the decoded offsets are needed by
-///   multiple sparse-related substreams of the same column (e.g. `SparseElements` and derived `SparseNullMap` for
-///   `Sparse(Nullable(T))`). This offsets-related state is safe and beneficial to share/cache under the `SparseOffsets`
-///   substream path.
-/// - The nested deserialization state is not always shareable across substreams: when reading different subcolumns of a
-///   multi-stream type (e.g. `Nullable(Tuple(...))` and its `tup.x` / `tup.y`), different nested serializations expect
-///   different state types. If a single cached `nested` state is shared, one substream can overwrite it and another will
-///   later try to interpret it as a different type, leading to logical errors/crashes.
-/// Therefore `DeserializeStateSparseShared` contains only offsets-related fields (cached), while `DeserializeStateSparse`
-/// holds a per-substream `nested` state plus a pointer to the shared offsets state.
-struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
-{
-    std::shared_ptr<DeserializeStateSparseShared> shared;
-    ISerialization::DeserializeBinaryBulkStatePtr nested;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<DeserializeStateSparse>();
-        new_state->shared = shared ? std::make_shared<DeserializeStateSparseShared>(*shared) : nullptr;
+        auto new_state = std::make_shared<DeserializeStateSparse>(*this);
         new_state->nested = nested ? nested->clone() : nullptr;
         return new_state;
     }
@@ -103,7 +78,7 @@ size_t deserializeOffsets(
     size_t offset,
     size_t limit,
     size_t & skipped_values_rows,
-    DeserializeStateSparseShared & state)
+    DeserializeStateSparse & state)
 {
     skipped_values_rows = 0;
     size_t max_rows_to_read = offset + limit;
@@ -201,7 +176,7 @@ size_t readOrGetCachedSparseOffsets(
     ColumnPtr & offsets_column,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache,
-    DeserializeStateSparseShared & state_sparse,
+    DeserializeStateSparse & state_sparse,
     size_t prev_size,
     size_t rows_offset,
     size_t limit,
@@ -384,31 +359,21 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSett
 void SerializationSparse::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    /// Use Substream::SparseOffsets as the cache key for SparseOffsets state,
+    /// Use Substream::SparseOffsets as the cache key for SparseState,
     /// because this state is also shared by the SparseNullMap substream.
     settings.path.push_back(Substream::SparseOffsets);
-    std::shared_ptr<DeserializeStateSparseShared> shared_offsets_state;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
-        checkAndGetState<DeserializeStateSparseShared>(cached_state);
-        shared_offsets_state = std::static_pointer_cast<DeserializeStateSparseShared>(cached_state);
+        state = cached_state;
     }
     else
     {
-        shared_offsets_state = std::make_shared<DeserializeStateSparseShared>();
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, shared_offsets_state);
-    }
-
-    auto * sparse_state = typeid_cast<DeserializeStateSparse *>(state.get());
-    if (!sparse_state)
-    {
         state = std::make_shared<DeserializeStateSparse>();
-        sparse_state = checkAndGetState<DeserializeStateSparse>(state);
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
     }
-    sparse_state->shared = std::move(shared_offsets_state);
 
     settings.path.back() = Substream::SparseElements;
-    nested->deserializeBinaryBulkStatePrefix(settings, sparse_state->nested, cache);
+    nested->deserializeBinaryBulkStatePrefix(settings, checkAndGetState<DeserializeStateSparse>(state)->nested, cache);
     settings.path.pop_back();
 }
 
@@ -421,8 +386,6 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
-    if (!state_sparse->shared)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationSparse: missing shared SparseOffsets state");
 
     /// Reading SparseOffsets first.
     auto mutable_column = column->assumeMutable();
@@ -431,8 +394,8 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t prev_size = column_sparse.size();
     size_t read_rows = 0;
     size_t skipped_values_rows = 0;
-    size_t num_read_offsets = readOrGetCachedSparseOffsets(
-        offsets_column, settings, cache, *state_sparse->shared, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
+    size_t num_read_offsets
+        = readOrGetCachedSparseOffsets(offsets_column, settings, cache, *state_sparse, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
 
     /// Reading SparseValues and constructing ColumnSparse.
     auto & values_column = column_sparse.getValuesPtr();
@@ -617,7 +580,7 @@ void SerializationSparseNullMap::enumerateStreams(
 void SerializationSparseNullMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    /// Use Substream::SparseOffsets as the cache key for SparseOffsets state,
+    /// Use Substream::SparseOffsets as the cache key for SparseState,
     /// because this state is also shared by the Sparse stream.
     settings.path.push_back(Substream::SparseOffsets);
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
@@ -626,7 +589,7 @@ void SerializationSparseNullMap::deserializeBinaryBulkStatePrefix(
     }
     else
     {
-        state = std::make_shared<DeserializeStateSparseShared>();
+        state = std::make_shared<DeserializeStateSparse>();
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
     }
 }
@@ -639,7 +602,7 @@ void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * state_sparse = checkAndGetState<DeserializeStateSparseShared>(state);
+    auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
     /// Reading SparseOffsets first.
 
