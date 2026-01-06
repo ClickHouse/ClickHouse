@@ -1134,6 +1134,7 @@ const char * auto_contributors[] {
     "Reinaldy Rafli",
     "Renat Bilalov",
     "Reto Kromer",
+    "Revertionist",
     "Ri",
     "Rich Raposa",
     "RinChanNOWWW",
