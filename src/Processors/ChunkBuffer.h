@@ -5,15 +5,15 @@
 #include <mutex>
 #include <queue>
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
 
 extern const int LOGICAL_ERROR;
 
 }
-
-namespace DB
-{
 
 struct ChunkBuffer
 {

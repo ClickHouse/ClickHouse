@@ -209,7 +209,6 @@ protected:
 
 private:
     bool disjunctions_optimization_applied = false;
-    bool may_use_in_memory_input_storage = false;
 };
 
 
