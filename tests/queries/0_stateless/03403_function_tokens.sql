@@ -17,16 +17,17 @@ SELECT tokens('a', 'ngrams', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'ngrams', materialize(1)); -- { serverError ILLEGAL_COLUMN }
--- If 2nd arg is "ngram", then the 3rd arg must be between 1 and 8
+-- If 2nd arg is "ngram", then the 3rd arg must be larger than 0
 SELECT tokens('a', 'ngrams', 0); -- { serverError BAD_ARGUMENTS}
-SELECT tokens('a', 'ngrams', 9); -- { serverError BAD_ARGUMENTS}
+SELECT tokens('a', 'ngrams', -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('a', 'ngrams', 18_446_744_073_709_551_616); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 --    const Array (for "split")
 SELECT tokens('a', 'splitByString', 'c'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', toInt8(-1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', toFixedString('c', 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT tokens('a', 'splitByString', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
-SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError INCORRECT_QUERY }
-SELECT tokens('  a  bc d', 'splitByString', []); -- { serverError INCORRECT_QUERY }
+SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('  a  bc d', 'splitByString', []); -- { serverError BAD_ARGUMENTS }
 
 
 SELECT 'Default tokenizer';

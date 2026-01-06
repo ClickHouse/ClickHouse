@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -278,7 +279,12 @@ ProcessList::EntryPtr ProcessList::insert(
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
+                    .metrics = {}, /// Metrics are set by child scopes
                 };
+
+                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
+
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
@@ -860,6 +866,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
             .buffer_size = settings[Setting::temporary_files_buffer_size],
+            .metrics = {}, /// Metrics are set by child scopes
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

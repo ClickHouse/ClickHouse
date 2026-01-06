@@ -366,12 +366,14 @@ public:
     AccessFlags flags;                   /// flags = (inherited_flags - partial_revokes) | explicit_grants
     AccessFlags min_flags_with_children; /// min_flags_with_children = access & child[0].min_flags_with_children & ... & child[N-1].min_flags_with_children
     AccessFlags max_flags_with_children; /// max_flags_with_children = access | child[0].max_flags_with_children | ... | child[N-1].max_flags_with_children
-    std::unique_ptr<Container> children;
+    std::shared_ptr<Container> children;
 
     bool wildcard_grant = false;
 
     Node() = default;
     Node(const Node & src) { *this = src; }
+    Node(Node && src) noexcept = default;
+    Node & operator=(Node && src) noexcept = default;
 
     Iterator begin() const { return ++Iterator{*this}; }
     Iterator end() const { return Iterator{*this}; }
@@ -388,10 +390,23 @@ public:
         min_flags_with_children = src.min_flags_with_children;
         max_flags_with_children = src.max_flags_with_children;
         if (src.children)
-            children = std::make_unique<Container>(*src.children);
+            children = std::make_shared<Container>(*src.children);
         else
             children = nullptr;
         return *this;
+    }
+
+    Node makeLightCopy() const
+    {
+        Node res;
+        res.node_name = node_name;
+        res.level = level;
+        res.flags = flags;
+        res.wildcard_grant = wildcard_grant;
+        res.min_flags_with_children = min_flags_with_children;
+        res.max_flags_with_children = max_flags_with_children;
+        res.children = children;
+        return res;
     }
 
     bool isLeaf() const { return node_name.empty(); }
@@ -480,6 +495,8 @@ public:
     template <bool wildcard = false, typename... Args>
     bool isGranted(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
     {
+        const auto next_level = static_cast<Level>(level + 1);
+
         AccessFlags flags_to_check = flags_ - min_flags_with_children;
         if (!flags_to_check)
             return true;
@@ -498,16 +515,12 @@ public:
             ///                 "foo" (SELECT)
             ///                /             \
             ///     "" (leaf, USAGE)        "bar" (SELECT)
-            const auto & [node, _] = tryGetLeafOrPrefix(name, /* return_parent_node= */ true);
-            /// Check min_flags_with_children because wildcard allows to grant for all children.
-            return node.min_flags_with_children.contains(flags_to_check);
+            const auto node = tryGetLeaf(name, next_level, /* return_parent_node= */ true);
+            return node.isGranted(flags_to_check);
         }
 
-        const auto & [node, final] = tryGetLeafOrPrefix(name);
-        if (final)
-            return node.isGranted<wildcard>(flags_to_check, subnames...);
-
-        return node.flags.contains(flags_to_check);
+        const auto node = tryGetLeaf(name, next_level);
+        return node.isGranted<wildcard>(flags_to_check, subnames...);
     }
 
     template <bool wildcard = false, typename StringT>
@@ -521,17 +534,9 @@ public:
 
         for (const auto & name : names)
         {
-            const Node * child = tryGetLeaf(name);
-            if (child)
-            {
-                if (!child->isGranted<wildcard>(flags_to_check, name))
-                    return false;
-            }
-            else
-            {
-                if (!flags.contains(flags_to_check))
-                    return false;
-            }
+            Node child = tryGetLeaf(name);
+            if (!child.isGranted<wildcard>(flags_to_check, name))
+                return false;
         }
         return true;
     }
@@ -671,7 +676,7 @@ private:
             return *this;
 
         if (!children)
-            children = std::make_unique<Container>();
+            children = std::make_shared<Container>();
 
         auto find_possible_prefix = [path](const Node & n)
         {
@@ -710,7 +715,9 @@ private:
 
             auto & new_parent = getChildNode(prefix, level_);
             child.node_name = child.node_name.substr(i);
-            new_parent.children = std::make_unique<Container>();
+            new_parent.children = std::make_shared<Container>();
+            new_parent.min_flags_with_children = it->min_flags_with_children & flags;
+            new_parent.max_flags_with_children = it->max_flags_with_children | flags;
             new_parent.children->splice(new_parent.children->begin(), *children, it);
 
             return new_parent.getLeaf(new_path, level_, return_parent_node);
@@ -720,44 +727,68 @@ private:
         auto & child = getChildNode(path, level_);
 
         /// Child is a leaf.
-        if (path.empty())
+        if (path.empty() || return_parent_node)
             return child;
 
         /// Creates a leaf in child.
         return child.getLeaf("", level_, return_parent_node);
     }
 
-    /// Returns a pair [node, is_leaf].
-    std::pair<const Node &, bool> tryGetLeafOrPrefix(std::string_view path, bool return_parent_node = false) const
+    /// Same logic as `getLeaf`, but const.
+    /// Using non-move copy on the returned node will make a full copy of all underlying children.
+    Node tryGetLeaf(std::string_view path, Level level_ = Level::GLOBAL_LEVEL, bool return_parent_node = false) const
     {
-        if (!children)
-            return {*this, false};
+        /// The implementation of this function is almost the same as `getLeaf`.
+        /// Instead of creating new nodes in-place, this function creates ephemeral nodes without modifying the tree structure.
+        /// If a node already exists, this function returns a lightweight copy of it (without the deep copy of the children)
+        ///
+        /// The nodes, returned by this function, don't have ownership of their children (!)
+        /// Attempting to read or modify `.children` may break the grants tree logic     (!)
+        /// The returned ephemeral nodes shouldn't be used longer than a function scope  (!)
+        if (path.empty() && return_parent_node)
+            return this->makeLightCopy();
 
-        for (auto & child : *children)
+        auto find_possible_prefix = [path](const Node & n)
         {
-            if (path.empty() && child.isLeaf())
-                return {child, true};
+            if (path.empty())
+                return n.isLeaf();
 
-            if (!child.isLeaf() && path.starts_with(child.node_name))
+            return n.node_name[0] == path[0];
+        };
+
+        if (children)
+        {
+            if (auto it = std::find_if(children->begin(), children->end(), find_possible_prefix); it != children->end())
             {
-                if (return_parent_node && path == child.node_name)
-                    return {child, true};
+                if (path.empty())
+                    return it->makeLightCopy();
 
-                return child.tryGetLeafOrPrefix(path.substr(child.node_name.size()));
+                auto child = it->makeLightCopy();
+                const auto & [left, right] = std::mismatch(path.begin(), path.end(), child.node_name.begin(), child.node_name.end());
+
+                if (right == child.node_name.end())
+                    return child.tryGetLeaf(path.substr(child.node_name.size()), level_, return_parent_node);
+
+                /// See `getLeaf`
+                size_t i = std::distance(path.begin(), left);
+                std::string_view prefix = path.substr(0, i);
+                std::string_view new_path = path.substr(i);
+
+                auto new_parent = createChildNode(prefix, level_);
+                child.node_name = child.node_name.substr(i);
+                new_parent.children = std::make_shared<Container>();
+                new_parent.min_flags_with_children = child.min_flags_with_children & flags;
+                new_parent.max_flags_with_children = child.max_flags_with_children | flags;
+                new_parent.children->push_back(std::move(child));
+
+                return new_parent.tryGetLeaf(new_path, level_, return_parent_node);
             }
         }
 
-        return {*this, false};
-    }
+        if (path.empty() || return_parent_node)
+            return createChildNode(path, level_);
 
-    /// Similar to `getLeaf`, but returns nullptr if no leaf was found.
-    const Node * tryGetLeaf(std::string_view path, bool return_parent_node = false) const
-    {
-        const auto & [node, final] = tryGetLeafOrPrefix(path, return_parent_node);
-        if (!final)
-            return nullptr;
-
-        return &node;
+        return createChildNode(path, level_).tryGetLeaf("", level_, return_parent_node);
     }
 
     /// Returns a child node with the given name. If no child was found, creates a new one with specified *level_*.
@@ -768,14 +799,22 @@ private:
             return *child;
 
         if (!children)
-            children = std::make_unique<Container>();
+            children = std::make_shared<Container>();
 
-        auto & new_child = children->emplace_back();
-        new_child.node_name = name;
-        new_child.level = level_;
-        new_child.flags = flags & new_child.getAllGrantableFlags();
-
+        auto & new_child = children->emplace_back(createChildNode(name, level_));
         return new_child;
+    }
+
+    Node createChildNode(const std::string_view name, const Level level_ = Level::GLOBAL_LEVEL) const
+    {
+        Node child;
+        child.node_name = name;
+        child.level = level_;
+        child.flags = flags & child.getAllGrantableFlags();
+        child.min_flags_with_children = flags;
+        child.max_flags_with_children = flags;
+
+        return child;
     }
 
     /// Similar to `getChildNode`, but returns nullptr if no child node was found.

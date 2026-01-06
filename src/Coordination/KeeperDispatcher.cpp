@@ -463,6 +463,29 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     return true;
 }
 
+bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+{
+    {
+        /// If session was already disconnected than we will ignore requests
+        std::lock_guard lock(session_to_response_callback_mutex);
+        if (!session_to_response_callback.contains(session_id))
+            return false;
+    }
+
+    KeeperRequestForSession request_info;
+    request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    request_info.session_id = session_id;
+
+    if (keeper_context->isShutdownCalled())
+        return false;
+
+    server->putLocalReadRequest(request_info);
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+    return true;
+}
+
 void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
@@ -734,15 +757,27 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     if (keeper_context->isShutdownCalled())
         return;
 
+    ZooKeeperResponseCallback callback;
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
         if (session_it != session_to_response_callback.end())
         {
+            callback = std::move(session_it->second);
             session_to_response_callback.erase(session_it);
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
+
+    /// Notify the callback that session is being closed before removing it
+    /// This allows clients to mark themselves as expired
+    if (callback)
+    {
+        auto close_response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        close_response->error = Coordination::Error::ZSESSIONEXPIRED;
+        callback(close_response, nullptr);
+    }
+
     {
         std::lock_guard lock(read_request_queue_mutex);
         read_request_queue.erase(session_id);
