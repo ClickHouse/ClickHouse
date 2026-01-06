@@ -14,19 +14,17 @@ if __name__ == "__main__":
         command=["bash ci/jobs/merge_llvm_coverage.sh"],
     )
     
-    attached_files = []
-    
     # Compress coverage artifacts
-    coverage_files = [
-        f"{temp_dir}/merged.profdata",
-        f"{temp_dir}/llvm_coverage_html_report",
-    ]
-    attached_files.append(
-        Utils.compress_files_gz(coverage_files, f"{temp_dir}/llvm_coverage_html_report.tar.gz")
+    # Change to temp_dir so archive doesn't include full path
+    import subprocess
+    subprocess.run(
+        f"cd {temp_dir} && tar -czf llvm_coverage_html_report.tar.gz merged.profdata llvm_coverage_html_report",
+        shell=True,
+        check=True
     )
     
     Result.create_from(
         results=[result],
-        files=attached_files,
+        files=[f"{temp_dir}/llvm_coverage_html_report.tar.gz"],
         info="LLVM Coverage Merge Job Completed",
     ).complete_job()
