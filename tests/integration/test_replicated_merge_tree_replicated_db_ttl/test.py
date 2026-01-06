@@ -46,6 +46,8 @@ def test_replicated_db_and_ttl(started_cluster):
     )
 
     node1.query("INSERT INTO 02908_main VALUES (1)")
-    node1.query("INSERT INTO 02908_dependent VALUES (1, now())")
+    node1.query("INSERT INTO 02908_dependent VALUES (1, now()-30)")
+    node1.query("INSERT INTO 02908_dependent VALUES (2, now()+30)")
 
+    node1.query("OPTIMIZE TABLE 02908_dependent FINAL")
     node1.query("SELECT * FROM 02908_dependent")

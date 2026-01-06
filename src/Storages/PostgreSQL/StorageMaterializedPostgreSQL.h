@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include "PostgreSQLReplicationHandler.h"
+#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -122,7 +122,7 @@ public:
     /// temporary nested, which will be created shortly after.
     StoragePtr createTemporary() const;
 
-    ContextPtr getNestedTableContext() const { return nested_context; }
+    ContextMutablePtr getNestedTableContext() const { return nested_context; }
 
     StorageID getNestedStorageID() const;
 

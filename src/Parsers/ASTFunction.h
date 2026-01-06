@@ -21,10 +21,11 @@ public:
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
 
+    /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
+    bool is_operator = false;
+
     bool is_window_function = false;
-
     bool compute_after_window_functions = false;
-
     bool is_lambda_function = false;
 
     /// This field is updated in executeTableFunction if its a parameterized_view
@@ -90,16 +91,25 @@ private:
 
 
 template <typename... Args>
-std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
+std::shared_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... args)
 {
     auto function = std::make_shared<ASTFunction>();
 
     function->name = name;
+
     function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     function->arguments->children = { std::forward<Args>(args)... };
 
+    return function;
+}
+
+template <typename... Args>
+std::shared_ptr<ASTFunction> makeASTOperator(const String & name, Args &&... args)
+{
+    auto function = makeASTFunction(name, std::forward<Args>(args)...);
+    function->is_operator = true;
     return function;
 }
 

@@ -6,6 +6,7 @@ import string
 import time
 import uuid
 from multiprocessing.dummy import Pool
+from datetime import datetime
 
 import pytest
 from kazoo.exceptions import NoNodeError
@@ -58,7 +59,11 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -71,7 +76,11 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
+            ],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -88,17 +97,6 @@ def started_cluster():
             stay_alive=True,
             with_installed_binary=True,
             use_old_analyzer=True,
-        )
-        cluster.add_instance(
-            "instance_too_many_parts",
-            user_configs=["configs/users.xml"],
-            with_minio=True,
-            with_zookeeper=True,
-            main_configs=[
-                "configs/s3queue_log.xml",
-                "configs/merge_tree.xml",
-            ],
-            stay_alive=True,
         )
         cluster.add_instance(
             "instance_24.5",
@@ -279,7 +277,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
 def test_upgrade(started_cluster):
     node = started_cluster.instances["instance_23.12"]
     if "23.12" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
 
     table_name = f"test_upgrade"
     dst_table_name = f"{table_name}_dst"
@@ -320,82 +318,6 @@ def test_upgrade(started_cluster):
     node.restart_with_latest_version()
 
     assert expected_rows == get_count()
-
-
-def test_exception_during_insert(started_cluster):
-    node = started_cluster.instances["instance_too_many_parts"]
-
-    # A unique table name is necessary for repeatable tests
-    table_name = f"test_exception_during_insert_{generate_random_string()}"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "unordered",
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "polling_min_timeout_ms": 100,
-            "polling_max_timeout_ms": 100,
-            "polling_backoff_ms": 0,
-        },
-    )
-    node.rotate_logs()
-
-    node.query("system stop merges")
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    def wait_for_rows(expected_rows):
-        for _ in range(20):
-            if expected_rows == get_count():
-                break
-            time.sleep(1)
-        assert expected_rows == get_count()
-
-    expected_rows = [0]
-
-    def generate(check_inserted):
-        files_to_generate = 1
-        row_num = 1
-        time.sleep(10)
-        total_values = generate_random_files(
-            started_cluster,
-            files_path,
-            files_to_generate,
-            start_ind=0,
-            row_num=row_num,
-            use_random_names=1,
-        )
-        expected_rows[0] += files_to_generate * row_num
-        if check_inserted:
-            wait_for_rows(expected_rows[0])
-
-    generate(True)
-    generate(True)
-    generate(True)
-    generate(False)
-
-    node.wait_for_log_line(
-        "Merges are processing significantly slower than inserts: while pushing to view default.test_exception_during_insert_"
-    )
-
-    time.sleep(2)
-    exception = node.query(
-        f"SELECT exception FROM system.s3queue WHERE zookeeper_path ilike '%{table_name}%' and notEmpty(exception)"
-    )
-    assert "Too many parts" in exception
-
-    node.query("system start merges")
-    node.query(f"optimize table {dst_table_name} final")
-
-    wait_for_rows(expected_rows[0])
 
 
 @pytest.mark.parametrize("processing_threads", [1, 16])
@@ -462,6 +384,8 @@ def test_commit_on_limit(started_cluster, processing_threads):
         started_cluster, f"{files_path}/test_999999.csv", correct_values_csv
     )
 
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     create_mv(node, table_name, dst_table_name)
 
     expected_files = files_to_generate + 4
@@ -511,6 +435,25 @@ def test_commit_on_limit(started_cluster, processing_threads):
         )
     )
 
+    finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    node.query("system flush logs")
+    commit_id = node.query(
+        f"SELECT commit_id FROM system.s3queue_log WHERE file_name = '{files_path}/test_999999.csv'"
+    ).strip()
+    assert len(commit_id) > 0
+    commit_id_count = int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE commit_id = {commit_id}"
+        ).strip()
+    )
+    assert files_to_generate + 5 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE transaction_start_time >= toDateTime('{start_time}') and transaction_start_time <= toDateTime('{finish_time}')"
+        ).strip()
+    )
+    # 11 and not 10, because failed file is not accounted in
+    # current_processed_files which is compared to max_processed_files.
+    assert commit_id_count <= 11
     expected_processed = ["test_" + str(i) + ".csv" for i in range(files_to_generate)]
     processed = get_processed_files()
     for value in expected_processed:
@@ -539,7 +482,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
     if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"

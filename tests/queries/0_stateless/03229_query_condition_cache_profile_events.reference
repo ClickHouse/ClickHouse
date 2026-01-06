@@ -1,0 +1,6 @@
+--- with move to PREWHERE
+0	1	0
+1	1	1
+--- without move to PREWHERE
+0	1	0
+1	0	1

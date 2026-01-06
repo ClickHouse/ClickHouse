@@ -55,44 +55,44 @@ TEST(ObjectSerialization, JSONSerialization)
     WriteBufferFromOwnString buf2;
     serialization->serializeTextJSONPretty(col_object, 1, buf2, FormatSettings(), 0);
     ASSERT_EQ(buf2.str(), R"({
-    "a" : [
+    "a": [
         43,
         "Str3"
     ],
-    "a" : {
-        "b" : 0,
-        "b" : {
-            "c" : 42,
-            "e" : 43
+    "a": {
+        "b": 0,
+        "b": {
+            "c": 42,
+            "e": 43
         },
-        "c" : [
+        "c": [
             "Str1",
             "Str2"
         ]
     },
-    "b" : {
-        "c" : {
-            "d" : {
-                "e" : 42,
-                "g" : 43
+    "b": {
+        "c": {
+            "d": {
+                "e": 42,
+                "g": 43
             },
-            "h" : {
-                "r" : 44
+            "h": {
+                "r": 44
             }
         }
     },
-    "c" : {
-        "g" : {
-            "h" : {
-                "t" : [
+    "c": {
+        "g": {
+            "h": {
+                "t": [
                     "Str",
                     "Str2"
                 ]
             }
         }
     },
-    "h" : "Str",
-    "j" : "Str"
+    "h": "Str",
+    "j": "Str"
 })");
 
 }

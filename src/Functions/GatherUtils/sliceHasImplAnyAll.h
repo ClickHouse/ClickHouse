@@ -1,8 +1,8 @@
 #pragma once
 
-#include "GatherUtils.h"
-#include "Slices.h"
-#include "sliceEqualElements.h"
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Slices.h>
+#include <Functions/GatherUtils/sliceEqualElements.h>
 
 #include <Common/TargetSpecific.h>
 

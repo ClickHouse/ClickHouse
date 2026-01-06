@@ -4,6 +4,7 @@ sidebar_label: 'RENAME'
 sidebar_position: 48
 slug: /sql-reference/statements/rename
 title: 'RENAME Statement'
+doc_type: 'reference'
 ---
 
 # RENAME Statement

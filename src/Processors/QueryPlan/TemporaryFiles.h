@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
-#include <vector>
 #include <memory>
 
 namespace DB

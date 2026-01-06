@@ -2,13 +2,13 @@
     <storage_configuration>
         <disks>
             <jbod1>
-                <path>/jbod1/</path>
+                <path>/test_jbod_load_balancing_jbod1/</path>
             </jbod1>
             <jbod2>
-                <path>/jbod2/</path>
+                <path>/test_jbod_load_balancing_jbod2/</path>
             </jbod2>
             <jbod3>
-                <path>/jbod3/</path>
+                <path>/test_jbod_load_balancing_jbod3/</path>
             </jbod3>
         </disks>
         <policies>

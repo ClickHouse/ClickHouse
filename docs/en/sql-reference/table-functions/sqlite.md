@@ -4,28 +4,29 @@ sidebar_label: 'sqlite'
 sidebar_position: 185
 slug: /sql-reference/table-functions/sqlite
 title: 'sqlite'
+doc_type: 'reference'
 ---
 
 # sqlite Table Function
 
 Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
 - `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
 - `table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
 
-**Returned value**
+## Returned value {#returned_value}
 
 - A table object with the same columns as in the original `SQLite` table.
 
-**Example**
+## Example {#example}
 
 Query:
 
@@ -43,6 +44,6 @@ Result:
 └───────┴──────┘
 ```
 
-**See Also**
+## Related {#related}
 
 - [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine

@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -68,13 +69,11 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return std::make_shared<DataTypeUInt8>();
-    }
+        if (arguments[0]->hasDynamicSubcolumns())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -82,6 +81,11 @@ public:
     {
         /// Never return constant for -IgnoreSet functions to avoid constant folding.
         return !ignore_set;
+    }
+
+    bool useDefaultImplementationForDynamic() const override
+    {
+        return false;
     }
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }

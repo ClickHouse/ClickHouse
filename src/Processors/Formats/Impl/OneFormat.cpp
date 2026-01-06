@@ -10,17 +10,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-OneInputFormat::OneInputFormat(const Block & header, ReadBuffer & in_) : IInputFormat(header, &in_)
+OneInputFormat::OneInputFormat(SharedHeader header, ReadBuffer & in_) : IInputFormat(header, &in_)
 {
-    if (header.columns() != 1)
+    if (header->columns() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "One input format is only suitable for tables with a single column of type UInt8 but the number of columns is {}",
-                        header.columns());
+                        header->columns());
 
-    if (!WhichDataType(header.getByPosition(0).type).isUInt8())
+    if (!WhichDataType(header->getByPosition(0).type).isUInt8())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "One input format is only suitable for tables with a single column of type String but the column type is {}",
-                        header.getByPosition(0).type->getName());
+                        header->getByPosition(0).type->getName());
 }
 
 Chunk OneInputFormat::read()
@@ -42,7 +42,7 @@ void registerInputFormatOne(FormatFactory & factory)
                    const RowInputFormatParams &,
                    const FormatSettings &)
     {
-        return std::make_shared<OneInputFormat>(sample, buf);
+        return std::make_shared<OneInputFormat>(std::make_shared<const Block>(sample), buf);
     });
 }
 

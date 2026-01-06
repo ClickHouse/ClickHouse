@@ -1,6 +1,7 @@
 services:
     mysql2:
         image: mysql:8.0
+        stop_grace_period: 5s
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
@@ -22,8 +23,10 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
         user: ${MYSQL_CLUSTER_DOCKER_USER}
+        cpus: 3
     mysql3:
         image: mysql:8.0
+        stop_grace_period: 5s
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
@@ -45,8 +48,10 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
         user: ${MYSQL_CLUSTER_DOCKER_USER}
+        cpus: 3
     mysql4:
         image: mysql:8.0
+        stop_grace_period: 5s
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: ClickHouse_MySQL_P@ssw0rd
@@ -68,3 +73,4 @@ services:
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
         user: ${MYSQL_CLUSTER_DOCKER_USER}
+        cpus: 3

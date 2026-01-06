@@ -78,6 +78,13 @@ static const bool have_madvise_huge =
     false
 #endif
     ;
+static const bool have_process_madvise =
+#ifdef JEMALLOC_HAVE_PROCESS_MADVISE
+    true
+#else
+    false
+#endif
+    ;
 static const bool config_fill =
 #ifdef JEMALLOC_FILL
     true
@@ -109,6 +116,13 @@ static const bool config_prof_libgcc =
     ;
 static const bool config_prof_libunwind =
 #ifdef JEMALLOC_PROF_LIBUNWIND
+    true
+#else
+    false
+#endif
+    ;
+static const bool config_prof_frameptr =
+#ifdef JEMALLOC_PROF_FRAME_POINTER
     true
 #else
     false

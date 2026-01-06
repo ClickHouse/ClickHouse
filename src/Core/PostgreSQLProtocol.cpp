@@ -1,10 +1,17 @@
-#include "PostgreSQLProtocol.h"
+#include <Core/PostgreSQLProtocol.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB::PostgreSQLProtocol::Messaging
 {
 
-ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index)
+ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type)
 {
+    // Check for Bool type first
+    if (isBool(data_type))
+        return {ColumnType::BOOL, 1};
+
+    // Otherwise use TypeIndex
+    TypeIndex type_index = data_type->getTypeId();
     switch (type_index)
     {
         case TypeIndex::Int8:
@@ -28,8 +35,6 @@ ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index)
             return {ColumnType::FLOAT8, 8};
 
         case TypeIndex::FixedString:
-            return {ColumnType::BPCHAR, -1};
-
         case TypeIndex::String:
             return {ColumnType::VARCHAR, -1};
 

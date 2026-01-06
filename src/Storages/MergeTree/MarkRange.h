@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstddef>
-#include <deque>
 #include <Processors/Chunk.h>
+#include <boost/container/devector.hpp>
 #include <fmt/format.h>
 #include <base/types.h>
 
@@ -30,9 +30,16 @@ struct MarkRange
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public std::deque<MarkRange>
+struct MarkRanges : public boost::container::devector<MarkRange>
 {
-    using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
+    enum class SearchAlgorithm : uint8_t
+    {
+        Unknown,
+        BinarySearch,
+        GenericExclusionSearch,
+    };
+
+    using boost::container::devector<MarkRange>::devector; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
     bool isOneRangeForWholePart(size_t num_marks_in_part) const;
@@ -40,6 +47,8 @@ struct MarkRanges : public std::deque<MarkRange>
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
+
+    SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
 
 /** Get max range.end from ranges.
@@ -64,10 +73,15 @@ public:
     bool has_final_mark;
     MarkRanges mark_ranges;
 };
+
 using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
 
-}
+struct MarkRangeHash
+{
+    size_t operator()(const MarkRange & range) const;
+};
 
+}
 
 template <>
 struct fmt::formatter<DB::MarkRange>

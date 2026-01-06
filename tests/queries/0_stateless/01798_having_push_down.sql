@@ -25,3 +25,11 @@ SELECT sum(c0 = 0), min(c0 + 1), sum(c0 + 2) FROM t_having
 GROUP BY c0 HAVING c0 = 0;
 
 DROP TABLE t_having;
+
+CREATE TABLE t_exact (c0 Bool, c1 Int) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO TABLE t_exact (c0, c1) VALUES (FALSE, 1), (TRUE, 2);
+SELECT c1 FROM t_exact GROUP BY c1, c0 HAVING c0;
+DROP TABLE t_exact;
+
+SELECT 1 FROM remote('127.0.0.{1,1}') GROUP BY (2, materialize(3)) HAVING materialize(3) SETTINGS group_by_use_nulls = true;
+

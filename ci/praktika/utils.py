@@ -9,13 +9,15 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
-import traceback
 from abc import ABC, abstractmethod
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from shlex import quote
 from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
@@ -40,6 +42,8 @@ class MetaClasses:
                 return [cls.to_dict(i) for i in obj]
             elif isinstance(obj, dict):
                 return {k: cls.to_dict(v) for k, v in obj.items()}
+            elif isinstance(obj, Path):
+                return str(obj)
             else:
                 return obj
 
@@ -49,13 +53,20 @@ class MetaClasses:
 
         @classmethod
         def from_fs(cls: Type[T], name) -> T:
-            with open(cls.file_name_static(name), "r", encoding="utf8") as f:
+            return cls.from_file(cls.file_name_static(name))
+
+        @classmethod
+        def from_file(cls: Type[T], path) -> T:
+            """
+            For non-default result file locations
+            """
+            with open(path, "r", encoding="utf8") as f:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
                     print(f"ERROR: failed to parse json, ex [{ex}]")
-                    print(f"JSON content [{cls.file_name_static(name)}]")
-                    Shell.check(f"cat {cls.file_name_static(name)}")
+                    print(f"JSON content [{path}]")
+                    Shell.check(f"cat {path}")
                     raise ex
 
         @classmethod
@@ -171,15 +182,18 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
             executable="/bin/bash",
+            errors="ignore",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
         if strict and res.returncode != 0:
-            raise RuntimeError(f"command failed with {res.returncode}")
+            raise RuntimeError(
+                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+            )
         return res.stdout.strip()
 
     @classmethod
-    def get_res_stdout_stderr(cls, command, verbose=True):
+    def get_res_stdout_stderr(cls, command, verbose=True, strip=True):
         if verbose:
             print(f"Run command [{command}]")
         res = subprocess.run(
@@ -188,8 +202,12 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="ignore",
         )
-        return res.returncode, res.stdout.strip(), res.stderr.strip()
+        if strip:
+            return res.returncode, res.stdout.strip(), res.stderr.strip()
+        else:
+            return res.returncode, res.stdout, res.stderr
 
     @classmethod
     def check(
@@ -201,7 +219,7 @@ class Shell:
         dry_run=False,
         stdin_str=None,
         timeout=None,
-        retries=0,
+        retries=1,
         **kwargs,
     ):
         return (
@@ -253,6 +271,37 @@ class Shell:
         return not failed
 
     @classmethod
+    def _check_timeout(cls, timeout, process) -> None:
+        if not timeout:
+            return
+        time.sleep(timeout)
+        print(
+            f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
+        )
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            print("Process already terminated.")
+            return
+
+        time_wait = 0
+        wait_interval = 5
+
+        # Wait for process to terminate
+        while process.poll() is None and time_wait < 100:
+            print("Waiting for process to exit...")
+            time.sleep(wait_interval)
+            time_wait += wait_interval
+
+        # Force kill if still running
+        if process.poll() is None:
+            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                print("Process already terminated.")
+
+    @classmethod
     def run(
         cls,
         command,
@@ -262,38 +311,14 @@ class Shell:
         dry_run=False,
         stdin_str=None,
         timeout=None,
-        retries=0,
+        retries=1,
+        retry_errors: Union[List[str], str] = "",
         **kwargs,
     ):
-        def _check_timeout(timeout, process) -> None:
-            if not timeout:
-                return
-            time.sleep(timeout)
-            print(
-                f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
-            )
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                print("Process already terminated.")
-                return
-
-            time_wait = 0
-            wait_interval = 5
-
-            # Wait for process to terminate
-            while process.poll() is None and time_wait < 100:
-                print("Waiting for process to exit...")
-                time.sleep(wait_interval)
-                time_wait += wait_interval
-
-            # Force kill if still running
-            if process.poll() is None:
-                print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    print("Process already terminated.")
+        if retry_errors and retries < 2:
+            retries = 2
+            if isinstance(retry_errors, str):
+                retry_errors = [retry_errors]
 
         # Dry-run
         if dry_run:
@@ -305,7 +330,8 @@ class Shell:
 
         log_file = log_file or "/dev/null"
         proc = None
-        for retry in range(retries + 1):
+        err_output = []
+        for retry in range(retries):
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -318,12 +344,13 @@ class Shell:
                         start_new_session=True,  # Start a new process group for signal handling
                         bufsize=1,  # Line-buffered
                         errors="backslashreplace",
+                        executable="/bin/bash",
                         **kwargs,
                     )
 
                     # Start the timeout thread if specified
                     if timeout:
-                        t = Thread(target=_check_timeout, args=(timeout, proc))
+                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
                         t.daemon = True
                         t.start()
 
@@ -333,16 +360,19 @@ class Shell:
                         proc.stdin.close()
 
                     # Process both stdout and stderr in real-time
-                    def stream_output(stream, output_fp):
+                    def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
                             sys.stdout.write(line)
                             output_fp.write(line)
+                            if output is not None:
+                                output.append(line)
 
+                    err_output = []
                     stdout_thread = Thread(
-                        target=stream_output, args=(proc.stdout, log_fp)
+                        target=stream_output, args=(proc.stdout, log_fp, None)
                     )
                     stderr_thread = Thread(
-                        target=stream_output, args=(proc.stderr, log_fp)
+                        target=stream_output, args=(proc.stderr, log_fp, err_output)
                     )
 
                     stdout_thread.start()
@@ -358,8 +388,22 @@ class Shell:
                     else:
                         if verbose:
                             print(
-                                f"ERROR: command [{command}] failed, exit code: {proc.returncode}, retry: {retry}/{retries}"
+                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
                             )
+                        if retry_errors:
+                            should_retry = False
+                            for err in retry_errors:
+                                if any(err in err_line for err_line in err_output):
+                                    print(
+                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
+                                    )
+                                    should_retry = True
+                                    break
+                            if not should_retry:
+                                print(
+                                    f"No retryable errors found, stopping retry attempts"
+                                )
+                                break
             except Exception as e:
                 if verbose:
                     print(
@@ -367,14 +411,16 @@ class Shell:
                     )
                 if proc:
                     proc.kill()
+                if strict and retry == retries - 1:
+                    raise e
 
-        # Handle strict mode (ensure process success or fail)
-        if strict:
-            assert (
-                proc and proc.returncode == 0
-            ), f"Command failed with return code {proc.returncode}"
+        if strict and (not proc or proc.returncode != 0):
+            err = "\n   ".join(err_output).strip()
+            raise RuntimeError(
+                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+            )
 
-        return proc.returncode if proc else 1  # Return 1 if process never started
+        return proc.returncode if proc else 1  # Return 1 if the process never started
 
     @classmethod
     def run_async(
@@ -421,20 +467,53 @@ class Utils:
     @staticmethod
     def is_amd():
         arch = platform.machine()
-        if "x86_64" in arch.lower() or "amd64" in arch.lower():
+        if "x86" in arch.lower() or "amd" in arch.lower():
             return True
         return False
 
     @staticmethod
+    def is_mac():
+        return platform.system() == "Darwin"
+
+    @staticmethod
     def terminate_process_group(pid, force=False):
-        if not force:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        else:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        try:
+            if not force:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
+
+    @staticmethod
+    def terminate_process(pid, force=False):
+        try:
+            if not force:
+                os.kill(pid, signal.SIGTERM)
+            else:
+                os.kill(pid, signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
 
     @staticmethod
     def set_env(key, val):
         os.environ[key] = val
+
+    @staticmethod
+    def physical_memory() -> int:
+        """
+        Returns the total physical memory in bytes.
+        """
+        try:
+            # for linux
+            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        except ValueError:
+            # for MacOS
+            return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
     @staticmethod
     def print_formatted_error(error_message, stdout="", stderr=""):
@@ -462,10 +541,12 @@ class Utils:
     def cpu_count():
         return multiprocessing.cpu_count()
 
+    # deprecated: unnecessary lines in traceback + ide linting issues
+    # switch to regular raise Ex() inplace
     @staticmethod
     def raise_with_error(error_message, stdout="", stderr="", ex=None):
         Utils.print_formatted_error(error_message, stdout, stderr)
-        raise ex or RuntimeError()
+        raise ex or RuntimeError(error_message)
 
     @staticmethod
     def timestamp():
@@ -598,6 +679,143 @@ class Utils:
         return res
 
     @classmethod
+    def compress_zst(cls, path):
+        path = str(path).rstrip("/")
+        path_obj = Path(path)
+        is_dir = path_obj.is_dir()
+        path_out = ""
+
+        if Shell.check("which zstd"):
+            if is_dir:
+                # Compress just the directory's content, not full path
+                parent = str(path_obj.parent.resolve())
+                name = path_obj.name
+                path_out = f"{parent}/{name}.tar.zst"
+                Shell.check(
+                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
+                    verbose=True,
+                    strict=True,
+                )
+            elif path_obj.is_file():
+                path_out = f"{path}.zst"
+                Shell.check(
+                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
+                    verbose=True,
+                    strict=True,
+                )
+        return path_out
+
+    @classmethod
+    def compress_files_gz(cls, files, archive_name):
+        files = [
+            os.path.relpath(file) if os.path.isabs(file) else file for file in files
+        ]
+        for file in files:
+            assert Path(file).exists(), f"Path does not exist [{file}]"
+
+        with tempfile.NamedTemporaryFile() as f:
+            f.write("\n".join(files).encode())
+            f.flush()
+            Shell.check(
+                f"tar -cf - -T {f.name} | gzip > {archive_name}",
+                verbose=True,
+                strict=True,
+            )
+        return archive_name
+
+    @classmethod
+    def compress_gz(cls, path):
+        path = str(path).rstrip("/")
+        path_obj = Path(path)
+        is_dir = path_obj.is_dir()
+        path_out = ""
+
+        if Shell.check("which gzip"):
+            if is_dir:
+                # Compress just the directory's content, not full path
+                parent = str(path_obj.parent.resolve())
+                name = path_obj.name
+                path_out = f"{parent}/{name}.tar.gz"
+                archive_name = f"{name}.tar.gz"
+                Shell.check(
+                    f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
+                    verbose=True,
+                    strict=True,
+                )
+            elif path_obj.is_file():
+                path_out = f"{path}.gz"
+                Shell.check(
+                    f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
+                    verbose=True,
+                    strict=True,
+                )
+            elif not path_obj.exists():
+                raise RuntimeError(
+                    f"Failed to compress file [{path}]: path does not exist"
+                )
+            else:
+                raise RuntimeError(f"Failed to compress file [{path}]")
+        else:
+            raise RuntimeError(f"Failed to compress file [{path}]: no gzip installed")
+        return path_out
+
+    @classmethod
+    def compress_file(cls, path, no_strict=False):
+        if Shell.check("which zstd"):
+            return cls.compress_zst(path)
+        elif Shell.check("which gzip"):
+            return cls.compress_gz(path)
+        else:
+            path_out = path
+            if not no_strict:
+                raise RuntimeError(
+                    f"Failed to compress file [{path}] no zstd or gz installed"
+                )
+        return path_out
+
+    @classmethod
+    def decompress_file(cls, path, path_to=None, remove_archive=False, no_strict=False):
+        path = str(path)
+
+        if path.endswith(".zst"):
+            path_to = path_to or path.removesuffix(".zst")
+
+            # Ensure zstd is installed
+            if not Shell.check("which zstd", verbose=True, strict=not no_strict):
+                print("ERROR: zstd is not installed. Cannot decompress artifact.")
+                return False
+
+            # Perform decompression
+            res = Shell.check(
+                f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
+                verbose=True,
+                strict=not no_strict,
+            )
+        elif path.endswith(".gz"):
+            path_to = path_to or path.removesuffix(".gz")
+
+            # Ensure gzip is installed
+            if not Shell.check("which gzip", verbose=True, strict=not no_strict):
+                print("ERROR: gzip is not installed. Cannot decompress artifact.")
+                return False
+
+            # Perform decompression (decompress to stdout and redirect to file)
+            res = Shell.check(
+                f"gzip --decompress --stdout {quote(path)} > {quote(path_to)}",
+                verbose=True,
+                strict=not no_strict,
+            )
+        else:
+            raise NotImplementedError(
+                f"Decompression for file type not supported: {path}"
+            )
+
+        if res and remove_archive:
+            Shell.check(f"rm -f {quote(path)}", verbose=True)
+
+        return res
+
+    @classmethod
     def add_to_PATH(cls, path):
         path_cur = os.getenv("PATH", "")
         if path_cur:
@@ -612,6 +830,32 @@ class Utils:
         def duration(self) -> float:
             return datetime.now().timestamp() - self.start_time
 
+    class Tee:
+        def __init__(self, stdout=None):
+            self.original_stdout = sys.stdout
+            self.stdout = stdout
+
+        def __enter__(self):
+            class DualWriter:
+                def __init__(self, original, duplicate):
+                    self.original = original
+                    self.duplicate = duplicate
+
+                def write(self, message):
+                    self.original.write(message)
+                    self.duplicate.write(message)
+
+                def flush(self):
+                    self.original.flush()
+                    self.duplicate.flush()
+
+            if self.stdout:
+                sys.stdout = DualWriter(self.original_stdout, self.stdout)
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            sys.stdout = self.original_stdout
+
 
 class TeePopen:
     def __init__(
@@ -620,6 +864,8 @@ class TeePopen:
         log_file: Union[str, Path] = "",
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
+        timeout_shell_cleanup: Optional[str] = None,
+        preserve_stdio: bool = False,
     ):
         self.command = command
         self.log_file_name = log_file
@@ -627,26 +873,37 @@ class TeePopen:
         self.env = env or os.environ.copy()
         self.process = None  # type: Optional[subprocess.Popen]
         self.timeout = timeout
+        self.timeout_shell_cleanup = timeout_shell_cleanup
         self.timeout_exceeded = False
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
+        self.log_rolling_buffer = deque(maxlen=100)
+        self.preserve_stdio = preserve_stdio
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
         time.sleep(self.timeout)
-        print(
-            f"WARNING: Timeout exceeded [{self.timeout}], send SIGTERM to [{self.process.pid}] and give a chance for graceful termination"
-        )
-        self.send_signal(signal.SIGTERM)
-        time_wait = 0
-        self.terminated_by_sigterm = True
+        print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
+
+        if self.timeout_shell_cleanup:
+            Shell.check(self.timeout_shell_cleanup, verbose=True)
+            return
+
+        self.send_signal(signal.SIGTERM)
+        print(f"Send SIGTERM to [{self.process.pid}]")
+        time_wait = 0
+
         while self.process.poll() is None and time_wait < 100:
             print("wait...")
             wait = 5
             time.sleep(wait)
             time_wait += wait
+
+        self.terminated_by_sigterm = True
+
+        print(f"Graceful termination timeout, send SIGKILL to [{self.process.pid}]")
         while self.process.poll() is None:
             print(f"WARNING: Still running, send SIGKILL to [{self.process.pid}]")
             self.send_signal(signal.SIGKILL)
@@ -654,19 +911,35 @@ class TeePopen:
             time.sleep(2)
 
     def __enter__(self) -> "TeePopen":
-        if self.log_file_name:
+        if self.log_file_name and not self.preserve_stdio:
             self.log_file = open(self.log_file_name, "w", encoding="utf-8")
-        self.process = subprocess.Popen(
-            self.command,
-            shell=True,
-            universal_newlines=True,
-            env=self.env,
-            start_new_session=True,  # signall will be sent to all children
-            stderr=subprocess.STDOUT,
-            stdout=subprocess.PIPE,
-            bufsize=1,
-            errors="backslashreplace",
-        )
+
+        if self.preserve_stdio:
+            # Inherit parent's stdio and do not start a new session to keep the controlling TTY
+            self.process = subprocess.Popen(
+                self.command,
+                shell=True,
+                universal_newlines=True,
+                env=self.env,
+                # inherit stdin/stdout/stderr
+                stdin=None,
+                stdout=None,
+                stderr=None,
+                start_new_session=False,
+                errors="backslashreplace",
+            )
+        else:
+            self.process = subprocess.Popen(
+                self.command,
+                shell=True,
+                universal_newlines=True,
+                env=self.env,
+                start_new_session=True,  # signal will be sent to all children
+                stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE,
+                bufsize=1,
+                errors="backslashreplace",
+            )
         time.sleep(1)
         print(f"Subprocess started, pid [{self.process.pid}]")
         if self.timeout is not None and self.timeout > 0:
@@ -681,31 +954,36 @@ class TeePopen:
             self.log_file.close()
 
     def wait(self) -> int:
-        if self.process.stdout is not None:
+        # If preserving stdio, we don't have our own stdout pipe; just wait
+        if not self.preserve_stdio and self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)
+
                 if self.log_file:
                     self.log_file.write(line)
-
+                self.log_rolling_buffer.append(line)
         return self.process.wait()
 
     def poll(self):
         return self.process.poll()
 
     def send_signal(self, signal_num):
-        os.killpg(self.process.pid, signal_num)
+        try:
+            # Prefer sending to the process group when we created a new session
+            if not self.preserve_stdio:
+                os.killpg(self.process.pid, signal_num)
+            else:
+                os.kill(self.process.pid, signal_num)
+        except ProcessLookupError:
+            pass
 
+    def get_latest_log(self, max_lines=20):
+        buffer = list(self.log_rolling_buffer)
 
-if __name__ == "__main__":
+        # Search backwards for "Traceback"
+        for i in range(len(buffer) - 1, -1, -1):
+            if "Traceback" in buffer[i]:
+                return "".join(buffer[i:])
 
-    @dataclasses.dataclass
-    class Test(MetaClasses.Serializable):
-        name: str
-
-        @staticmethod
-        def file_name_static(name):
-            return f"/tmp/{Utils.normalize_string(name)}.json"
-
-    Test(name="dsada").dump()
-    t = Test.from_fs("dsada")
-    print(t)
+        # Fallback: return last max_lines
+        return "".join(buffer[-max_lines:])

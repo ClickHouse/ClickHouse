@@ -3,11 +3,13 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/FailPoint.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -31,6 +33,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
     extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
+}
+
+namespace FailPoints
+{
+    extern const char rmt_merge_task_sleep_in_prepare[];
 }
 
 namespace ErrorCodes
@@ -57,6 +64,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
+
+    fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    });
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
@@ -117,6 +129,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
     for (const String & source_part_name : entry.source_parts)
     {
@@ -145,7 +158,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
             String message;
             LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
+            if (!source_part_or_covering->info.contains(new_part_info))
                 throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
 
             return PrepareResult{
@@ -168,6 +181,27 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
 
         parts.push_back(source_part_or_covering);
+    }
+
+    for (const auto & patch_part_name : entry.patch_parts)
+    {
+        auto patch_part = storage.getActiveContainingPart(patch_part_name);
+
+        if (!patch_part || patch_part->name != patch_part_name)
+        {
+            /// We do not have one of source parts locally, try to take some already merged part from someone.
+            LOG_DEBUG(log, "Don't have all patch parts (at least {} is missing) for merge {}; "
+                "will try to fetch part instead. Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
+                patch_part_name, entry.new_part_name);
+
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = part_log_writer,
+            };
+        }
+
+        patch_parts.push_back(patch_part);
     }
 
     /// All source parts are found locally, we can execute merge
@@ -214,7 +248,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
+    future_merged_part->assign(parts, patch_parts, entry.new_part_format);
+
     if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",

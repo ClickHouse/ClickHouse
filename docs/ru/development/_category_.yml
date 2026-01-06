@@ -1,7 +1,0 @@
-position: 50
-label: 'Инструкция для разработчиков'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Инструкция для разработчиков

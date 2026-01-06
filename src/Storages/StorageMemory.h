@@ -6,6 +6,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
@@ -63,7 +64,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
@@ -128,7 +128,7 @@ public:
 
 private:
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 

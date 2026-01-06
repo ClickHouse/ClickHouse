@@ -17,7 +17,7 @@ TEST(SchedulerUnifiedNode, Smoke)
 {
     ResourceTest t;
 
-    t.addCustom<UnifiedSchedulerNode>("/", SchedulingSettings{});
+    t.addCustom<UnifiedSchedulerNode>("/", WorkloadSettings{});
 
     t.enqueue("/fifo", {10, 10});
     t.dequeue(2);
@@ -310,7 +310,7 @@ TEST(SchedulerUnifiedNode, ThrottlerLeakyBucket)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 20.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
 
     t.enqueue(all, {10, 10, 10, 10, 10, 10, 10, 10});
 
@@ -339,9 +339,9 @@ TEST(SchedulerUnifiedNode, ThrottlerPacing)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    // Zero burst allows you to send one request of any `size` and than throttle for `size/max_speed` seconds.
+    // Zero burst allows you to send one request of any `size` and than throttle for `size/max_bytes_per_second` seconds.
     // Useful if outgoing traffic should be "paced", i.e. have the least possible burstiness.
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 1.0, .max_burst = 0.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 1.0, .max_burst_bytes = 0.0});
 
     t.enqueue(all, {1, 2, 3, 1, 2, 1});
     int output[] = {1, 2, 0, 3, 0, 0, 1, 2, 0, 1, 0};
@@ -358,7 +358,7 @@ TEST(SchedulerUnifiedNode, ThrottlerBucketFilling)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 100.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
 
     t.enqueue(all, {100});
 
@@ -379,7 +379,7 @@ TEST(SchedulerUnifiedNode, ThrottlerBucketFilling)
 
     t.enqueue(all, {95, 1, 1, 1, 1, 1, 1, 1, 1, 1});
     t.process(start + std::chrono::seconds(200));
-    t.consumed("all", 101); // check we cannot consume more than max_burst + 1 request
+    t.consumed("all", 101); // check we cannot consume more than max_burst_bytes + 1 request
 
     t.process(start + std::chrono::seconds(100500));
     t.consumed("all", 3);
@@ -391,7 +391,7 @@ TEST(SchedulerUnifiedNode, ThrottlerAndFairness)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 100.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
     auto a = t.createUnifiedNode("A", all, {.weight = 10.0, .priority = Priority{}});
     auto b = t.createUnifiedNode("B", all, {.weight = 90.0, .priority = Priority{}});
 
@@ -680,7 +680,7 @@ TEST(SchedulerUnifiedNode, UpdateThrottlerMaxSpeed)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 20.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 20.0});
 
     t.enqueue(all, {10, 10, 10, 10, 10, 10, 10, 10});
 
@@ -693,7 +693,7 @@ TEST(SchedulerUnifiedNode, UpdateThrottlerMaxSpeed)
     t.process(start + std::chrono::seconds(2));
     t.consumed("all", 10);
 
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 1.0, .max_burst = 20.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 1.0, .max_burst_bytes = 20.0});
 
     t.process(start + std::chrono::seconds(12));
     t.consumed("all", 10);
@@ -711,7 +711,7 @@ TEST(SchedulerUnifiedNode, UpdateThrottlerMaxBurst)
     EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
-    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_speed = 10.0, .max_burst = 100.0});
+    auto all = t.createUnifiedNode("all", {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
 
     t.enqueue(all, {100});
 
@@ -720,7 +720,7 @@ TEST(SchedulerUnifiedNode, UpdateThrottlerMaxBurst)
 
     t.process(start + std::chrono::seconds(2));
     t.consumed("all", 0); // There was nothing to consume
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 10.0, .max_burst = 30.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 30.0});
 
     t.process(start + std::chrono::seconds(5));
     t.consumed("all", 0); // There was nothing to consume
@@ -729,19 +729,19 @@ TEST(SchedulerUnifiedNode, UpdateThrottlerMaxBurst)
     t.process(start + std::chrono::seconds(5));
     t.consumed("all", 40); // min(30 tokens, 5 sec * 10 tokens/sec) = 30 tokens + 1 extra request to go below zero
 
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 10.0, .max_burst = 100.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 10.0, .max_burst_bytes = 100.0});
 
     t.process(start + std::chrono::seconds(100));
     t.consumed("all", 60); // Consume rest
 
     t.process(start + std::chrono::seconds(150));
-    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_speed = 100.0, .max_burst = 200.0});
+    t.updateUnifiedNode(all, {}, {}, {.priority = Priority{}, .max_bytes_per_second = 100.0, .max_burst_bytes = 200.0});
 
     t.process(start + std::chrono::seconds(200));
 
     t.enqueue(all, {195, 1, 1, 1, 1, 1, 1, 1, 1, 1});
     t.process(start + std::chrono::seconds(200));
-    t.consumed("all", 201); // check we cannot consume more than max_burst + 1 request
+    t.consumed("all", 201); // check we cannot consume more than max_burst_bytes + 1 request
 
     t.process(start + std::chrono::seconds(100500));
     t.consumed("all", 3);

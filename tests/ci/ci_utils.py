@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -350,6 +351,13 @@ class Utils:
             return True
         except ValueError:
             return False
+
+    @staticmethod
+    def is_arm():
+        arch = platform.machine()
+        if "arm" in arch.lower() or "aarch" in arch.lower():
+            return True
+        return False
 
     @staticmethod
     def normalize_string(string: str) -> str:

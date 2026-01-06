@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-async-insert
+# no-async-insert: read_rows and written_rows are correctly missing from the initial query,
+# and the secondary insert query (AsyncInsertFlush) is not logged
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

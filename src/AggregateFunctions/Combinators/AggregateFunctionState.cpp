@@ -1,6 +1,6 @@
-#include "AggregateFunctionState.h"
-#include "AggregateFunctionMerge.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 

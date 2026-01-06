@@ -34,19 +34,17 @@ $CLICKHOUSE_CLIENT --check_table_dependencies=0 --query "DROP TABLE dict_invalid
 
 function check_exception_detected()
 {
-
+    local TIMELIMIT=$((SECONDS+30))
     query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
 
-    while [ -z "$query_result" ]
+    while [ -z "$query_result" ] && [ $SECONDS -lt "$TIMELIMIT" ]
     do
         query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
         sleep 0.1
     done
 }
 
-
-export -f check_exception_detected;
-timeout 30 bash -c check_exception_detected 2> /dev/null
+check_exception_detected 2> /dev/null
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1 | grep -Eo "dict_invalidate.*UNKNOWN_TABLE" | wc -l
 
@@ -60,18 +58,18 @@ FROM system.one"
 
 function check_exception_fixed()
 {
+    local TIMELIMIT=$((SECONDS+60))
     query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
 
-    while [ "$query_result" ]
+    while [ "$query_result" ] && [ $SECONDS -lt "$TIMELIMIT" ]
     do
         query_result=$($CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1)
         sleep 0.1
     done
 }
 
-export -f check_exception_fixed;
 # it may take a while until dictionary reloads
-timeout 60 bash -c check_exception_fixed 2> /dev/null
+check_exception_fixed 2> /dev/null
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1
 $CLICKHOUSE_CLIENT --query "SELECT dictGetUInt8('invalidate', 'two', toUInt64(133))"

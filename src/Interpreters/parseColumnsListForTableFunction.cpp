@@ -16,10 +16,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_dynamic_type;
-    extern const SettingsBool allow_experimental_json_type;
-    extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool allow_experimental_variant_type;
+    extern const SettingsBool enable_time_time64_type;
+    extern const SettingsBool allow_experimental_qbit_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -39,13 +37,11 @@ extern const int ILLEGAL_COLUMN;
 
 DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & settings)
     : allow_suspicious_low_cardinality_types(settings[Setting::allow_suspicious_low_cardinality_types])
-    , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
-    , enable_variant_type(settings[Setting::allow_experimental_variant_type])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
-    , enable_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
-    , enable_json_type(settings[Setting::allow_experimental_json_type])
+    , enable_time_time64_type(settings[Setting::enable_time_time64_type])
+    , allow_experimental_qbit_type(settings[Setting::allow_experimental_qbit_type])
 {
 }
 
@@ -72,18 +68,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.allow_experimental_object_type)
-        {
-            if (data_type.hasDynamicSubcolumnsDeprecated())
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because experimental Object type is not allowed. "
-                    "Set setting allow_experimental_object_type = 1 in order to allow it",
-                    data_type.getName());
-            }
-        }
-
         if (!settings.allow_suspicious_fixed_string_types)
         {
             if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&data_type))
@@ -95,18 +79,6 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
                         data_type.getName(),
                         MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
-            }
-        }
-
-        if (!settings.enable_variant_type)
-        {
-            if (isVariant(data_type))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because Variant type is not allowed. "
-                    "Set setting enable_variant_type = 1 in order to allow it",
-                    data_type.getName());
             }
         }
 
@@ -142,27 +114,34 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.enable_dynamic_type)
+        if (!settings.enable_time_time64_type)
         {
-            if (isDynamic(data_type))
+            if (isTime(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because Dynamic type is not allowed. "
-                    "Set setting enable_dynamic_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because Time type is not allowed. "
+                    "Set setting enable_time_time64_type = 1 in order to allow it",
+                    data_type.getName());
+            }
+            if (isTime64(data_type))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because Time64 type is not allowed. "
+                    "Set setting enable_time_time64_type = 1 in order to allow it",
                     data_type.getName());
             }
         }
 
-        if (!settings.enable_json_type)
+        if (!settings.allow_experimental_qbit_type)
         {
-            const auto * object_type = typeid_cast<const DataTypeObject *>(&data_type);
-            if (object_type && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+            if (isQBit(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create column with type '{}' because JSON type is not allowed. "
-                    "Set setting enable_json_type = 1 in order to allow it",
+                    "Cannot create column with type '{}' because QBit type is not allowed. "
+                    "Set setting allow_experimental_qbit_type = 1 in order to allow it",
                     data_type.getName());
             }
         }

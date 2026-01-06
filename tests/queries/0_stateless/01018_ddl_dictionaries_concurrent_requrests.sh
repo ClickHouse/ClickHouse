@@ -28,88 +28,107 @@ $CLICKHOUSE_CLIENT -q "
 
 function thread1()
 {
-    while true; do $CLICKHOUSE_CLIENT --query "SELECT * FROM system.dictionaries FORMAT Null"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM system.dictionaries FORMAT Null"
+    done
 }
 
 function thread2()
 {
-    while true; do CLICKHOUSE_CLIENT --query "ATTACH DICTIONARY database_for_dict.dict1" ||: ; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        CLICKHOUSE_CLIENT --query "ATTACH DICTIONARY database_for_dict.dict1" ||:
+    done
 }
 
 function thread3()
 {
-    while true; do CLICKHOUSE_CLIENT --query "ATTACH DICTIONARY database_for_dict.dict2" ||:; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        CLICKHOUSE_CLIENT --query "ATTACH DICTIONARY database_for_dict.dict2" ||:
+    done
 }
 
 
 function thread4()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "
-        SELECT * FROM database_for_dict.dict1 FORMAT Null;
-        SELECT * FROM database_for_dict.dict2 FORMAT Null;
-    " ||: ; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "
+            SELECT * FROM database_for_dict.dict1 FORMAT Null;
+            SELECT * FROM database_for_dict.dict2 FORMAT Null;
+        " ||:
+    done
 }
 
 function thread5()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "
-        SELECT dictGetString('database_for_dict.dict1', 'value_column', toUInt64(number)) from numbers(1000) FROM FORMAT Null;
-        SELECT dictGetString('database_for_dict.dict2', 'value_column', toUInt64(number)) from numbers(1000) FROM FORMAT Null;
-    " ||: ; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "
+            SELECT dictGetString('database_for_dict.dict1', 'value_column', toUInt64(number)) from numbers(1000) FROM FORMAT Null;
+            SELECT dictGetString('database_for_dict.dict2', 'value_column', toUInt64(number)) from numbers(1000) FROM FORMAT Null;
+        " ||:
+    done
 }
 
 function thread6()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "DETACH DICTIONARY database_for_dict.dict1"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "DETACH DICTIONARY database_for_dict.dict1"
+    done
 }
 
 function thread7()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "DETACH DICTIONARY database_for_dict.dict2"; done
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "DETACH DICTIONARY database_for_dict.dict2"
+    done
 }
-
-
-export -f thread1;
-export -f thread2;
-export -f thread3;
-export -f thread4;
-export -f thread5;
-export -f thread6;
-export -f thread7;
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
+thread6 2> /dev/null &
+thread7 2> /dev/null &
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
+thread6 2> /dev/null &
+thread7 2> /dev/null &
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
+thread6 2> /dev/null &
+thread7 2> /dev/null &
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
-timeout $TIMEOUT bash -c thread7 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
+thread6 2> /dev/null &
+thread7 2> /dev/null &
 
 wait
 $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"
