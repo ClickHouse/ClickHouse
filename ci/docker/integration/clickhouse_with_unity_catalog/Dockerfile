@@ -17,6 +17,11 @@ RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.4/spark-3.5.4-
 
 # download spark and packages
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
-RUN packages="org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \
-    /spark-3.5.4-bin-hadoop3/bin/spark-shell --packages "$packages" > /dev/null \
-    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.4-bin-hadoop3/jars/ \;
+# Using spark-sql with -e flag (instead of spark-shell) to ensure reliable automatic exit
+RUN packages="org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" && \
+    cd /spark-3.5.4-bin-hadoop3 && \
+    for i in 1 2 3; do \
+        bin/spark-sql --packages "$packages" -e "SELECT 1;" > /dev/null 2>&1 && \
+        break || sleep 5; \
+    done && \
+    find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.4-bin-hadoop3/jars/ \;
