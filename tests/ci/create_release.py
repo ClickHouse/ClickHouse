@@ -113,7 +113,7 @@ from pathlib import Path
 from typing import Iterator, List
 
 from ci_buddy import CIBuddy
-from ci_utils import GH, Shell
+from ci_utils import GH, Envs, Shell
 from git_helper import GIT_PREFIX, Git
 from pr_info import Labels
 from s3_helper import S3Helper
@@ -322,7 +322,7 @@ class ReleaseInfo:
             )
             assert previous_release_sha
 
-            if CI.GH.is_latest_release_branch(release_branch):
+            if GH.is_latest_release_branch(release_branch):
                 print("This is going to be the latest release!")
                 latest_release = True
 
@@ -372,7 +372,7 @@ class ReleaseInfo:
 
     @staticmethod
     def _create_gh_label(label: str, color_hex: str, dry_run: bool) -> None:
-        cmd = f"gh api repos/{CI.Envs.GITHUB_REPOSITORY}/labels -f name={label} -f color={color_hex}"
+        cmd = f"gh api repos/{Envs.GITHUB_REPOSITORY}/labels -f name={label} -f color={color_hex}"
         res = Shell.check(cmd, dry_run=dry_run, verbose=True)
         if not res:
             # not a critical error - do not fail. branch might be created already (recovery case)
@@ -476,7 +476,7 @@ class ReleaseInfo:
                         "### Changelog category (leave one):\n- Not for changelog (changelog entry is not required)\n"
                     )
                     cmd_create_pr = (
-                        f"gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Update version after release' "
+                        f"gh pr create --repo {Envs.GITHUB_REPOSITORY} --title 'Update version after release' "
                         f'--head {branch_upd_version_contributors} --base master --body "{body}" --assignee {actor}'
                     )
                     Shell.check(
@@ -513,7 +513,7 @@ class ReleaseInfo:
                 if release_type == VersionType.LTS:
                     pr_labels += f" --label {Labels.RELEASE_LTS}"
                 Shell.check(
-                    f"""gh pr create --repo {CI.Envs.GITHUB_REPOSITORY} --title 'Release pull request for branch {self.release_branch}' \
+                    f"""gh pr create --repo {Envs.GITHUB_REPOSITORY} --title 'Release pull request for branch {self.release_branch}' \
                                 --head {self.release_branch} {pr_labels} \
                                 --body 'This PullRequest is a part of ClickHouse release cycle. It is used by CI system only. Do not perform any changes with it.'""",
                     dry_run=dry_run,
@@ -545,7 +545,7 @@ class ReleaseInfo:
             print(f"Version bump PR url [{url}]")
             self.version_bump_pr = url
 
-        self.release_url = f"https://github.com/{CI.Envs.GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
+        self.release_url = f"https://github.com/{Envs.GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
         print(f"Release url [{self.release_url}]")
 
         self.dump()
@@ -553,7 +553,7 @@ class ReleaseInfo:
         return self
 
     def create_gh_release(self, packages_files: List[str], dry_run: bool) -> None:
-        repo = CI.Envs.GITHUB_REPOSITORY
+        repo = Envs.GITHUB_REPOSITORY
         assert repo
         cmds = [
             f"gh release create --repo {repo} --title 'Release {self.release_tag}' {self.release_tag}"
@@ -573,7 +573,7 @@ class ReleaseInfo:
         self.dump()
 
     def merge_prs(self, dry_run: bool) -> None:
-        repo = CI.Envs.GITHUB_REPOSITORY
+        repo = Envs.GITHUB_REPOSITORY
         if self.release_type == "patch":
             assert self.changelog_pr
             print("Merging ChangeLog PR")
@@ -750,7 +750,7 @@ class PackageDownloader:
                 ]
             )
             self.s3.download_file(
-                bucket=CI.Envs.S3_BUILDS_BUCKET,
+                bucket=Envs.S3_BUILDS_BUCKET,
                 s3_path=s3_path,
                 local_file_path="/".join([self.LOCAL_DIR, package_file]),
             )
@@ -766,7 +766,7 @@ class PackageDownloader:
                 ]
             )
             self.s3.download_file(
-                bucket=CI.Envs.S3_BUILDS_BUCKET,
+                bucket=Envs.S3_BUILDS_BUCKET,
                 s3_path=s3_path,
                 local_file_path="/".join([self.LOCAL_DIR, macos_binary]),
             )
