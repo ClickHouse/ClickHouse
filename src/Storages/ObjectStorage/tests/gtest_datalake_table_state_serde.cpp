@@ -14,12 +14,14 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         .metadata_version = std::numeric_limits<Int32>::min(),
         .schema_id = std::numeric_limits<Int32>::max(),
         .snapshot_id = std::optional{std::numeric_limits<Int64>::max()},
+        .last_modify_time = 1234
     },
     Iceberg::TableStateSnapshot{
         .metadata_file_path = "",
         .metadata_version = 0,
         .schema_id = std::numeric_limits<Int32>::max(),
         .snapshot_id = std::nullopt,
+        .last_modify_time = 2345
     },
 };
 }

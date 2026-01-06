@@ -499,10 +499,14 @@ std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & 
     auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
     auto data_files = listFiles(*object_storage, table_path, "data", "");
 
-    for (auto && data_file : data_files)
-        metadata_files.push_back(data_file);
+    std::vector<String> res;
+    res.reserve(data_files.size() + metadata_files.size());
+    for (auto & data_file : data_files)
+        res.emplace_back(data_file->relative_path);
+    for (auto & metadata_file : metadata_files)
+        res.emplace_back(metadata_file->relative_path);
 
-    return metadata_files;
+    return res;
 }
 
 void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)

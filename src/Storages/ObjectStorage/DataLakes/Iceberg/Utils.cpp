@@ -222,8 +222,8 @@ bool writeMetadataFileAndVersionHint(
                 write_if_none_match.clear();
             }
 
-            auto [old_version, _1, _2, _3] = getMetadataFileAndVersion(version_hint_value);
-            auto [new_version, _4, _5, _6] = getMetadataFileAndVersion(version_hint_content);
+            auto [old_version, _1, _2, _3] = getMetadataFileAndVersion(version_hint_value, object_storage);
+            auto [new_version, _4, _5, _6] = getMetadataFileAndVersion(version_hint_content, object_storage);
             if (old_version < new_version)
             {
                 try
@@ -913,7 +913,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         String filename = std::filesystem::path(path).filename();
         if (isTemporaryMetadataFile(filename))
             continue;
-        auto [version, metadata_file_path, last_modify_time,compression_method] = getMetadataFileAndVersion(path);
+        auto [version, metadata_file_path, last_modify_time,compression_method] = getMetadataFileAndVersion(path, object_storage);
 
         if (need_all_metadata_files_parsing)
         {
@@ -1018,7 +1018,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             }
             if (!explicit_metadata_path.starts_with(table_path))
                 explicit_metadata_path = std::filesystem::path(table_path) / explicit_metadata_path;
-            return getMetadataFileAndVersion(explicit_metadata_path);
+            return getMetadataFileAndVersion(explicit_metadata_path, object_storage);
         }
         catch (const std::exception & ex)
         {
@@ -1064,7 +1064,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
 
-        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename());
+        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename(), object_storage);
     }
     else
     {
