@@ -8,7 +8,7 @@
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/WriteSettings.h>

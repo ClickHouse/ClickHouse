@@ -1067,6 +1067,22 @@ async function loadDatabases(server_address, user, password) {
     let databases_elem = document.getElementById('databases');
     while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
 
+    // Use natural order for database names
+    json.data.sort((a, b) => {
+        // Maintain original order for default, system, information_schema
+        const getPriority = (name) => {
+            switch (name) {
+                case 'default': return 0;
+                case 'system': return 2;
+                case 'information_schema': return 3
+                default: return 1;
+            }
+        }
+
+        return getPriority(a.database) - getPriority(b.database)
+            || a.database.localeCompare(b.database, undefined, { numeric: true });
+    });
+
     for (let elem of json.data) {
         let database = document.createElement('div');
         database.className = 'database';
@@ -1117,6 +1133,9 @@ async function loadTables(server_address, user, password, database, container) {
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
+
+    // Use natural order for table names
+    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
 
     for (let elem of json.data) {
         let table = document.createElement('div');

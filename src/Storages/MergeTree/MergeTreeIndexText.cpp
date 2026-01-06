@@ -1022,8 +1022,12 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             ++num_processed_tokens;
             return false;
         });
+}
 
-    ++num_processed_documents;
+void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
+{
+    is_empty = false;
+    ++current_row;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -1048,6 +1052,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
 void MergeTreeIndexTextGranuleBuilder::reset()
 {
+    is_empty = true;
     current_row = 0;
     num_processed_tokens = 0;
     tokens_map = {};
