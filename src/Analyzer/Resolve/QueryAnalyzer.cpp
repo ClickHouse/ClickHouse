@@ -4934,7 +4934,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (!scope.group_by_use_nulls)
     {
-        scope.identifier_to_resolved_expression_cache.enable();
+        /// Don't enable cache if there are interpolate columns - the cache would get stale entries
+        /// because resolveProjectionExpressionNodeList first resolves expressions (caching them),
+        /// then wraps interpolate columns in __interpolate() function.
+        if (interpolate_list.empty())
+            scope.identifier_to_resolved_expression_cache.enable();
 
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
         if (query_node_typed.getProjection().getNodes().empty())
