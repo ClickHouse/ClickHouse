@@ -173,6 +173,7 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
     {
         readVarUInt(cur_data.num_rows, buf);
         cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
+
         for (size_t i = 0; i < cur_data.offsets.size(); ++i)
         {
             readVarUInt(cur_data.offsets[i], buf);
@@ -183,6 +184,9 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
             if (i != 0 && cur_data.offsets[i] < cur_data.offsets[i - 1])
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[i - 1]);
         }
+
+        if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: last offset {} is not equal to data size {}", cur_data.offsets.back(), cur_data.data_size);
     }
 }
 
