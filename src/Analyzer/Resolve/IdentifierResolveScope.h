@@ -127,6 +127,7 @@ constexpr auto PROJECTION_NAME_PLACEHOLDER = "__projection_name_placeholder";
 
 struct IdentifierResolveCache
 {
+    /// Disable cache during join tree resolution when table expressions aren't fully initialized
     void disable() { enabled = false; }
     void enable() { enabled = true; }
 

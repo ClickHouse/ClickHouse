@@ -969,48 +969,6 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     return result_aggregate_function_name;
 }
 
-/// Check if any argument of a function is a query or union node
-static bool hasQueryOrUnionArgument(const FunctionNode * func)
-{
-    for (const auto & arg : func->getArguments().getNodes())
-    {
-        auto arg_type = arg->getNodeType();
-        if (arg_type == QueryTreeNodeType::QUERY || arg_type == QueryTreeNodeType::UNION)
-            return true;
-    }
-    return false;
-}
-
-/** Check if a node contains expressions that cannot be safely shared from alias cache.
-  * IN/exists functions with query/union arguments need cloning when rewrite_in_to_join is enabled
-  * because each use needs unique table aliases after rewriting.
-  */
-static bool nodeRequiresCloneFromCache(const QueryTreeNodePtr & node, bool rewrite_in_to_join_enabled)
-{
-    if (!node)
-        return false;
-
-    auto node_type = node->getNodeType();
-
-    if (node_type == QueryTreeNodeType::FUNCTION && rewrite_in_to_join_enabled)
-    {
-        if (const auto * func = node->as<FunctionNode>())
-        {
-            const auto func_name = func->getFunctionName();
-            if ((isNameOfInFunction(func_name) || func_name == "exists") && hasQueryOrUnionArgument(func))
-            {
-                return true;
-            }
-        }
-    }
-
-    for (const auto & child : node->getChildren())
-        if (nodeRequiresCloneFromCache(child, rewrite_in_to_join_enabled))
-            return true;
-
-    return false;
-}
-
 /** Resolve identifier from scope aliases.
   *
   * Resolve strategy:
@@ -1320,8 +1278,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Create a scope-aware version of the lookup for cache operations.
     /// Different values of allow_resolve_from_using need different cache entries
     /// (e.g., PREWHERE sets it to false to avoid resolving USING columns).
-    /// Each IN function instance gets its own cache entries to ensure
-    /// proper cloning when aliased IN expressions are expanded.
+    /// in_function_instance_id ensures unique table aliases in distributed queries
+    /// when aliased IN expressions are reused.
     IdentifierLookup cache_lookup = identifier_lookup;
     cache_lookup.allow_resolve_from_using = scope.allow_resolve_from_using;
     cache_lookup.in_function_instance_id = scope.expressions_in_resolve_process_stack.getInFunctionInstanceId();
@@ -1350,20 +1308,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(cache_lookup);
             if (cached_result)
             {
-                // requires_clone_from_cache is precomputed at insert time to avoid repeated tree traversal
-                if (cached_result->requires_clone_from_cache)
+                auto result = *cached_result;
+                /// Clone LOCAL IN/EXISTS functions when rewrite_in_to_join is enabled.
+                /// Must clone at retrieval so each alias usage gets an independent node.
+                if (scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
                 {
-                    // cloning is obviously not as fast as returning the same pointer, but still faster
-                    // than re-resolving from scratch
-                    return IdentifierResolveResult
+                    if (auto * function_node = result.resolved_identifier->as<FunctionNode>())
                     {
-                        .resolved_identifier = cached_result->resolved_identifier->clone(),
-                        .resolve_place = cached_result->resolve_place,
-                        .requires_clone_from_cache = cached_result->requires_clone_from_cache
-                    };
+                        const auto & func_name = function_node->getFunctionName();
+                        if (isNameOfLocalInFunction(func_name) || func_name == "exists")
+                            result.resolved_identifier = result.resolved_identifier->clone();
+                    }
                 }
-                else
-                    return *cached_result;
+                return result;
             }
         }
 
@@ -1480,9 +1437,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         scope.identifier_in_lookup_process.erase(it);
         if (can_use_cache && resolve_result.resolved_identifier)
         {
-            bool rewrite_in_to_join_enabled = scope.context->getSettingsRef()[Setting::rewrite_in_to_join];
-            resolve_result.requires_clone_from_cache = nodeRequiresCloneFromCache(resolve_result.resolved_identifier, rewrite_in_to_join_enabled);
-            scope.identifier_to_resolved_expression_cache.insert(cache_lookup, resolve_result);
+            /// Don't cache nodes that are in nullable_group_by_keys - they need different
+            /// treatment depending on whether they're inside an aggregate function or not.
+            bool in_nullable_group_by_keys = scope.nullable_group_by_keys.contains(resolve_result.resolved_identifier);
+            if (!in_nullable_group_by_keys)
+                scope.identifier_to_resolved_expression_cache.insert(cache_lookup, resolve_result);
         }
     }
 
@@ -3480,6 +3439,33 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 "Projection node must be constant, function, column, query or union");
 
         projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
+
+        if (interpolate_list.contains(projection_names[i]))
+        {
+            if (const auto * function_node = projection_nodes[i]->as<FunctionNode>(); !function_node || function_node->getFunctionName() != "__interpolate")
+            {
+                /// Clone if shared to avoid corrupting cached entries
+                if (projection_nodes[i].use_count() > 1)
+                {
+                    projection_nodes[i] = projection_nodes[i]->clone();
+                    /// Remove alias from cloned inner node - the __interpolate wrapper becomes the projection
+                    projection_nodes[i]->removeAlias();
+                }
+
+                auto f = std::make_shared<FunctionNode>("__interpolate");
+                f->getArguments().getNodes().push_back(projection_nodes[i]);
+                f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
+                resolveOrdinaryFunctionNodeByName(*f, f->getFunctionName(), scope.context);
+                projection_nodes[i] = f;
+                scope.expression_argument_name_to_node.emplace(projection_names[i], projection_nodes[i]);
+
+                /// Update cache entry to point to wrapped node, so subsequent lookups
+                /// (e.g., in resolveInterpolateColumnsNodeList) get the wrapped version.
+                IdentifierLookup cache_key{Identifier{projection_names[i]}, IdentifierLookupContext::EXPRESSION};
+                scope.identifier_to_resolved_expression_cache.insert(cache_key,
+                    {projection_nodes[i], IdentifierResolvePlace::EXPRESSION_ARGUMENTS});
+            }
+        }
     }
 
     return projection_columns;
@@ -4921,6 +4907,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
         scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
+    /// Disable cache during join tree resolution - table expressions aren't fully initialized yet,
+    /// and with join_use_nulls column types change after join resolution.
     scope.identifier_to_resolved_expression_cache.disable();
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
@@ -4928,18 +4916,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 
+    /// Enable cache after join tree is resolved and all table expressions are registered.
+    /// INTERPOLATE columns are handled via clone-if-shared at the wrapping site.
+    /// group_by_use_nulls is handled by not caching nodes in nullable_group_by_keys.
+    scope.identifier_to_resolved_expression_cache.enable();
+
     /// Resolve query node sections.
 
     NamesAndTypes projection_columns;
 
     if (!scope.group_by_use_nulls)
     {
-        /// Don't enable cache if there are interpolate columns - the cache would get stale entries
-        /// because resolveProjectionExpressionNodeList first resolves expressions (caching them),
-        /// then wraps interpolate columns in __interpolate() function.
-        if (interpolate_list.empty())
-            scope.identifier_to_resolved_expression_cache.enable();
-
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
@@ -4974,9 +4961,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveGroupByNode(query_node_typed, scope);
 
     if (scope.group_by_use_nulls)
-    {
         resolved_expressions.clear();
-    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

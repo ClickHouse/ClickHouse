@@ -46,7 +46,7 @@ struct IdentifierLookup
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
     bool allow_resolve_from_using = true;  /// Part of cache key - PREWHERE sets this to false
-    size_t in_function_instance_id = 0;  /// Part of cache key - each IN function gets unique resolution context
+    size_t in_function_instance_id = 0;  /// Part of cache key - ensures unique table aliases in distributed queries
 
     bool isExpressionLookup() const
     {
@@ -124,7 +124,6 @@ struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
-    bool requires_clone_from_cache = false;  /// Computed at cache insert time to avoid repeated tree traversal
 
     explicit operator bool() const
     {
