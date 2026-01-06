@@ -41,6 +41,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
+    extern const Event FilesystemCacheCheckCorrectness;
 }
 
 namespace CurrentMetrics
@@ -828,6 +829,7 @@ FileCache::getOrSet(
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
+    locked_key.reset();
     assertCacheCorrectnessWithProbability();
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
@@ -843,8 +845,9 @@ FileSegmentsHolderPtr FileCache::get(
 
     assertInitialized();
 
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, UserInfo(user_id));
-    if (locked_key)
+    std::unique_ptr<FileSegmentsHolder> holder;
+    if (auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, UserInfo(user_id));
+        locked_key != nullptr)
     {
         FileSegment::Range range(offset, offset + size - 1);
 
@@ -863,13 +866,15 @@ FileSegmentsHolderPtr FileCache::get(
                 *locked_key, file_segments, range, offset + size - 1, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{});
 
             chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
-            return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+            holder = std::make_unique<FileSegmentsHolder>(std::move(file_segments));
         }
     }
 
+    if (!holder)
+        holder = std::make_unique<FileSegmentsHolder>(FileSegments{std::make_shared<FileSegment>(key, offset, size, FileSegment::State::DETACHED)});
+
     assertCacheCorrectnessWithProbability();
-    return std::make_unique<FileSegmentsHolder>(FileSegments{
-        std::make_shared<FileSegment>(key, offset, size, FileSegment::State::DETACHED)});
+    return holder;
 }
 
 KeyMetadata::iterator FileCache::addFileSegment(
@@ -1718,6 +1723,9 @@ void FileCache::assertCacheCorrectnessWithProbability()
 void FileCache::assertCacheCorrectness()
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
+    LOG_TEST(log, "Checking cache correctness");
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheCheckCorrectness);
+
     metadata.iterate([&](LockedKey & locked_key)
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
