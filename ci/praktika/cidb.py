@@ -24,58 +24,6 @@ from .utils import Utils
 
 
 class CIDB:
-    @staticmethod
-    def build_link_to_test_case_statistics(
-        test_name: str, job_name: Optional[str] = None, url="", user=""
-    ) -> str:
-        """
-        Build a link to query CI DB statistics for a specific test case.
-        The link format follows the Play-style URL: <url>[?user=<user>]#<base64(sql)>.
-        Groups by day and shows recent failures for the test. Optionally filters by job_name.
-        """
-        # Basic sanitization for SQL string literals
-        tn = (test_name or "").replace("'", "''")
-        jn = (job_name or "").replace("'", "''") if job_name else None
-        # Prefer configured table name if available, fall back to default
-        table = Settings.CI_DB_TABLE_NAME or "checks"
-        # Use configured main branch (fallback to 'master' for legacy)
-        base_branch = (getattr(Settings, "MAIN_BRANCH", None) or "master").strip()
-        bb = base_branch.replace("'", "''")
-
-        query = f"""\
-WITH
-    90 AS interval_days
-SELECT
-    toStartOfDay(check_start_time) AS day,
-    count() AS failures,
-    groupUniqArray(pull_request_number) AS prs,
-    any(report_url) AS report_url
-FROM {table}
-WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
-    AND test_name = '{tn}'
-    -- AND check_name = '{job_name}'
-    AND test_status IN ('FAIL', 'ERROR')
-    AND ((pull_request_number = 0 AND head_ref = '{bb}') OR pull_request_number != 0)
-{f"    AND check_name = '{jn}'" if jn else ''}
-GROUP BY day
-ORDER BY day DESC
-"""
-
-        # Compose base URL and always point to Play UI
-        base_url = (url or Settings.CI_DB_READ_URL or "").strip()
-        if base_url:
-            base = base_url.rstrip("/") + "/play"
-        else:
-            base = "/play"
-        # Attach parameters: always run=1; optionally user
-        params = []
-        if user:
-            params.append(f"user={urllib.parse.quote(user, safe='')}")
-        params.append("run=1")
-        sep = "?" if "?" not in base else "&"
-        base = f"{base}{sep}{'&'.join(params)}"
-        return f"{base}#{Utils.to_base64(query)}"
-
     @dataclasses.dataclass
     class TableRecord:
         pull_request_number: int
@@ -321,7 +269,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
-                    data="\n".join(jsons),
+                    data=",".join(jsons),
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
