@@ -280,7 +280,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 4));
-                setClusterClause(rg, cluster, sfunc->mutable_cluster());
+                setClusterClause(rg, cluster, sfunc->mutable_cluster(), true);
             }
             else
             {
@@ -304,7 +304,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 afunc->set_fname(static_cast<AzureBlobStorageFunc_FName>(static_cast<uint32_t>(val) + 3));
-                setClusterClause(rg, cluster, afunc->mutable_cluster());
+                setClusterClause(rg, cluster, afunc->mutable_cluster(), true);
             }
             else
             {
@@ -333,7 +333,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 ffunc->set_fname(FileFunc_FName::FileFunc_FName_fileCluster);
-                setClusterClause(rg, cluster, ffunc->mutable_cluster());
+                setClusterClause(rg, cluster, ffunc->mutable_cluster(), true);
             }
             else
             {
@@ -357,7 +357,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-                setClusterClause(rg, cluster, ufunc->mutable_cluster());
+                setClusterClause(rg, cluster, ufunc->mutable_cluster(), true);
             }
             else
             {
@@ -475,7 +475,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         ClusterFunc * cdf = tfunc->mutable_cluster();
 
         cdf->set_all_replicas(this->allow_not_deterministic && rg.nextBool());
-        setClusterClause(rg, t.getCluster(), cdf->mutable_cluster());
+        setClusterClause(rg, t.getCluster(), cdf->mutable_cluster(), true);
         t.setName(cdf->mutable_tof()->mutable_est(), true);
         if (this->allow_not_deterministic && rg.nextSmallNumber() < 4)
         {
@@ -1080,7 +1080,7 @@ bool StatementGenerator::joinedTableOrFunction(
         if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-            setClusterClause(rg, cluster, ufunc->mutable_cluster());
+            setClusterClause(rg, cluster, ufunc->mutable_cluster(), true);
         }
         else
         {
