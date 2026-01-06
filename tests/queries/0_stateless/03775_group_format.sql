@@ -24,4 +24,4 @@ order by key;
 select groupFormat('JSONEachRow')(number) from numbers(0);
 
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select groupFormat('JSONEachRow')() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
