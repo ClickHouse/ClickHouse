@@ -451,6 +451,7 @@ def test_failed_commit(started_cluster):
 
 
 def test_failure_in_the_middle(started_cluster):
+try:
     node = started_cluster.instances["instance"]
 
     table_name = f"test_failure_in_the_middle_{generate_random_string()}"
@@ -553,6 +554,10 @@ def test_failure_in_the_middle(started_cluster):
         )
     )
     node.query(f"DROP TABLE {dst_table_name} SYNC")
+finally:
+    started_cluster.instances["instance"].query(
+        f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+    )
 
 
 def test_macros_support(started_cluster):
