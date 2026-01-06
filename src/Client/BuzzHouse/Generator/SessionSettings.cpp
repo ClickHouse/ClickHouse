@@ -1258,7 +1258,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "external_storage_max_read_bytes",
            "filesystem_cache_boundary_alignment",
            "filesystem_cache_max_download_size",
-           "filesystem_prefetch_max_memory_usage",
            "filesystem_prefetch_min_bytes_for_single_read_task",
            "filesystem_prefetch_step_bytes",
            "group_by_two_level_threshold_bytes",
@@ -1538,7 +1537,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
                       const uint32_t currentMonth = static_cast<uint32_t>(ymd.month()); /// 1–12
 
                       /// Map (year, month) to a linear month index
-                      const uint32_t startIndex = minYear * 12 + (minMonth - 1); /// 23.1
+                      const uint32_t startIndex = minYear * 12 + (minMonth - 1); /// 24.3
                       const uint32_t total = (currentYear * 12 + (currentMonth - 1)) - startIndex + 1;
                       const uint32_t randomIndex = startIndex + rg.randomInt<uint32_t>(0, total - 1);
                       /// Convert back from linear month index to (year, month)
@@ -1546,6 +1545,20 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
                   },
                   {},
                   false)}});
+    }
+    if (fc.enable_memory_settings)
+    {
+        static const auto & memorySetting = CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(50) * UINT32_C(1024) * UINT32_C(1024))); },
+            {"'1M'", "'5M'", "'10M'", "'50M'", "'100M'"},
+            false);
+
+        serverSettings.insert(
+            {{"filesystem_prefetch_max_memory_usage", memorySetting},
+             {"max_memory_usage", memorySetting},
+             {"max_memory_usage_for_user", memorySetting},
+             {"max_server_memory_usage", memorySetting}});
     }
 
     /// Set hot settings
