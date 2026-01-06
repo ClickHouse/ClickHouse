@@ -141,18 +141,20 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     std::unique_ptr<QueryPlan> source_,
-    StoragePtr external_table_,
+    StoragePtr external_table,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table(std::move(external_table_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+
+    set_and_key->external_table = std::move(external_table);
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -185,7 +187,7 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
-void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { external_table = std::move(external_table_); }
+void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { set_and_key->external_table = std::move(external_table_); }
 
 DataTypes FutureSetFromSubquery::getTypes() const
 {
@@ -207,7 +209,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     auto creating_set = std::make_unique<CreatingSetStep>(
         plan->getCurrentHeader(),
         set_and_key,
-        external_table,
         network_transfer_limits,
         prepared_sets_cache);
     creating_set->setStepDescription("Create set for subquery");

@@ -37,6 +37,7 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
+    StoragePtr external_table;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -131,7 +132,7 @@ public:
         Hash hash_,
         ASTPtr ast_,
         std::unique_ptr<QueryPlan> source_,
-        StoragePtr external_table_,
+        StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
         bool transform_null_in,
         SizeLimits size_limits,
@@ -170,7 +171,6 @@ private:
     Hash hash;
     ASTPtr ast;
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;
