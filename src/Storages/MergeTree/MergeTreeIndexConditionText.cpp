@@ -206,6 +206,9 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
+    if (query.tokens.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
+        return std::nullopt;
+
     auto query_hash = query.getHash();
     auto it = all_search_queries.find(query_hash.get128());
 
