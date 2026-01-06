@@ -266,14 +266,12 @@ private:
     {
         explicit CheckCacheProbability(double probability, UInt64 seed = 0);
 
-        bool doCheck()
-        {
-            return distribution(rndgen);
-        }
+        bool doCheck();
 
     private:
         pcg64_fast rndgen;
         std::bernoulli_distribution distribution;
+        std::mutex mutex;
     };
     CheckCacheProbability check_cache_probability;
 

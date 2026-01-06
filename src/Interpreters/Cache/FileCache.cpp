@@ -131,6 +131,12 @@ FileCache::CheckCacheProbability::CheckCacheProbability(double probability, UInt
 {
 }
 
+bool FileCache::CheckCacheProbability::doCheck()
+{
+    std::lock_guard lock(mutex);
+    return distribution(rndgen);
+}
+
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
