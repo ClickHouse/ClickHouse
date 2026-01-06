@@ -178,6 +178,7 @@ namespace Setting
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -1835,7 +1836,13 @@ void ReadFromMergeTree::buildIndexes(
     ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context);
 
     indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, query_context, primary_key_column_names, primary_key.expression}});
+        ReadFromMergeTree::Indexes{KeyCondition{
+            filter_dag,
+            query_context,
+            primary_key_column_names,
+            primary_key.expression,
+            /* single_point_ = */ false,
+            /* skip_analysis_ = */ !settings[Setting::use_primary_key]}});
 
     NamesAndTypesList dummy_names_and_types;
     indexes->key_condition_rpn_template = KeyCondition{filter_dag, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
