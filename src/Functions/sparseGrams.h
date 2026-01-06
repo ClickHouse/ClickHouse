@@ -54,7 +54,7 @@ private:
     Pos end = nullptr;
     UInt64 min_ngram_length = 3;
     UInt64 max_ngram_length = 100;
-    UInt64 min_cutoff_length = 3;
+    std::optional<UInt64> min_cutoff_length;
 
     /// Current batch of answers. The size of result can not be greater than `convex_hull`.
     /// The size of `convex_hull` should not be large, see comment to `convex_hull` for more details.
@@ -219,7 +219,7 @@ public:
     explicit SparseGramsImpl(UInt64 min_ngram_length_, UInt64 max_ngram_length_, std::optional<UInt64> min_cutoff_length_)
         : min_ngram_length(min_ngram_length_)
         , max_ngram_length(max_ngram_length_)
-        , min_cutoff_length(min_cutoff_length_.value_or(min_ngram_length_))
+        , min_cutoff_length(std::move(min_cutoff_length_))
     {
     }
 
@@ -262,10 +262,10 @@ public:
         if (arguments.size() == 4)
             min_cutoff_length = arguments[3].column->getUInt(0);
 
-        if (min_cutoff_length < min_ngram_length)
+        if (min_cutoff_length && *min_cutoff_length < min_ngram_length)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_cutoff_length' must be greater or equal to 'min_ngram_length'");
 
-        if (min_cutoff_length > max_ngram_length)
+        if (min_cutoff_length && *min_cutoff_length > max_ngram_length)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'min_cutoff_length' must be less or equal to 'max_ngram_length'");
     }
 
@@ -298,7 +298,7 @@ public:
             auto iter_right = cur_result->right_index;
             auto length = cur_result->symbols_between;
 
-            if (min_cutoff_length > length)
+            if (min_cutoff_length && *min_cutoff_length > length)
                 continue;
 
             token_begin = pos + iter_left;
