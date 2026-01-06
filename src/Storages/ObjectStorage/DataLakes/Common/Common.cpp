@@ -36,7 +36,11 @@ std::vector<RelativePathWithMetadataPtr> listFiles(
         if (check_need(*file_with_metadata))
             res.emplace_back(file_with_metadata);
     }
-    LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
+    LOG_TRACE(
+        getLogger("DataLakeCommon"),
+        "Listed {} files ({})",
+        res.size(),
+        fmt::join(res | std::views::transform([](const auto & p) -> const String & { return p->relative_path; }), ", "));
     return res;
 }
 }

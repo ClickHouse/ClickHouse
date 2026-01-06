@@ -647,7 +647,7 @@ IcebergStorageSink::IcebergStorageSink(
 
     metadata = getMetadataJSONObject(
         metadata_path,
-        last_modified_time,
+        last_modify_time,
         object_storage,
         persistent_table_components.metadata_cache,
         context,
