@@ -17,7 +17,7 @@ SETTINGS disk = disk(
             max_file_segment_size = 100,
             boundary_alignment = 100,
             path = '03032_dynamically_resize_filesystem_cache/',
-            cache_policy='SLRU',
+            cache_policy='LRU',
             cache_on_write_operations= 1,
             disk = 's3_disk');
 INSERT INTO test SELECT randomString(10000);
