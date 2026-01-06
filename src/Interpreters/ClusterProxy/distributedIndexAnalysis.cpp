@@ -16,15 +16,18 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
 #include <Columns/ColumnString.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -36,7 +39,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
 }
 
@@ -181,30 +183,22 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     return res;
 }
 
-ASTPtr getQueryWithNonQualifiedIdentifiers(const QueryTreeNodePtr & query_tree)
+ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_key_column_names, ContextMutablePtr & context)
 {
-    ASTPtr result_ast = query_tree->toAST(ConvertToASTOptions{
-        .fully_qualified_identifiers = false,
-    });
+    if (!query_info.filter_actions_dag)
+        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
 
-    while (true)
-    {
-        if (auto * /*select_query*/ _ = result_ast->as<ASTSelectQuery>())
-            break;
-        if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
-            result_ast = select_with_union->list_of_selects->children.at(0);
-        else if (auto * subquery = result_ast->as<ASTSubquery>())
-            result_ast = subquery->children.at(0);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
-    }
+    NameSet primary_key_columns_names_set(primary_key_column_names.begin(), primary_key_column_names.end());
+    ASTPtr predicate = tryBuildAdditionalFilterAST(*query_info.filter_actions_dag,
+        /*projection_names=*/ primary_key_columns_names_set,
+        /*execution_name_to_projection_query_tree=*/ {},
+        /*external_tables=*/ nullptr,
+        context);
+    if (!predicate)
+        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
 
-    if (result_ast == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
-
-    return result_ast;
+    return predicate;
 }
-
 
 }
 
@@ -214,6 +208,7 @@ namespace DB
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const SelectQueryInfo & query_info,
+    const Names & primary_key_column_names,
     const RangesInDataParts & parts_with_ranges,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context)
@@ -258,15 +253,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     DistributedIndexAnalysisPartsRanges res;
     res.resize(replicas);
 
-    ASTs filter_asts;
-    ASTPtr query = getQueryWithNonQualifiedIdentifiers(query_info.query_tree);
-    const auto & select_query = query->as<ASTSelectQuery &>();
-    if (auto prewhere = select_query.prewhere())
-        filter_asts.push_back(prewhere);
-    if (auto where = select_query.where())
-        filter_asts.push_back(where);
-    auto filter_ast = makeASTForLogicalAnd(std::move(filter_asts));
-    auto filter_query = filter_ast->formatWithSecretsOneLine();
+    ContextMutablePtr execution_context = Context::createCopy(context);
+    auto filter_query = getFilterAST(query_info, primary_key_column_names, execution_context)->formatWithSecretsOneLine();
 
     ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
                     CurrentMetrics::DistributedIndexAnalysisThreadsActive,
@@ -302,7 +290,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                 try
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
-                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, execution_context, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }

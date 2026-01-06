@@ -231,7 +231,7 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
-static ASTPtr tryBuildAdditionalFilterAST(
+ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,

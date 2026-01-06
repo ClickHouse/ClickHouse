@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -28,6 +29,7 @@ using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const 
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const SelectQueryInfo & query_info,
+    const Names & primary_key_column_names,
     const RangesInDataParts & parts_with_ranges,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context);
