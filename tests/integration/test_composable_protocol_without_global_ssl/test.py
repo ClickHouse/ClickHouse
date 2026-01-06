@@ -16,6 +16,7 @@ server = cluster.add_instance(
     main_configs=[
         "keys/server.crt",
         "keys/server.key",
+        "keys/server.pem",
     ],
 )
 
@@ -39,3 +40,9 @@ def test_composable_protocol_without_global_ssl():
         config=f"{SCRIPT_DIR}/configs/client/client.xml",
     )
     assert client.query("SELECT 1") == "1\n"
+
+    # Verify that system.certificates includes per-protocol CA certificates
+    result = client.query(
+        "SELECT count() = 2 AND countIf(path LIKE '%server.pem%') = 2 FROM system.certificates WHERE protocol = 'tcp_secure'"
+    ).strip()
+    assert result == "1"

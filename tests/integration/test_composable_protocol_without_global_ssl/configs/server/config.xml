@@ -8,7 +8,8 @@
             <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
             <verificationMode>none</verificationMode>
-            <caConfig>/etc/ssl/certs/ca-certificates.crt</caConfig>
+            <caConfig>/etc/clickhouse-server/config.d/server.pem</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
             <description>secure native protocol</description>
         </tcp_secure>
         <tcp>
