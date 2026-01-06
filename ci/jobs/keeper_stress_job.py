@@ -74,6 +74,7 @@ def main():
     # Enable faults by default on CI; can be overridden via env/CLI
     os.environ.setdefault("KEEPER_FAULTS", "on")
     os.environ.setdefault("KEEPER_DURATION", "600")
+    # Let the test suite parameterize across both backends in a single run
     os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
     # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
     os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
@@ -412,31 +413,35 @@ def main():
     except Exception:
         pytest_proc_timeout = 9000
     pytest_log_file = f"{temp_dir}/pytest_stdout.log"
-    # Always run exactly two backends for parity: default and rocks
-    backends = ["default", "rocks"]
-    any_fail = False
-    any_pass = False
-    for backend_opt in backends:
-        run_name = f"Keeper Stress (backend={backend_opt})"
-        cmd_run = cmd
-        if f"--keeper-backend={backend_opt}" not in cmd_run:
-            cmd_run = f"{cmd_run} --keeper-backend={backend_opt}"
+    # Log the resolved execution context for transparency
+    try:
         results.append(
-            Result.from_pytest_run(
-                command=cmd_run,
-                cwd=repo_dir,
-                name=run_name,
-                env=env,
-                pytest_report_file=report_file,
-                logfile=pytest_log_file,
-                timeout_seconds=pytest_proc_timeout,
+            Result.from_commands_run(
+                name="Keeper run context",
+                command=[
+                    "bash -lc \"echo 'resolved_xdist_workers="
+                    + xdist_workers
+                    + "'; echo 'KEEPER_MATRIX_BACKENDS="
+                    + (env.get("KEEPER_MATRIX_BACKENDS", ""))
+                    + "'\"",
+                ],
             )
         )
-        if results[-1].is_ok():
-            any_pass = True
-        else:
-            any_fail = True
-    pytest_result_ok = any_pass and not any_fail
+    except Exception:
+        pass
+    # Single pytest invocation; tests parameterize across backends via KEEPER_MATRIX_BACKENDS
+    results.append(
+        Result.from_pytest_run(
+            command=cmd,
+            cwd=repo_dir,
+            name="Keeper Stress",
+            env=env,
+            pytest_report_file=report_file,
+            logfile=pytest_log_file,
+            timeout_seconds=pytest_proc_timeout,
+        )
+    )
+    pytest_result_ok = results[-1].is_ok()
     # Best-effort: ensure keeper artifacts are world-readable for attachment/triage
     try:
         results.append(
