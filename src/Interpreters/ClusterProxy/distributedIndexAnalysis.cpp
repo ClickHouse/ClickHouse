@@ -43,8 +43,6 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_hedged_requests;
 }
 
@@ -73,8 +71,6 @@ ContextMutablePtr updateContext(ContextPtr orignal_context)
     auto context = Context::createCopy(orignal_context);
 
     Settings new_settings = context->getSettingsCopy();
-    new_settings[Setting::max_result_rows] = 0;
-    new_settings[Setting::max_result_bytes] = 0;
     /// FIXME: Do we even need this?
     new_settings[Setting::use_hedged_requests] = false;
     context->setSettings(new_settings);
