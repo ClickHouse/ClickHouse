@@ -1051,7 +1051,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3_skip_empty_files", trueOrFalseSettingNoOracle},
     {"s3_slow_all_threads_after_network_error", trueOrFalseSettingNoOracle},
     {"s3_throw_on_zero_files_match", trueOrFalseSettingNoOracle},
-    {"s3_truncate_on_insert", trueOrFalseSettingNoOracle},
     {"s3_use_adaptive_timeouts", trueOrFalseSettingNoOracle},
     {"s3_validate_request_settings", trueOrFalseSettingNoOracle},
     {"s3queue_enable_logging_to_s3queue_log", trueOrFalseSettingNoOracle},
