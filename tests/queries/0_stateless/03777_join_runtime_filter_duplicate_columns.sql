@@ -1,6 +1,7 @@
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=1;
+SET query_plan_join_swap_table=0;
 
 SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') FROM
 (
