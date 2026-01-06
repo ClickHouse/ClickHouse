@@ -221,6 +221,8 @@ public:
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
+    bool isFinished() const { return finished; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,

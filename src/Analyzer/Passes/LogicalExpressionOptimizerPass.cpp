@@ -6,13 +6,14 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-
-#include <iostream>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -164,8 +165,8 @@ bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const 
     if (argument_nodes.size() != 2)
         return false;
 
-    auto first_src = getExpressionSource(argument_nodes[0]);
-    auto second_src = getExpressionSource(argument_nodes[1]);
+    auto first_src = getExpressionSource(argument_nodes[0]).first;
+    auto second_src = getExpressionSource(argument_nodes[1]).first;
     if (!first_src || !second_src)
         return false;
 
@@ -931,12 +932,32 @@ private:
 
             if (function_name == "equals")
             {
+                /*
+                 * This function checks a pattern of `col = X and col = Y` such that if there are two different constant values are assigned for the same expression.
+                 * That pattern always yields to `FALSE`, except implicit conversion from a string to an integer / a boolean
+                 * which the pattern could be `col = X and col = 'X'`. In such cases, constant values are same.
+                 */
                 const auto has_and_with_different_constant = [&](const QueryTreeNodePtr & expression, const ConstantNode * constant)
                 {
+                    /// This is an implicit conversion from a string to the type of an constant node (`expected`).
+                    const auto convert_and_check_equals = [](const ConstantNode * string_value, const ConstantNode * expected)
+                    {
+                        Field converted = tryConvertFieldToType(string_value->getValue(), *expected->getResultType());
+                        if (!converted.isNull())
+                            return accurateEquals(converted, expected->getValue());
+                        return false;
+                    };
+
                     if (auto it = equals_node_to_constants.find(expression); it != equals_node_to_constants.end())
                     {
                         if (!it->second->isEqual(*constant))
+                        {
+                            if (it->second->getResultType()->equals(DataTypeString()) && convert_and_check_equals(it->second, constant))
+                                return false;
+                            else if (constant->getResultType()->equals(DataTypeString()) && convert_and_check_equals(constant, it->second))
+                                return false;
                             return true;
+                        }
                     }
                     else
                     {

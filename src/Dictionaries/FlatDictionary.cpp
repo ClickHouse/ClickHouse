@@ -102,7 +102,7 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsShortCircuitImpl<ValueType, false>(
                     attribute, ids, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
@@ -110,15 +110,15 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, ids, [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); }, default_mask);
+                        attribute, ids, [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); }, default_mask);
             }
             else
             {
@@ -156,7 +156,7 @@ ColumnPtr FlatDictionary::getColumn(
                     [&](size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
@@ -164,17 +164,17 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         ids,
-                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); },
                         default_value_extractor);
             }
             else
@@ -717,7 +717,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
         loaded_keys[key] = true;
 
-        if constexpr (std::is_same_v<ValueType, StringRef>)
+        if constexpr (std::is_same_v<ValueType, std::string_view>)
         {
             auto arena_value = copyStringInArena(string_arena, attribute_value);
             container[key] = arena_value;

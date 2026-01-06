@@ -5,6 +5,12 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
+#include "config.h"
+
+#if USE_XRAY
+#include <Interpreters/InstrumentationManager.h>
+#include <variant>
+#endif
 
 namespace DB
 {
@@ -32,6 +38,7 @@ public:
         DROP_TEXT_INDEX_DICTIONARY_CACHE,
         DROP_TEXT_INDEX_HEADER_CACHE,
         DROP_TEXT_INDEX_POSTINGS_CACHE,
+        DROP_TEXT_INDEX_CACHES,
         DROP_MMAP_CACHE,
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
@@ -100,6 +107,7 @@ public:
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
         WAIT_FAILPOINT,
+        NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
@@ -124,6 +132,8 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        INSTRUMENT_ADD,
+        INSTRUMENT_REMOVE,
         END
     };
 
@@ -172,6 +182,14 @@ public:
 
     String fail_point_name;
 
+    enum class FailPointAction
+    {
+        UNSPECIFIED,
+        PAUSE,
+        RESUME
+    };
+    FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
+
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     std::vector<String> src_replicas;
@@ -179,6 +197,17 @@ public:
     std::vector<std::pair<String, String>> tables;
 
     ServerType server_type;
+
+#if USE_XRAY
+    /// For SYSTEM INSTRUMENT ADD/REMOVE
+    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    String instrumentation_function_name;
+    String instrumentation_handler_name;
+    Instrumentation::EntryType instrumentation_entry_type;
+    std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
+    std::vector<InstrumentParameter> instrumentation_parameters;
+    String instrumentation_subquery;
+#endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.

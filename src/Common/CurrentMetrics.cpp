@@ -69,6 +69,7 @@
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperSessionExpired, "Number of expired global ZooKeeper sessions.") \
+    M(ZooKeeperConnectionLossStartedTimestampSeconds, "Unix timestamp in seconds when ZooKeeper connection was lost, or 0 if connected successfully.") \
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
@@ -355,6 +356,7 @@
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
     M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
+    M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -381,11 +383,14 @@
     M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
+    M(DistrCacheWriteBuffers, "Number of distributed cache write buffers") \
+    M(DistrCacheReadBuffers, "Number of distributed cache read buffers") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
@@ -483,28 +488,28 @@ namespace CurrentMetrics
     /// +1 to allow using END as a placeholder
     std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
-    const char * getName(Metric event)
+    static const std::array<std::string_view, END> names =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) #NAME,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) #NAME,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getName(Metric event)
+    {
+        return names[event];
     }
 
-    const char * getDocumentation(Metric event)
+    static const std::array<std::string_view, END> docs =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) DOCUMENTATION,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getDocumentation(Metric event)
+    {
+        return docs[event];
     }
 
     Metric end() { return END; }

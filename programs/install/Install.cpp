@@ -3,8 +3,8 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
+#include <csignal>
 #include <sys/stat.h>
-#include <pwd.h>
 
 #if defined(OS_LINUX)
     #include <syscall.h>

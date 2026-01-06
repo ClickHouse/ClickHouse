@@ -10,8 +10,18 @@ class SerializationNullable : public ISerialization
 private:
     SerializationPtr nested;
 
+    /// If true, use a default (shared) NullMap instead of serializing a separate one.
+    /// Used in Sparse columns where the null map is implicitly derived from sparse offsets.
+    bool use_default_null_map;
+
 public:
-    explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false)
+        : nested(nested_)
+        , use_default_null_map(use_default_null_map_)
+    {
+    }
+
+    const SerializationPtr & getNested() const { return nested; }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

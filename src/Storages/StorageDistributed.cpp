@@ -1437,7 +1437,7 @@ void StorageDistributed::initializeFromDisk()
 
     for (const DiskPtr & disk : disks)
     {
-        runner([this, disk_to_init = disk]
+        runner.enqueueAndKeepTrack([this, disk_to_init = disk]
         {
             initializeDirectoryQueuesForDisk(disk_to_init);
         });
@@ -1448,7 +1448,7 @@ void StorageDistributed::initializeFromDisk()
     std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        runner([&paths, &last_increment, i]
+        runner.enqueueAndKeepTrack([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
         });
@@ -1641,9 +1641,11 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
                 continue;
             }
 
-            if (address.replica_index > replicas)
+            if (address.replica_index == 0 || address.replica_index > replicas)
             {
-                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
+                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                                address.replica_index, dirname, replicas, address.shard_index);
                 continue;
             }
 
@@ -1901,7 +1903,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         for (const auto & node : directory_queues)
         {
-            runner([node_to_flush = node, &settings_changes]
+            runner.enqueueAndKeepTrack([node_to_flush = node, &settings_changes]
             {
                 node_to_flush->flushAllData(settings_changes);
             });
