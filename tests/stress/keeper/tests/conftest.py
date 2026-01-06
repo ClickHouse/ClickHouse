@@ -65,6 +65,11 @@ def pytest_addoption(parser):
         action="store",
         default=os.environ.get("KEEPER_INCLUDE_IDS", ""),
     )
+    pa(
+        "--seed-list",
+        action="store",
+        default=os.environ.get("KEEPER_SEEDS", ""),
+    )
 
 
 from ..framework.core.cluster import ClusterBuilder
