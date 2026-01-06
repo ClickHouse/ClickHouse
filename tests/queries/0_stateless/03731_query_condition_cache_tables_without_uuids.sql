@@ -1,5 +1,8 @@
 -- Testcase for https://github.com/ClickHouse/ClickHouse/issues/92863
 -- Tables/parts without UUID should not enter into the query condition cache.
+-- Tags: no-parallel, no-shared-merge-tree
+-- no-parallel: creates own database
+-- no-shared-merge-tree: doesn't support databases without UUID
 
 DROP DATABASE IF EXISTS memory_database;
 
