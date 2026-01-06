@@ -592,7 +592,7 @@ private:
 
     /// True if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
-    bool is_case_insensitive = false;
+    std::atomic_bool is_case_insensitive = false;
     std::atomic_bool is_case_sensitivity_checked = false;
     std::mutex case_sensitivity_check_mutex;
 
