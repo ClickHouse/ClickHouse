@@ -38,7 +38,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -274,7 +274,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
         return;
 
     std::optional<ActionsDAG> dag;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
         dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
     else
         dag = createExpressions(block, conversion_expr_list, true, context);
@@ -308,7 +308,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
         return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }

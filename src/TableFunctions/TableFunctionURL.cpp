@@ -27,7 +27,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;

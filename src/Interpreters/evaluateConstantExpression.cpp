@@ -54,7 +54,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool normalize_function_names;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -101,7 +101,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
     ColumnPtr result_column;
     DataTypePtr result_type;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         result_name = ast->getColumnName();
 

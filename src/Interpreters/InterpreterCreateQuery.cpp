@@ -107,7 +107,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -930,7 +930,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         SharedHeader as_select_sample;
 
-        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (getContext()->getSettingsRef()[Setting::enable_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
         }
@@ -1082,7 +1082,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         try
         {
-            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (getContext()->getSettingsRef()[Setting::enable_analyzer])
             {
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());

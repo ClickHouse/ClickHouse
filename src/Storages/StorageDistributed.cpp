@@ -150,7 +150,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
@@ -175,7 +175,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 enable_parallel_replicas;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_global_with_statement;
 }
@@ -349,7 +349,7 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
+    UInt64 max_parallel_replicas = settings[Setting::enable_parallel_replicas]
         ? settings[Setting::max_parallel_replicas] : 1;
 
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
@@ -542,7 +542,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (settings[Setting::allow_experimental_analyzer])
+    if (settings[Setting::enable_analyzer])
         optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
@@ -967,7 +967,7 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
-    if (settings[Setting::allow_experimental_analyzer])
+    if (settings[Setting::enable_analyzer])
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
 
@@ -1208,7 +1208,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     QueryPlan plan;
     SelectQueryOptions options;
     options.only_analyze = true;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
         plan = std::move(interpreter).extractQueryPlan();
@@ -1784,7 +1784,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (local_context->getSettingsRef()[Setting::enable_analyzer])
         return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();

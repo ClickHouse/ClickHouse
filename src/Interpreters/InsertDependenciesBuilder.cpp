@@ -94,7 +94,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool insert_deduplicate;
@@ -605,7 +605,7 @@ private:
 
         QueryPipelineBuilder pipeline;
 
-        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (local_context->getSettingsRef()[Setting::enable_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter(select_query, local_context,local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();

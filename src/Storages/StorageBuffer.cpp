@@ -79,7 +79,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -270,7 +270,7 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    bool enable_analyzer = local_context->getSettingsRef()[Setting::enable_analyzer];
 
     if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {

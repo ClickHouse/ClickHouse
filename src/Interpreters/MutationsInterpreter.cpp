@@ -60,7 +60,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
@@ -225,7 +225,7 @@ IsStorageTouched isStorageTouchedByMutations(
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
@@ -468,9 +468,9 @@ MutationsInterpreter::MutationsInterpreter(
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
-    if (new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (new_context->getSettingsRef()[Setting::enable_analyzer])
     {
-        new_context->setSetting("allow_experimental_analyzer", false);
+        new_context->setSetting("enable_analyzer", false);
         LOG_TEST(logger, "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
@@ -1626,7 +1626,7 @@ void MutationsInterpreter::validate()
     // Make sure the mutation query is valid
     if (context->getSettingsRef()[Setting::validate_mutation_query])
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef()[Setting::enable_analyzer])
             prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
         else
         {

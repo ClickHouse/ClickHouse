@@ -96,7 +96,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool allow_suspicious_codecs;
@@ -104,6 +104,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -2314,15 +2315,15 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// Settings
     ///
 
-    /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
+    /// FIXME: Remove when enable_analyzer will become obsolete.
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
     /// different servers.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
             < VersionNumber(23, 3, 0)
-        && !passed_settings[Setting::allow_experimental_analyzer].changed)
-        passed_settings.set("allow_experimental_analyzer", false);
+        && !passed_settings[Setting::enable_analyzer].changed)
+        passed_settings.set("enable_analyzer", false);
 
     if (state->stage == QueryProcessingStage::WithMergeableState
         && VersionNumber(client_info.connection_client_version_major, client_info.connection_client_version_minor, client_info.connection_client_version_patch)

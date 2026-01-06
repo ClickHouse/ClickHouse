@@ -64,7 +64,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -82,7 +82,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool async_query_sending_for_remote;
@@ -150,7 +149,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-            if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (current_context->getSettingsRef()[Setting::enable_analyzer])
             {
                 header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
             }
@@ -159,7 +158,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
                 ASTPtr input_function;
                 query.tryFindInputFunction(input_function);
                 if (input_function)
-                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with allow_experimental_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
+                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with enable_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
 
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, current_context, select_query_options};
@@ -602,7 +601,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
         const Settings & settings = select_context->getSettingsRef();
-        if (settings[Setting::allow_experimental_analyzer])
+        if (settings[Setting::enable_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
             return interpreter_select_analyzer.buildQueryPipeline();
@@ -683,7 +682,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
-    if (!settings[Setting::allow_experimental_analyzer])
+    if (!settings[Setting::enable_analyzer])
         return {};
 
     if (!context_ptr->canUseParallelReplicasOnInitiator())

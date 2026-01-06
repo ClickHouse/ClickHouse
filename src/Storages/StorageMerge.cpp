@@ -67,7 +67,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
@@ -459,7 +459,7 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     auto common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage == QueryProcessingStage::Complete)
+    if (local_context->getSettingsRef()[Setting::enable_analyzer] && processed_stage == QueryProcessingStage::Complete)
     {
         auto block = *common_header;
         /// Remove constants.
@@ -676,7 +676,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_as_aliases;
             Names real_column_names = column_names;
-            bool use_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+            bool use_analyzer = context->getSettingsRef()[Setting::enable_analyzer];
             if (use_analyzer && has_table_virtual_column
                 && (common_processed_stage != QueryProcessingStage::FetchColumns
                     || std::dynamic_pointer_cast<StorageMerge>(storage)
@@ -702,7 +702,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             auto modified_query_info
                 = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
 
-            if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (!context->getSettingsRef()[Setting::enable_analyzer])
             {
                 auto storage_columns = storage_metadata_snapshot->getColumns();
                 auto syntax_result = TreeRewriter(context).analyzeSelect(
@@ -1087,7 +1087,7 @@ void ReadFromMerge::addVirtualColumns(
 
     auto plan_header = child.plan.getCurrentHeader();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
 
@@ -1168,7 +1168,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return builder;
 
     if (processed_stage > child.stage
-        || (context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage != QueryProcessingStage::FetchColumns))
+        || (context->getSettingsRef()[Setting::enable_analyzer] && processed_stage != QueryProcessingStage::FetchColumns))
     {
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -1203,7 +1203,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_select.setFinal();
     }
 
-    bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    bool use_analyzer = modified_context->getSettingsRef()[Setting::enable_analyzer];
 
     auto storage_stage = storage->getQueryProcessingStage(modified_context,
         processed_stage,
@@ -1510,7 +1510,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (local_context->getSettingsRef()[Setting::enable_analyzer])
     {
         for (const auto & alias : aliases)
         {

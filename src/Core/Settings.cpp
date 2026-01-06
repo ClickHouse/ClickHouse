@@ -5818,10 +5818,10 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_use_logical_join_step, true, R"(
 Use logical join step in query plan.
 Note: setting `query_plan_use_new_logical_join_step` is deprecated, use `query_plan_use_logical_join_step` instead.
-)", 0, query_plan_use_logical_join_step) \
+)", 0, query_plan_use_new_logical_join_step) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
@@ -6860,9 +6860,9 @@ For testing purposes. Replaces all external table functions to Null to not initi
 Replace external dictionary sources to Null on restore. Useful for testing purposes
 )", 0) \
         /* Parallel replicas */ \
-    DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
+    DECLARE_WITH_ALIAS(UInt64, enable_parallel_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
-)", 0, enable_parallel_replicas) \
+)", 0, allow_experimental_parallel_reading_from_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
 Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
@@ -6972,18 +6972,18 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
-)", BETA, allow_database_iceberg) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
+)", BETA, allow_experimental_database_iceberg) \
+    DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
-)", BETA, allow_database_unity_catalog) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
+)", BETA, allow_experimental_database_unity_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
-)", BETA, allow_database_glue_catalog) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
+)", BETA, allow_experimental_database_glue_catalog) \
+    DECLARE_WITH_ALIAS(Bool, enable_analyzer, true, R"(
 Allow new query analyzer.
-)", IMPORTANT, enable_analyzer) \
+)", IMPORTANT, allow_experimental_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
 )", 0) \

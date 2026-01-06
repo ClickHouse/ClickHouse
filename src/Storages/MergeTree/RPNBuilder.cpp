@@ -36,7 +36,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -189,7 +189,7 @@ std::string RPNBuilderTreeNode::getColumnName() const
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
 
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::enable_analyzer]);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -201,7 +201,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
         return adjusted_ast->getColumnNameWithoutAlias();
     }
 
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getQueryContext(), getTreeContext().getSettings()[Setting::enable_analyzer], true /*legacy*/);
 }
 
 bool RPNBuilderTreeNode::isFunction() const
