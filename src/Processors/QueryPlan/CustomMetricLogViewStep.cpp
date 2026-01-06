@@ -25,12 +25,15 @@ namespace DB
 
 namespace
 {
+
 /// Transpose structure with metrics/events as rows to
 /// to columnar view.
 class CustomMetricLogViewTransform : public IInflatingTransform
 {
+private:
     HashMap<std::string_view, size_t> mapping;
     Names column_names;
+
 public:
     static constexpr size_t SECONDS_IN_HOUR = 3600;
     String getName() const override { return "CustomMetricLogViewTransform"; }
@@ -66,7 +69,7 @@ public:
             {
                 mapping[column_name] = counter;
                 buffer[counter].resize(SECONDS_IN_HOUR);
-                counter++;
+                ++counter;
             }
             else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
             {
