@@ -636,7 +636,9 @@ std::vector<String> SparseGramsTokenExtractor::compactTokens(const std::vector<S
 {
     std::unordered_set<String> result;
     auto sorted_tokens = tokens;
-    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); });
+
+    /// Bug in clang-tidy: https://github.com/llvm/llvm-project/issues/78132
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); }); /// NOLINT(clang-analyzer-cplusplus.Move)
 
     /// Filter out sparse grams that are covered by longer ones,
     /// because if index has longer sparse gram, it has all shorter covered ones.
