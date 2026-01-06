@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -105,19 +106,16 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 TokensWithPosition extractTokensFromString(std::string_view value)
 {
     SplitByNonAlphaTokenExtractor default_token_extractor;
-
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-    size_t length = value.size();
+    TokensWithPosition tokens;
     size_t pos = 0;
 
-    TokensWithPosition tokens;
-    while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(value.data()), length, &cur, &token_start, &token_len))
+    forEachTokenPadded(default_token_extractor, value.data(), value.size(), [&](const char * token_start, size_t token_len)
     {
-        tokens.emplace(std::string{value.data() + token_start, token_len}, pos);
+        tokens.emplace(std::string{token_start, token_len}, pos);
         ++pos;
-    }
+        return false;
+    });
+
     return tokens;
 }
 
@@ -342,6 +340,16 @@ void execute(
             executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, token_extractor, tokens);
     }
 }
+
+template <typename ColumnType>
+const ColumnType * getTypedColumn(const IColumn & column)
+{
+    if (const auto * column_const_typed = checkAndGetColumnConstData<ColumnType>(&column))
+        return column_const_typed;
+
+    return checkAndGetColumn<ColumnType>(&column);
+}
+
 }
 
 template <class HasTokensTraits>
@@ -368,36 +376,33 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         TokensWithPosition search_tokens_from_args;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
-        if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
+        if (const ColumnString * column_needles_string = getTypedColumn<ColumnString>(*col_needles))
         {
-            search_tokens_from_args = extractTokensFromString(col_needles_str_const->getDataAt(0));
+            search_tokens_from_args = extractTokensFromString(column_needles_string->getDataAt(0));
         }
-        else if (const ColumnString * col_needles_str = checkAndGetColumn<ColumnString>(col_needles.get()))
+        else if (const ColumnArray * column_needles_array = getTypedColumn<ColumnArray>(*col_needles))
         {
-            search_tokens_from_args = extractTokensFromString(col_needles_str->getDataAt(0));
-        }
-        else if (const ColumnConst * col_needles_array_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
-        {
-            const Array & array = col_needles_array_const->getValue<Array>();
+            const IColumn & array_data = column_needles_array->getData();
 
-            for (size_t i = 0; i < array.size(); ++i)
-                search_tokens_from_args.emplace(array.at(i).safeGet<String>(), i);
-        }
-        else if (const ColumnArray * col_needles_array = checkAndGetColumn<ColumnArray>(col_needles.get()))
-        {
-            const IColumn & array_data = col_needles_array->getData();
-            const ColumnArray::Offsets & array_offsets = col_needles_array->getOffsets();
+            /// Argument has Array(Nothing) type if a constant array is empty.
+            if (checkAndGetColumn<ColumnNothing>(&array_data))
+            {
+                col_result->getData().assign(input_rows_count, UInt8(0));
+                return col_result;
+            }
 
             const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(array_data);
+            const ColumnArray::Offsets & array_offsets = column_needles_array->getOffsets();
 
             for (size_t i = 0; i < array_offsets[0]; ++i)
                 search_tokens_from_args.emplace(needles_data_string.getDataAt(i), i);
         }
         else
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
+        }
 
         static SplitByNonAlphaTokenExtractor default_token_extractor;
-
         execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, &default_token_extractor, search_tokens_from_args);
     }
     else
