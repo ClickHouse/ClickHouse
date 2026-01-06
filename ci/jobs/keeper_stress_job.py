@@ -7,7 +7,6 @@ import time
 import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
-import requests
 import traceback
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
@@ -75,7 +74,6 @@ def main():
     # Enable faults by default on CI; can be overridden via env/CLI
     os.environ.setdefault("KEEPER_FAULTS", "on")
     os.environ.setdefault("KEEPER_DURATION", "600")
-    # Run both default and rocks backends by default to compare behavior
     os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
     # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
     os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
@@ -414,18 +412,31 @@ def main():
     except Exception:
         pytest_proc_timeout = 9000
     pytest_log_file = f"{temp_dir}/pytest_stdout.log"
-    results.append(
-        Result.from_pytest_run(
-            command=cmd,
-            cwd=repo_dir,
-            name="Keeper Stress",
-            env=env,
-            pytest_report_file=report_file,
-            logfile=pytest_log_file,
-            timeout_seconds=pytest_proc_timeout,
+    # Always run exactly two backends for parity: default and rocks
+    backends = ["default", "rocks"]
+    any_fail = False
+    any_pass = False
+    for backend_opt in backends:
+        run_name = f"Keeper Stress (backend={backend_opt})"
+        cmd_run = cmd
+        if f"--keeper-backend={backend_opt}" not in cmd_run:
+            cmd_run = f"{cmd_run} --keeper-backend={backend_opt}"
+        results.append(
+            Result.from_pytest_run(
+                command=cmd_run,
+                cwd=repo_dir,
+                name=run_name,
+                env=env,
+                pytest_report_file=report_file,
+                logfile=pytest_log_file,
+                timeout_seconds=pytest_proc_timeout,
+            )
         )
-    )
-    pytest_result_ok = results[-1].is_ok()
+        if results[-1].is_ok():
+            any_pass = True
+        else:
+            any_fail = True
+    pytest_result_ok = any_pass and not any_fail
     # Best-effort: ensure keeper artifacts are world-readable for attachment/triage
     try:
         results.append(
@@ -593,8 +604,13 @@ def main():
             cidb_url = ""
             auth = None
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
+        # Lazy import requests after deps installation
+        try:
+            import requests  # type: ignore
+        except Exception:
+            requests = None  # type: ignore
         metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
-        if have_cidb:
+        if have_cidb and requests is not None:
             try:
                 if sha and sha != "local":
                     filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"

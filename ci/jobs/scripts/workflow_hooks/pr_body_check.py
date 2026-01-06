@@ -66,9 +66,10 @@ if __name__ == "__main__":
         info = Info()
         changed_files = info.get_kv_data("changed_files")
         labels = info.pr_labels or labels or []
-        # Allow CI/test-only PRs to skip strict PR body category requirement
+        # Allow CI/test-only PRs to skip strict PR body category requirement only when all files are within CI/test paths
+        allowed_prefixes = ("ci/", "tests/stress/keeper")
         if (
-            any(f.startswith(("ci/", "tests/stress/keeper")) for f in (changed_files or []))
+            (changed_files and any(f.startswith(allowed_prefixes) for f in changed_files))
             or ("pr-ci" in labels)
         ):
             category = LABEL_CATEGORIES["pr-ci"][0]
