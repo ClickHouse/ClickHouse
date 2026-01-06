@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Compression/CompressedReadBuffer.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -205,6 +206,19 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     /// Get parameters
     name = content.get("name", "_data");
     format = params.get(name + "_format", "TabSeparated");
+
+    /// Check if data should be decompressed (native compressed format)
+    if (params.has(name + "_decompress"))
+    {
+        read_buffer = std::make_unique<CompressedReadBuffer>(
+            std::move(read_buffer),
+            /* allow_different_codecs_ = */ false,
+            /* external_data_ = */ true);
+
+        /// Optionally disable checksum verification
+        if (params.has(name + "_disable_checksum"))
+            static_cast<CompressedReadBuffer &>(*read_buffer).disableChecksumming();
+    }
 
     if (params.has(name + "_structure"))
         parseStructureFromStructureField(params.get(name + "_structure"));
