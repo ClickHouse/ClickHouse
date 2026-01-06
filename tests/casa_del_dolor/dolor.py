@@ -228,6 +228,7 @@ parser.add_argument("--with-redis", action="store_true", help="With Redis integr
 parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
+parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -466,6 +467,7 @@ for i in range(0, len(args.replica_values)):
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
+            with_kafka=args.with_kafka,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -585,6 +587,8 @@ if args.with_mongodb:
     integrations.append("mongo")
 if args.with_redis:
     integrations.append("redis")
+if args.with_kafka:
+    integrations.append("kafka")
 
 # This is the main loop, run while client and server are running
 all_running = True
@@ -707,6 +711,7 @@ while all_running:
             "mysql8": ["mysql80"],
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
+            "kafka": ["kafka1"],
         }
 
         restart_choices = list(available_options[next_pick])
