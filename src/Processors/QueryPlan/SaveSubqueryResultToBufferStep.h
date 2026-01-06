@@ -16,6 +16,9 @@ using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 struct ChunkBuffer;
 using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
 
+/** Save data to ChunkBuffer to be read later by ReadFromCommonBufferStep.
+  * Used to implement result buffering for common subplan.
+  */
 class SaveSubqueryResultToBufferStep : public ITransformingStep
 {
 public:

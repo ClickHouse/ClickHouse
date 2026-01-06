@@ -8,6 +8,9 @@ namespace DB
 struct ChunkBuffer;
 using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
 
+/** Read data from ChunkBuffer filled by SaveSubqueryResultToBufferStep's.
+  * Used to implement result buffering for common subplan.
+  */
 class ReadFromCommonBufferStep : public ISourceStep
 {
 public:

@@ -15,6 +15,11 @@ extern const int LOGICAL_ERROR;
 
 }
 
+/** A thread-safe buffer for storing chunks from multiple inputs.
+  * Inputs can append chunks to the buffer, and once all inputs are finished,
+  * chunks can be extracted from the buffer. Implements a simple producer-consumer pattern.
+  * Used to implement common subplan step result buffering.
+  */
 struct ChunkBuffer
 {
     void append(Chunk && chunk)

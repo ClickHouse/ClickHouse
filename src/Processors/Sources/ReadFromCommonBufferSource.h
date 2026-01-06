@@ -6,6 +6,9 @@
 namespace DB
 {
 
+/** Read data from ChunkBuffer filled by SaveSubqueryResultToBufferTransform's.
+  * Used to implement result buffering for common subplan.
+  */
 class ReadFromCommonBufferSource : public ISource
 {
 public:
