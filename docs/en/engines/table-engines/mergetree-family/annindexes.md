@@ -441,6 +441,8 @@ If individual vector index granules are bigger than the cache size, they will no
 Therefore, please make sure to calculate the vector index size (based on the formula in "Estimating storage and memory consumption" or [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices)) and size the cache correspondingly.
 :::
 
+_We reiterate that verifying and, if necessary, increasing the vector index cache should be the first step when investigating slow vector search queries._
+
 The current size of the vector similarity index cache is shown in [system.metrics](../../../operations/system-tables/metrics.md):
 
 ```sql
@@ -516,7 +518,7 @@ search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-e
 params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
 result = chclient.query(
    "SELECT id FROM items
-    ORDER BY cosineDistance(vector, (SELECT reinterpret($search_v_binary$, 'Array(Float32)')))
+    ORDER BY cosineDistance(vector, reinterpret($search_v_binary$, 'Array(Float32)'))
     LIMIT 10"
     parameters = params)
 ```

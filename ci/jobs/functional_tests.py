@@ -2,6 +2,7 @@ import argparse
 import os
 import random
 import re
+import subprocess
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -63,6 +64,12 @@ def parse_args():
         "--workers",
         help="Optional. Number of parallel workers for the test runner. Default: automatically computed from CPU count and job type",
         default=None,
+    )
+    parser.add_argument(
+        "--debug",
+        help="Optional. Open clickhouse-client console after test run",
+        default=False,
+        action="store_true",
     )
     return parser.parse_args()
 
@@ -296,6 +303,35 @@ def main():
         stages.remove(JobStages.RETRIES)
 
     tests = args.test
+
+    # for local run check if stateful tests are present to skip prepare_stateful_data and start faster if not
+    has_stateful_tests = True
+    if tests and info.is_local_run:
+        from glob import glob
+
+        has_stateful = False
+        for test_pattern in tests:
+            test_pattern_clean = test_pattern.strip()
+            matching_files = glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sql", recursive=True
+            )
+            matching_files += glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sh", recursive=True
+            )
+            for test_file in matching_files:
+                try:
+                    with open(test_file, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        if "stateful" in content.lower():
+                            has_stateful = True
+                            break
+                except Exception:
+                    pass
+            if has_stateful:
+                break
+        if not has_stateful:
+            has_stateful_tests = False
+
     targeter = Targeting(info=info)
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
@@ -409,13 +445,14 @@ def main():
                     )
                     print("Failed to create minio log tables")
 
-                res = (
-                    CH.prepare_stateful_data(
-                        with_s3_storage=is_s3_storage,
-                        is_db_replicated=is_database_replicated,
+                if has_stateful_tests:
+                    res = (
+                        CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                        )
+                        and CH.insert_system_zookeeper_config()
                     )
-                    and CH.insert_system_zookeeper_config()
-                )
             if res:
                 print("stateful data prepared")
             return res
@@ -557,6 +594,10 @@ def main():
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
+
+    if args.debug:
+        print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
+        subprocess.call("clickhouse-client", shell=True)
 
     CH.terminate()
 
