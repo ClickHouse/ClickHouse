@@ -68,14 +68,12 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDis
 
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
-    const String & object_key_prefix_,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
-    , object_key_prefix(object_key_prefix_)
     , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
@@ -645,7 +643,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
     const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorage>(
         getName(),
-        object_key_prefix,
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),

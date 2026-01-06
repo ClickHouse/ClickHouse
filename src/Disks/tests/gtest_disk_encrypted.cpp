@@ -452,7 +452,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
     auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
 
-    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", "/", metadata_storage, object_storage, *config, "");
+    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", metadata_storage, object_storage, *config, "");
 
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 
