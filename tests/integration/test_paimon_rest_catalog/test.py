@@ -41,7 +41,7 @@ def start_bearer_token_server():
 
     # install maven
     run_and_check(
-        ["docker exec {cont_id} bash -lc \"cp /etc/apt/trusted.gpg /etc/apt/trusted.gpg.bak && curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/llvm.gpg && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 15CF4D18AF4F7421 65ADECD7A7039392 && curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/kitware.gpg && apt update && apt-get install -y maven\"".format(
+        ["docker exec {cont_id} bash -lc \"apt update --allow-insecure-repositories && apt-get install -y maven\"".format(
             cont_id=instance_id,
         )]
         ,
