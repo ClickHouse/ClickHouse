@@ -636,7 +636,7 @@ std::vector<String> SparseGramsTokenExtractor::compactTokens(const std::vector<S
 {
     std::unordered_set<String> result;
     auto sorted_tokens = tokens;
-    std::sort(sorted_tokens.begin(), sorted_tokens.end(), [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); });
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); });
 
     /// Filter out sparse grams that are covered by longer ones,
     /// because if index has longer sparse gram, it has all shorter covered ones.
