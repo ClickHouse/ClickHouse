@@ -3,7 +3,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Field.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerContext.h>
@@ -15,12 +14,8 @@
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
