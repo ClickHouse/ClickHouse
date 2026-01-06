@@ -1850,13 +1850,11 @@ CONV_FN(JoinConstraint, jc)
         const UsingExpr & uexpr = jc.using_expr();
 
         ret += " USING (";
-        for (int i = 0; i < uexpr.columns_size(); i++)
+        ExprColumnToString(ret, uexpr.column());
+        for (int i = 0; i < uexpr.other_columns_size(); i++)
         {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ExprColumnToString(ret, uexpr.columns(i));
+            ret += ", ";
+            ExprColumnToString(ret, uexpr.other_columns(i));
         }
         ret += ")";
     }

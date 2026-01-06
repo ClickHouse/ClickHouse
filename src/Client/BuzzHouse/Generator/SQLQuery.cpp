@@ -1283,112 +1283,109 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc)
 {
-    if (rg.nextSmallNumber() < 8)
+    const uint32_t nopt = rg.nextSmallNumber();
+
+    if (allow_using && nopt < 3)
     {
-        bool generated = false;
+        /// Using clause
+        UsingExpr * uexpr = jc->mutable_using_expr();
+        const SQLRelation & rel1 = rg.pickRandomly(this->levels[this->current_level].rels);
+        const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
+        std::vector<DB::Strings> cols1;
+        std::vector<DB::Strings> cols2;
+        std::vector<DB::Strings> intersect;
 
-        if (allow_using && rg.nextSmallNumber() < 3)
+        cols1.reserve(rel1.cols.size());
+        for (const auto & entry : rel1.cols)
         {
-            /// Using clause
-            UsingExpr * uexpr = jc->mutable_using_expr();
-            const SQLRelation & rel1 = rg.pickRandomly(this->levels[this->current_level].rels);
-            const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
-            std::vector<DB::Strings> cols1;
-            std::vector<DB::Strings> cols2;
-            std::vector<DB::Strings> intersect;
-
-            cols1.reserve(rel1.cols.size());
-            for (const auto & entry : rel1.cols)
-            {
-                cols1.push_back(entry.path);
-            }
-            cols2.reserve(rel2.cols.size());
-            for (const auto & entry : rel2.cols)
-            {
-                cols2.push_back(entry.path);
-            }
-            std::set_intersection(cols1.begin(), cols1.end(), cols2.begin(), cols2.end(), std::back_inserter(intersect));
-
-            if (intersect.empty())
-            {
-                uexpr->add_columns()->mutable_path()->mutable_col()->set_column("c0");
-            }
-            else
-            {
-                const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), rg.nextLargeNumber() % static_cast<uint32_t>(intersect.size()));
-
-                std::shuffle(intersect.begin(), intersect.end(), rg.generator);
-                for (uint32_t i = 0; i < nclauses; i++)
-                {
-                    ColumnPath * cp = uexpr->add_columns()->mutable_path();
-                    const DB::Strings & npath = intersect[i];
-
-                    for (size_t j = 0; j < npath.size(); j++)
-                    {
-                        Column * col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
-
-                        col->set_column(npath[j]);
-                    }
-                }
-                generated = true;
-            }
+            cols1.push_back(entry.path);
         }
-        if (!generated)
+        cols2.reserve(rel2.cols.size());
+        for (const auto & entry : rel2.cols)
         {
-            /// Joining clause
-            const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 2)) + UINT32_C(1);
-            Expr * expr = jc->mutable_on_expr();
+            cols2.push_back(entry.path);
+        }
+        std::set_intersection(cols1.begin(), cols1.end(), cols2.begin(), cols2.end(), std::back_inserter(intersect));
 
+        if (intersect.empty())
+        {
+            uexpr->mutable_column()->mutable_path()->mutable_col()->set_column("c0");
+        }
+        else
+        {
+            const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), (rg.nextLargeNumber() % static_cast<uint32_t>(intersect.size())) + 1);
+
+            std::shuffle(intersect.begin(), intersect.end(), rg.generator);
             for (uint32_t i = 0; i < nclauses; i++)
             {
-                if (rg.nextSmallNumber() < 3)
+                ExprColumn * ecol = i == 0 ? uexpr->mutable_column() : uexpr->add_other_columns();
+                ColumnPath * cp = ecol->mutable_path();
+                const DB::Strings & npath = intersect[i];
+
+                for (size_t j = 0; j < npath.size(); j++)
                 {
-                    /// Negate clause
-                    if (rg.nextSmallNumber() < 9)
-                    {
-                        UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
+                    Column * col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
 
-                        uexpr->set_paren(true);
-                        uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-                        expr = uexpr->mutable_expr();
-                    }
-                    else
-                    {
-                        /// Sometimes do the function call instead
-                        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-                        sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
-                        expr = sfc->add_args()->mutable_expr();
-                    }
+                    col->set_column(npath[j]);
                 }
-                if (i == nclauses - 1)
+            }
+        }
+    }
+    else if (nopt < 9)
+    {
+        /// Joining clause
+        const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 2)) + UINT32_C(1);
+        Expr * expr = jc->mutable_on_expr();
+
+        for (uint32_t i = 0; i < nclauses; i++)
+        {
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// Negate clause
+                if (rg.nextSmallNumber() < 9)
                 {
-                    addJoinClause(rg, expr);
+                    UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
+
+                    uexpr->set_paren(true);
+                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+                    expr = uexpr->mutable_expr();
                 }
                 else
                 {
-                    Expr * predicate = nullptr;
-                    const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
+                    /// Sometimes do the function call instead
+                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
 
-                    if (rg.nextSmallNumber() < 9)
-                    {
-                        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-
-                        bexpr->set_op(op);
-                        predicate = bexpr->mutable_lhs();
-                        expr = bexpr->mutable_rhs();
-                    }
-                    else
-                    {
-                        /// Sometimes do the function call instead
-                        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-
-                        sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
-                        predicate = sfc->add_args()->mutable_expr();
-                        expr = sfc->add_args()->mutable_expr();
-                    }
-                    addJoinClause(rg, predicate);
+                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                    expr = sfc->add_args()->mutable_expr();
                 }
+            }
+            if (i == nclauses - 1)
+            {
+                addJoinClause(rg, expr);
+            }
+            else
+            {
+                Expr * predicate = nullptr;
+                const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
+
+                if (rg.nextSmallNumber() < 9)
+                {
+                    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+                    bexpr->set_op(op);
+                    predicate = bexpr->mutable_lhs();
+                    expr = bexpr->mutable_rhs();
+                }
+                else
+                {
+                    /// Sometimes do the function call instead
+                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+                    sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+                    predicate = sfc->add_args()->mutable_expr();
+                    expr = sfc->add_args()->mutable_expr();
+                }
+                addJoinClause(rg, predicate);
             }
         }
     }
@@ -1741,7 +1738,7 @@ uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const u
                 core->set_const_on_right(rg.nextBool());
             }
             generateFromElement(rg, allowed_clauses, core->mutable_tos());
-            generateJoinConstraint(rg, njoined == 2, core->mutable_join_constraint());
+            generateJoinConstraint(rg, true, core->mutable_join_constraint());
         }
     }
     this->width -= njoined;

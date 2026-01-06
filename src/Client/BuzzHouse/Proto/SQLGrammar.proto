@@ -2525,7 +2525,8 @@ enum InOutFormat {
 }
 
 message UsingExpr {
-    repeated ExprColumn columns = 1;
+    required ExprColumn column = 1;
+    repeated ExprColumn other_columns = 2;
 }
 
 message JoinConstraint {
