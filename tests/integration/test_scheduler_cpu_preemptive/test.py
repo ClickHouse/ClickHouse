@@ -146,7 +146,7 @@ def test_create_workload():
     ],
     indirect=True,
 )
-def test_independent_pools():
+def test_independent_pools(with_custom_config):
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
