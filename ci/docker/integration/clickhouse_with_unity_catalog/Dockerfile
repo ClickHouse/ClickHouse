@@ -2,6 +2,9 @@
 ARG FROM_TAG=latest
 FROM clickhouse/integration-test:$FROM_TAG
 
+# Fix missing GPG key for kitware repository to prevent apt-get update failure
+RUN rm -f /etc/apt/sources.list.d/kitware.list || true
+
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get -y install openjdk-17-jdk-headless && update-alternatives --config java && update-alternatives --config javac
 
 # Clone unity catalog and hack their sample data because it contains inconsistent DeltaLake definition
