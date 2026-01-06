@@ -348,7 +348,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"cloud_mode", trueOrFalseSettingNoOracle},
     {"cloud_mode_database_engine", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
     {"cloud_mode_engine",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 4)); }, {}, false)},
     {"cluster_table_function_split_granularity",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
