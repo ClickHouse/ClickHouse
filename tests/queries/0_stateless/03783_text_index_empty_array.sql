@@ -1,3 +1,5 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/93432
+
 SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS t;
