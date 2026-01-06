@@ -148,7 +148,7 @@ def main():
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
-        "allow_health_check": False, # I have to test this first
+        "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
@@ -226,11 +226,14 @@ def main():
             "min_bytes_for_wide_part",
             "min_rows_for_full_part_storage",
             "min_rows_for_wide_part",
+            "ratio_of_defaults_for_sparse_serialization",
             "remove_empty_parts",
+            "string_serialization_version",
             "ttl_only_drop_parts",
             "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
             "vertical_merge_algorithm_min_rows_to_activate",
+            "vertical_merge_algorithm_min_columns_to_activate",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

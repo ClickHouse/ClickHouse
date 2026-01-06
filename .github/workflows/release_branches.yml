@@ -22,7 +22,7 @@ jobs:
     name: "Config Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,7 +47,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -63,7 +62,7 @@ jobs:
     name: "Dockers Build (amd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,7 +87,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -104,7 +102,7 @@ jobs:
     name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -129,7 +127,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -145,7 +142,7 @@ jobs:
     name: "Build (amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -170,7 +167,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -186,7 +182,7 @@ jobs:
     name: "Build (amd_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -211,7 +207,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -227,7 +222,7 @@ jobs:
     name: "Build (amd_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -252,7 +247,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -268,7 +262,7 @@ jobs:
     name: "Build (amd_msan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -293,7 +287,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -309,7 +302,7 @@ jobs:
     name: "Build (amd_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -334,7 +327,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -350,7 +342,7 @@ jobs:
     name: "Build (arm_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -375,7 +367,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -391,7 +382,7 @@ jobs:
     name: "Build (amd_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -416,7 +407,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -432,7 +422,7 @@ jobs:
     name: "Build (arm_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -457,7 +447,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -473,7 +462,7 @@ jobs:
     name: "Build (amd_darwin)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -498,7 +487,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -514,7 +502,7 @@ jobs:
     name: "Build (arm_darwin)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -539,7 +527,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -555,7 +542,7 @@ jobs:
     name: "Docker server image"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -580,7 +567,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -596,7 +582,7 @@ jobs:
     name: "Docker keeper image"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -621,7 +607,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -637,7 +622,7 @@ jobs:
     name: "Install packages (amd_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -662,7 +647,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -678,7 +662,7 @@ jobs:
     name: "Install packages (arm_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -703,7 +687,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -719,7 +702,7 @@ jobs:
     name: "Stateless tests (amd_asan, distributed plan, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -744,7 +727,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -760,7 +742,7 @@ jobs:
     name: "Stateless tests (amd_asan, distributed plan, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -785,7 +767,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -801,7 +782,7 @@ jobs:
     name: "Stateless tests (amd_asan, db disk, distributed plan, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -826,7 +807,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -842,7 +822,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, 1/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -867,7 +847,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -883,7 +862,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, 2/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -908,7 +887,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -924,7 +902,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, 3/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -949,7 +927,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -965,7 +942,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, 4/4)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -990,7 +967,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1006,7 +982,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, old analyzer, 1/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1031,7 +1007,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1047,7 +1022,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, old analyzer, 2/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1072,7 +1047,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1088,7 +1062,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, old analyzer, 3/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1113,7 +1087,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1129,7 +1102,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, old analyzer, 4/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1154,7 +1127,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1170,7 +1142,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, old analyzer, 5/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1195,7 +1167,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1211,7 +1182,7 @@ jobs:
     name: "Integration tests (amd_asan, db disk, old analyzer, 6/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1236,7 +1207,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1252,7 +1222,7 @@ jobs:
     name: "Integration tests (amd_tsan, 1/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1277,7 +1247,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1293,7 +1262,7 @@ jobs:
     name: "Integration tests (amd_tsan, 2/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1318,7 +1287,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1334,7 +1302,7 @@ jobs:
     name: "Integration tests (amd_tsan, 3/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1359,7 +1327,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1375,7 +1342,7 @@ jobs:
     name: "Integration tests (amd_tsan, 4/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1400,7 +1367,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1416,7 +1382,7 @@ jobs:
     name: "Integration tests (amd_tsan, 5/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1441,7 +1407,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1457,7 +1422,7 @@ jobs:
     name: "Integration tests (amd_tsan, 6/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1482,7 +1447,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1498,7 +1462,7 @@ jobs:
     name: "Stress test (amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1523,7 +1487,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1539,7 +1502,7 @@ jobs:
     name: "Stress test (amd_tsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1564,7 +1527,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1580,7 +1542,7 @@ jobs:
     name: "Stress test (arm_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1605,7 +1567,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1621,7 +1582,7 @@ jobs:
     name: "Stress test (arm_asan, s3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1646,7 +1607,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1662,7 +1622,7 @@ jobs:
     name: "Stress test (amd_ubsan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1687,7 +1647,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1703,7 +1662,7 @@ jobs:
     name: "Stress test (amd_msan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1728,7 +1687,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -1744,7 +1702,7 @@ jobs:
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1769,7 +1727,6 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then

@@ -328,3 +328,19 @@ def test_persistent_watches_cleanup_on_close(started_cluster):
             break
         time.sleep(0.1)
     assert "zk_watch_count\t0" in data
+
+def test_clear_watches(started_cluster):
+    node1.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node1)
+
+    client = get_fake_zk(node1)
+    NODE_PATH = "/testPersistentCleanup"
+
+    def cb(_):
+        pass
+
+    client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT)
+    client.add_watch(NODE_PATH, cb, AddWatchMode.PERSISTENT_RECURSIVE)
+    destroy_zk_client(client)
+    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+    assert "zk_watch_count\t0" in data

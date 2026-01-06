@@ -6,8 +6,10 @@ SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET parallel_replicas_mark_segment_size = 128;
-SET parallel_replicas_min_number_of_rows_per_replica = 1000;
 SET enable_analyzer = 1;
+
+-- With small index granularity, the amount of rows left to read after the index analysis might be too small to utilize parallel replicas. So, we set it to 0.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
 DROP TABLE IF EXISTS tab;
 
