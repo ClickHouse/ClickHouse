@@ -290,43 +290,6 @@ class Runner:
             )
             from_root = "root" in docker_settings
             settings = [s for s in docker_settings if s.startswith("-")]
-            # Best-effort: propagate CI DB credentials into container env so in-container tools can push metrics
-            try:
-                if workflow.enable_cidb:
-                    # Read once to avoid throttling
-                    url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
-                    user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
-                    passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
-                    if url_secret and user_secret and passwd_secret:
-                        url, user, pwd = (
-                            url_secret.join_with(user_secret)
-                            .join_with(passwd_secret)
-                            .get_value()
-                        )
-                        if url:
-                            os.environ.setdefault("CI_DB_URL", url)
-                        if user:
-                            os.environ.setdefault("CI_DB_USER", user)
-                        if pwd:
-                            os.environ.setdefault("CI_DB_PASSWORD", pwd)
-                        # Pass-through environment variables (values taken from host env)
-                        for name in ("CI_DB_URL", "CI_DB_USER", "CI_DB_PASSWORD"):
-                            if f"-e {name}" not in settings:
-                                settings.append(f"-e {name}")
-            except Exception:
-                pass
-            # Also pass COMMIT_SHA and JOB_NAME for in-container consumers (e.g., keeper stress metrics and verifiers)
-            try:
-                env_obj = _Environment.get()
-                if env_obj.SHA:
-                    os.environ.setdefault("COMMIT_SHA", env_obj.SHA)
-                if env_obj.JOB_NAME:
-                    os.environ.setdefault("JOB_NAME", env_obj.JOB_NAME)
-                for name in ("COMMIT_SHA", "JOB_NAME"):
-                    if f"-e {name}" not in settings:
-                        settings.append(f"-e {name}")
-            except Exception:
-                pass
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
@@ -657,7 +620,7 @@ class Runner:
                         if not test_case_result.is_ok():
                             test_case_result.set_clickable_label(
                                 "cidb",
-                                CIDB.build_link_to_test_case_statistics(
+                                ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
                                     failure_patterns=Settings.TEST_FAILURE_PATTERNS,
                                     test_output=test_case_result.info,
