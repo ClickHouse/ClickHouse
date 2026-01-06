@@ -7286,8 +7286,8 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", 0) \
-    DECLARE(UInt64, max_subcolumns, 10000, R"(
-Limit on the number of subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negative value disables check.
+    DECLARE(Int64, max_static_subcolumns, 10000, R"(
+Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negative value disables check.
 )", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
 Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.

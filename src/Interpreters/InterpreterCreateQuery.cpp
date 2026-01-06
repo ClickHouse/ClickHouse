@@ -2000,13 +2000,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (res->storesDataOnDisk())
     {
         /// Check sub columns limit
-        int max_subcolumns = getContext()->getSettingsRef()[Setting::max_subcolumns];
+        Int64 max_static_subcolumns = getContext()->getSettingsRef()[Setting::max_static_subcolumns];
         size_t subcolumn_count = properties.columns.getNumberOfSubcoumns();
 
-        if (max_subcolumns >= 0 && subcolumn_count > static_cast<unsigned>(max_subcolumns))
+        if (max_static_subcolumns >= 0 && subcolumn_count > static_cast<unsigned>(max_static_subcolumns))
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
-                                    "Too many subcolumns. The limit is set to {}, the number of subcolumns in the table is {}",
-                                    max_subcolumns, subcolumn_count);
+                                    "Too many static subcolumns. The limit is set to {}, the number of static subcolumns in the table is {}",
+                                    max_static_subcolumns, subcolumn_count);
     }
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());

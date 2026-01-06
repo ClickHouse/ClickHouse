@@ -54,7 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
-            {"max_subcolumns", -1, 10000, "Limit on the number of subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negative value disables check."},
+            {"max_static_subcolumns", -1, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negative value disables check."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
