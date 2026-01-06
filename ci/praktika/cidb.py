@@ -269,7 +269,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
-                    data=",".join(jsons),
+                    data="\n".join(jsons),
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )

@@ -434,7 +434,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         ensure_environment(nodes, scenario_for_env)
         single_leader(nodes)
         leader = [n for n in nodes if is_leader(n)][0]
-        sink_url = "ci" if has_ci_sink() else ""
+        sink_url = "ci" if (has_ci_sink() or os.environ.get("KEEPER_METRICS_FILE")) else ""
         _snapshot_and_sink(
             nodes, "pre", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
         )
@@ -693,7 +693,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             pass
         # Attempt to snapshot fail state as well
         try:
-            sink_url = "ci" if has_ci_sink() else ""
+            sink_url = "ci" if (has_ci_sink() or os.environ.get("KEEPER_METRICS_FILE")) else ""
             _snapshot_and_sink(
                 nodes,
                 "fail",
