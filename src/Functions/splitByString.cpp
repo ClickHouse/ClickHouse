@@ -160,7 +160,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/se
     FunctionDocumentation::Syntax syntax = "splitByString(separator, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
         {"separator", "The separator.", {"String"}},
-        {"s", "The string to split.", {"String"}},
+        {"s", "The string to split.", {"String", "Nullable(String)"}},
         {"max_substrings", "Optional. When `max_substrings > 0`, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible. Default value: `0`.", {"Int64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of selected substrings of `s`", {"Array(String)"}};

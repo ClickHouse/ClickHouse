@@ -2,8 +2,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
@@ -70,13 +72,27 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        auto is_string_or_fixed_string_nullable = [](const IDataType & type) -> bool
+        {
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+                return isStringOrFixedString(*nullable->getNestedType());
+            return isStringOrFixedString(type);
+        };
+
         FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
-            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
+            {"haystack",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(is_string_or_fixed_string_nullable),
+             nullptr,
+             "String, FixedString, or Nullable String"},
+            {"needle",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString),
+             isColumnConst,
+             "const String or const FixedString"},
         };
         validateFunctionArguments(*this, arguments, args);
 
@@ -88,8 +104,15 @@ public:
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = arguments[0].column;
+        ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
+
+        const NullMap * null_map = nullptr;
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column_haystack.get()))
+        {
+            column_haystack = col_nullable->getNestedColumnPtr();
+            null_map = &col_nullable->getNullMapData();
+        }
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -129,6 +152,13 @@ public:
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                /// For NULL values, produce empty array
+                if (null_map && (*null_map)[i])
+                {
+                    root_offsets_data[i] = current_root_offset;
+                    continue;
+                }
+
                 std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
@@ -169,6 +199,13 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t matches_per_row = 0;
+
+                /// For NULL values, produce empty array
+                if (null_map && (*null_map)[i])
+                {
+                    number_of_matches_per_row.push_back(0);
+                    continue;
+                }
 
                 const auto & current_row = column_haystack->getDataAt(i);
 

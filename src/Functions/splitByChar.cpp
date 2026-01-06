@@ -133,7 +133,7 @@ Empty substrings may be selected when:
 )";
     FunctionDocumentation::Syntax syntax = "splitByChar(separator, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
-        {"separator", "The separator must be a single-byte character.", {"String"}},
+        {"separator", "The separator must be a single-byte character.", {"String", "Nullable(String)"}},
         {"s", "The string to split.", {"String"}},
         {"max_substrings", "Optional. If `max_substrings > 0`, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible. The default value is `0`. ", {"Int64"}}
     };

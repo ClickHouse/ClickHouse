@@ -22,7 +22,7 @@ Matches all groups of a string using a regular expression and returns an array o
 )";
     FunctionDocumentation::Syntax syntax = "extractAllGroupsVertical(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
-        {"s", "Input string to extract from.", {"String", "FixedString"}},
+        {"s", "Input string to extract from.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)"}},
         {"regexp", "Regular expression to match by.", {"const String", "const FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of arrays, where each inner array contains the captured groups from one match. Each match produces an array with elements corresponding to the capturing groups in the regular expression (group 1, group 2, etc.). If no matches are found, returns an empty array.", {"Array(Array(String))"}};

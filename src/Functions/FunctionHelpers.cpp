@@ -363,4 +363,23 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 current_size);
     }
 }
+
+std::variant<UnwrappedNullableColumn, UnwrappedColumnConstIsNullValue> unwrapNullableColumn(const ColumnPtr & column)
+{
+    if (const auto * col_const = checkAndGetColumn<ColumnConst>(column.get()))
+    {
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&col_const->getDataColumn()))
+        {
+            if (col_const->isNullAt(0))
+                return UnwrappedColumnConstIsNullValue{};
+            // Convert to non-null ColumnConst
+            return UnwrappedNullableColumn{ColumnConst::create(col_nullable->getNestedColumnPtr()->cloneResized(1), col_const->size())};
+        }
+    }
+    else if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+        return UnwrappedNullableColumn{col_nullable->getNestedColumnPtr(), &col_nullable->getNullMapData()};
+
+    return UnwrappedNullableColumn{column};
+}
+
 }
