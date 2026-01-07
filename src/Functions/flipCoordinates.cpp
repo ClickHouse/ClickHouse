@@ -108,7 +108,7 @@ private:
         MutableColumns result_variants;
         result_variants.reserve(variants.size());
 
-        for (size_t i = 0; i < variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i < variants.size(); ++i)
         {
             const auto & variant_column = variants[i];
             auto global_discr = column_variant->globalDiscriminatorByLocal(i);
