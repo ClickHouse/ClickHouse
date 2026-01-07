@@ -187,7 +187,7 @@ public:
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string/tuple/array");
             }
-            auto parse_json_path = [&](const String& query) -> std::shared_ptr<GeneratorJSONPath<JSONParser>>
+            auto parse_json_path = [&](const std::string_view& query) -> std::shared_ptr<GeneratorJSONPath<JSONParser>>
             {
                 /// Tokenize the query
                 Tokens tokens(query.data(), query.data() + query.size());
