@@ -149,7 +149,7 @@ struct RowRefList : RowRef
         /// make sure to prevent the first element from being null to avoid a crash.
         if (rows == 0)
         {
-            columns = row_ref.columns;
+            columns_info = row_ref.columns_info;
             row_num = row_ref.row_num;
             ++rows;
             return;
