@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
@@ -1101,11 +1103,17 @@ namespace
             UInt32 size = list_reader.size();
             auto & column_array = assert_cast<ColumnArray &>(column);
             auto & offsets = column_array.getOffsets();
-            offsets.push_back(offsets.back() + list_reader.size());
-
             auto & nested_column = column_array.getData();
-            for (UInt32 i = 0; i != size; ++i)
-                nested_serializer->readRow(nested_column, list_reader, i);
+
+            auto read_array = [&]()
+            {
+                for (UInt32 i = 0; i != size; ++i)
+                    nested_serializer->readRow(nested_column, list_reader, i);
+
+                offsets.push_back(offsets.back() + list_reader.size());
+            };
+
+            SerializationArray::readArraySafe(column, read_array);
         }
 
         capnp::ListSchema list_schema;
@@ -1382,8 +1390,13 @@ namespace
         {
             if (auto * tuple_column = typeid_cast<ColumnTuple *>(&column))
             {
-                for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
-                    fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
+                auto read_tuple = [&]()
+                {
+                    for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
+                        fields_serializers[i]->readRow(tuple_column->getColumn(i), struct_reader, fields_offsets[i]);
+                };
+
+                SerializationTuple::readElementsSafe(column, read_tuple);
             }
             else
                 fields_serializers[0]->readRow(column, struct_reader, fields_offsets[0]);
