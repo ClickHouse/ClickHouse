@@ -183,6 +183,7 @@ class ElOraculoDeTablas:
             client = Client(
                 host=next_node.ip_address, port=9000, command=cluster.client_bin_path
             )
+            info_str = ""
             try:
                 info_str = client.query(
                     """
@@ -209,24 +210,24 @@ class ElOraculoDeTablas:
                     ) tx ORDER BY y;
                     """
                 )
-                if not isinstance(info_str, str) or info_str == "":
-                    logger.warn(
-                        f"No monitoring information found for node {next_node.name}"
-                    )
-                    continue
-
-                fetched_info: list[int] = [
-                    int(line) for line in info_str.split("\n") if line
-                ]
-                for idx, check_name in enumerate(ElOraculoDeTablas.HEALTH_CHECKS):
-                    if fetched_info[idx] != 0:
-                        message: str = (
-                            f"Health check '{check_name}' failed on node {next_node.name}: {fetched_info[idx]} issues found"
-                        )
-                        logger.warn(message)
-                        raise ValueError(message)
             except Exception as ex:
                 logger.warn(
                     f"Error occurred while fetching monitoring information for node {next_node.name}: {ex}"
                 )
                 continue
+            if not isinstance(info_str, str) or info_str == "":
+                logger.warn(
+                    f"No monitoring information found for node {next_node.name}"
+                )
+                continue
+
+            fetched_info: list[int] = [
+                int(line) for line in info_str.split("\n") if line
+            ]
+            for idx, check_name in enumerate(ElOraculoDeTablas.HEALTH_CHECKS):
+                if fetched_info[idx] != 0:
+                    message: str = (
+                        f"Health check '{check_name}' failed on node {next_node.name}: {fetched_info[idx]} issues found"
+                    )
+                    logger.warn(message)
+                    raise ValueError(message)
