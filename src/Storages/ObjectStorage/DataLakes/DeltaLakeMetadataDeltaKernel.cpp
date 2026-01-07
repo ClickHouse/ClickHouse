@@ -433,7 +433,7 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
         auto buf = createReadBuffer(object_info, object_storage_common, context, log);
         String json_str;
         readStringUntilEOF(json_str, *buf);
-        insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), key);
+        insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), object_info.relative_path);
     }
 
 }
