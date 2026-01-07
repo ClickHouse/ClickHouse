@@ -132,30 +132,58 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
-    DECLARE(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
-The size of blocks (in a count of rows) to form for insertion into a table.
-This setting only applies in cases when the server forms the blocks.
-For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
-But when using clickhouse-client, the client parses the data itself, and the 'max_insert_block_size' setting on the server does not affect the size of the inserted blocks.
-The setting also does not have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
+    DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
-The default is slightly more than `max_block_size`. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
-)", 0) \
-    DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
-Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+This setting controls block formation in format parsing. When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) or Values format from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
+Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+
+A block is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+
+The default is slightly more than max_block_size. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
 
 Possible values:
-
 - Positive integer.
-- 0 — Squashing disabled.
+)", 0, max_insert_block_size_rows) \
+DECLARE(UInt64, max_insert_block_size_bytes, 0, R"(
+The maximum size of blocks (in bytes) to form for insertion into a table.
+
+This setting works together with max_insert_block_size_rows and controls block formation in the same context. See max_insert_block_size_rows for detailed information about when and how these settings are applied.
+
+Possible values:
+- Positive integer.
+- 0 — setting does not participate in block formation.
+)", 0) \
+DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
+The minimum size of blocks (in rows) to form for insertion into a table.
+
+This setting controls block formation in two contexts:
+
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
+Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+2. INSERT operations: During INSERT...SELECT queries and when data flows through materialized views, blocks are squashed based on this setting before writing to storage.
+
+A block in format parsing is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+
+Smaller sized blocks for insert operation are squashed into bigger ones and emitted when one of min_insert_block_size_rows or min_insert_block_size_bytes is met.
+
+Possible values:
+- Positive integer.
+- 0 — setting does not participate in block formation.
 )", 0) \
     DECLARE(UInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), R"(
-Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+The minimum size of blocks (in bytes) to form for insertion into a table.
+
+This setting works together with min_insert_block_size_rows and controls block formation in the same contexts (format parsing and INSERT operations). See min_insert_block_size_rows for detailed information about when and how these settings are applied.
 
 Possible values:
 
 - Positive integer.
-- 0 — Squashing disabled.
+- 0 — setting does not participate in block formation.
 )", 0) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, R"(
 Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
@@ -1539,6 +1567,14 @@ Disables query execution if the index can't be used by date.
 Works with tables in the MergeTree family.
 
 If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+)", 0) \
+    DECLARE(Bool, use_primary_key, true, R"(
+Use the primary key to prune granules during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
 )", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
@@ -4361,8 +4397,8 @@ These functions can be transformed:
 - [isNull](/sql-reference/functions/functions-for-nulls#isNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [isNotNull](/sql-reference/functions/functions-for-nulls#isNotNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [mapKeys](/sql-reference/functions/tuple-map-functions#mapkeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
-- [mapValues](/sql-reference/functions/tuple-map-functions#mapvalues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapKeys](/sql-reference/functions/tuple-map-functions#mapKeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapValues](/sql-reference/functions/tuple-map-functions#mapValues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -7071,7 +7107,7 @@ Populate constant comparison in AND chains to enhance filtering ability. Support
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
-    DECLARE(Bool, use_join_disjunctions_push_down, false, R"(
+    DECLARE(Bool, use_join_disjunctions_push_down, true, R"(
 Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
 This allows storage engines to filter earlier, which can reduce data read.
 The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
@@ -7494,11 +7530,17 @@ Allow to create table with the Alias engine.
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
+Allow to use hive partitioning with S3Queue/AzureQueue engines
+    )", EXPERIMENTAL) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
  - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
 Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
