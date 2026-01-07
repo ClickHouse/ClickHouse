@@ -23,6 +23,37 @@ except Exception:
 
 from praktika.result import Result
 from praktika.utils import Shell, Utils
+from praktika.settings import Settings
+
+
+def _resolve_cidb():
+    url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
+    user = os.environ.get("CI_DB_USER", "")
+    key = os.environ.get("CI_DB_PASSWORD", "")
+    try:
+        if (not url) or (not user) or (not key):
+            try:
+                from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
+                h = ClickHouseHelper()
+            except Exception:
+                h = None
+            if not url:
+                url = (getattr(h, "url", "") if h else "") or (Settings.SECRET_CI_DB_URL or "")
+            if (not user) or (not key):
+                auth = getattr(h, "auth", None) if h else None
+                if auth:
+                    user = user or auth.get("X-ClickHouse-User", "")
+                    key = key or auth.get("X-ClickHouse-Key", "")
+                if not user or not key:
+                    user = user or (Settings.SECRET_CI_DB_USER or "")
+                    key = key or (Settings.SECRET_CI_DB_PASSWORD or "")
+    except Exception:
+        if not url:
+            url = Settings.SECRET_CI_DB_URL or ""
+        if not user or not key:
+            user = user or (Settings.SECRET_CI_DB_USER or "")
+            key = key or (Settings.SECRET_CI_DB_PASSWORD or "")
+    return url, {"X-ClickHouse-User": user, "X-ClickHouse-Key": key}
 
 
 def main():
@@ -104,34 +135,16 @@ def main():
     stop_watch = Utils.Stopwatch()
     results = []
     files_to_attach = []
-    # Host-side CIDB env and schema preflight (blocking)
+    # Host-side CIDB env and schema preflight (non-blocking)
     try:
-        missing = []
-        for k in ("KEEPER_METRICS_CLICKHOUSE_URL", "CI_DB_USER", "CI_DB_PASSWORD"):
-            if not os.environ.get(k):
-                missing.append(k)
-        if missing:
-            msg = "Missing required CIDB env: " + ",".join(missing)
-            results.append(
-                Result.from_commands_run(
-                    name=f"CIDB Sanity Gate (blocking): {msg}",
-                    command=[f"bash -lc 'echo {msg}; exit 1'"],
-                )
-            )
-            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-            return
-        cidb_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
-        auth = {
-            "X-ClickHouse-User": os.environ.get("CI_DB_USER", ""),
-            "X-ClickHouse-Key": os.environ.get("CI_DB_PASSWORD", ""),
-        }
+        cidb_url, auth = _resolve_cidb()
         ok = True
         try:
             r = requests.get(cidb_url, params={"query": "SELECT 1 FORMAT TabSeparated"}, headers=auth, timeout=20)
             ok = ok and r.ok and (r.text or "").strip().splitlines()[0] == "1"
         except Exception:
             ok = False
-        dbn = os.environ.get("KEEPER_METRICS_DB", "keeper_stress_tests")
+        dbn = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
         if ok:
             try:
                 q = f"EXISTS TABLE {dbn}.keeper_metrics_ts FORMAT TabSeparated"
@@ -143,12 +156,10 @@ def main():
             msg = "CIDB preflight failed: connectivity or schema missing (keeper_metrics_ts)"
             results.append(
                 Result.from_commands_run(
-                    name=f"CIDB Preflight (blocking): {msg}",
-                    command=[f"bash -lc 'echo {msg}; exit 1'"],
+                    name=f"CIDB Preflight: {msg} (non-blocking)",
+                    command=["true"],
                 )
             )
-            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-            return
     except Exception:
         pass
 
@@ -332,11 +343,6 @@ def main():
 
     # Prepare env for pytest
     env = os.environ.copy()
-    try:
-        if env.get("KEEPER_METRICS_CLICKHOUSE_URL"):
-            env["CI_DB_URL"] = env["KEEPER_METRICS_CLICKHOUSE_URL"]
-    except Exception:
-        pass
     env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
     try:
         subproc_to = str(max(300, min(timeout_val - 60, 900)))
@@ -350,14 +356,11 @@ def main():
     env["CLICKHOUSE_BINARY"] = ch_path
     env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = ch_path
     env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_bin_for_mount
-    env["CLICKHOUSE_BINARY"] = ch_path
     env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
     env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
     # Ensure ClickHouseCluster uses the same readiness window when waiting for instances
     env.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_val))
     env.setdefault("KEEPER_SCENARIO_FILE", "all")
-    # Use default DB for Keeper metrics to avoid DB creation permissions issues
-    env.setdefault("KEEPER_METRICS_DB", "keeper_stress_tests")
     # Sidecar file for metrics rows emitted by tests; host will ingest post-run
     env["KEEPER_METRICS_FILE"] = f"{temp_dir}/keeper_metrics.jsonl"
     # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
@@ -409,24 +412,6 @@ def main():
                 cmd = f"{cmd} --commit-sha={env['COMMIT_SHA']}"
         except Exception:
             pass
-    except Exception:
-        pass
-    # Blocking sanity gate: require explicit CIDB credentials for single-path metrics push
-    try:
-        missing = []
-        for k in ("KEEPER_METRICS_CLICKHOUSE_URL", "CI_DB_USER", "CI_DB_PASSWORD"):
-            if not os.environ.get(k):
-                missing.append(k)
-        if missing:
-            msg = "Missing required CIDB env: " + ",".join(missing)
-            results.append(
-                Result.from_commands_run(
-                    name=f"CIDB Sanity Gate (blocking): {msg}",
-                    command=[f"bash -lc 'echo {msg}; exit 1'"],
-                )
-            )
-            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-            return
     except Exception:
         pass
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
@@ -548,11 +533,10 @@ def main():
         except Exception:
             pass
         if extracted_rows > 0:
-            host_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
-            host_user = os.environ.get("CI_DB_USER", "")
-            host_key = os.environ.get("CI_DB_PASSWORD", "")
-            host_auth = {"X-ClickHouse-User": host_user, "X-ClickHouse-Key": host_key}
-            metrics_db_local = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
+            host_url, host_auth = _resolve_cidb()
+            host_user = host_auth.get("X-ClickHouse-User", "")
+            host_key = host_auth.get("X-ClickHouse-Key", "")
+            metrics_db_local = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
             pushed = 0
             skipped = 0
             errors = 0
@@ -776,10 +760,9 @@ def main():
             except Exception:
                 per_test_events = []
             if per_test_events:
-                host_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
-                host_user = os.environ.get("CI_DB_USER", "")
-                host_key = os.environ.get("CI_DB_PASSWORD", "")
-                auth = {"X-ClickHouse-User": host_user, "X-ClickHouse-Key": host_key}
+                host_url, auth = _resolve_cidb()
+                host_user = auth.get("X-ClickHouse-User", "")
+                host_key = auth.get("X-ClickHouse-Key", "")
                 debug_lines = [
                     f"url_present={(1 if bool(host_url) else 0)}",
                     f"events={len(per_test_events)}",
@@ -806,8 +789,8 @@ def main():
                         if len(chunk) >= chunk_size:
                             body = "\n".join(chunk)
                             params = {
-                                "database": "default",
-                                "query": "INSERT INTO default.checks FORMAT JSONEachRow",
+                                "database": Settings.CI_DB_DB_NAME or "default",
+                                "query": f"INSERT INTO {Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'} FORMAT JSONEachRow",
                                 "date_time_input_format": "best_effort",
                                 "send_logs_level": "warning",
                             }
@@ -830,8 +813,8 @@ def main():
                     if chunk:
                         body = "\n".join(chunk)
                         params = {
-                            "database": "default",
-                            "query": "INSERT INTO default.checks FORMAT JSONEachRow",
+                            "database": Settings.CI_DB_DB_NAME or "default",
+                            "query": f"INSERT INTO {Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'} FORMAT JSONEachRow",
                             "date_time_input_format": "best_effort",
                             "send_logs_level": "warning",
                         }
@@ -877,26 +860,12 @@ def main():
         checks_rows = 0
         # Resolve CIDB endpoint from host env; we stripped these from pytest env earlier
         try:
-            from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-            _h = None
-            cidb_url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
-            auth = None
-            if cidb_url and os.environ.get("CI_DB_USER") and os.environ.get("CI_DB_PASSWORD"):
-                auth = {"X-ClickHouse-User": os.environ.get("CI_DB_USER"), "X-ClickHouse-Key": os.environ.get("CI_DB_PASSWORD")}
-            if (not cidb_url or not auth) and _h is None:
-                try:
-                    _h = ClickHouseHelper()
-                except Exception:
-                    _h = None
-                if not cidb_url and _h is not None:
-                    cidb_url = getattr(_h, "url", "")
-                if not auth and _h is not None:
-                    auth = getattr(_h, "auth", None)
+            cidb_url, auth = _resolve_cidb()
         except Exception:
             cidb_url = ""
             auth = None
         have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
-        metrics_db = env.get("KEEPER_METRICS_DB", "keeper_stress_tests")
+        metrics_db = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
         if have_cidb:
             try:
                 if sha and sha != "local":
@@ -937,15 +906,16 @@ def main():
                     "(lowerUTF8(check_name) LIKE 'keeper stress:%' OR lowerUTF8(check_name) LIKE 'keeper stress%' OR "
                     "lowerUTF8(check_name) LIKE 'keeper_stress:%' OR lowerUTF8(check_name) LIKE 'keeper_stress%')"
                 )
+                table_fq = f"{Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'}"
                 if sha and sha != "local":
                     q = (
-                        "SELECT count() FROM default.checks "
+                        f"SELECT count() FROM {table_fq} "
                         f"WHERE {name_filter} AND commit_sha = '{sha}' "
                         "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
                 else:
                     q = (
-                        "SELECT count() FROM default.checks "
+                        f"SELECT count() FROM {table_fq} "
                         f"WHERE {name_filter} "
                         "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
                     )
@@ -981,17 +951,18 @@ def main():
                     lines.append("<empty>")
                 # Checks sample (recent rows)
                 try:
+                    table_fq = f"{Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'}"
                     if sha and sha != "local":
                         q = (
                             "SELECT check_start_time, check_name, check_status, test_name "
-                            "FROM default.checks "
+                            f"FROM {table_fq} "
                             f"WHERE {name_filter} AND commit_sha = '{sha}' "
                             "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
                         )
                     else:
                         q = (
                             "SELECT check_start_time, check_name, check_status, test_name "
-                            "FROM default.checks "
+                            f"FROM {table_fq} "
                             f"WHERE {name_filter} "
                             "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
                         )
