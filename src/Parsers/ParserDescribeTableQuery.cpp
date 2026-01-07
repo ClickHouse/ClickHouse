@@ -1,8 +1,11 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Common/typeid_cast.h>
@@ -19,8 +22,7 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserSetQuery parser_settings(true);
 
-    ASTPtr database;
-    ASTPtr table;
+    ASTPtr select;
 
     if (!s_describe.ignore(pos, expected) && !s_desc.ignore(pos, expected))
         return false;
@@ -29,7 +31,17 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     s_table.ignore(pos, expected);
 
-    if (!ParserTableExpression().parse(pos, query->table_expression, expected))
+    /// Try to parse SELECT query without parentheses (e.g., DESCRIBE SELECT 1)
+    if (ParserSelectWithUnionQuery().parse(pos, select, expected))
+    {
+        auto table_expr = std::make_shared<ASTTableExpression>();
+        /// Wrap SELECT in ASTSubquery, as expected by the rest of the codebase
+        auto subquery = std::make_shared<ASTSubquery>(std::move(select));
+        table_expr->subquery = subquery;
+        table_expr->children.push_back(table_expr->subquery);
+        query->table_expression = table_expr;
+    }
+    else if (!ParserTableExpression().parse(pos, query->table_expression, expected))
         return false;
 
     /// For compatibility with SELECTs, where SETTINGS can be in front of FORMAT

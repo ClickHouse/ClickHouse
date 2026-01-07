@@ -260,13 +260,21 @@ class KeeperClient(object):
     def from_cluster(
         cls,
         cluster: ClickHouseCluster,
-        keeper_node: str,
+        keeper_node: Optional[str] = None,
+        keeper_ip: Optional[str] = None,
         port: Optional[int] = None,
         identity: Optional[str] = None,
     ) -> "KeeperClient":
+        if keeper_node is None and keeper_ip is None:
+            raise ValueError("Must specify either keeper_node or keeper_ip")
+
+        instance_ip = keeper_ip
+        if instance_ip is None:
+            instance_ip = cluster.get_instance_ip(keeper_node)
+
         client = cls(
             cluster.server_bin_path,
-            cluster.get_instance_ip(keeper_node),
+            instance_ip,
             port or cluster.zookeeper_port,
             identity=identity,
         )
@@ -291,7 +299,9 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_se
     try:
         client = get_keeper_socket(cluster, node.name, port, timeout_sec)
         if argument is not None:
-            client.send(cmd.encode() + struct.pack('>L', len(argument)) + argument.encode())
+            client.send(
+                cmd.encode() + struct.pack(">L", len(argument)) + argument.encode()
+            )
         else:
             client.send(cmd.encode())
 

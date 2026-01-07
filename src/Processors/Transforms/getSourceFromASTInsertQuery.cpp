@@ -16,13 +16,15 @@
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 
-
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -59,8 +61,14 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         ? getReadBufferFromASTInsertQuery(ast)
         : std::make_unique<EmptyReadBuffer>();
 
+    const Settings & settings = context->getSettingsRef();
+
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
+    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,
+                                          settings[Setting::max_insert_block_size], std::nullopt,
+                                          settings[Setting::max_insert_block_size_bytes],
+                                          settings[Setting::min_insert_block_size_rows],
+                                          settings[Setting::min_insert_block_size_bytes]);
     format->addBuffer(std::move(input_buffer));
     return format;
 }
