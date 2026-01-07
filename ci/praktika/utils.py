@@ -472,6 +472,10 @@ class Utils:
         return False
 
     @staticmethod
+    def is_mac():
+        return platform.system() == "Darwin"
+
+    @staticmethod
     def terminate_process_group(pid, force=False):
         try:
             if not force:

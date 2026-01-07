@@ -2,6 +2,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
@@ -29,6 +30,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -115,6 +117,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -307,6 +310,31 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
+    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            columns, configuration->getRawPath().path, format_settings, context_);
+    }
+
+    auto hive_partition_columns_to_read_from_file_path_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+
+    for (const auto & column : columns.getAllPhysical())
+    {
+        auto hive_column = hive_partition_columns_to_read_from_file_path_set.find(column.getNameInStorage());
+        if (hive_column == hive_partition_columns_to_read_from_file_path_set.end())
+            file_columns.emplace_back(column);
+        else
+            hive_partition_columns_to_read_from_file_path_set.erase(hive_column);
+    }
+
+    /// All hive columns must be in storage schema
+    if (!hive_partition_columns_to_read_from_file_path_set.empty())
+    {
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "All hive partitioning columns must be in engine schema. Next columns not found: {}",
+            fmt::join(hive_partition_columns_to_read_from_file_path_set, ", "));
+    }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
@@ -316,10 +344,18 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
+    bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
+
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
+        zk_path, *queue_settings_,
+        storage_metadata.getColumns(),
+        configuration_->format,
+        context_,
+        is_attach,
+        is_path_with_hive_partitioning,
+        log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -331,7 +367,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
+        is_path_with_hive_partitioning);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -549,6 +586,7 @@ void StorageObjectStorageQueue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
+
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -812,7 +850,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context));
+            supportsSubsetOfColumns(queue_context),
+            /*supports_tuple_elements*/ false,
+            PrepareReadingFromFormatHiveParams {file_columns,
+                hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+        );
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
@@ -923,64 +965,87 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
+    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
+    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
 
-    if (requests.empty())
+    size_t retry_count = 0;
+    constexpr size_t retry_limit = 5;
+
+    while (true)
     {
-        LOG_TEST(log, "Nothing to commit");
-        return;
-    }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
-
-    if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
-    {
-        postProcess(successful_objects);
-    }
-
-    auto context = getContext();
-    const auto & settings = context->getSettingsRef();
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-
-    std::optional<Coordination::Error> code;
-    Coordination::Responses responses;
-    size_t try_num = 0;
-    zk_retry.retryLoop([&]
-    {
-        if (zk_retry.isRetry())
+        if (requests.empty())
         {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
+            LOG_TEST(log, "Nothing to commit");
+            return;
         }
-        ++try_num;
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
+
+        if (!successful_objects.empty()
+            && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+        {
+            postProcess(successful_objects);
+        }
+
+        auto context = getContext();
+        const auto & settings = context->getSettingsRef();
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
+        std::optional<Coordination::Error> code;
+        Coordination::Responses responses;
+        size_t try_num = 0;
+        zk_retry.retryLoop([&]
+        {
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+
+            auto zk_client = getZooKeeper();
+            code = zk_client->tryMulti(requests, responses);
         });
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-        });
 
-        auto zk_client = getZooKeeper();
-        code = zk_client->tryMulti(requests, responses);
-    });
+        if (!code.has_value())
+        {
+            throw Exception(
+                ErrorCodes::KEEPER_EXCEPTION,
+                "Failed to commit files with {} retries, last error message: {}",
+                settings[Setting::keeper_max_retries].value,
+                zk_retry.getLastKeeperErrorMessage());
+        }
 
-    if (!code.has_value())
-    {
-        throw Exception(
-            ErrorCodes::KEEPER_EXCEPTION,
-            "Failed to commit files with {} retries, last error message: {}",
-            settings[Setting::keeper_max_retries].value,
-            zk_retry.getLastKeeperErrorMessage());
-    }
+        if (code.value() == Coordination::Error::ZBADVERSION && retry_count < retry_limit)
+        {
+            ++retry_count;
+            LOG_INFO(log, "Keeper Bad Version error, other node wrote something, retry {}", retry_count);
+            /// Need to recreate requests list based on new keeper state
+            requests.clear();
+            for (auto & source : sources)
+                source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+            ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+            continue;
+        }
 
-    chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-    if (code.value() != Coordination::Error::ZOK)
-    {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+        if (code.value() != Coordination::Error::ZOK)
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+            throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        }
+
+        break;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
@@ -1319,18 +1384,27 @@ void StorageObjectStorageQueue::alter(
         }
         if (requires_detached_mv)
         {
+            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
+
             for (auto & task : streaming_tasks)
                 task->deactivate();
+
+            LOG_TRACE(log, "Deactivated streaming tasks");
         }
         SCOPE_EXIT({
             if (requires_detached_mv)
             {
                 for (auto & task : streaming_tasks)
                     task->activateAndSchedule();
+
+                LOG_TRACE(log, "Re-activated streaming tasks");
             }
         });
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+        LOG_TRACE(
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            new_metadata.settings_changes->formatForLogging(),
+            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -1388,6 +1462,9 @@ void StorageObjectStorageQueue::alter(
         }
 
         files_metadata->updateSettings(changed_settings);
+        /// Reset streaming_iterator as it can hold state which we could have just altered.
+        if (requires_detached_mv)
+            streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);
@@ -1429,6 +1506,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
         enable_hash_ring_filtering_copy,

@@ -338,15 +338,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                              || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
                 bool is_array = (literal && literal->value.getType() == Field::Types::Array)
                              || (function && function->name == "array");
+                bool has_alias = !arguments->children[0]->tryGetAlias().empty();
 
                 /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
-                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
+                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1, UNLESS the inner statement has an alias e.g. -(-1 AS a)
                 /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
                 /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
                 /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
-                bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
+                bool inside_parens = (name == "negate" && !has_alias && (literal_need_parens || (function && function->name == "negate")))
                     || (subquery && name == "not") || (is_tuple && name == "not");
 
                 /// We DO need parentheses around a single literal
@@ -446,12 +447,21 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                 const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
                 const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
+                bool is_literal_tuple_or_array = second_arg_literal
+                    && (second_arg_literal->value.getType() == Field::Types::Tuple
+                        || second_arg_literal->value.getType() == Field::Types::Array);
+
+                /** Conditions for extra parens:
+                 *  1. Is IN operator
+                 *  2. 2nd arg is not subquery
+                 *  3. 2nd arg is not function or literal tuple or array
+                 *  4. If the 2nd argument has alias, we ignore condition 3 and add extra parens if other conditions are satisfied
+                 *
+                 *  Condition 4 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
+                 */
                 bool extra_parents_around_in_rhs = is_in_operator
-                    && !second_arg_func
-                    && !(second_arg_literal
-                         && (second_arg_literal->value.getType() == Field::Types::Tuple
-                            || second_arg_literal->value.getType() == Field::Types::Array))
-                    && !arguments->children[1]->as<ASTSubquery>();
+                    && !arguments->children[1]->as<ASTSubquery>()
+                    && ((!second_arg_func && !is_literal_tuple_or_array) || !arguments->children[1]->tryGetAlias().empty());
 
                 if (extra_parents_around_in_rhs)
                 {
