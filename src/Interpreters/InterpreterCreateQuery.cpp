@@ -933,7 +933,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
@@ -1088,7 +1090,9 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                    context,
+                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {

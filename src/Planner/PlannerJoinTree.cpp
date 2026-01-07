@@ -421,7 +421,7 @@ bool applyTrivialCountIfPossible(
     return true;
 }
 
-void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, PlannerContextPtr & planner_context)
+void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -443,7 +443,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
     }
-    else if (query_node || union_node)
+    else if ((query_node || union_node) && select_query_options.check_subquery_table_access)
     {
         /// Check permissions for all tables referenced in the subquery.
         /// This is needed because in only_analyze mode, subqueries are not recursively planned,
@@ -2614,7 +2614,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             continue;
         }
 
-        prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
+        prepareBuildQueryPlanForTableExpression(table_expression, select_query_options, planner_context);
     }
 
     auto should_disable_parallel_replicas = [&]() -> bool
