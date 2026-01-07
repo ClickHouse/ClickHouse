@@ -304,11 +304,7 @@ __attribute__((constructor(202))) void init_ssl()
 /// class C { C() { assert(inside_main); } };
 bool inside_main = false;
 
-#if USE_FUZZING_MODE
-int clickhouseMain(int argc_, char ** argv_)
-#else
 int main(int argc_, char ** argv_)
-#endif
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
