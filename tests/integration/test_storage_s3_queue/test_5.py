@@ -470,6 +470,7 @@ def test_failure_in_the_middle(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_loading_retries": 10000,
+            "polling_max_timeout_ms": 100,
         },
     )
     values = []
@@ -526,7 +527,7 @@ def test_failure_in_the_middle(started_cluster):
             )
         )
     finally:
-        started_cluster.instances["instance"].query(
+        node.query(
             f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
         )
 
@@ -536,7 +537,7 @@ def test_failure_in_the_middle(started_cluster):
     assert 0 == get_count()
 
     processed = False
-    for _ in range(40):
+    for _ in range(50):
         node.query("SYSTEM FLUSH LOGS")
         processed = int(
             node.query(
