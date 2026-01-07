@@ -957,7 +957,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
         NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
         NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-        visitor.visit(create.getChild(*create.dictionary->source));
+        visitor.visit(create.dictionary->getChild(*create.dictionary->source));
 
         return {};
     }
