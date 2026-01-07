@@ -78,7 +78,7 @@ template <class FuncName>
 class FunctionTupleOperator : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
+    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
     static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name);
 
     explicit FunctionTupleOperator(ContextPtr context_) : ITupleFunction(context_) {}
@@ -230,7 +230,7 @@ template <class FuncName>
 class FunctionTupleOperatorByNumber : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
+    /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
     static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
 
     explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
@@ -1188,7 +1188,7 @@ template <class FuncLabel>
 class FunctionLDistance : public ITupleFunction
 {
 public:
-    constexpr static inline auto name = std::string("L") + FuncLabel::name + "Distance";
+    static constexpr inline auto name = std::string("L") + FuncLabel::name + "Distance";
 
     explicit FunctionLDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLDistance>(context_); }
@@ -1243,8 +1243,7 @@ template <class FuncLabel>
 class FunctionLNormalize : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = std::string("L") + FuncLabel::name + "Normalize";
+    static constexpr inline auto name = std::string("L") + FuncLabel::name + "Normalize";
 
     explicit FunctionLNormalize(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNormalize>(context_); }
@@ -1299,8 +1298,7 @@ using FunctionLpNormalize = FunctionLNormalize<LpLabel>;
 class FunctionCosineDistance : public ITupleFunction
 {
 public:
-    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "cosineDistance";
+    static constexpr auto name = "cosineDistance";
 
     explicit FunctionCosineDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCosineDistance>(context_); }
