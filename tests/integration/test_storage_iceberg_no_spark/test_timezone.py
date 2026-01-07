@@ -2,7 +2,6 @@ import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
-    default_upload_directory,
     get_uuid_str
 )
 
@@ -10,9 +9,8 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("single_file", [True, False])
 @pytest.mark.parametrize("storage_type", ["s3"])
-@pytest.mark.parametrize("create_with_spark", [True, False])
-def test_timezone(started_cluster_iceberg_with_spark, format_version, single_file, storage_type, create_with_spark):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
+def test_timezone(started_cluster_iceberg_no_spark, format_version, single_file, storage_type):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME_PREFIX = "test_timezone_" + storage_type + "_" + get_uuid_str()
 
     TABLE_NAME_ICEBERG = f"{TABLE_NAME_PREFIX}_iceberg"
@@ -20,80 +18,37 @@ def test_timezone(started_cluster_iceberg_with_spark, format_version, single_fil
     TABLE_NAME_ICEBERG_DIST = f"{TABLE_NAME_PREFIX}_iceberg_dist"
     TABLE_NAME_MT = f"{TABLE_NAME_PREFIX}_mt"
 
-    if create_with_spark:
-        spark = started_cluster_iceberg_with_spark.spark_session
-        spark.sql(f"""
-            CREATE TABLE {TABLE_NAME_ICEBERG} (key INT, value INT, time TIMESTAMP)
-            USING iceberg
-            PARTITIONED BY (identity(key))
-            OPTIONS ('format-version'='{format_version}')
-        """)
-
-        if single_file:
-            spark.sql(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 1, TIMESTAMP '2025-01-01 01:00:00'),
-                    (1, 2, TIMESTAMP '2025-01-01 02:00:00'),
-                    (1, 3, TIMESTAMP '2025-01-01 03:00:00')
-            """)
-        else:
-            spark.sql(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 1, TIMESTAMP '2025-01-01 01:00:00')
-            """)
-            spark.sql(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 2, TIMESTAMP '2025-01-01 02:00:00')
-            """)
-            spark.sql(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 3, TIMESTAMP '2025-01-01 03:00:00')
-            """)
-
-        default_upload_directory(
-            started_cluster_iceberg_with_spark,
-            storage_type,
-            f"/iceberg_data/default/{TABLE_NAME_ICEBERG}/",
-            f"/iceberg_data/default/{TABLE_NAME_ICEBERG}/",
-        )
-
-        create_iceberg_table(storage_type,
-                            instance,
-                            TABLE_NAME_ICEBERG,
-                            started_cluster_iceberg_with_spark,
-                            )
+    create_iceberg_table(storage_type,
+                        instance,
+                        TABLE_NAME_ICEBERG,
+                        started_cluster_iceberg_no_spark,
+                        schema="(key Int32, value Int32, time DateTime)",
+                        format_version=format_version,
+                        )
+    if single_file:
+        instance.query(f"""
+            INSERT INTO {TABLE_NAME_ICEBERG} VALUES
+                (1, 1, '2025-01-01 01:00:00'),
+                (1, 2, '2025-01-01 02:00:00'),
+                (1, 3, '2025-01-01 03:00:00')
+        """,
+        settings={"allow_experimental_insert_into_iceberg": 1})
     else:
-        create_iceberg_table(storage_type,
-                            instance,
-                            TABLE_NAME_ICEBERG,
-                            started_cluster_iceberg_with_spark,
-                            schema="(key Int32, value Int32, time DateTime)",
-                            format_version=format_version,
-                            )
-        if single_file:
-            instance.query(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 1, '2025-01-01 01:00:00'),
-                    (1, 2, '2025-01-01 02:00:00'),
-                    (1, 3, '2025-01-01 03:00:00')
-            """,
-            settings={"allow_experimental_insert_into_iceberg": 1})
-        else:
-            instance.query(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 1, '2025-01-01 01:00:00')
-            """,
-            settings={"allow_experimental_insert_into_iceberg": 1})
-            instance.query(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 2, '2025-01-01 02:00:00')
-            """,
-            settings={"allow_experimental_insert_into_iceberg": 1})
-            instance.query(f"""
-                INSERT INTO {TABLE_NAME_ICEBERG} VALUES
-                    (1, 3, '2025-01-01 03:00:00')
-            """,
-            settings={"allow_experimental_insert_into_iceberg": 1})
+        instance.query(f"""
+            INSERT INTO {TABLE_NAME_ICEBERG} VALUES
+                (1, 1, '2025-01-01 01:00:00')
+        """,
+        settings={"allow_experimental_insert_into_iceberg": 1})
+        instance.query(f"""
+            INSERT INTO {TABLE_NAME_ICEBERG} VALUES
+                (1, 2, '2025-01-01 02:00:00')
+        """,
+        settings={"allow_experimental_insert_into_iceberg": 1})
+        instance.query(f"""
+            INSERT INTO {TABLE_NAME_ICEBERG} VALUES
+                (1, 3, '2025-01-01 03:00:00')
+        """,
+        settings={"allow_experimental_insert_into_iceberg": 1})
 
     instance.query(f"""
         CREATE TABLE {TABLE_NAME_MT} (key Int32, value Int32, time DateTime)
@@ -162,6 +117,7 @@ def test_timezone(started_cluster_iceberg_with_spark, format_version, single_fil
     assert result_view == expected_cond_tz_result
     assert result_dist == expected_cond_tz_result
 
+    # Restart to clean permament variables
     instance.restart_clickhouse()
 
     # Chech with timezone after restart
