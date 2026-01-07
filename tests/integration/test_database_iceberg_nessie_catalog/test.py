@@ -505,10 +505,10 @@ def test_drop_table(started_cluster):
 
 
 def test_three_part_identifiers(started_cluster):
-    """Test 3-part identifiers (catalog.namespace.table) for DataLakeCatalog databases.
+    """Test 3-part identifiers (catalog.namespace.table) for DataLakeCatalog databases
     
-    This tests that queries like SELECT FROM catalog.namespace.table work without
-    needing to quote the table name as `namespace.table`.
+    verifies that queries like SELECT FROM catalog.namespace.table work without
+    needing to quote the table name as `namespace.table`
     """
     node = started_cluster.instances["node1"]
 

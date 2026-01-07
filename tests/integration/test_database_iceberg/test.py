@@ -754,7 +754,6 @@ def test_database_priority_over_namespace(started_cluster):
 
     # When in the DataLakeCatalog database, querying namespace.table should resolve
     # to the regular database (db.table takes priority)
-    # run USE and SELECT in same session
     count = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}"))
     assert count == 3, f"Expected 3 rows from regular database, got {count}"
 
