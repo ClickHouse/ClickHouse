@@ -92,9 +92,6 @@ def test_system_detached_tables(
 
     assert result == expected_before_restart
 
-    if db_engine.startswith("Lazy"):
-        return
-
     node.restart_clickhouse()
 
     if db_engine.startswith("Repl"):

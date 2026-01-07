@@ -453,9 +453,10 @@ void DatabaseOnDisk::renameTable(
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
-    /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, local_context);
-    if (dictionary && table && !table->isDictionary())
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database returned nullptr for the table, which is a bug");
+    if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
     /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.

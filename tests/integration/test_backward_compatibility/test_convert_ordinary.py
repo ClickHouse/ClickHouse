@@ -152,7 +152,6 @@ def check_convert_all_dbs_to_atomic():
     )
     node.query("CREATE DATABASE atomic ENGINE=Atomic")
     node.query("CREATE DATABASE mem ENGINE=Memory")
-    node.query("CREATE DATABASE lazy ENGINE=Lazy(1)")
 
     tables_with_data = ["mt1", "mt2", "rmt1", "rmt2", "mv1", "mv2", "detached"]
 
@@ -164,7 +163,6 @@ def check_convert_all_dbs_to_atomic():
     node.query(
         "CREATE TABLE `.o r d i n a r y.`.`t. a. b. l. e.` (n int) ENGINE=MergeTree ORDER BY n"
     )
-    node.query("CREATE TABLE lazy.table (n int) ENGINE=Log")
 
     # Introduce some cross dependencies
     node.query(
@@ -225,11 +223,10 @@ def check_convert_all_dbs_to_atomic():
             "SELECT name FROM system.databases WHERE engine='Atomic' ORDER BY name"
         )
     )
-    assert "Lazy\nMemory\n" == node.query(
-        "SELECT engine FROM system.databases WHERE name IN ('mem', 'lazy') ORDER BY name"
+    assert "Memory\n" == node.query(
+        "SELECT engine FROM system.databases WHERE name IN ('mem') ORDER BY name"
     )
     assert "t. a. b. l. e.\n" == node.query("SHOW TABLES FROM `.o r d i n a r y.`")
-    assert "table\n" == node.query("SHOW TABLES FROM lazy")
 
     for db in ["ordinary", "other", "atomic"]:
         assert "\n".join(

@@ -143,15 +143,7 @@ def dependent_tables_assert():
 def test_dependent_tables(started_cluster):
     query = node1.query
     query("drop database if exists a")
-    query("drop database if exists lazy")
-    query("create database lazy engine=Lazy(10)")
     query("create database a")
-    query("create table lazy.src (n int, m int) engine=Log")
-    query(
-        "create dictionary a.d (n int default 0, m int default 42) primary key n "
-        "source(clickhouse(host 'localhost' port tcpPort() user 'default' table 'src' password '' db 'lazy'))"
-        "lifetime(min 1 max 10) layout(flat())"
-    )
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     for i in range(2, 100):
@@ -172,9 +164,6 @@ def test_dependent_tables(started_cluster):
         "k default dictGet('test.d', 'm', toUInt64(0))) engine=Join(any, left, n)"
     )
     query(
-        "create table lazy.log (n default dictGet(test.d, 'm', toUInt64(0))) engine=Log"
-    )
-    query(
         "create table a.t (n default joinGet('system.join', 'm', 1::int),"
         "m default dictGet('test.d', 'm', toUInt64(3)),"
         "k default joinGet(join, 'm', 1::int)) engine=MergeTree order by n"
@@ -184,13 +173,11 @@ def test_dependent_tables(started_cluster):
     node1.restart_clickhouse()
     dependent_tables_assert()
     query("drop table a.t")
-    query("drop table lazy.log")
     query("drop table join")
     query("drop dictionary test.d")
     query("drop table src")
     query("drop table system.join")
     query("drop database a")
-    query("drop database lazy")
 
 
 def test_multiple_tables(started_cluster):

@@ -122,10 +122,6 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         res_columns[1]->insert(DATABASE_CONTEXT);
         res_columns[2]->insertDefault();
 
-        /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
-        if (database_ptr->getEngineName() == "Lazy")
-            continue;
-
         for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
