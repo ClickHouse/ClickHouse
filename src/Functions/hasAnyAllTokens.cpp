@@ -68,6 +68,15 @@ void FunctionHasAnyAllTokens<HasTokensTraits>::setSearchTokens(const std::vector
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} search tokens", name, max_number_of_tokens);
 }
 
+template <class HasTokensTraits>
+void FunctionHasAnyAllTokens<HasTokensTraits>::setPreprocessor(MergeTreeIndexTextPreprocessorPtr new_preprocessor)
+{
+    if (preprocessor != nullptr)
+        return;
+
+    preprocessor = new_preprocessor;
+}
+
 namespace
 {
 
@@ -362,7 +371,8 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    ColumnPtr col_input = arguments[arg_input].column;
+    auto [col_input, _] = preprocessor->processColumn(arguments[arg_input], 0, input_rows_count);
+
     auto col_result = ColumnVector<UInt8>::create();
 
     if (token_extractor == nullptr)

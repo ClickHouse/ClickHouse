@@ -571,6 +571,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
             search_function.setSearchTokens(search_tokens);
+            search_function.setPreprocessor(preprocessor);
         }
         else
         {
@@ -580,6 +581,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
             search_function.setSearchTokens(search_tokens);
+            search_function.setPreprocessor(preprocessor);
         }
 
         return true;

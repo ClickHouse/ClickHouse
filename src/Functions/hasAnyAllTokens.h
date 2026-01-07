@@ -3,6 +3,8 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+
 #include <absl/container/flat_hash_map.h>
 
 namespace DB
@@ -48,6 +50,7 @@ public:
 
     void setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor);
     void setSearchTokens(const std::vector<String> & new_search_tokens);
+    void setPreprocessor(MergeTreeIndexTextPreprocessorPtr new_preprocessor);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
@@ -55,6 +58,7 @@ public:
 private:
     const bool enable_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
+    MergeTreeIndexTextPreprocessorPtr preprocessor;
     std::optional<TokensWithPosition> search_tokens;
 };
 }

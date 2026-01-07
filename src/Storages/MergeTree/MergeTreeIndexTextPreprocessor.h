@@ -35,4 +35,6 @@ private:
     String column_name;
 };
 
+using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
+
 }
