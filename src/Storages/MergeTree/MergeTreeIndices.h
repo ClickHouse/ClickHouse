@@ -318,6 +318,7 @@ struct IMergeTreeIndex
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
+    virtual bool isTextIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -356,6 +357,7 @@ public:
 
     using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
+    static void implicitValidation(const IndexDescription & index);
     void validate(const IndexDescription & index, bool attach) const;
 
     MergeTreeIndexPtr get(const IndexDescription & index) const;

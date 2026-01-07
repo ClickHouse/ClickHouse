@@ -5,7 +5,6 @@
             <s3queue_enable_logging_to_s3queue_log>1</s3queue_enable_logging_to_s3queue_log>
             <s3queue_allow_experimental_sharded_mode>1</s3queue_allow_experimental_sharded_mode>
             <function_sleep_max_microseconds_per_block>100000000</function_sleep_max_microseconds_per_block>
-            <keeper_max_retries>6</keeper_max_retries>
         </default>
     </profiles>
 </clickhouse>

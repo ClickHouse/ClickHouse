@@ -2,11 +2,8 @@
 
 #include "config.h"
 #include <base/types.h>
-#include <xray/xray_interface.h>
 
-namespace DB
-{
-namespace Instrumentation
+namespace DB::Instrumentation
 {
 
 enum class EntryType : UInt8
@@ -16,10 +13,6 @@ enum class EntryType : UInt8
     ENTRY_AND_EXIT
 };
 
-EntryType fromXRayEntryType(XRayEntryType entry_type);
-String entryTypeToString(EntryType entry_type);
-
-}
 }
 
 #if USE_XRAY
@@ -33,12 +26,23 @@ String entryTypeToString(EntryType entry_type);
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
+#include <xray/xray_interface.h>
 
 #include <vector>
 #include <variant>
 
 namespace DB
 {
+
+namespace Instrumentation
+{
+
+EntryType fromXRayEntryType(XRayEntryType entry_type);
+String entryTypeToString(EntryType entry_type);
+
+struct All {};
+
+}
 
 struct TraceLogElement;
 
@@ -97,8 +101,9 @@ public:
 
     static InstrumentationManager & instance();
 
+    [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, Instrumentation::All, String> id);
+    [[clang::xray_never_instrument]] static bool shouldPatchFunction(String function_to_patch, String full_qualified_function);
     [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters);
-    [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, bool> id);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
     InstrumentedPoints getInstrumentedPoints() const;

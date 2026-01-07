@@ -1,0 +1,46 @@
+        Type: LEFT
+        Strictness: ANTI
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+                Prewhere filter column: not(equals(__table1.c_custkey, 1_UInt8)) (removed)
+              ReadFromMergeTree (default.nation)
+              ReadType: Default
+                Prewhere filter column: equals(__table2.n_name, \'FRANCE\'_String) (removed)
+        Type: RIGHT
+        Strictness: ANTI
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+                Prewhere filter column: equals(__table1.c_custkey, 1_UInt8) (removed)
+              ReadFromMergeTree (default.nation)
+              ReadType: Default
+                Prewhere filter column: not(equals(__table2.n_name, \'FRANCE\'_String)) (removed)
+        Type: LEFT
+        Strictness: SEMI
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+                Prewhere filter column: equals(__table1.c_custkey, 1_UInt8) (removed)
+              ReadFromMergeTree (default.nation)
+              ReadType: Default
+                Prewhere filter column: equals(__table2.n_name, \'FRANCE\'_String) (removed)
+        Type: RIGHT
+        Strictness: SEMI
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+                Prewhere filter column: equals(__table1.c_custkey, 1_UInt8) (removed)
+              ReadFromMergeTree (default.nation)
+              ReadType: Default
+                Prewhere filter column: equals(__table2.n_name, \'FRANCE\'_String) (removed)
+        Type: LEFT
+        Strictness: ANY
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+                Prewhere filter column: equals(__table1.c_custkey, 1_UInt8) (removed)
+              ReadFromMergeTree (default.nation)
+              ReadType: Default
+        Type: RIGHT
+        Strictness: ANY
+              ReadFromMergeTree (default.customer)
+              ReadType: Default
+              ReadFromMergeTree (default.nation)
+              ReadType: Default
+                Prewhere filter column: equals(__table2.n_name, \'FRANCE\'_String) (removed)

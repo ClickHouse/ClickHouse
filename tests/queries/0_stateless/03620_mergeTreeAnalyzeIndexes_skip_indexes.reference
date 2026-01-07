@@ -1,0 +1,7 @@
+-- { echo }
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), 'with_skip_index', value > 0);
+all_1_1_0	[(0,122)]
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), 'with_skip_index', value > 5_000_000);
+all_1_1_0	[(6,122)]
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), 'with_skip_index', value > 100_000_000);
+all_1_1_0	[]

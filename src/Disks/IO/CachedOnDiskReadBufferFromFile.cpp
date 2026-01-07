@@ -27,6 +27,7 @@ extern const Event FileSegmentPredownloadMicroseconds;
 extern const Event FileSegmentUsedBytes;
 
 extern const Event CachedReadBufferReadFromSourceMicroseconds;
+extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
@@ -83,9 +84,11 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
     LOG_TEST(
-        log, "Boundary alignment: {}, external buffer: {}, allow seeks after first read: {}",
+        log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
+        "external buffer: {}, allow seeks after first read: {}, file size: {}",
+        cache_key.toString(), source_file_path,
         settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
-        use_external_buffer, allow_seeks_after_first_read);
+        use_external_buffer, allow_seeks_after_first_read, file_size_);
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -617,7 +620,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 watch.stop();
                 auto elapsed = watch.elapsedMicroseconds();
                 current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceMicroseconds, elapsed);
             }
 
             if (!bytes_to_predownload || !has_more_data)
@@ -1137,12 +1140,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         std::optional<std::string> impl_read_stop_reason;
         if (read_type != ReadType::CACHED)
         {
-            object_size = implementation_buffer->tryGetFileSize();
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
                 impl_read_stop_reason = s3_buf->getStopReason();
+                object_size = s3_buf->getObjectSizeFromS3();
             }
 #endif
         }

@@ -68,7 +68,7 @@ public:
 
         const IColumn & col_length = *arguments[0].column;
         size_t total_codepoints = 0;
-        const size_t max_total_codepoints = 1 << 29;
+        const size_t max_total_codepoints = 1ULL << 29;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t codepoints = col_length.getUInt(row_num);
@@ -171,7 +171,7 @@ It is still possible that the client interacting with ClickHouse server is not a
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomStringUTF8>(documentation);
 }

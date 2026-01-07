@@ -57,12 +57,12 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            "./ci/praktika/cidb.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/defs/job_configs.py",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -71,21 +71,21 @@ common_ft_job_config = Job.Config(
 common_stress_job_config = Job.Config(
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
-    command="cd ./tests/ci && python3 ./stress_check.py",
+    command="python3 ./ci/jobs/stress_job.py",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./tests/queries/0_stateless/",
-            "./tests/ci/stress.py",
-            "./tests/ci/stress_check.py",
+            "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    allow_merge_on_failure=True,
     timeout=3600 * 2,
 )
 common_integration_test_job_config = Job.Config(
@@ -95,12 +95,13 @@ common_integration_test_job_config = Job.Config(
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
+            "./ci/jobs/scripts/integration_tests_configs.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
-    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker",
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
 )
 
 BINARY_DOCKER_COMMAND = (
@@ -253,8 +254,7 @@ class JobConfigs:
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
             timeout=3 * 3600,
         ),
         Job.ParamSet(
@@ -265,7 +265,6 @@ class JobConfigs:
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
-            # Release needs same architecture (for now) to handle `clickhouse hash-binary` to setup binary hash
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -348,7 +347,7 @@ class JobConfigs:
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
+        command="python3 ./ci/jobs/install_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/install_check.py",
@@ -359,11 +358,23 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_debug",
+            parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[
-                ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.DEB_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.TGZ_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            requires=[
+                ArtifactNames.DEB_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
     )
@@ -681,16 +692,17 @@ class JobConfigs:
     upgrade_test_jobs = Job.Config(
         name=JobNames.UPGRADE,
         runs_on=["from param"],
-        command="cd ./tests/ci && python3 ./upgrade_check.py",
+        command="python3 ./ci/jobs/upgrade_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/upgrade_check.py",
-                "./tests/ci/stress_check.py",
+                "./ci/jobs/upgrade_job.py",
+                "./ci/jobs/stress_job.py",
+                "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
+                "./ci/jobs/scripts/log_parser.py",
             ]
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_asan",
@@ -851,36 +863,36 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.ARM_MEDIUM,
             requires=[ArtifactNames.CH_ARM_ASAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="amd_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
@@ -1047,20 +1059,20 @@ class JobConfigs:
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=["Build (arm_fuzzers)"],
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",
