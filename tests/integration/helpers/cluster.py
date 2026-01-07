@@ -4284,7 +4284,7 @@ class ClickHouseInstance:
             self.mem_limit = "mem_limit: 10g"
 
         if cpu_limit is None:
-            self.cpu_limit = "cpus: 3"
+            self.cpu_limit = "cpus: 5"
         elif cpu_limit == False:
             self.cpu_limit = ""
         else:
