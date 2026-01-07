@@ -62,3 +62,64 @@ READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
 
 CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
+
+# Substrings used to classify and categorize test failures based on error output.
+# Use the following query to find test failures NOT covered by current patterns:
+# WITH ['Timeout', 'AssertionError', 'E   assert', 'E   Exception', 'E   NameError', 'Connection refused', 'UnboundLocalError', 'AttributeError', 'Too many retry attempts', 'E   FileNotFoundError', 'E   RuntimeError', 'Connection has been closed', 'E   Failed', 'E   ValueError', 'E   KeyError', 'InternalError', 'syntax error', 'E   TypeError', 'E   OSError', 'Code:', 'ClientError', 'QueryRuntimeException', 'Max retries exceeded with url', 'UnicodeDecodeError', 'Py4JError', 'ConnectionLoss', 'Connection reset by peer', 'Exception:', 'Failure:', 'ExistsError', 'ConnectionError', 'Client Error', 'Errno']
+# AS reasons
+# SELECT test_context_raw
+# FROM checks
+# WHERE match(test_name, '^test_')
+#   AND test_context_raw != ''
+#   AND test_status = 'FAIL'
+#   AND check_name LIKE 'Integration%'
+#   AND check_start_time > now() - INTERVAL 3 MONTH
+#   AND NOT arrayExists(
+#         r -> positionCaseInsensitive(ifNull(test_context_raw, ''), r) > 0,
+#         reasons
+#       )
+# LIMIT 100;
+TEST_FAILURE_PATTERNS = [
+    # Common Functional tests failures
+    "Timeout",
+    "having stderror",
+    "result differs with reference",
+    "return code",
+    "Test runs too long",
+    "having exception in stdout",
+    "server died",
+    "Test internal error:",
+    # Common Integration tests failures
+    "AssertionError",
+    "E   assert",
+    "E   Exception",
+    "E   NameError",
+    "Connection refused",
+    "UnboundLocalError",
+    "AttributeError",
+    "Too many retry attempts",
+    "E   FileNotFoundError",
+    "E   RuntimeError",
+    "Connection has been closed",
+    "E   Failed",
+    "E   ValueError",
+    "E   KeyError",
+    "InternalError",
+    "syntax error",
+    "E   TypeError",
+    "E   OSError",
+    "Code:",
+    "ClientError",
+    "QueryRuntimeException",
+    "Max retries exceeded with url",
+    "UnicodeDecodeError",
+    "Py4JError",
+    "ConnectionLoss",
+    "Connection reset by peer",
+    "Exception:",
+    "Failure:",
+    "ExistsError",
+    "ConnectionError",
+    "Client Error",
+    "Errno",
+]

@@ -55,18 +55,41 @@ class CIDB:
         }
 
     def get_link_to_test_case_statistics(
-        self, test_name: str, job_name: Optional[str] = None, url="", user=""
+        self,
+        test_name: str,
+        job_name: Optional[str] = None,
+        failure_patterns=None,
+        test_output="",
+        url="",
+        user="",
     ) -> str:
         """
         Build a link to query CI DB statistics for a specific test case.
         The link format follows the Play-style URL: <self.url>[?user=<user>]#<base64(sql)>.
         Groups by day and shows recent failures for the test. Optionally filters by job_name.
+        If failure_patterns provided and any pattern matches test_output, adds filter on test_context_raw.
         """
         # Basic sanitization for SQL string literals
         tn = (test_name or "").replace("'", "''")
         jn = (job_name or "").replace("'", "''") if job_name else None
         # Prefer configured table name if available, fall back to default
         table = Settings.CI_DB_TABLE_NAME or "checks"
+
+        # Find first matching failure pattern in test output
+        matched_pattern = None
+        if failure_patterns and test_output:
+            for pattern in failure_patterns:
+                if pattern in test_output:
+                    # Sanitize pattern for SQL and use first match
+                    matched_pattern = pattern.replace("'", "''")
+                    break
+
+        # Build failure pattern filter line
+        if matched_pattern:
+            failure_filter = f"    AND test_context_raw LIKE '%{matched_pattern}%'"
+        else:
+            # Add commented placeholder for manual editing
+            failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
 
         info = Info()
         query = f"""\
@@ -83,6 +106,7 @@ WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     -- AND check_name = '{job_name}'
     AND test_status IN ('FAIL', 'ERROR')
     AND ((pull_request_number = 0 AND head_ref = '{info.git_branch}') OR (pull_request_number != 0 AND base_ref = '{info.base_branch}'))
+{failure_filter}
 GROUP BY day
 ORDER BY day DESC
 """
