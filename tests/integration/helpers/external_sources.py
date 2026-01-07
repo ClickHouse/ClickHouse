@@ -125,9 +125,11 @@ class SourceMySQL(ExternalSource):
             self.internal_hostname = cluster.mysql8_ip
         self.create_mysql_conn()
         self.execute_mysql_query(
-            "create database if not exists test default character set 'utf8'"
+            "drop database if exists test"
         )
-        self.execute_mysql_query("drop table if exists test.{}".format(table_name))
+        self.execute_mysql_query(
+            "create database test default character set 'utf8'"
+        )
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields
@@ -301,7 +303,8 @@ class SourceClickHouse(ExternalSource):
 
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
-        self.node.query("CREATE DATABASE IF NOT EXISTS test")
+        self.node.query("DROP DATABASE IF EXISTS test")
+        self.node.query("CREATE DATABASE test")
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields

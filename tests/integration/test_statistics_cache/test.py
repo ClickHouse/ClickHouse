@@ -121,7 +121,8 @@ def _create_join(node, prefix, interval):
 def _create_rep(interval):
     table = "rep_sc"
     for n in (r1, r2):
-        _query_retry(n, f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
+        _query_retry(n, f"DROP DATABASE IF EXISTS {TEST_DB}")
+        _query_retry(n, f"CREATE DATABASE {TEST_DB}")
         _query_retry(n, f"DROP TABLE IF EXISTS {table} SYNC")
 
     _query_retry(r1, f"""
@@ -150,9 +151,12 @@ def _create_rep(interval):
 @pytest.fixture(scope="module", autouse=True)
 def _started_cluster():
     cluster.start()
-    ch1.query(f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
-    r1.query(f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
-    r2.query(f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
+    ch1.query(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    ch1.query(f"CREATE DATABASE {TEST_DB}")
+    r1.query(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    r1.query(f"CREATE DATABASE {TEST_DB}")
+    r2.query(f"DROP DATABASE IF EXISTS {TEST_DB}")
+    r2.query(f"CREATE DATABASE {TEST_DB}")
     try:
         yield
     finally:

@@ -28,6 +28,7 @@ def q(query):
 
 
 def check_convert_system_db_to_atomic():
+    node.query("DROP DATABASE IF EXISTS default2")
     node.query(
         "CREATE DATABASE default2 ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},

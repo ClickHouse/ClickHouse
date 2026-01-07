@@ -43,7 +43,8 @@ def start_cluster():
 def test_system_detached_tables(
     start_cluster, db_name, db_engine, table_engine, table_engine_params
 ):
-    node.query(f"CREATE DATABASE IF NOT EXISTS {db_name} ENGINE={db_engine};")
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name} ENGINE={db_engine};")
 
     node.query(
         f"CREATE TABLE {db_name}.test_table (n Int64) ENGINE={table_engine} {table_engine_params};"

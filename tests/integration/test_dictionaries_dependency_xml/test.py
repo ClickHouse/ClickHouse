@@ -23,8 +23,10 @@ def started_cluster():
 
         instance.query(
             """
-            CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
-            CREATE DATABASE IF NOT EXISTS test;
+            DROP DATABASE IF EXISTS dict;
+            DROP DATABASE IF EXISTS test;
+            CREATE DATABASE dict ENGINE=Dictionary;
+            CREATE DATABASE test;
             DROP TABLE IF EXISTS test.elements;
             CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;
             INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);

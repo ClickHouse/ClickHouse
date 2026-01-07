@@ -46,8 +46,10 @@ def started_cluster():
         for node in [node1, node2]:
             node.query(
                 f"""
-                CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
-                CREATE DATABASE IF NOT EXISTS test;
+                DROP DATABASE IF EXISTS dict;
+                DROP DATABASE IF EXISTS test;
+                CREATE DATABASE dict ENGINE=Dictionary;
+                CREATE DATABASE test;
                 CREATE TABLE test_table_src(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', '{nodenum}')
                 PARTITION BY date ORDER BY id
