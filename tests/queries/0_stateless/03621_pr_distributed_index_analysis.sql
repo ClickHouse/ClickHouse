@@ -29,7 +29,11 @@ select
       -- the max is hosts in test_cluster_one_shard_two_replicas (2) * 2 (one for the query itself and one for mergeTreeAnalyzeIndexes()) - 1 * 2 (for local replica we do not issue a separate query) + 1 (query itself)
       max2(count(), 3)::UInt64,
     ),
-    count()
+    -- in case of distributed index analyss, it is possible that there will be less subqueries then max, due to failures on remote
+    if(any(Settings['cluster_for_parallel_replicas']) = 'parallel_replicas',
+      max2(count(), 10)::UInt64,
+      max2(count(), 2)::UInt64
+    )
   ) queries_with_subqueries,
   anyIf(ProfileEvents['DistributedIndexAnalysisScheduledReplicas'] > 0, is_initial_query) distributed_index_analysis_replicas,
   anyIf(ProfileEvents['ParallelReplicasReadRequestMicroseconds'] > 0, is_initial_query) read_with_parallel_replicas

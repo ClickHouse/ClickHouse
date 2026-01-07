@@ -8,7 +8,7 @@ select sum(key) from test_10m settings allow_experimental_parallel_reading_from_
 Row 1:
 ──────
 q:                                   select sum(key) from test_10m settings `?`=?, distributed_index_analysis=?, cluster_for_parallel_replicas=?;
-queries_with_subqueries:             6
+queries_with_subqueries:             10
 distributed_index_analysis_replicas: 1
 read_with_parallel_replicas:         0
 
