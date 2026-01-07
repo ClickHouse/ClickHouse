@@ -431,9 +431,6 @@ def main():
             attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
             )
-            attached_files.append(
-                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-            )
             if Path("./ci/tmp/docker-in-docker.log").exists():
                 attached_files.append("./ci/tmp/docker-in-docker.log")
 
