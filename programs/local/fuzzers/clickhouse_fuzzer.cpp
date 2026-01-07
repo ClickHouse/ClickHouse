@@ -234,7 +234,7 @@ void DB::ClientBase::runLibFuzzer()
     }
     cv.notify_one();
 
-    while(true)
+    while (true)
     {
         {
             std::unique_lock lock(mutex);
