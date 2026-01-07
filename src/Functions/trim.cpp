@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
