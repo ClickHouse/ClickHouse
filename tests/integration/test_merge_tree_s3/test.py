@@ -875,10 +875,10 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
         f" SETTINGS storage_policy='{storage_policy}'"
     )
     node.query("SYSTEM STOP MERGES test_merge_canceled_by_s3_errors")
-    insert_error = node.query_and_get_error(
+    output, insert_error = node.query_and_get_answer_with_error(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT number, toString(number) FROM numbers(10000)"
     )
-    insert_error_2 = node.query_and_get_error(
+    output_2, insert_error_2 = node.query_and_get_answer_with_error(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
     )
     assert (
