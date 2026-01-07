@@ -1177,7 +1177,6 @@ class SettingsRandomizer:
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['dpsize,greedy', 'greedy,dpsize', 'greedy', 'dpsize']),
-        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000),
         **randomize_external_sort_group_by(),
     }
 
@@ -1278,6 +1277,7 @@ class MergeTreeSettingsRandomizer:
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
         "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
+        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000)
     }
 
     @staticmethod
