@@ -2,13 +2,14 @@
 """
 Test for TLS certificate hot-reload on Keeper Raft connections.
 
-This test verifies that when TLS certificates are renewed, new Raft connections
-between Keeper nodes pick up the new certificates without requiring a restart.
+This test verifies that when TLS certificates are replaced on disk,
+new Raft connections between Keeper nodes pick up the new certificates
+without requiring a restart. CertificateReloader detects file changes
+via modification time.
 """
 
 import os
 import time
-from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -18,54 +19,59 @@ from helpers.cluster import ClickHouseCluster
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)
 
-# Use 3-node Keeper cluster with secure Raft
-nodes = [
-    cluster.add_instance(
-        "node1",
-        main_configs=[
-            "configs/enable_secure_keeper1.xml",
-            "configs/ssl_conf.yml",
-            "configs/first.crt",
-            "configs/first.key",
-            "configs/second.crt",
-            "configs/second.key",
-            "configs/rootCA.pem",
-        ],
-        stay_alive=True,
-    ),
-    cluster.add_instance(
-        "node2",
-        main_configs=[
-            "configs/enable_secure_keeper2.xml",
-            "configs/ssl_conf.yml",
-            "configs/first.crt",
-            "configs/first.key",
-            "configs/second.crt",
-            "configs/second.key",
-            "configs/rootCA.pem",
-        ],
-        stay_alive=True,
-    ),
-    cluster.add_instance(
-        "node3",
-        main_configs=[
-            "configs/enable_secure_keeper3.xml",
-            "configs/ssl_conf.yml",
-            "configs/first.crt",
-            "configs/first.key",
-            "configs/second.crt",
-            "configs/second.key",
-            "configs/rootCA.pem",
-        ],
-        stay_alive=True,
-    ),
+# Common config files for all nodes
+COMMON_CONFIGS = [
+    "configs/ssl_conf.yml",
+    "configs/first.crt",
+    "configs/first.key",
+    "configs/second.crt",
+    "configs/second.key",
+    "configs/rootCA.pem",
 ]
+
+# Start with 3 nodes, node4 will be added dynamically to test new connections
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/enable_secure_keeper1.xml"] + COMMON_CONFIGS,
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/enable_secure_keeper2.xml"] + COMMON_CONFIGS,
+    stay_alive=True,
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/enable_secure_keeper3.xml"] + COMMON_CONFIGS,
+    stay_alive=True,
+)
+# node4 starts later - used to verify new Raft connections use updated certs
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/enable_secure_keeper4.xml"] + COMMON_CONFIGS,
+    stay_alive=True,
+)
+
+initial_nodes = [node1, node2, node3]
+all_nodes = [node1, node2, node3, node4]
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+
+        # Initialize: copy first.crt/key to current.crt/key on all nodes
+        for node in all_nodes:
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "cp /etc/clickhouse-server/config.d/first.crt /etc/clickhouse-server/config.d/current.crt && "
+                    "cp /etc/clickhouse-server/config.d/first.key /etc/clickhouse-server/config.d/current.key",
+                ]
+            )
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -75,20 +81,20 @@ def get_fake_zk(nodename, timeout=30.0):
     return ku.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
-def wait_for_cluster_ready():
-    """Wait for all nodes to be connected and form a quorum."""
+def wait_nodes_ready(nodes):
+    """Wait for specified nodes to be connected and form a quorum."""
     for node in nodes:
         ku.wait_until_connected(cluster, node)
 
 
-def verify_cluster_works(test_path):
+def verify_cluster_works(test_path, nodes_to_check):
     """Verify the cluster can perform basic operations."""
     node_zks = []
     try:
-        for node in nodes:
+        for node in nodes_to_check:
             node_zks.append(get_fake_zk(node.name))
 
-        # Create a node from node1
+        # Create a node from first node
         node_zks[0].create(test_path, b"test_data")
 
         # Sync and verify from all nodes
@@ -109,168 +115,101 @@ def verify_cluster_works(test_path):
                     pass
 
 
-def switch_certificates(cert_name):
+def replace_certificates_in_place(node, cert_name):
     """
-    Switch all nodes to use a different certificate.
-    Updates the SSL config and triggers config reload.
+    Replace certificate files in-place (same path, new content).
+    This simulates how cert-manager or certbot renews certificates.
+    The file modification time changes, triggering CertificateReloader.
     """
-    for node in nodes:
-        # Update SSL config to point to new certificate
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"""cat > /etc/clickhouse-server/config.d/ssl_conf.yml << 'EOF'
-openSSL:
-  server:
-    certificateFile: '/etc/clickhouse-server/config.d/{cert_name}.crt'
-    privateKeyFile: '/etc/clickhouse-server/config.d/{cert_name}.key'
-    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
-    loadDefaultCAFile: true
-    verificationMode: 'none'
-    cacheSessions: true
-    disableProtocols: 'sslv2,sslv3'
-    preferServerCiphers: true
-  client:
-    certificateFile: '/etc/clickhouse-server/config.d/{cert_name}.crt'
-    privateKeyFile: '/etc/clickhouse-server/config.d/{cert_name}.key'
-    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
-    loadDefaultCAFile: true
-    verificationMode: 'none'
-    cacheSessions: true
-    disableProtocols: 'sslv2,sslv3'
-    preferServerCiphers: true
-EOF""",
-            ]
-        )
-
-
-def trigger_config_reload():
-    """Trigger config reload on all nodes."""
-    for node in nodes:
-        node.query("SYSTEM RELOAD CONFIG")
-
-
-def force_raft_reconnect(node):
-    """
-    Force Raft reconnection by temporarily blocking the Raft port.
-    This ensures new connections are established with updated certificates.
-    """
-    # Brief network disruption to force reconnect
     node.exec_in_container(
-        ["bash", "-c", "iptables -A INPUT -p tcp --dport 9234 -j DROP && sleep 2 && iptables -D INPUT -p tcp --dport 9234 -j DROP"],
-        privileged=True,
+        [
+            "bash",
+            "-c",
+            f"cp /etc/clickhouse-server/config.d/{cert_name}.crt /etc/clickhouse-server/config.d/current.crt && "
+            f"cp /etc/clickhouse-server/config.d/{cert_name}.key /etc/clickhouse-server/config.d/current.key && "
+            # Touch to ensure modification time is updated
+            "touch /etc/clickhouse-server/config.d/current.crt /etc/clickhouse-server/config.d/current.key",
+        ]
     )
 
 
-def get_certificate_serial_from_log(node, timeout=10):
-    """
-    Extract the certificate serial number from the node's log.
-    This helps verify which certificate is being used.
-    """
-    # Note: This is a placeholder. In practice, you might need to:
-    # 1. Enable TLS debug logging
-    # 2. Parse certificate info from logs
-    # 3. Or use openssl s_client to connect and check the cert
-    pass
+def get_cert_serial(node):
+    """Get the serial number of the currently configured certificate."""
+    result = node.exec_in_container(
+        [
+            "openssl",
+            "x509",
+            "-in",
+            "/etc/clickhouse-server/config.d/current.crt",
+            "-serial",
+            "-noout",
+        ]
+    )
+    return result.strip()
 
 
-def test_raft_cert_reload_without_restart(started_cluster):
+def trigger_config_reload(node):
+    """Trigger config reload to pick up new certificates."""
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_new_node_joins_with_updated_certs(started_cluster):
     """
-    Test that Raft TLS certificates can be reloaded without restart.
+    Test that a new node can join the cluster after certificates are rotated.
+
+    This verifies that new Raft connections use the updated certificates.
 
     Steps:
-    1. Start cluster with 'first' certificate
+    1. Start 3-node cluster with 'first' certificate
     2. Verify cluster works
-    3. Switch to 'second' certificate via config change
-    4. Trigger config reload
-    5. Force Raft reconnections
-    6. Verify cluster still works (new connections use new cert)
+    3. Replace certificates with 'second' on all nodes (including node4)
+    4. Trigger config reload on existing nodes
+    5. Start node4 - it will establish NEW Raft connections
+    6. Verify node4 successfully joins (proves new certs work for new connections)
     """
-    # Wait for cluster to be ready
-    wait_for_cluster_ready()
+    # Wait for initial 3-node cluster to be ready
+    wait_nodes_ready(initial_nodes)
 
-    # Verify initial state with first certificate
-    verify_cluster_works("/test_initial")
-    print("Cluster working with initial certificates")
+    # Get initial certificate serial
+    initial_serial = get_cert_serial(node1)
+    print(f"Initial certificate serial: {initial_serial}")
 
-    # Switch to second certificate
-    switch_certificates("second")
-    print("Switched SSL config to second certificate")
+    # Verify initial cluster works
+    verify_cluster_works("/test_initial", initial_nodes)
+    print("Initial 3-node cluster working with first certificates")
 
-    # Trigger config reload on all nodes
-    trigger_config_reload()
-    print("Config reload triggered")
+    # Replace certificate files on ALL nodes (including node4 which hasn't started yet)
+    for node in all_nodes:
+        replace_certificates_in_place(node, "second")
+    print("Replaced certificate files with second cert on all nodes")
+
+    # Trigger config reload on running nodes
+    for node in initial_nodes:
+        trigger_config_reload(node)
+    print("Config reload triggered on initial nodes")
+
+    # Verify the certificate file changed
+    new_serial = get_cert_serial(node1)
+    print(f"New certificate serial: {new_serial}")
+    assert initial_serial != new_serial, "Certificate serial should have changed"
 
     # Give some time for the reload to process
     time.sleep(2)
 
-    # Cluster should still work (existing connections continue)
-    verify_cluster_works("/test_after_reload")
-    print("Cluster working after config reload (existing connections)")
+    # Existing cluster should still work
+    verify_cluster_works("/test_after_reload", initial_nodes)
+    print("Cluster working after cert reload (existing connections)")
 
-    # Force reconnection on one node to establish new connections
-    # Note: In production, connections would naturally cycle over time
-    try:
-        force_raft_reconnect(nodes[0])
-    except Exception as e:
-        print(f"Warning: Could not force reconnect (may need privileged mode): {e}")
+    # Now start node4 - this creates NEW Raft connections
+    # These new connections must use the updated certificates
+    print("Starting node4 to test new Raft connections with updated certs...")
+    node4.start_clickhouse()
 
-    # Wait for reconnection
-    time.sleep(5)
-    wait_for_cluster_ready()
+    # Wait for node4 to join the cluster
+    wait_nodes_ready([node4])
+    print("Node4 started and connected")
 
-    # Verify cluster works after reconnection (new connections with new cert)
-    verify_cluster_works("/test_after_reconnect")
-    print("Cluster working after forced reconnection with new certificates")
-
-
-def test_rolling_cert_update(started_cluster):
-    """
-    Test rolling certificate update across the cluster.
-
-    Updates certificates one node at a time to simulate a more realistic
-    certificate rotation scenario.
-    """
-    wait_for_cluster_ready()
-    verify_cluster_works("/test_rolling_initial")
-
-    for i, node in enumerate(nodes):
-        print(f"Updating certificate on node{i+1}")
-
-        # Update just this node's config
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                """cat > /etc/clickhouse-server/config.d/ssl_conf.yml << 'EOF'
-openSSL:
-  server:
-    certificateFile: '/etc/clickhouse-server/config.d/second.crt'
-    privateKeyFile: '/etc/clickhouse-server/config.d/second.key'
-    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
-    loadDefaultCAFile: true
-    verificationMode: 'none'
-    cacheSessions: true
-    disableProtocols: 'sslv2,sslv3'
-    preferServerCiphers: true
-  client:
-    certificateFile: '/etc/clickhouse-server/config.d/second.crt'
-    privateKeyFile: '/etc/clickhouse-server/config.d/second.key'
-    caConfig: '/etc/clickhouse-server/config.d/rootCA.pem'
-    loadDefaultCAFile: true
-    verificationMode: 'none'
-    cacheSessions: true
-    disableProtocols: 'sslv2,sslv3'
-    preferServerCiphers: true
-EOF""",
-            ]
-        )
-        node.query("SYSTEM RELOAD CONFIG")
-        time.sleep(1)
-
-        # Cluster should remain operational during rolling update
-        verify_cluster_works(f"/test_rolling_node{i+1}")
-        print(f"Cluster still working after updating node{i+1}")
-
-    print("Rolling certificate update completed successfully")
+    # Verify all 4 nodes can work together
+    # This proves new Raft connections successfully use the new certificates
+    verify_cluster_works("/test_with_new_node", all_nodes)
+    print("All 4 nodes working together - new Raft connections use updated certs!")

@@ -31,6 +31,11 @@
                 <hostname>node3</hostname>
                 <port>9234</port>
             </server>
+            <server>
+                <id>4</id>
+                <hostname>node4</hostname>
+                <port>9234</port>
+            </server>
         </raft_configuration>
     </keeper_server>
 </clickhouse>
