@@ -462,6 +462,16 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
+                parameter=f"llvm coverage, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
+            )
+            for total_batches in (LLVM_FT_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
                 parameter=f"amd_asan, distributed plan, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM_CPU,
                 requires=[ArtifactNames.CH_AMD_ASAN],
@@ -598,18 +608,18 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    functional_tests_jobs_llvm_coverage = common_ft_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"llvm coverage, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-                provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
-            )
-            for total_batches in (LLVM_FT_NUM_BATCHES,)
-            for batch in range(1, total_batches + 1)
-        ]
-    )
+    # functional_tests_jobs_llvm_coverage = common_ft_job_config.parametrize(
+    #     *[
+    #         Job.ParamSet(
+    #             parameter=f"llvm coverage, {batch}/{total_batches}",
+    #             runs_on=RunnerLabels.AMD_MEDIUM,
+    #             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+    #             provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
+    #         )
+    #         for total_batches in (LLVM_FT_NUM_BATCHES,)
+    #         for batch in range(1, total_batches + 1)
+    #     ]
+    # )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             Job.ParamSet(
