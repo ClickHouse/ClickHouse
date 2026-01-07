@@ -251,7 +251,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 
         for (auto it = nodes.begin(); it != nodes.end();)
         {
-            if (auto id = it->get()->as<ASTIdentifier>())
+            if (auto * id = it->get()->as<ASTIdentifier>())
             {
                 if (RE2::PartialMatch(id->shortName(), *regexp))
                 {
