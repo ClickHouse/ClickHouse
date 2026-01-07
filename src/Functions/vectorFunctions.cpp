@@ -1426,9 +1426,12 @@ public:
         if constexpr (IsTransposedTrait<Traits>::value)
         {
             if (!is_array_or_qbit)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Function {} requires Array, QBit, or FixedString as first argument, got {}",
-                                getName(), arguments[0].type->getName());
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} requires Array, QBit, or FixedString as first argument, got {}",
+                    getName(),
+                    arguments[0].type->getName());
+
             return array_function->getReturnTypeImpl(arguments);
         }
         else
@@ -2206,81 +2209,6 @@ SELECT L2Distance((1, 2), (2, 3))
 
     factory.registerFunction<TupleOrArrayFunctionL2Distance>(documentation_l2_distance);
 
-    /// L2DistanceTransposed documentation
-    FunctionDocumentation::Description description_l2_distance_transposed = R"(
-Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).    
-    )";
-    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
-    FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float64"}};
-    FunctionDocumentation::Examples examples_l2_distance_transposed
-        = {{"Basic usage",
-            R"(
-CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
-INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
-)",
-            R"(
-┌─L2DistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
-│                           1.4142135623730951 │
-└──────────────────────────────────────────────┘
-            )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
-    FunctionDocumentation::Category category_l2_distance_transposed = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_distance_transposed
-        = {description_l2_distance_transposed,
-           syntax_l2_distance_transposed,
-           arguments_l2_distance_transposed,
-           {},
-           returned_value_l2_distance_transposed,
-           examples_l2_distance_transposed,
-           introduced_in_l2_distance_transposed,
-           category_l2_distance_transposed};
-
-    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposed>(documentation_l2_distance_transposed);
-
-    /// CosineDistanceTransposed documentation
-    FunctionDocumentation::Description description_cosine_distance_transposed = R"(
-Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity) between two points (the values of the vectors are the coordinates). The smaller the returned value is, the more similar are the vectors.
-    )";
-    FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p)";
-    FunctionDocumentation::Arguments arguments_cosine_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}},
-           {"reference", "Reference vector.", {"Array(T)"}},
-           {"p",
-            "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level "
-            "controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while "
-            "using more bits increases accuracy at the cost of performance.",
-            {"UInt"}}};
-    FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
-        = {"Returns the approximate cosine of the angle between two vectors subtracted from one.", {"Float64"}};
-    FunctionDocumentation::Examples examples_cosine_distance_transposed
-        = {{"Basic usage",
-            R"(
-CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
-INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT cosineDistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
-)",
-            R"(
-┌─cosineDistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
-│                              0.10557281085638826 │
-└──────────────────────────────────────────────────┘
-            )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
-    FunctionDocumentation::Category category_cosine_distance_transposed = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_cosine_distance_transposed
-        = {description_cosine_distance_transposed,
-           syntax_cosine_distance_transposed,
-           arguments_cosine_distance_transposed,
-           {},
-           returned_value_cosine_distance_transposed,
-           examples_cosine_distance_transposed,
-           introduced_in_cosine_distance_transposed,
-           category_cosine_distance_transposed};
-
-    factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposed>(documentation_cosine_distance_transposed);
-
     /// L2SquaredDistance documentation
     FunctionDocumentation::Description description_l2_squared_distance = R"(
 Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
@@ -2366,15 +2294,6 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
     factory.registerFunction<TupleOrArrayFunctionLpDistance>(documentation_lp_distance);
 
-    // Register aliases for distance functions
-    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
-
     /// cosineDistance documentation
     FunctionDocumentation::Description description_cosine_distance = R"(
 Calculates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity) between two vectors (the elements of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
@@ -2402,6 +2321,90 @@ SELECT cosineDistance((1, 2), (2, 3));
     FunctionDocumentation documentation_cosine_distance = {description_cosine_distance, syntax_cosine_distance, arguments_cosine_distance, {}, returned_value_cosine_distance, examples_cosine_distance, introduced_in_cosine_distance, category_cosine_distance};
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistance>(documentation_cosine_distance);
+
+    /// L2DistanceTransposed documentation
+    FunctionDocumentation::Description description_l2_distance_transposed = R"(
+Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+    )";
+    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Arguments arguments_l2_distance_transposed
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float64"}};
+    FunctionDocumentation::Examples examples_l2_distance_transposed
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
+)",
+            R"(
+┌─L2DistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
+│                           1.4142135623730951 │
+└──────────────────────────────────────────────┘
+            )"}};
+    FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
+    FunctionDocumentation::Category category_l2_distance_transposed = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_distance_transposed
+        = {description_l2_distance_transposed,
+           syntax_l2_distance_transposed,
+           arguments_l2_distance_transposed,
+           {},
+           returned_value_l2_distance_transposed,
+           examples_l2_distance_transposed,
+           introduced_in_l2_distance_transposed,
+           category_l2_distance_transposed};
+
+    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposed>(documentation_l2_distance_transposed);
+
+    /// CosineDistanceTransposed documentation
+    FunctionDocumentation::Description description_cosine_distance_transposed = R"(
+Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity) between two points (the values of the vectors are the coordinates). The smaller the returned value is, the more similar are the vectors.
+    )";
+    FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Arguments arguments_cosine_distance_transposed
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}},
+           {"reference", "Reference vector.", {"Array(T)"}},
+           {"p",
+            "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level "
+            "controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while "
+            "using more bits increases accuracy at the cost of performance.",
+            {"UInt"}}};
+    FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
+        = {"Returns the approximate cosine of the angle between two vectors subtracted from one.", {"Float64"}};
+    FunctionDocumentation::Examples examples_cosine_distance_transposed
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT cosineDistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
+)",
+            R"(
+┌─cosineDistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
+│                              0.10557281085638826 │
+└──────────────────────────────────────────────────┘
+            )"}};
+    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
+    FunctionDocumentation::Category category_cosine_distance_transposed = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_cosine_distance_transposed
+        = {description_cosine_distance_transposed,
+           syntax_cosine_distance_transposed,
+           arguments_cosine_distance_transposed,
+           {},
+           returned_value_cosine_distance_transposed,
+           examples_cosine_distance_transposed,
+           introduced_in_cosine_distance_transposed,
+           category_cosine_distance_transposed};
+
+    factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposed>(documentation_cosine_distance_transposed);
+
+    // Register aliases for distance functions
+    factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
 
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(
