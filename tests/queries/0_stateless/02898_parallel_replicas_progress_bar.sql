@@ -18,6 +18,7 @@ SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_re
 SET parallel_replicas_local_plan=0; -- corresponding logs about total rows are written only during interaction with remote nodes
                                     -- but with local plan a query execution can be finished locally even before we get response from remote node
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
+SET parallel_replicas_for_non_replicated_merge_tree = 0; -- To avoid https://github.com/ClickHouse/ClickHouse/issues/93193
 
 -- default coordinator
 SELECT count(), min(k), max(k), avg(k) FROM t1 SETTINGS log_comment='02898_default_190aed82-2423-413b-ad4c-24dcca50f65b';
