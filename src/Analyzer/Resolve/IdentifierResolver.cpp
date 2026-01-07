@@ -148,25 +148,46 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 
 /// Resolve identifier functions implementation
 
-/// here we try resolving a table with explicit database and table names
-static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & database_name, const std::string & table_name, const ContextPtr & context)
+/// Try resolve table identifier from database catalog
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
+    size_t parts_size = table_identifier.getPartsSize();
+    if (parts_size < 1 || parts_size > 2)
+        throw Exception(ErrorCodes::INVALID_IDENTIFIER,
+            "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
+            table_identifier.getFullName());
+
+    std::string database_name;
+    std::string table_name;
+
+    if (table_identifier.isCompound())
+    {
+        database_name = table_identifier[0];
+        table_name = table_identifier[1];
+    }
+    else
+    {
+        table_name = table_identifier[0];
+    }
+
+    /// For DataLakeCatalog databases, apply table prefix from USE db.prefix
+    String current_database = context->getCurrentDatabase();
+    if (database_name.empty() && DatabaseCatalog::instance().isDatalakeCatalog(current_database))
+    {
+        String table_prefix = context->getCurrentTablePrefix();
+        if (!table_prefix.empty())
+            table_name = table_prefix + "." + table_name;
+    }
+
     StorageID storage_id(database_name, table_name);
-
-    /// avoid throwing if database doesn't exist
-    storage_id = context->tryResolveStorageID(storage_id);
-    if (storage_id.empty())
-        return {};
-
+    storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
     TableLockHolder storage_lock;
 
     if (is_temporary_table)
-    {
         storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    }
     else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
     {
         /// If table is the target of a refreshable materialized view, it needs additional
@@ -174,9 +195,7 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
         std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
     }
     else
-    {
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-    }
 
     if (!storage && storage_id.hasUUID())
     {
@@ -199,84 +218,6 @@ static std::shared_ptr<TableNode> tryResolveTableWithNames(const std::string & d
         result->setTemporaryTableName(table_name);
 
     return result;
-}
-
-/// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
-{
-    size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 2)
-        throw Exception(
-            ErrorCodes::INVALID_IDENTIFIER,
-            "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
-            table_identifier.getFullName());
-
-    /// table prefix from context (set by USE db.prefix)
-    /// Only applies to DataLakeCatalog databases
-    String table_prefix;
-    String current_database = context->getCurrentDatabase();
-    bool is_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
-
-    if (is_datalake)
-    {
-        /// Get the table prefix from the current context
-        table_prefix = context->getCurrentTablePrefix();
-    }
-
-    /// Single part: table name, possibly with prefix
-    if (parts_size == 1)
-    {
-        const std::string & table_name = table_identifier[0];
-
-        /// If prefix is set, first try prefix.table_name
-        if (!table_prefix.empty())
-        {
-            std::string prefixed_name = table_prefix + "." + table_name;
-            if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
-                return result;
-        }
-
-        /// Fall back to just table_name
-        return tryResolveTableWithNames({}, table_name, context);
-    }
-
-    /// Two parts: could be db.table or table with dots in current database
-    /// The parser already joined extra parts into the table name, so parts[0] is
-    /// potential database and parts[1] is potential table name (may contain dots)
-    const std::string & db_name = table_identifier[0];
-    const std::string & tbl_name = table_identifier[1];
-
-    bool db_exists = DatabaseCatalog::instance().isDatabaseExist(db_name);
-
-    /// First, try as database.table (standard interpretation)
-    if (auto result = tryResolveTableWithNames(db_name, tbl_name, context))
-        return result;
-
-    /// For DataLakeCatalog databases, also try as table with dots in current database
-    /// but only if the first part is NOT a known database (to avoid false ambiguity)
-    if (is_datalake && !db_exists)
-    {
-        const std::string & full_table_name = table_identifier.getFullName();
-        if (auto result = tryResolveTableWithNames({}, full_table_name, context))
-            return result;
-
-        /// If prefix is set, also try prefix.full_table_name
-        if (!table_prefix.empty())
-        {
-            std::string prefixed_name = table_prefix + "." + full_table_name;
-            if (auto result = tryResolveTableWithNames({}, prefixed_name, context))
-                return result;
-        }
-    }
-
-    /// If the database doesn't exist, use resolveStorageID to throw UNKNOWN_DATABASE with hints
-    if (!db_exists)
-    {
-        StorageID storage_id(db_name, tbl_name);
-        context->resolveStorageID(storage_id); /// This will throw UNKNOWN_DATABASE with hints
-    }
-
-    return {};
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
