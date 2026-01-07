@@ -127,7 +127,8 @@ private:
 
     static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
 
-    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) {
+    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t)
+    {
         return accurateLessOrEqual(rhs, arr[pos]);
     }
 
