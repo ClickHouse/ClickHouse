@@ -36,7 +36,7 @@ select
 from system.query_log
 where
   event_date >= yesterday()
-  and type != 'QueryStart'
+  and type = 'QueryFinish'
   and query_kind = 'Select'
   and Settings['distributed_index_analysis'] = '1'
   -- SKIP: current_database = currentDatabase() (it will filter out non-initial queries)
