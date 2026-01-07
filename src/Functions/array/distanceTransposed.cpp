@@ -134,7 +134,7 @@ struct CosineDistanceTransposed
     }
 };
 
-/** Each [L2/Cosine/...]DistanceTransposed has two calling conventions:
+/** Each [L2/cosine/...]DistanceTransposed has two calling conventions:
   * 1. User-facing (documented): DistanceTransposed(qbit, ref_vec, precision)
   * 2. Internal (undocumented): DistanceTransposed(vec.1, ..., vec.precision, qbit_size, ref_vec)
   *
