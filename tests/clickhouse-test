@@ -1174,6 +1174,7 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
         **randomize_external_sort_group_by(),
     }
@@ -1183,7 +1184,19 @@ class SettingsRandomizer:
     }
 
     @staticmethod
-    def get_random_settings(args):
+    def adjust_settings_for_autopr(args, tags, random_settings):
+        # no_parallel_replicas is set for runs with enabled parallel replicas. In this case we should not reset `cluster_for_parallel_replicas`
+        if (
+            not args.no_parallel_replicas
+            and "no-parallel-replicas" not in tags
+            and random_settings["automatic_parallel_replicas_mode"] != 0
+        ):
+            random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
+            random_settings["parallel_replicas_local_plan"] = 1
+            random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+
+    @staticmethod
+    def get_random_settings(args, tags):
         random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
@@ -1196,6 +1209,7 @@ class SettingsRandomizer:
                 random_settings[setting] = generator()
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
+        SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
         return random_settings
 
 
@@ -1597,7 +1611,7 @@ class TestCase:
         # Base randomized dicts (or empty if not allowed)
         base_settings = {}
         if allow_random_settings:
-            base_settings = SettingsRandomizer.get_random_settings(args)
+            base_settings = SettingsRandomizer.get_random_settings(args, self.tags)
             self.apply_random_settings_limits(base_settings)
 
         base_mt_settings = {}

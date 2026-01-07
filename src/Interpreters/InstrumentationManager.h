@@ -101,8 +101,9 @@ public:
 
     static InstrumentationManager & instance();
 
-    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters);
     [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, Instrumentation::All, String> id);
+    [[clang::xray_never_instrument]] static bool shouldPatchFunction(String function_to_patch, String full_qualified_function);
+    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
     InstrumentedPoints getInstrumentedPoints() const;
