@@ -1470,7 +1470,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
                 squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
+                    projection_squashes[i].addAndGenerate({block_to_squash.getColumns(), block_to_squash.rows()}),
                     projection_squashes[i].getHeader());
             }
 

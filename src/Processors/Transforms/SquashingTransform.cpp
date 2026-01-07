@@ -12,17 +12,17 @@ namespace ErrorCodes
 }
 
 SquashingTransform::SquashingTransform(
-    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
+    size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes,
+                max_block_size_rows, max_block_size_bytes, squash_with_strict_limits)
 {
 }
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = Squashing::squash(
-        squashing.add(std::move(chunk)),
-        getInputPort().getSharedHeader());
+    squashing.add(std::move(chunk));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
@@ -31,6 +31,12 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
     res.chunk = std::move(cur_chunk);
     res.is_done = true;
     return res;
+}
+
+bool SquashingTransform::canGenerate()
+{
+    cur_chunk = Squashing::squash(squashing.generate(), getInputPort().getSharedHeader());
+    return bool(cur_chunk);
 }
 
 void SquashingTransform::onFinish()
@@ -65,7 +71,7 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)), getOutputPort().getSharedHeader());
+    squashing.add(std::move(chunk));
 }
 
 Chunk SimpleSquashingChunksTransform::generate()
@@ -80,6 +86,7 @@ Chunk SimpleSquashingChunksTransform::generate()
 
 bool SimpleSquashingChunksTransform::canGenerate()
 {
+    squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
     return squashed_chunk.hasRows();
 }
 

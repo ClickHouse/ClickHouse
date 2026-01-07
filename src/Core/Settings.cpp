@@ -132,6 +132,13 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
+DECLARE(Bool, squash_insert_with_strict_limits, false, R"(
+Makes clickhouse to squash blocks on inserts taking in account min_insert_block_size_rows, min_insert_block_size_bytes, max_insert_block_size and max_insert_block_size_bytes.  
+
+A block is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+)", 0) \
     DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
