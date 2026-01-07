@@ -830,7 +830,7 @@ class Utils:
             path += ":" + path_cur
         os.environ["PATH"] = path
 
-    @classmethod
+    @staticmethod
     def call_from_ref(ref, *args):
         module_path, func_name = ref.rsplit(".", 1)
 
