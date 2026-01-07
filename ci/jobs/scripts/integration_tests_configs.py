@@ -925,7 +925,7 @@ def get_tests_execution_time(info: Info, job_options: str) -> dict[str, int]:
     assert info.updated_at
     start_time_filter = f"parseDateTimeBestEffort('{info.updated_at}')"
 
-    build = job_options.split(',', 1)[0]
+    build = job_options.split(",", 1)[0]
 
     query = f"""
         SELECT
@@ -966,11 +966,13 @@ def get_tests_execution_time(info: Info, job_options: str) -> dict[str, int]:
         return {}
     try:
         import json
+
         data = json.loads(res)
         return {row["file"]: int(row["file_duration_ms"]) for row in data["data"]}
     except Exception as e:
         print(f"ERROR: Failed to parse CIDB response: {e}")
         return {}
+
 
 def get_optimal_test_batch(
     tests: list[str],

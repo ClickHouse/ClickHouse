@@ -328,7 +328,7 @@ def main():
             args.test or targeted_tests or changed_test_modules,
             workers,
             args.options,
-            info
+            info,
         )
     )
 
