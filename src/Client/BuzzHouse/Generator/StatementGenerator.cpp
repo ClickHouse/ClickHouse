@@ -1117,6 +1117,7 @@ void StatementGenerator::generateInsertToTable(
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
         const bool allow_cast = rg.nextSmallNumber() < 3;
+        const bool can_use_default = rg.nextLargeNumber() < 6;
 
         for (uint64_t i = 0; i < nrows; i++)
         {
@@ -1135,7 +1136,7 @@ void StatementGenerator::generateInsertToTable(
                     buf += ", ";
                 }
                 if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
+                    || (entry.path.size() == 1 && can_use_default && rg.nextMediumNumber() < 11))
                 {
                     buf += "DEFAULT";
                 }

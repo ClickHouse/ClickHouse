@@ -120,9 +120,11 @@ def main():
     # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
     allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
+    max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 100)
     min_insert_rows = random.randint(1, 100)
-    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 1000)
+    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 5000)
     min_string_length = random.randint(0, 100)
+    max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 1000)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
         "max_depth": random.randint(2, 6),
@@ -133,11 +135,11 @@ def main():
         "max_dictionaries": random.randint(0, 10),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
-        "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
+        "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
         "min_insert_rows": min_insert_rows,
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
-        "max_string_length": random.randint(min_string_length, min_string_length + 500),
+        "max_string_length": random.randint(min_string_length, max_string_length),
         "max_parallel_queries": 1,
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
