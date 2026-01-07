@@ -1,5 +1,2 @@
 [libfuzzer]
 timeout = 20
-
-[CI]
-FUZZER_ARGS = true

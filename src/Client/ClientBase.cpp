@@ -3846,70 +3846,7 @@ fs::path ClientBase::getHistoryFilePath()
     throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
-
-#if USE_FUZZING_MODE
-std::mutex mutex;
-std::condition_variable cv;
-bool started = false;
-bool finished = false;
-
-std::thread init;
-
-extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv)
-{
-    {
-        std::unique_lock lock(mutex);
-        init = std::thread(clickhouseMain, *argc, *argv);
-        cv.wait(lock, []{ return started; });
-    }
-
-    int ret = std::atexit([]()
-    {
-        {
-            std::lock_guard lock(mutex);
-            finished = true;
-        }
-        cv.notify_one();
-        init.join();
-    });
-    return ret;
-}
-
-std::function<bool(const String & text)> doProcessQueryText;
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
-    try
-    {
-        auto worker = ThreadFromGlobalPool([&]()
-        {
-            String query(reinterpret_cast<const char *>(data), size);
-            doProcessQueryText(query);
-        });
-        worker.join();
-    }
-    catch (...)
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-void ClientBase::runLibFuzzer()
-{
-    doProcessQueryText = [this](const String & text){ return this->processQueryText(text); };
-
-    {
-        std::lock_guard lock(mutex);
-        started = true;
-    }
-    cv.notify_one();
-
-    std::unique_lock lock(mutex);
-    cv.wait(lock, []{ return finished; });
-}
-#else
+#if !USE_FUZZING_MODE
 void ClientBase::runLibFuzzer() {}
 #endif
 
