@@ -2296,7 +2296,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
     /// cosineDistance documentation
     FunctionDocumentation::Description description_cosine_distance = R"(
-Calculates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity) between two vectors (the elements of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
+Calculates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between two vectors (the elements of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
     )";
     FunctionDocumentation::Syntax syntax_cosine_distance = "cosineDistance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_cosine_distance = {
@@ -2358,7 +2358,7 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
     /// CosineDistanceTransposed documentation
     FunctionDocumentation::Description description_cosine_distance_transposed = R"(
-Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity) between two points (the values of the vectors are the coordinates). The smaller the returned value is, the more similar are the vectors.
+Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between two points (the values of the vectors are the coordinates). The smaller the returned value is, the more similar are the vectors.
     )";
     FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p)";
     FunctionDocumentation::Arguments arguments_cosine_distance_transposed
