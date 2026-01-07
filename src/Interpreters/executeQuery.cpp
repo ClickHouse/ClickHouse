@@ -1201,7 +1201,14 @@ static BlockIO executeQueryImpl(
                 String formatted1 = format_ast(out_ast);
 
                 /// The query can become more verbose after formatting, so:
-                size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+                size_t size_t_max = -1;
+                size_t new_max_query_size = 0;
+                if (max_query_size == 0)
+                    new_max_query_size = 0;
+                else if (max_query_size > (size_t_max - 1000) / 2)
+                    new_max_query_size = size_t_max;
+                else
+                    new_max_query_size = 1000 + 2 * max_query_size;
 
                 ASTPtr ast2;
                 try
