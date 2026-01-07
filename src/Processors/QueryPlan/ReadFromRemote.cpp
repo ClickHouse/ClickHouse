@@ -460,7 +460,17 @@ static void addFilters(
 
     const auto * table_node = table_expressions.front()->as<TableNode>();
     if (!table_node)
-        return;
+    {
+        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
+        /// Case with JOIN is not supported so far.
+        if (table_expressions.size() != 1)
+            return;
+
+        table_node = table_expressions.front()->as<TableNode>();
+        if (!table_node)
+            return;
+    }
 
     TableWithColumnNamesAndTypes table_with_columns(
         DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
