@@ -51,7 +51,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     else if (mode == TTLMode::GROUP_BY)
     {
         ostr << " GROUP BY ";
-        for (const auto * it = group_by_key.begin(); it != group_by_key.end(); ++it)
+        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
             if (it != group_by_key.begin())
                 ostr << ", ";
@@ -61,7 +61,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         if (!group_by_assignments.empty())
         {
             ostr << " SET ";
-            for (const auto * it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
             {
                 if (it != group_by_assignments.begin())
                     ostr << ", ";

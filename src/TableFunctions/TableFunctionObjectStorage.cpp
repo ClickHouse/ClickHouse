@@ -178,7 +178,7 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
     /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
     /// We do similarly for some other table functions
     /// whose storage implementation supports storage settings (for example, MySQL).
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)

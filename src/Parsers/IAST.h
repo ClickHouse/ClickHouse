@@ -163,7 +163,7 @@ public:
         if (field == nullptr)
             return;
 
-        auto * child = children.begin();
+        auto child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)

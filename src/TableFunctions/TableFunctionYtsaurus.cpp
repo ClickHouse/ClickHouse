@@ -92,7 +92,7 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
 
     YTsaurusSettings yt_settings;
 
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)

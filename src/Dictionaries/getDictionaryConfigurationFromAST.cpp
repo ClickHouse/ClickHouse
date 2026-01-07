@@ -382,7 +382,7 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto * it = std::find_if(
+        const auto it = std::find_if(
             children.begin(),
             children.end(),
             [&](const ASTPtr & node)
