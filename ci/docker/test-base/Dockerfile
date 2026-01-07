@@ -8,9 +8,6 @@ ARG LLVM_APT_VERSION="1:21.1.5~"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
 
-# Clean up any cached repository configurations that might cause GPG key issues
-RUN rm -f /etc/apt/sources.list.d/kitware.list /etc/apt/trusted.gpg.d/kitware.gpg /etc/apt/sources.list.d/llvm.list
-
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
     && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
