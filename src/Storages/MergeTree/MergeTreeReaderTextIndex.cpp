@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {

@@ -226,7 +226,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/VectorCamp/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan.git
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project

@@ -40,9 +40,12 @@ DB::TLSHandler::TLSHandler(
         return;
     }
 
-    // for backwards compatibility
-    auto ctx = SSLManager::instance().defaultServerContext();
-    params.caLocation = config.getString(prefix + SSLManager::CFG_CA_LOCATION, ctx->getCAPaths().caLocation);
+    params.caLocation = config.getString(prefix + SSLManager::CFG_CA_LOCATION, "");
+    if (params.caLocation.empty())
+    {
+        auto ctx = SSLManager::instance().defaultServerContext();
+        params.caLocation = ctx->getCAPaths().caLocation;
+    }
 
     // optional options for which we have defaults defined
     params.verificationMode = SSLManager::VAL_VER_MODE;
@@ -99,10 +102,10 @@ DB::TLSHandler::TLSHandler(
 void DB::TLSHandler::run()
 {
 #if USE_SSL
-    auto ctx = SSLManager::instance().defaultServerContext();
-
     bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
     bool acme_certificate_provided = config.has("acme");
+
+    Context::Ptr ctx;
 
     if (keys_are_explicitly_set || acme_certificate_provided)
     {
@@ -117,6 +120,10 @@ void DB::TLSHandler::run()
             CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
             ctx = SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
+    }
+    else
+    {
+        ctx = SSLManager::instance().defaultServerContext();
     }
 
     socket() = SecureStreamSocket::attach(socket(), ctx);

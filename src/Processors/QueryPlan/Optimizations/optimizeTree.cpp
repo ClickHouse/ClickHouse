@@ -508,17 +508,20 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    /// Materialize subplan references before other optimizations.
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        materializeQueryPlanReferences(frame_node, nodes);
-    });
+        /// Materialize subplan references before other optimizations.
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            materializeQueryPlanReferences(frame_node, nodes);
+        });
 
-    /// Remove CommonSubplanSteps (they must be not used at that point).
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
-    {
-        optimizeUnusedCommonSubplans(frame_node);
-    });
+        /// Remove CommonSubplanSteps (they must be not used at that point).
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            optimizeUnusedCommonSubplans(frame_node);
+        });
+    }
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
@@ -526,6 +529,7 @@ void optimizeTreeSecondPass(
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
+            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
         [&](auto & frame_node)
         {

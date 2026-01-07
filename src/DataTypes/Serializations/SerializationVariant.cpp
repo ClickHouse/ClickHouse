@@ -483,6 +483,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (!col.hasGlobalVariantsOrder())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to deserialize data into Variant column with not global variants order");
 
+    if (col.getNumVariants() != variant_serializations.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of variants in column doesn't match number of variant serializations: {} != {}", col.getNumVariants(), variant_serializations.size());
+
     /// First, deserialize discriminators.
     settings.path.push_back(Substream::VariantDiscriminators);
 
@@ -602,11 +605,19 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
+        auto & variant_column = col.getVariantPtrByLocalDiscriminator(i);
+        if (!variant_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column for variant {} is invalid", variant_names[i]);
+
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            col.getVariantPtrByLocalDiscriminator(i), variant_rows_offsets[i], variant_limits[i],
+            variant_column, variant_rows_offsets[i], variant_limits[i],
             settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
+
+        /// Verify that we deserialized data of this variant.
+        if (variant_limits[i] && col.getVariantPtrByLocalDiscriminator(i)->empty())
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Variant {} is empty, but expected to be read {} values", variant_names[i], variant_limits[i]);
     }
     settings.path.pop_back();
 

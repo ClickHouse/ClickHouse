@@ -363,7 +363,6 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
           std::make_unique<MergeTreeProjectionIndexSelectAlgorithm>(),
           nullptr /*row_level_filter*/,
           std::move(prewhere_info),
-          nullptr /*lazily_read_info*/,
           IndexReadTasks{} /*index_read_tasks*/,
           actions_settings,
           reader_settings))

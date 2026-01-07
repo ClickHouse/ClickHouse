@@ -21,7 +21,7 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
