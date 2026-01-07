@@ -167,6 +167,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
@@ -1096,8 +1097,11 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                     SelectQueryOptions().analyze()).getSampleBlock();
             }
         }
-        catch (Exception &)
+        catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+
             if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
                 throw;
             check_columns = false;
@@ -1136,11 +1140,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
             getContext()
         );
     }
-
-    if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-        InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(), SelectQueryOptions()).getQueryPlan();
-    else
-        InterpreterSelectWithUnionQuery(create.select->clone(), getContext(), SelectQueryOptions().analyze());
 }
 
 namespace

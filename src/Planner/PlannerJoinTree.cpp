@@ -193,6 +193,22 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
     return {};
 }
 
+/// Check access rights for all tables referenced in a subquery
+void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
+{
+    auto table_nodes = extractAllTableReferences(subquery_node);
+    for (const auto & table_node_ptr : table_nodes)
+    {
+        const auto & table_node = table_node_ptr->as<TableNode &>();
+        if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
+            continue;
+
+        const auto & storage_id = table_node.getStorageID();
+        if (storage_id.hasDatabase())
+            query_context->checkAccess(AccessType::SELECT, storage_id);
+    }
+}
+
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
 {
     const auto & storage_id = table_node.getStorageID();
@@ -426,6 +442,13 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
+    }
+    else if (query_node || union_node)
+    {
+        /// Check permissions for all tables referenced in the subquery.
+        /// This is needed because in only_analyze mode, subqueries are not recursively planned,
+        /// so their permission checks would otherwise be skipped.
+        checkAccessRightsForSubquery(table_expression, query_context);
     }
 
     if (columns_names.empty())
