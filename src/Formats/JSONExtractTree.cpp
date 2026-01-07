@@ -1874,6 +1874,7 @@ private:
                 {
                     if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
                     {
+                        /// We can't have duplicated key with the same type (literal/object).
                         if (it->second.contains(value_element_type))
                         {
                             if (format_settings.json.type_json_skip_duplicated_paths)
