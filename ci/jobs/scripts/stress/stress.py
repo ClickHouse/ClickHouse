@@ -105,7 +105,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append(
             f"query_plan_optimize_join_order_limit={random.randint(0, 64)}"
         )
-    join_order_algorithm_combinations = ['dpsize,greedy', 'greedy,dpsize']
+    join_order_algorithm_combinations = ['dpsize','greedy', 'dpsize,greedy', 'greedy,dpsize']
     client_options.append(
         f"query_plan_optimize_join_order_algorithm={random.choice(join_order_algorithm_combinations)}"
     )
