@@ -77,7 +77,7 @@ Returns the part of the domain that includes top-level subdomains up to the firs
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustom_introduced_in = {21, 1};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainCustom_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainCustom_documentation = {cutToFirstSignificantSubdomainCustom_description, cutToFirstSignificantSubdomainCustom_syntax, cutToFirstSignificantSubdomainCustom_arguments, cutToFirstSignificantSubdomainCustom_returned_value, cutToFirstSignificantSubdomainCustom_examples, cutToFirstSignificantSubdomainCustom_introduced_in, cutToFirstSignificantSubdomainCustom_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainCustom_documentation = {cutToFirstSignificantSubdomainCustom_description, cutToFirstSignificantSubdomainCustom_syntax, cutToFirstSignificantSubdomainCustom_arguments, {}, cutToFirstSignificantSubdomainCustom_returned_value, cutToFirstSignificantSubdomainCustom_examples, cutToFirstSignificantSubdomainCustom_introduced_in, cutToFirstSignificantSubdomainCustom_category};
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustom>(cutToFirstSignificantSubdomainCustom_documentation);
 
     FunctionDocumentation::Description cutToFirstSignificantSubdomainCustomWithWWW_description = R"(
@@ -120,7 +120,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustomWithWWW_introduced_in = {21, 1};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainCustomWithWWW_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainCustomWithWWW_documentation = {cutToFirstSignificantSubdomainCustomWithWWW_description, cutToFirstSignificantSubdomainCustomWithWWW_syntax, cutToFirstSignificantSubdomainCustomWithWWW_arguments, cutToFirstSignificantSubdomainCustomWithWWW_returned_value, cutToFirstSignificantSubdomainCustomWithWWW_examples, cutToFirstSignificantSubdomainCustomWithWWW_introduced_in, cutToFirstSignificantSubdomainCustomWithWWW_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainCustomWithWWW_documentation = {cutToFirstSignificantSubdomainCustomWithWWW_description, cutToFirstSignificantSubdomainCustomWithWWW_syntax, cutToFirstSignificantSubdomainCustomWithWWW_arguments, {}, cutToFirstSignificantSubdomainCustomWithWWW_returned_value, cutToFirstSignificantSubdomainCustomWithWWW_examples, cutToFirstSignificantSubdomainCustomWithWWW_introduced_in, cutToFirstSignificantSubdomainCustomWithWWW_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>(cutToFirstSignificantSubdomainCustomWithWWW_documentation);
 
@@ -128,7 +128,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain.
 Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
 This function can be useful if you need a fresh TLD list or if you have a custom list.
-Similar to [cutToFirstSignificantSubdomainCustom](#cuttofirstsignificantsubdomaincustom) but conforms to RFC 3986.
+Similar to [cutToFirstSignificantSubdomainCustom](#cutToFirstSignificantSubdomainCustom) but conforms to RFC 3986.
 
 **Configuration example**
 
@@ -168,7 +168,7 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustomRFC_introduced_in = {22, 10};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainCustomRFC_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainCustomRFC_documentation = {cutToFirstSignificantSubdomainCustomRFC_description, cutToFirstSignificantSubdomainCustomRFC_syntax, cutToFirstSignificantSubdomainCustomRFC_arguments, cutToFirstSignificantSubdomainCustomRFC_returned_value, cutToFirstSignificantSubdomainCustomRFC_examples, cutToFirstSignificantSubdomainCustomRFC_introduced_in, cutToFirstSignificantSubdomainCustomRFC_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainCustomRFC_documentation = {cutToFirstSignificantSubdomainCustomRFC_description, cutToFirstSignificantSubdomainCustomRFC_syntax, cutToFirstSignificantSubdomainCustomRFC_arguments, {}, cutToFirstSignificantSubdomainCustomRFC_returned_value, cutToFirstSignificantSubdomainCustomRFC_examples, cutToFirstSignificantSubdomainCustomRFC_introduced_in, cutToFirstSignificantSubdomainCustomRFC_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomRFC>(cutToFirstSignificantSubdomainCustomRFC_documentation);
 
@@ -209,7 +209,7 @@ Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantS
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustomWithWWWRFC_introduced_in = {22, 10};
     FunctionDocumentation::Category cutToFirstSignificantSubdomainCustomWithWWWRFC_category = FunctionDocumentation::Category::URL;
-    FunctionDocumentation cutToFirstSignificantSubdomainCustomWithWWWRFC_documentation = {cutToFirstSignificantSubdomainCustomWithWWWRFC_description, cutToFirstSignificantSubdomainCustomWithWWWRFC_syntax, cutToFirstSignificantSubdomainCustomWithWWWRFC_arguments, cutToFirstSignificantSubdomainCustomWithWWWRFC_returned_value, cutToFirstSignificantSubdomainCustomWithWWWRFC_examples, cutToFirstSignificantSubdomainCustomWithWWWRFC_introduced_in, cutToFirstSignificantSubdomainCustomWithWWWRFC_category};
+    FunctionDocumentation cutToFirstSignificantSubdomainCustomWithWWWRFC_documentation = {cutToFirstSignificantSubdomainCustomWithWWWRFC_description, cutToFirstSignificantSubdomainCustomWithWWWRFC_syntax, cutToFirstSignificantSubdomainCustomWithWWWRFC_arguments, {}, cutToFirstSignificantSubdomainCustomWithWWWRFC_returned_value, cutToFirstSignificantSubdomainCustomWithWWWRFC_examples, cutToFirstSignificantSubdomainCustomWithWWWRFC_introduced_in, cutToFirstSignificantSubdomainCustomWithWWWRFC_category};
 
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC>(cutToFirstSignificantSubdomainCustomWithWWWRFC_documentation);
 }

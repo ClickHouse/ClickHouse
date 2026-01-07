@@ -164,7 +164,7 @@ REGISTER_FUNCTION(ArraySlice)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2, NULL, 4]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArraySlice>(documentation);
 }

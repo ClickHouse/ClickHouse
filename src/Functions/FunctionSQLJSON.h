@@ -245,7 +245,7 @@ public:
             Impl impl;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json = json_column.column->getDataAt(i).toView();
+                std::string_view json = json_column.column->getDataAt(i);
                 document_ok = json_parser.parse(json, document);
 
                 bool added_to_column = false;

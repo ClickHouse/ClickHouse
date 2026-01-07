@@ -12,6 +12,11 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -45,6 +50,11 @@ public:
     {
         /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
         if (!use_analyzer)
+            return nullptr;
+
+        /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
+        /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
+        if (isNothing(result_type))
             return nullptr;
 
         const ColumnWithTypeAndName & elem = arguments[0];
@@ -110,6 +120,23 @@ public:
         /// Since no element is nullable, return a constant one.
         return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+        {
+            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+            return b.CreateSelect(is_null, b.getInt8(0), b.getInt8(1));
+        }
+        else
+            return b.getInt8(1);
+    }
+#endif
 
 private:
     MULTITARGET_FUNCTION_AVX2_SSE42(
@@ -179,7 +206,7 @@ SELECT x FROM t_null WHERE isNotNull(y);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotNull>(documentation);
 }

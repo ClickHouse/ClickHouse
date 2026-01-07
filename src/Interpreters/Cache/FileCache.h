@@ -19,6 +19,8 @@
 #include <Interpreters/Cache/UserInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <filesystem>
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -210,9 +212,14 @@ public:
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
 
+    using CacheIteratorPtr = CacheMetadata::IteratorPtr;
+    CacheIteratorPtr getCacheIterator(const UserID & user_id);
+
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
     void freeSpaceRatioKeepingThreadFunc();
+
+    const String & getName() const { return name; }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
@@ -233,6 +240,7 @@ private:
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
 
+    String name;
     LoggerPtr log;
 
     std::exception_ptr init_exception;
@@ -252,6 +260,21 @@ private:
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
 
+    /// Random checks for cache correctness.
+    /// They are heavy, so cannot be done on each cache access.
+    struct CheckCacheProbability
+    {
+        explicit CheckCacheProbability(double probability, UInt64 seed = 0);
+
+        bool doCheck();
+
+    private:
+        pcg64_fast rndgen;
+        std::bernoulli_distribution distribution;
+        std::mutex mutex;
+    };
+    CheckCacheProbability check_cache_probability;
+
     /**
      * A QueryLimit allows to control cache write limit per query.
      * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
@@ -263,6 +286,7 @@ private:
 
     void assertInitialized() const;
     void assertCacheCorrectness();
+    void assertCacheCorrectnessWithProbability();
 
     void loadMetadata();
     void loadMetadataImpl();

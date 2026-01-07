@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/memcpySmall.h>
 
 namespace DB
@@ -72,6 +73,20 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
     return right_column;
 }
 
+static void replicateColumnLazily(ColumnPtr & column, const IColumn::Offsets & offsets, ColumnPtr & indexes)
+{
+    if (isLazyReplicationUseful(column))
+    {
+        if (!indexes)
+            indexes = convertOffsetsToIndexes(offsets);
+        column = ColumnReplicated::create(column, indexes);
+    }
+    else
+    {
+        column = column->replicate(offsets);
+    }
+}
+
 static void appendRightColumns(
     Block & block,
     MutableColumns columns,
@@ -123,7 +138,7 @@ static void appendRightColumns(
         block.insert(std::move(right_col));
 
         if (!offsets.empty())
-            right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
+            right_keys_to_replicate.push_back(block.columns() - 1);
     }
 
     if (!offsets.empty())
@@ -132,10 +147,21 @@ static void appendRightColumns(
         chassert(offsets.size() == block.rows());
 
         auto columns_to_replicate = block.getColumns();
-        for (size_t i = 0; i < existing_columns; ++i)
-            columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
-        for (size_t pos : right_keys_to_replicate)
-            columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
+        if (properties.enable_lazy_columns_replication)
+        {
+            ColumnPtr indexes;
+            for (size_t i = 0; i < existing_columns; ++i)
+                replicateColumnLazily(columns_to_replicate[i], offsets, indexes);
+            for (size_t pos : right_keys_to_replicate)
+                replicateColumnLazily(columns_to_replicate[pos], offsets, indexes);
+        }
+        else
+        {
+            for (size_t i = 0; i < existing_columns; ++i)
+                columns_to_replicate[i] = columns_to_replicate[i]->replicate(offsets);
+            for (size_t pos : right_keys_to_replicate)
+                columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
+        }
 
         block.setColumns(columns_to_replicate);
     }
@@ -204,9 +230,9 @@ Block HashJoinResult::generateBlock(
     else
     {
         rows_added = lazy_output.buildOutput(
-            state->rows_to_reserve, columns,
+            state->rows_to_reserve, state->block, state->offsets, columns,
             off_data + state->row_ref_begin, off_data + state->row_ref_end,
-            state->state_row_offset, state->state_row_limit);
+            state->state_row_offset, state->state_row_limit, state->state_bytes_limit);
     }
 
     IColumn::Offsets offsets;
@@ -312,21 +338,29 @@ static size_t getAvgBytesPerRow(const Block & block)
     return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
+void HashJoinResult::setNextBlock(ScatteredBlock && block)
+{
+    next_scattered_block.emplace(std::move(block));
+}
+
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {
         bool is_last = current_row_state->is_last;
         auto block = generateBlock(current_row_state, lazy_output, properties);
-        return {std::move(block), is_last && !current_row_state.has_value()};
+        return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
     }
 
     if (!scattered_block)
-        return {};
+        return {Block(), next_block_ptr, true};
 
     size_t limit_rows_per_key = 0;
+    size_t limit_bytes_per_key = 0;
     /// We can split when using lazy_output with row_refs and offsets
     if (properties.joined_block_split_single_row
+        && properties.max_joined_block_rows > 0
         /// ignore join get, it has any join semantics
         && !properties.is_join_get
         && !offsets.empty()
@@ -338,6 +372,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         && std::ranges::all_of(columns, [](const auto & col) { return col->empty(); }))
     {
         limit_rows_per_key = properties.max_joined_block_rows;
+        limit_bytes_per_key = properties.max_joined_block_bytes;
     }
 
     size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
@@ -362,11 +397,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             .matched_rows = std::span<UInt64>{matched_rows},
             .is_last = true,
             .state_row_limit = limit_rows_per_key,
+            .state_bytes_limit = limit_bytes_per_key,
         });
 
         auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
-        return {std::move(block), !current_row_state.has_value()};
+        return {std::move(block), next_block_ptr, !current_row_state.has_value()};
     }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
@@ -487,13 +523,14 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         .matched_rows = partial_matched_rows,
         .is_last = is_last,
         .state_row_limit = limit_rows_per_key,
+        .state_bytes_limit = limit_bytes_per_key,
     });
 
     auto block = generateBlock(current_row_state, lazy_output, properties);
     if (is_last)
         scattered_block.reset();
 
-    return {std::move(block), is_last && !current_row_state.has_value()};
+    return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
 }
 
 }

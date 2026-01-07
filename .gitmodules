@@ -6,7 +6,7 @@
 	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
-	url = https://github.com/facebook/zstd
+	url = https://github.com/ClickHouse/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
 	url = https://github.com/lz4/lz4
@@ -45,7 +45,7 @@
 	url = https://github.com/ClickHouse/arrow
 [submodule "contrib/thrift"]
 	path = contrib/thrift
-	url = https://github.com/apache/thrift
+	url = https://github.com/ClickHouse/thrift
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
 	url = https://github.com/ClickHouse/libhdfs3
@@ -218,18 +218,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/qpl"]
-	path = contrib/qpl
-	url = https://github.com/intel/qpl
-[submodule "contrib/idxd-config"]
-	path = contrib/idxd-config
-	url = https://github.com/ClickHouse/idxd-config.git
-[submodule "contrib/QAT-ZSTD-Plugin"]
-	path = contrib/QAT-ZSTD-Plugin
-	url = https://github.com/intel/QAT-ZSTD-Plugin
-[submodule "contrib/qatlib"]
-	path = contrib/qatlib
-	url = https://github.com/intel/qatlib
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -238,7 +226,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/VectorCamp/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan.git
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -353,7 +341,7 @@
 	url = https://github.com/ClickHouse/double-conversion.git
 [submodule "contrib/mongo-cxx-driver"]
 	path = contrib/mongo-cxx-driver
-	url = https://github.com/ClickHouse/mongo-cxx-driver.git
+	url = https://github.com/mongodb/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git

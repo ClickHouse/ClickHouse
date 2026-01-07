@@ -19,10 +19,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
@@ -101,6 +102,9 @@ class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
+class TextIndexDictionaryBlockCache;
+class TextIndexHeaderCache;
+class TextIndexPostingsCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -116,6 +120,7 @@ class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
+class BackgroundSchedulePoolLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
@@ -124,6 +129,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
 class SessionLog;
@@ -168,7 +174,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-using DisksMap = std::map<String, DiskPtr>;
+using DisksMap = std::map<String, DiskPtr, std::less<>>;
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
@@ -249,6 +255,9 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -257,6 +266,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+class ReverseLookupCache;
+using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
 class ContextTimeSeriesTagsCollector;
 
@@ -345,12 +357,16 @@ protected:
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
+    using InteractiveCancelCallback = std::function<bool()>;
+    InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
+
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     struct InsertionTableInfo
     {
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
+        std::optional<ColumnsDescription> columns_description;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -379,6 +395,8 @@ protected:
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
     BlockMarshallingCallback block_marshalling_callback;
+
+    mutable RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     bool is_under_restore = false;
 
@@ -536,6 +554,10 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
+    /// This is a per query cache and not shared across queries.
+    mutable ReverseLookupCachePtr reverse_lookup_cache;
+
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
@@ -575,13 +597,7 @@ protected:
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
-    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
-    mutable StorageMetadataCache storage_metadata_cache;
-    mutable std::mutex storage_metadata_cache_mutex;
-
-    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
-    mutable StorageSnapshotCache storage_snapshot_cache;
-    mutable std::mutex storage_snapshot_cache_mutex;
+    QueryMetadataCacheWeakPtr query_metadata_cache;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -649,6 +665,7 @@ public:
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
+
 
     ~Context();
 
@@ -757,8 +774,8 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password!
+    /// Sets the current user, assuming they are already authenticated.
+    /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
@@ -804,6 +821,7 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
@@ -986,9 +1004,11 @@ public:
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
+    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
+    const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1045,7 +1065,6 @@ public:
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
-    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
@@ -1062,8 +1081,15 @@ public:
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
+        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -1165,6 +1191,9 @@ public:
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
+    void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
+    InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1202,6 +1231,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getDefaultOrAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
+
+    int64_t getZooKeeperLastZXIDSeen() const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
@@ -1274,6 +1305,21 @@ public:
     void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
     void clearVectorSimilarityIndexCache() const;
+
+    void setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
+    void clearTextIndexDictionaryBlockCache() const;
+
+    void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexHeaderCache> getTextIndexHeaderCache() const;
+    void clearTextIndexHeaderCache() const;
+
+    void setTextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexPostingsCache> getTextIndexPostingsCache() const;
+    void clearTextIndexPostingsCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1400,7 +1446,9 @@ public:
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
-    std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
+    std::shared_ptr<PartLog> getPartLog() const;
+
+    std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
@@ -1492,8 +1540,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
-    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
-    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+    QueryMetadataCachePtr getQueryMetadataCache() const;
+    void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1556,11 +1604,14 @@ public:
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
+    bool hasMergeTreeAllRangesCallback() const;
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
 
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr getRuntimeDataflowStatisticsCacheUpdater() const;
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);
@@ -1603,6 +1654,8 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    ReverseLookupCache & getReverseLookupCache() const;
 
     /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
     /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.

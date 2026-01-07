@@ -84,6 +84,7 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -568,7 +569,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.narrow(num_streams);
     }
 
-    pipeline.addResources(std::move(resources));
+    pipeline.addResources(resources);
 }
 
 void ReadFromMerge::filterTablesAndCreateChildrenPlans()
@@ -939,7 +940,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
-            .withExtendedObjects()
             .withSubcolumns(storage_snapshot_->storage.supportsSubcolumns());
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
@@ -981,6 +981,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
+                /// Skip columns that don't exists in this table. It may happen when we use merge over tables with different schemas.
+                if (!storage_columns.has(column))
+                    continue;
+
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
 
@@ -1156,7 +1160,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return nullptr;
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    /// All optimisations will be done at plans creation
+    /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1350,7 +1354,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -1510,8 +1514,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         for (const auto & alias : aliases)
         {
-            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-
             ActionsDAG actions_dag(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
@@ -1593,7 +1595,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         current_step_columns,
         converted_columns,
-        ActionsDAG::MatchColumnsMode::Position);
+        ActionsDAG::MatchColumnsMode::Position,
+        local_context);
 
     auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
     child.plan.addStep(std::move(expression_step));
@@ -1630,7 +1633,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, {});
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
     };
 
     bool ok = true;
@@ -1679,6 +1682,20 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     });
 
     return column_sizes;
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
+{
+    try
+    {
+        return getColumnSizes();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+            return std::nullopt;
+        throw;
+    }
 }
 
 

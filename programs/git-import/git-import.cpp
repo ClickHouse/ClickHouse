@@ -20,7 +20,6 @@
 #include <Common/re2.h>
 #include <base/find_symbols.h>
 
-#include <IO/copyData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -558,24 +557,24 @@ struct Options
         skip_commits_without_parents = options["skip-commits-without-parents"].as<bool>();
         skip_commits_with_duplicate_diffs = options["skip-commits-with-duplicate-diffs"].as<bool>();
         threads = options["threads"].as<size_t>();
-        if (options.count("skip-paths"))
+        if (options.contains("skip-paths"))
         {
             skip_paths.emplace(options["skip-paths"].as<std::string>());
         }
-        if (options.count("skip-commits-with-messages"))
+        if (options.contains("skip-commits-with-messages"))
         {
             skip_commits_with_messages.emplace(options["skip-commits-with-messages"].as<std::string>());
         }
-        if (options.count("skip-commit"))
+        if (options.contains("skip-commit"))
         {
             auto vec = options["skip-commit"].as<std::vector<std::string>>();
             skip_commits.insert(vec.begin(), vec.end());
         }
-        if (options.count("diff-size-limit"))
+        if (options.contains("diff-size-limit"))
         {
             diff_size_limit = options["diff-size-limit"].as<size_t>();
         }
-        if (options.count("stop-after-commit"))
+        if (options.contains("stop-after-commit"))
         {
             stop_after_commit = options["stop-after-commit"].as<std::string>();
         }
@@ -1049,9 +1048,7 @@ static void processDiffs(
         }
 
         if (size_limit && diff_size > *size_limit)
-        {
             return;
-        }
     }
 }
 
@@ -1180,7 +1177,9 @@ static void processLog(const Options & options)
 
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        ReadBuffer & show_in = show_commands[i % num_threads]->out;
+        processCommit(show_in, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        show_in.ignoreAll();
 
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;
@@ -1226,7 +1225,7 @@ try
     po::variables_map options;
     po::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         std::cout << documentation << '\n'
             << "Usage: " << argv[0] << '\n'

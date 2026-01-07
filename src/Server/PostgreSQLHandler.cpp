@@ -51,6 +51,9 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -160,7 +163,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    setThreadName("PostgresHandler");
+    DB::setThreadName(ThreadName::POSTGRES_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
@@ -362,9 +365,9 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
 {
     std::unordered_map<String, String> & parameters = start_up_message.parameters;
 
-    if (parameters.find("application_name") != parameters.end())
+    if (parameters.contains("application_name"))
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("application_name", parameters["application_name"]));
-    if (parameters.find("client_encoding") != parameters.end())
+    if (parameters.contains("client_encoding"))
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("client_encoding", parameters["client_encoding"]));
     else
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("client_encoding", "UTF8"));
@@ -385,7 +388,7 @@ void PostgreSQLHandler::cancelRequest()
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(std::move(replacement), *out, true, query_context, {});
+    executeQuery(std::move(replacement), *out, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -450,7 +453,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
         String format;
         switch (copy_query->format)
         {
@@ -465,6 +467,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             break;
         }
 
+        const Settings & settings = query_context->getSettingsRef();
+
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();
         while (true)
@@ -477,7 +481,21 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
                 ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
+                auto format_ptr = FormatFactory::instance().getInput(
+                    format,
+                    buf,
+                    io.pipeline.getHeader(),
+                    query_context,
+                    settings[Setting::max_insert_block_size],
+                    std::nullopt,
+                    nullptr,
+                    nullptr,
+                    false,
+                    CompressionMethod::None,
+                    false,
+                    settings[Setting::max_insert_block_size_bytes],
+                    settings[Setting::min_insert_block_size_rows],
+                    settings[Setting::min_insert_block_size_bytes]);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();
@@ -661,7 +679,7 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
 
     // Execute query with PostgreSQLWire output format
     auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
-    executeQuery(std::move(read_buf), *out, false, query_context, {});
+    executeQuery(std::move(read_buf), *out, query_context, {});
 
     // Determine affected rows based on command type
     return (command == PostgreSQLProtocol::Messaging::CommandComplete::Command::INSERT)

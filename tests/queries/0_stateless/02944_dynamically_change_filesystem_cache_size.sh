@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name', serialization_info_version = 'default';
+CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name', serialization_info_version = 'basic';
 INSERT INTO test SELECT randomString(100);
 SYSTEM DROP FILESYSTEM CACHE;
 "
