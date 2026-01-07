@@ -22,6 +22,7 @@ struct RuntimeDataflowStatistics
 {
     size_t input_bytes = 0;
     size_t output_bytes = 0;
+    size_t total_rows_from_storage = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -73,6 +74,8 @@ public:
 
     void setCacheKey(size_t key) { cache_key = key; }
 
+    void setTotalRowsFromStorage(size_t rows) { total_rows_from_storage = rows; }
+
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
     void recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket);
@@ -85,6 +88,8 @@ public:
 
 private:
     std::optional<size_t> cache_key;
+
+    size_t total_rows_from_storage = 0;
 
     std::atomic_bool unsupported_case{false};
 
