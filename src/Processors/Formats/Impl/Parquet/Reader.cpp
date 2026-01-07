@@ -651,10 +651,10 @@ void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
-    
+
     ExpressionActionsSettings actions_settings;
     PrewhereExprInfo prewhere_expr_info;
-    
+
     bool use_multistage = false;
     if (prewhere_info)
     {
@@ -664,7 +664,7 @@ void Reader::preparePrewhere()
             prewhere_expr_info,
             /*force_short_circuit_execution*/ true);
     }
-    
+
     if (!use_multistage)
     {
         if (row_level_filter)
@@ -677,7 +677,7 @@ void Reader::preparePrewhere()
             step.need_filter = true;
             prewhere_expr_info.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(step)));
         }
-        
+
         if (prewhere_info)
         {
             ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);

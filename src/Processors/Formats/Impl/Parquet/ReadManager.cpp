@@ -255,7 +255,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
         {
             if (reader.primitive_columns[i].step_idx != step_idx)
                 continue;
-                
+
             ColumnChunk & c = row_group.columns.at(i);
             if (is_offset_index)
             {
@@ -348,7 +348,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 {
                     reader.applyPrewhere(row_subgroup, row_group, step_idx);
                 }
-                
+
                 size_t next_step = (step_idx < reader.steps.size()) ? step_idx + 1 : 0;
                 if (next_step > 0)
                 {

@@ -428,16 +428,16 @@ struct Reader
     {
         /// Columns needed for this step (indices in output_columns).
         std::vector<size_t> input_column_idxs {};
-        
+
         /// Optional expression to compute after reading columns.
         /// If present, actions will be executed and result_column_name will contain the result.
         std::optional<ExpressionActions> actions = std::nullopt;
         String result_column_name;
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        
+
         /// Index in output block if this step produces a column that should be in the output.
         std::optional<size_t> idx_in_output_block = std::nullopt;
-        
+
         /// Whether to filter rows using the result column after executing actions.
         bool need_filter = true;
     };
