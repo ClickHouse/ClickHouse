@@ -231,11 +231,12 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTree
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
-                                                                   size_t index_granularity_, int direction_, size_t size_hint_, bool store_map_) :
+                                                                   size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_) :
     index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index_granularity(index_granularity_)
     , direction(direction_)
+    , last_part_granule(last_part_granule_)
     , store_map(store_map_)
 {
     const DataTypePtr & type = index_sample_block.getByPosition(0).type;
@@ -262,17 +263,22 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(value, istr, format_settings);
     }
     /// If index granularity is not 1, we insert the same value as the min
-    /// or max for all the corresponding granules. For our top-K purporse,this
+    /// or max for all the corresponding granules. For our top-K purpose,this
     /// is safe and maybe lead to false positives, but never wrong results.
     for (size_t i = 0; i < index_granularity; ++i)
     {
-        granules.emplace_back(MinMaxGranule{granule_num, value});
+        auto part_granule_num = (granule_num * index_granularity) + i;
+        if (part_granule_num >= last_part_granule)
+            break;
+
+        granules.emplace_back(MinMaxGranule{part_granule_num, value});
         if (store_map)
-            granules_map.emplace(granule_num, granules.size() - 1);
+            granules_map.emplace(part_granule_num, granules.size() - 1);
     }
     empty = false;
 }
 
+/// Get top K granules of a single part
 template<bool handle_ties>
 void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMaxGranule> & result)
 {
@@ -322,14 +328,12 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
         for(size_t i = 0; i < min_granules && !queue.empty(); ++i)
         {
             threshold = queue.top();
-            LOG_TRACE(getLogger("topK"), "getTopK shortlisted first {} {}", (threshold.min_or_max_value.dump()), queue.top().granule_num);
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
             queue.pop();
         }
 
-	while(!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
+        while(!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
         {
-            LOG_TRACE(getLogger("topK"), "getTopK shortlisted {} {}", (threshold.min_or_max_value.dump()), queue.top().granule_num);
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
             queue.pop();
         }
@@ -348,6 +352,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, bool handle_ties, 
 template<bool handle_ties>
 void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
                                                     size_t n,
+                                                    size_t index_granularity,
                                                     const std::vector<std::vector<MinMaxGranule>> & parts,
                                                     std::vector<MarkRanges> & result)
 {
@@ -388,22 +393,20 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     }
     else
     {
-        auto min_granules = n; /// * index_granularity;
+        auto min_granules = n * index_granularity;
         auto threshold = queue.top();
         for(size_t i = 0; i < min_granules && !queue.empty(); ++i)
         {
             const auto & item = queue.top();
             threshold = queue.top();
             result[item.part_index].push_back({item.granule_num, item.granule_num + 1});
-            LOG_TRACE(getLogger("topK"), "adding range {} {}-{}", item.part_index, item.granule_num, item.granule_num + 1);
             queue.pop();
         }
 
-	while(!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
+        while(!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
         {
             const auto & item = queue.top();
             result[item.part_index].push_back({item.granule_num, item.granule_num + 1});
-            LOG_TRACE(getLogger("topK"), "adding extra range {} {}-{}", item.part_index, item.granule_num, item.granule_num + 1);
             queue.pop();
         }
     }
@@ -414,14 +417,15 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 
 void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
                                                     size_t n,
+                                                    size_t index_granularity,
                                                     bool handle_ties,
                                                     const std::vector<std::vector<MinMaxGranule>> & parts,
                                                     std::vector<MarkRanges> & result)
 {
     if (handle_ties)
-        getTopKMarks<true>(direction, n, parts, result);
+        getTopKMarks<true>(direction, n, index_granularity, parts, result);
     else
-        getTopKMarks<false>(direction, n, parts, result);
+        getTopKMarks<false>(direction, n, index_granularity, parts, result);
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(
