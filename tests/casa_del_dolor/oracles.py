@@ -218,7 +218,7 @@ class ElOraculoDeTablas:
                     int(line) for line in info_str.split("\n") if line
                 ]
                 for idx, check_name in enumerate(ElOraculoDeTablas.HEALTH_CHECKS):
-                    if fetched_info[idx] > 0:
+                    if fetched_info[idx] != 0:
                         message: str = (
                             f"Health check '{check_name}' failed on node {next_node.name}: {fetched_info[idx]} issues found"
                         )
