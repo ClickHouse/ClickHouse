@@ -202,16 +202,17 @@ def main():
             "restore_replace_external_engines_to_null",
             "restore_replace_external_table_functions_to_null",
             # Not handy
+            "default_compression_codec",
             "insert_shard_id",
             "union_default_mode",
             "except_default_mode",
             "input_format_skip_unknown_fields",
+            "insert_quorum",
+            "trace_profile_events",
             "unknown_packet_in_send_data",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [
-            "add_minmax_index_for_numeric_columns",
-            "add_minmax_index_for_string_columns",
             "allow_coalescing_columns_in_partition_or_order_key",
             # "allow_experimental_replacing_merge_with_cleanup",
             "allow_experimental_reverse_key",
@@ -227,16 +228,9 @@ def main():
             "merge_max_block_size",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
-            "min_rows_for_full_part_storage",
-            "min_rows_for_wide_part",
             "ratio_of_defaults_for_sparse_serialization",
-            "remove_empty_parts",
             "string_serialization_version",
-            "ttl_only_drop_parts",
-            "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
-            "vertical_merge_algorithm_min_rows_to_activate",
-            "vertical_merge_algorithm_min_columns_to_activate",
         ],
     }
     with open(buzz_config_file, "w") as outfile:
