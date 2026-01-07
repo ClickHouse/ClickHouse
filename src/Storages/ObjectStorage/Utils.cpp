@@ -43,6 +43,7 @@ namespace ErrorCodes
 namespace
 {
 
+#if USE_AVRO
 std::string normalizeScheme(const std::string & scheme)
 {
     auto scheme_lowercase = Poco::toLower(scheme);
@@ -64,28 +65,6 @@ std::string factoryTypeForScheme(const std::string & normalized_scheme)
     return "";
 }
 
-bool isAbsolutePath(const std::string & path)
-{
-    if (!path.empty() && (path.front() == '/' || path.find("://") != std::string_view::npos))
-        return true;
-
-    return false;
-}
-
-/// Normalize a path string by removing redundant components and leading slashes.
-std::string normalizePathString(const std::string & path)
-{
-    std::filesystem::path fs_path(path);
-    std::filesystem::path normalized = fs_path.lexically_normal();
-
-    std::string normalized_result = normalized.string();
-
-    while (!normalized_result.empty() && normalized_result.front() == '/')
-        normalized_result = normalized_result.substr(1);
-
-    return normalized_result;
-}
-
 #if USE_AWS_S3
 /// For s3:// URIs (generic), bucket needs to match.
 /// For explicit http(s):// URIs, both bucket and endpoint must match.
@@ -97,7 +76,6 @@ bool s3URIMatches(const S3::URI & target_uri, const std::string & base_bucket, c
     return bucket_matches && (endpoint_matches || is_generic_s3_uri);
 }
 #endif
-
 std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     const std::string & cache_key,
     const std::string & key_to_use,
@@ -129,6 +107,29 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     }
 
     return {storage, key_to_use};
+}
+#endif
+
+bool isAbsolutePath(const std::string & path)
+{
+    if (!path.empty() && (path.front() == '/' || path.find("://") != std::string_view::npos))
+        return true;
+
+    return false;
+}
+
+/// Normalize a path string by removing redundant components and leading slashes.
+std::string normalizePathString(const std::string & path)
+{
+    std::filesystem::path fs_path(path);
+    std::filesystem::path normalized = fs_path.lexically_normal();
+
+    std::string normalized_result = normalized.string();
+
+    while (!normalized_result.empty() && normalized_result.front() == '/')
+        normalized_result = normalized_result.substr(1);
+
+    return normalized_result;
 }
 
 /// Convert a path (relative to table location ot absolute path) to a key that will be looked up in the object storage.

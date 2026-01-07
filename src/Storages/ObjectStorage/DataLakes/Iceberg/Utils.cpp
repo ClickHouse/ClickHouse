@@ -1146,7 +1146,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
 namespace DB
 {
 
-ObjectStoragePtr getResolvedStorageFromObjectInfo(const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage)
+ObjectStoragePtr getResolvedStorageFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage)
 {
 #if USE_AVRO
     if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
@@ -1158,7 +1158,7 @@ ObjectStoragePtr getResolvedStorageFromObjectInfo(const ObjectInfoPtr & object_i
     return default_storage;
 }
 
-std::optional<String> getAbsolutePathFromObjectInfo(const ObjectInfoPtr & object_info)
+std::optional<String> getAbsolutePathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info)
 {
 #if USE_AVRO
     if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
