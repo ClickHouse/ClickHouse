@@ -3,7 +3,7 @@ set enable_analyzer=1;
 set enable_parallel_replicas=0;
 set prefer_localhost_replica=1;
 
-create table tab0 (x UInt32, y UInt32) engine = MergeTree order by x settings index_granularity=8192, min_bytes_for_wide_part=1e9;
+create table tab0 (x UInt32, y UInt32) engine = MergeTree order by x settings index_granularity=8192, min_bytes_for_wide_part=1e9, index_granularity_bytes=10e6;
 insert into tab0 select number, number from numbers(8192 * 123);
 
 -- { echo }
