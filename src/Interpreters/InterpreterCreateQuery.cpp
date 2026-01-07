@@ -1138,7 +1138,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     }
 
     if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-        InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(), SelectQueryOptions().analyze());
+        InterpreterSelectQueryAnalyzer(create.select->clone(), getContext(), SelectQueryOptions()).getQueryPlan();
     else
         InterpreterSelectWithUnionQuery(create.select->clone(), getContext(), SelectQueryOptions().analyze());
 }
