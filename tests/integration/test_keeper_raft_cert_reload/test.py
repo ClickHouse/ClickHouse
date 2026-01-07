@@ -60,18 +60,6 @@ all_nodes = [node1, node2, node3, node4]
 def started_cluster():
     try:
         cluster.start()
-
-        # Initialize: copy first.crt/key to current.crt/key on all nodes
-        for node in all_nodes:
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "cp /etc/clickhouse-server/config.d/first.crt /etc/clickhouse-server/config.d/current.crt && "
-                    "cp /etc/clickhouse-server/config.d/first.key /etc/clickhouse-server/config.d/current.key",
-                ]
-            )
-
         yield cluster
     finally:
         cluster.shutdown()
@@ -115,32 +103,34 @@ def verify_cluster_works(test_path, nodes_to_check):
                     pass
 
 
-def replace_certificates_in_place(node, cert_name):
+def replace_certificates_in_place(node):
     """
     Replace certificate files in-place (same path, new content).
     This simulates how cert-manager or certbot renews certificates.
+    Copies second.crt/key content over first.crt/key (the configured paths).
     The file modification time changes, triggering CertificateReloader.
     """
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"cp /etc/clickhouse-server/config.d/{cert_name}.crt /etc/clickhouse-server/config.d/current.crt && "
-            f"cp /etc/clickhouse-server/config.d/{cert_name}.key /etc/clickhouse-server/config.d/current.key && "
+            # Copy second cert content over first cert (in-place replacement)
+            "cp /etc/clickhouse-server/config.d/second.crt /etc/clickhouse-server/config.d/first.crt && "
+            "cp /etc/clickhouse-server/config.d/second.key /etc/clickhouse-server/config.d/first.key && "
             # Touch to ensure modification time is updated
-            "touch /etc/clickhouse-server/config.d/current.crt /etc/clickhouse-server/config.d/current.key",
+            "touch /etc/clickhouse-server/config.d/first.crt /etc/clickhouse-server/config.d/first.key",
         ]
     )
 
 
 def get_cert_serial(node):
-    """Get the serial number of the currently configured certificate."""
+    """Get the serial number of the currently configured certificate (first.crt)."""
     result = node.exec_in_container(
         [
             "openssl",
             "x509",
             "-in",
-            "/etc/clickhouse-server/config.d/current.crt",
+            "/etc/clickhouse-server/config.d/first.crt",
             "-serial",
             "-noout",
         ]
@@ -180,7 +170,7 @@ def test_new_node_joins_with_updated_certs(started_cluster):
 
     # Replace certificate files on ALL nodes (including node4 which hasn't started yet)
     for node in all_nodes:
-        replace_certificates_in_place(node, "second")
+        replace_certificates_in_place(node)
     print("Replaced certificate files with second cert on all nodes")
 
     # Trigger config reload on running nodes
