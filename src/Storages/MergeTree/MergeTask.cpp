@@ -106,11 +106,6 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool materialize_statistics_on_merge;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
@@ -139,6 +134,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+    extern const MergeTreeSettingsBool materialize_statistics_on_merge;
 }
 
 namespace ErrorCodes
@@ -156,9 +152,10 @@ namespace
 ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & context)
+    const MergeTreeSettings & merge_tree_settings
+    )
 {
-    if (!context->getServerSettings()[ServerSetting::materialize_statistics_on_merge])
+    if (!merge_tree_settings[MergeTreeSetting::materialize_statistics_on_merge])
         return {};
     ColumnsStatistics all_statistics;
     const auto & all_columns = metadata_snapshot->getColumns();
@@ -772,7 +769,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_columns,
         /// indices,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
-        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot, global_ctx->context),
+        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot, *global_ctx->data_settings),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
@@ -1405,7 +1402,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
-        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot, global_ctx->context),
+        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot, *global_ctx->data_settings),
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,

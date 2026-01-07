@@ -22,7 +22,6 @@ node2 = cluster.add_instance(
 node3 = cluster.add_instance(
     "node3",
     user_configs=["config/config.xml"],
-    main_configs=["config/disable_stats_merge.xml"],
     with_zookeeper=True,
 )
 
@@ -218,7 +217,7 @@ def test_replicated_db(started_cluster):
 
 def test_setting_materialize_statistics_on_merge(started_cluster):
     node3.query("DROP TABLE IF EXISTS test_stats SYNC")
-    node3.query("CREATE TABLE test_stats (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY()")
+    node3.query("CREATE TABLE test_stats (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY() settings materialize_statistics_on_merge = 0")
     node3.query("SYSTEM STOP MERGES")
     node3.query("insert into test_stats values(1,2)")
     node3.query("insert into test_stats values(2,3)")
