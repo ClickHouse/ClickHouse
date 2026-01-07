@@ -18,6 +18,7 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <base/scope_guard.h>
 
@@ -927,7 +928,7 @@ struct TestQuery {
             cpu_lease->startConsumption();
         metrics.start(thread_num);
 
-        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
+        DB::setThreadName(DB::ThreadName::TEST_SCHEDULER);
         while (true)
         {
             if (!controlConcurrency(cpu_lease))
@@ -982,7 +983,7 @@ struct TestQuery {
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
-                setThreadName(workload.c_str());
+                setThreadName(ThreadName::TEST_SCHEDULER);
                 {
                     std::unique_lock in_thread_lock{slots_mutex};
                     slots = allocateCPUSlots(type, master_link, worker_link, workload);
@@ -1271,6 +1272,23 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
     }
 
     t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    // Only max_cpu_share is set, max_cpus is unset
+    t.query("CREATE WORKLOAD all SETTINGS max_cpu_share = 0.5");
+    ClassifierPtr c = t.manager->acquire("all");
+
+    // The expected hard cap is max_cpu_share * getNumberOfCPUCoresToUse()
+    WorkloadSettings settings = c->getWorkloadSettings("cpu");
+    double expected_cap = 0.5 * getNumberOfCPUCoresToUse();
+    double actual_cap = settings.max_cpus;
+
+    EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
 auto getAcquired()

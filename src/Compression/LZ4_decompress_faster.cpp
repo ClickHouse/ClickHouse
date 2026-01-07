@@ -1,34 +1,20 @@
 #include <Compression/LZ4_decompress_faster.h>
 
-#include <cstring>
-#include <iostream>
-#include <Core/Defines.h>
+#include <base/defines.h>
+#include <base/MemorySanitizer.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <Common/Stopwatch.h>
-#include <Common/TargetSpecific.h>
 
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
+#include <cstring>
 
 #ifdef __SSSE3__
 #include <tmmintrin.h>
 #endif
 
-#if USE_MULTITARGET_CODE
-#include <immintrin.h>
-#endif
-
-#ifdef __aarch64__
+#if defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
-
-static inline UInt16 LZ4_readLE16(const void* mem_ptr)
-{
-        const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
-        return static_cast<UInt16>(p[0]) + (p[1] << 8);
-}
 
 namespace LZ4
 {
@@ -36,50 +22,56 @@ namespace LZ4
 namespace
 {
 
-template <size_t N> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
-template <size_t N> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
-template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, size_t offset);
-
-
-inline void copy8(UInt8 * dst, const UInt8 * src)
+ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 {
-    memcpy(dst, src, 8);
+    const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
+    return static_cast<UInt16>(p[0]) + (p[1] << 8);
 }
 
-inline void wildCopy8(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
+template <size_t block_size>
+ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
+{
+    __builtin_memcpy(dst, src, block_size);
+}
+
+template <size_t block_size>
+ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size)
 {
     /// Unrolling with clang is doing >10% performance degrade.
+    size_t i = 0;
     #pragma nounroll
     do
     {
-        copy8(dst, src);
-        dst += 8;
-        src += 8;
-    } while (dst < dst_end);
+        __builtin_memcpy(dst, src, block_size);
+        dst += block_size;
+        src += block_size;
+        i += block_size;
+    } while (i < size);
 }
 
-inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
+
+template <size_t block_size>
+ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t size)
 {
-    /// 4 % n.
-    /// Or if 4 % n is zero, we use n.
-    /// It gives equivalent result, but is better CPU friendly for unknown reason.
-    static constexpr int shift1[] = { 0, 1, 2, 1, 4, 4, 4, 4 };
-
-    /// 8 % n - 4 % n
-    static constexpr int shift2[] = { 0, 0, 0, 1, 0, -1, -2, -3 };
-
-    op[0] = match[0];
-    op[1] = match[1];
-    op[2] = match[2];
-    op[3] = match[3];
-
-    match += shift1[offset];
-    memcpy(op + 4, match, 4);
-    match += shift2[offset];
+    /// Unrolling with clang is doing >10% performance degrade.
+    size_t i = 0;
+    #pragma nounroll
+    do
+    {
+        __builtin_memcpy(dst, src, block_size);
+        dst += block_size;
+        src += block_size;
+        i += block_size;
+    } while (i < size);
 }
 
+template <size_t block_size>
+void ALWAYS_INLINE copyOverlap(UInt8 * op, UInt8 *& match, size_t offset);
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined(__riscv) || defined(__loongarch64)
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<8>(UInt8 * op, UInt8 *& match, size_t offset)
+{
+#if defined(__SSSE3__)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -158,10 +150,6 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
   * Actually it's possible to use 'emms' instruction after decompression routine.
   * But it's more easy to just use 'xmm' registers and avoid using 'mm' registers.
   */
-inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
-#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
         0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
@@ -180,20 +168,13 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(masks + 8 * offset))));
 
+    /// MSAN does not recognize the store as initializing the memory
+    __msan_unpoison(op, 16);
+
     match += masks[offset];
 
-#else
-    copyOverlap8(op, match, offset);
-#endif
-}
+#elif defined(__aarch64__) && defined(__ARM_NEON)
 
-#endif
-
-
-#ifdef __aarch64__
-
-inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
         0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
@@ -208,71 +189,30 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
 
     unalignedStore<uint8x8_t>(op, vtbl1_u8(unalignedLoad<uint8x8_t>(match), unalignedLoad<uint8x8_t>(masks + 8 * offset)));
     match += masks[offset];
-}
 
-#endif
-
-
-template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
-template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
-template <> void inline copyOverlap<8, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); }
-template <> void inline copyOverlap<8, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8Shuffle(op, match, offset); }
-
-
-inline void copy16(UInt8 * dst, const UInt8 * src)
-{
-#ifdef __SSE2__
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
 #else
-    memcpy(dst, src, 16);
-#endif
-}
-
-inline void wildCopy16(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
-{
-    /// Unrolling with clang is doing >10% performance degrade.
-    #pragma nounroll
-    do
-    {
-        copy16(dst, src);
-        dst += 16;
-        src += 16;
-    } while (dst < dst_end);
-}
-
-inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
     /// 4 % n.
-    static constexpr int shift1[]
-        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+    /// Or if 4 % n is zero, we use n.
+    /// It gives equivalent result, but is better CPU friendly for unknown reason.
+    static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4};
 
-    /// 8 % n - 4 % n
-    static constexpr int shift2[]
-        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4 };
-
-    /// 16 % n - 8 % n
-    static constexpr int shift3[]
-        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7 };
+    /// Shift amount for match pointer.
+    static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1};
 
     op[0] = match[0];
     op[1] = match[1];
     op[2] = match[2];
     op[3] = match[3];
 
-    match += shift1[offset];
-    memcpy(op + 4, match, 4);
+    memcpy(op + 4, match + shift1[offset], 4);
     match += shift2[offset];
-    memcpy(op + 8, match, 8);
-    match += shift3[offset];
+#endif
 }
 
-
-#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined (__riscv) || defined(__loongarch64)
-
-inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<16>(UInt8 * op, UInt8 *& match, size_t offset)
 {
-#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+#if defined(__SSSE3__)
 
     static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
     {
@@ -301,17 +241,11 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
 
     match += masks[offset];
 
-#else
-    copyOverlap16(op, match, offset);
-#endif
-}
+    /// MSAN does not recognize the store as initializing the memory
+    __msan_unpoison(op, 16);
 
-#endif
+#elif defined(__aarch64__) && defined(__ARM_NEON)
 
-#ifdef __aarch64__
-
-inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
     static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
     {
         0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
@@ -339,139 +273,59 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
         vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
 
     match += masks[offset];
-}
 
-#endif
-
-
-template <> void inline copy<16>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
-template <> void inline wildCopy<16>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
-template <> void inline copyOverlap<16, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); }
-template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16Shuffle(op, match, offset); }
-
-
-inline void copy32(UInt8 * dst, const UInt8 * src)
-{
-    /// There was an AVX here but with mash with SSE instructions, we got a big slowdown.
-#if defined(__SSE2__)
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
 #else
-    memcpy(dst, src, 16);
-    memcpy(dst + 16, src + 16, 16);
-#endif
-}
-
-inline void wildCopy32(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
-{
-    /// Unrolling with clang is doing >10% performance degrade.
-    #pragma nounroll
-    do
-    {
-        copy32(dst, src);
-        dst += 32;
-        src += 32;
-    } while (dst < dst_end);
-}
-
-inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
     /// 4 % n.
-    static constexpr int shift1[]
-        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+    static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
 
-    /// 8 % n - 4 % n
-    static constexpr int shift2[]
-        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+    /// 8 % n
+    static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8};
 
-    /// 16 % n - 8 % n
-    static constexpr int shift3[]
-        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8 };
-
-    /// 32 % n - 16 % n
-    static constexpr int shift4[]
-        = { 0,  0,  0,  1,  0,  1, -2,  2,  0, -2, -4,  5,  4,  3,  2,  1,  0, -1, -2, -3, -4, -5, -6, -7, -8, -9,-10,-11,-12,-13,-14,-15 };
+    /// 16 % n
+    static constexpr UInt8 shift3[] = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1};
 
     op[0] = match[0];
     op[1] = match[1];
     op[2] = match[2];
     op[3] = match[3];
 
-    match += shift1[offset];
-    memcpy(op + 4, match, 4);
-    match += shift2[offset];
-    memcpy(op + 8, match, 8);
+    memcpy(op + 4, match + shift1[offset], 4);
+    memcpy(op + 8, match + shift2[offset], 8);
     match += shift3[offset];
-    memcpy(op + 16, match, 16);
-    match += shift4[offset];
-}
-
-DECLARE_AVX512VBMI_SPECIFIC_CODE(
-inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
-    static constexpr UInt8 __attribute__((__aligned__(32))) masks[] =
-    {
-        0,  1,  2,  2,  4,  2,  2,  4,  8,  5,  2, 10,  8,  6,  4,  2, 16, 15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  /* offset=0, shift amount index. */
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  /* offset=1 */
-        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
-        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,
-        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,
-        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,  0,  1,  2,  3,  4,  5,  6,  7,  8,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,  0,  1,  2,  3,  4,  5,  6,  7,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,  0,  1,  2,  3,  4,  5,  6,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,  0,  1,  2,  3,  4,  5,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,  0,  1,  2,  3,  4,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,  0,  1,  2,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,  0,
-    };
-
-    _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
-        _mm256_permutexvar_epi8(
-            _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
-    match += masks[offset];
-}
-) /// DECLARE_AVX512VBMI_SPECIFIC_CODE
-
-
-template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
-template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
-template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
-template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset)
-{
-#if USE_MULTITARGET_CODE
-    TargetSpecific::AVX512VBMI::copyOverlap32Shuffle(op, match, offset);
-#else
-    copyOverlap32(op, match, offset);
 #endif
 }
 
 
-/// See also https://stackoverflow.com/a/30669632
+template <>
+[[maybe_unused]] void ALWAYS_INLINE copyOverlap<32>(UInt8 * op, UInt8 *& match, size_t offset)
+{
+    /// 4 % n
+    static constexpr UInt8 shift1[] = {0, 1, 2, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
 
-template <size_t copy_amount, bool use_shuffle>
+    /// 8 % n
+    static constexpr UInt8 shift2[] = {0, 1, 2, 2, 4, 3, 2, 1, 0, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
+
+    /// 16 % n
+    static constexpr UInt8 shift3[]
+        = {0, 1, 2, 1, 4, 1, 4, 2, 8, 7, 6, 5, 4, 3, 2, 1, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16};
+
+    /// 32 % n
+    static constexpr UInt8 shift4[]
+        = {0, 1, 2, 2, 4, 2, 2, 4, 8, 5, 2, 10, 8, 6, 4, 2, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+
+    op[0] = match[0];
+    op[1] = match[1];
+    op[2] = match[2];
+    op[3] = match[3];
+
+    memcpy(op + 4, match + shift1[offset], 4);
+    memcpy(op + 8, match + shift2[offset], 8);
+    memcpy(op + 16, match + shift3[offset], 16);
+    match += shift4[offset];
+}
+
+
+template <size_t copy_amount>
 bool NO_INLINE decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
@@ -480,8 +334,6 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
     UInt8 * const output_begin = op;
     UInt8 * const output_end = op + dest_size;
 
-    /// Unrolling with clang is doing >10% performance degrade.
-    #pragma nounroll
     while (true)
     {
         size_t length;
@@ -554,7 +406,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
             return false;
 
-        wildCopy<copy_amount>(op, ip, copy_end); /// Here we can write up to copy_amount - 1 bytes after buffer.
+        wildCopyFromInput<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         if (copy_end == output_end)
             return true;
@@ -571,7 +423,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         size_t offset = LZ4_readLE16(ip);
         ip += 2;
-        const UInt8 * match = op - offset;
+        UInt8 * match = op - offset;
 
         if (unlikely(match < output_begin))
             return false;
@@ -598,7 +450,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
           * The worst case when offset = 1 and length = 4
           */
 
-        if (unlikely(offset < copy_amount))
+        if (offset < copy_amount)
         {
             /// output: Hello
             ///              ^-op
@@ -611,22 +463,22 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
             /// output: HelloHelloHel
             ///            ^-match   ^-op
 
-            copyOverlap<copy_amount, use_shuffle>(op, match, offset);
+            copyOverlap<copy_amount>(op, match, offset);
         }
         else
         {
-            copy<copy_amount>(op, match);
+            copyFromOutput<copy_amount>(op, match);
             match += copy_amount;
         }
 
         op += copy_amount;
 
-        copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
+        copyFromOutput<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
         {
             if (unlikely(copy_end > output_end))
                 return false;
-            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
+            wildCopyFromOutput<copy_amount>(op + copy_amount, match + copy_amount, copy_end - (op + copy_amount));
         }
 
         op = copy_end;
@@ -635,13 +487,12 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
 }
 
-
 bool decompress(
     const char * const source,
     char * const dest,
     size_t source_size,
     size_t dest_size,
-    PerformanceStatistics & statistics [[maybe_unused]])
+    [[maybe_unused]] PerformanceStatistics & statistics)
 {
     if (source_size == 0 || dest_size == 0)
         return true;
@@ -649,119 +500,25 @@ bool decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        size_t variant_size = 4;
-#if USE_MULTITARGET_CODE && !defined(MEMORY_SANITIZER)
-        /// best_variant == 4 only valid when AVX512VBMI available
-        if (isArchSupported(DB::TargetArch::AVX512VBMI))
-            variant_size = 5;
-#endif
+        size_t variant_size = 3;
         size_t best_variant = statistics.select(variant_size);
 
-        /// Run the selected method and measure time.
-
         Stopwatch watch;
-        bool success = true;
+        bool success;
         if (best_variant == 0)
-            success = decompressImpl<16, true>(source, dest, source_size, dest_size);
-        if (best_variant == 1)
-            success = decompressImpl<16, false>(source, dest, source_size, dest_size);
-        if (best_variant == 2)
-            success = decompressImpl<8, true>(source, dest, source_size, dest_size);
-        if (best_variant == 3)
-            success = decompressImpl<32, false>(source, dest, source_size, dest_size);
-        if (best_variant == 4)
-            success = decompressImpl<32, true>(source, dest, source_size, dest_size);
+            success = decompressImpl<8>(source, dest, source_size, dest_size);
+        else if (best_variant == 1)
+            success = decompressImpl<16>(source, dest, source_size, dest_size);
+        else
+            success = decompressImpl<32>(source, dest, source_size, dest_size);
 
         watch.stop();
-
-        /// Update performance statistics.
-
-        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
+        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);  // NOLINT(clang-analyzer-security.ArrayBound)
 
         return success;
     }
 
-    return decompressImpl<8, false>(source, dest, source_size, dest_size);
-}
-
-
-void StreamStatistics::literal(size_t length)
-{
-    ++num_tokens;
-    sum_literal_lengths += length;
-}
-
-void StreamStatistics::match(size_t length, size_t offset)
-{
-    ++num_tokens;
-    sum_match_lengths += length;
-    sum_match_offsets += offset;
-    count_match_offset_less_8 += offset < 8;
-    count_match_offset_less_16 += offset < 16;
-    count_match_replicate_itself += offset < length;
-}
-
-void StreamStatistics::print() const
-{
-    std::cerr
-        << "Num tokens: " << num_tokens
-        << ", Avg literal length: " << static_cast<double>(sum_literal_lengths) / num_tokens
-        << ", Avg match length: " << static_cast<double>(sum_match_lengths) / num_tokens
-        << ", Avg match offset: " << static_cast<double>(sum_match_offsets) / num_tokens
-        << ", Offset < 8 ratio: " << static_cast<double>(count_match_offset_less_8) / num_tokens
-        << ", Offset < 16 ratio: " << static_cast<double>(count_match_offset_less_16) / num_tokens
-        << ", Match replicate itself: " << static_cast<double>(count_match_replicate_itself) / num_tokens
-        << "\n";
-}
-
-void statistics(
-    const char * const source,
-    char * const dest,
-    size_t dest_size,
-    StreamStatistics & stat)
-{
-    const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
-    UInt8 * op = reinterpret_cast<UInt8 *>(dest);
-    UInt8 * const output_end = op + dest_size;
-    while (true)
-    {
-        size_t length;
-
-        auto continue_read_length = [&]
-        {
-            unsigned s;
-            do
-            {
-                s = *ip++;
-                length += s;
-            } while (unlikely(s == 255));
-        };
-
-        auto token = *ip++;
-        length = token >> 4;
-        if (length == 0x0F)
-            continue_read_length();
-
-        stat.literal(length);
-
-        ip += length;
-        op += length;
-
-        if (op > output_end)
-            return;
-
-        size_t offset = unalignedLoad<UInt16>(ip);
-        ip += 2;
-
-        length = token & 0x0F;
-        if (length == 0x0F)
-            continue_read_length();
-        length += 4;
-
-        stat.match(length, offset);
-
-        op += length;
-    }
+    return decompressImpl<8>(source, dest, source_size, dest_size);
 }
 
 }

@@ -20,6 +20,7 @@ build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
         "./contrib/",
+        "./.gitmodules",
         "./CMakeLists.txt",
         "./PreLoad.cmake",
         "./cmake",
@@ -49,13 +50,14 @@ common_ft_job_config = Job.Config(
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
     # --cap-add=SYS_PTRACE and --privileged for gdb in docker
-    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
+    run_in_docker=f"clickhouse/stateless-test+--memory={LIMITED_MEM}+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+            "./ci/praktika/cidb.py",
             "./tests/queries",
             "./tests/clickhouse-test",
             "./tests/config",
@@ -69,21 +71,21 @@ common_ft_job_config = Job.Config(
 common_stress_job_config = Job.Config(
     name=JobNames.STRESS,
     runs_on=[],  # from parametrize()
-    command="cd ./tests/ci && python3 ./stress_check.py",
+    command="python3 ./ci/jobs/stress_job.py",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./tests/queries/0_stateless/",
-            "./tests/ci/stress.py",
-            "./tests/ci/stress_check.py",
+            "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/log_parser.py",
         ],
     ),
-    allow_merge_on_failure=True,
     timeout=3600 * 2,
 )
 common_integration_test_job_config = Job.Config(
@@ -93,11 +95,13 @@ common_integration_test_job_config = Job.Config(
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
+            "./ci/jobs/scripts/integration_tests_configs.py",
             "./tests/integration/",
             "./ci/docker/integration",
+            "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
-    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker",
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
 )
 
 BINARY_DOCKER_COMMAND = (
@@ -115,6 +119,13 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
+    pr_body = Job.Config(
+        name=JobNames.PR_BODY,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/pr_formatter_job.py",
+        allow_merge_on_failure=True,
+        enable_gh_auth=True,
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.AMD_LARGE,
@@ -129,6 +140,7 @@ class JobConfigs:
                 "./tests/clickhouse-test",
                 "./src",
                 "./contrib/",
+                "./.gitmodules",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -150,7 +162,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
     build_jobs = common_build_job_config.set_post_hooks(
@@ -162,7 +174,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN,
@@ -171,7 +183,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.UNITTEST_AMD_ASAN,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
@@ -180,7 +192,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
@@ -189,7 +201,7 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_UBSAN,
@@ -198,12 +210,12 @@ class JobConfigs:
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_BINARY,
             provides=[ArtifactNames.CH_AMD_BINARY],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN,
@@ -214,16 +226,17 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_COVERAGE,
-            provides=[
-                ArtifactNames.DEB_COV,
-                ArtifactNames.CH_COV_BIN,
-            ],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-        Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
             provides=[ArtifactNames.CH_ARM_BINARY],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    coverage_build_jobs = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_COVERAGE,
+            provides=[
+                ArtifactNames.CH_COV_BIN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -241,7 +254,8 @@ class JobConfigs:
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=3 * 3600,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_RELEASE,
@@ -250,6 +264,20 @@ class JobConfigs:
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    extra_validation_build_jobs = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_TSAN,
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -263,7 +291,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
             provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
@@ -278,7 +306,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
             provides=[ArtifactNames.CH_AMD_FREEBSD],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
@@ -288,12 +316,12 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MUSL,
             provides=[ArtifactNames.CH_AMD_MUSL],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.RISCV64,
@@ -303,7 +331,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.S390X,
             provides=[ArtifactNames.CH_S390X],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
@@ -311,7 +339,7 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.FUZZERS,
+            parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -319,7 +347,7 @@ class JobConfigs:
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
+        command="python3 ./ci/jobs/install_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/install_check.py",
@@ -327,13 +355,26 @@ class JobConfigs:
             ],
         ),
         timeout=900,
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_debug",
+            parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[
-                ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.DEB_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.TGZ_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            requires=[
+                ArtifactNames.DEB_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
     )
@@ -373,8 +414,15 @@ class JobConfigs:
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan, flaky check",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN],
+        ),
+    )
+    stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_asan, targeted",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
         ),
     )
     bugfix_validation_ft_pr_job = Job.Config(
@@ -382,7 +430,7 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+        run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse:mode=1777",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
@@ -393,6 +441,18 @@ class JobConfigs:
             ],
         ),
         result_name_for_cidb="Tests",
+    )
+    lightweight_functional_tests_job = Job.Config(
+        name="Quick functional tests",
+        command="python3 ./ci/jobs/clickhouse_light.py --path ./ci/tmp/clickhouse",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/queries",
+            ],
+        ),
+        requires=[ArtifactNames.CH_AMD_DEBUG],
+        runs_on=RunnerLabels.AMD_SMALL,
     )
     functional_tests_jobs = common_ft_job_config.parametrize(
         *[
@@ -405,7 +465,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
-            parameter="amd_asan, distributed plan, sequential",
+            parameter="amd_asan, db disk, distributed plan, sequential",
             runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
@@ -449,15 +509,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-        *[
-            Job.ParamSet(
-                parameter=f"amd_tsan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_TSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter=f"amd_tsan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, sequential, {batch}/{total_batches}",
@@ -467,15 +523,11 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        *[
-            Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter=f"amd_msan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, sequential, {batch}/{total_batches}",
@@ -487,7 +539,7 @@ class JobConfigs:
         ],
         Job.ParamSet(
             parameter="amd_ubsan, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,  # it runs much faster than many job, no need larger machine
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
         Job.ParamSet(
@@ -507,7 +559,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="amd_tsan, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         *[
@@ -530,19 +582,16 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
-    functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
-        True
-    ).parametrize(
-        Job.ParamSet(
-            parameter=f"arm_coverage, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_COV_BIN],
-        ),
-        Job.ParamSet(
-            parameter=f"arm_coverage, sequential",
-            runs_on=RunnerLabels.ARM_SMALL_MEM,
-            requires=[ArtifactNames.CH_COV_BIN],
-        ),
+    functional_tests_jobs_coverage = common_ft_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.AMD_COVERAGE}, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_SMALL,
+                requires=[ArtifactNames.CH_COV_BIN],
+            )
+            for total_batches in (8,)
+            for batch in range(1, total_batches + 1)
+        ]
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
@@ -558,9 +607,13 @@ class JobConfigs:
             ),
         )
     )
-    bugfix_validation_it_job = common_integration_test_job_config.set_name(
-        JobNames.BUGFIX_VALIDATE_IT
-    ).set_runs_on(RunnerLabels.AMD_SMALL_MEM)
+    bugfix_validation_it_job = (
+        common_integration_test_job_config.set_name(JobNames.BUGFIX_VALIDATE_IT)
+        .set_runs_on(RunnerLabels.AMD_SMALL_MEM)
+        .set_command(
+            "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
+        )
+    )
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=[],  # from parametrize()
@@ -639,16 +692,17 @@ class JobConfigs:
     upgrade_test_jobs = Job.Config(
         name=JobNames.UPGRADE,
         runs_on=["from param"],
-        command="cd ./tests/ci && python3 ./upgrade_check.py",
+        command="python3 ./ci/jobs/upgrade_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./tests/ci/upgrade_check.py",
-                "./tests/ci/stress_check.py",
+                "./ci/jobs/upgrade_job.py",
+                "./ci/jobs/stress_job.py",
+                "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
+                "./ci/jobs/scripts/log_parser.py",
             ]
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_asan",
@@ -675,7 +729,7 @@ class JobConfigs:
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, {batch}/{total_batches}",
+                parameter=f"amd_asan, db disk, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
@@ -686,7 +740,7 @@ class JobConfigs:
     integration_test_jobs_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
+                parameter=f"amd_asan, db disk, old analyzer, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
@@ -732,6 +786,13 @@ class JobConfigs:
             )
         )
     )
+    integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter=f"amd_asan, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_ASAN],
+        )
+    )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
         runs_on=[],  # from parametrize()
@@ -756,17 +817,17 @@ class JobConfigs:
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command=f"python3 ./ci/jobs/ast_fuzzer_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
-                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
@@ -797,39 +858,41 @@ class JobConfigs:
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/buzzhouse_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
-                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.ARM_MEDIUM,
             requires=[ArtifactNames.CH_ARM_ASAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="amd_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
     )
@@ -856,7 +919,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -865,7 +928,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
     )
@@ -892,7 +955,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -921,7 +984,7 @@ class JobConfigs:
         ),
     )
     docs_job = Job.Config(
-        name=JobNames.Docs,
+        name=JobNames.DOCS,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
@@ -930,19 +993,19 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
+                "./src/Functions",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
     )
-    docker_sever = Job.Config(
+    docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "tests/ci/docker_server.py",
-                "tests/ci/docker_images_helper.py",
+                "./ci/jobs/docker_server.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -953,11 +1016,10 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "tests/ci/docker_server.py",
-                "tests/ci/docker_images_helper.py",
+                "./ci/jobs/docker_server.py",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -997,20 +1059,20 @@ class JobConfigs:
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=["Build (fuzzers)"],
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",

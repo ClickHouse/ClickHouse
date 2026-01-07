@@ -103,7 +103,9 @@ class SparkAndClickHouseCheck:
                 f"SELECT count(*) FROM {table.get_clickhouse_path()}{clickhouse_predicate};"
             )
             if not isinstance(ch_count_str, str) or ch_count_str == "":
-                self.logger.error(f"No count received {table.get_clickhouse_path()}")
+                self.logger.error(
+                    f"No count received for {table.get_clickhouse_path()}"
+                )
                 return False
             ch_count = int(ch_count_str.rstrip())
             if spark_count != ch_count:

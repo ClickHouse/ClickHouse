@@ -7,7 +7,7 @@ template <typename TMapped, typename Allocator = HashTableAllocator, template <t
 class TwoLevelStringHashMap : public TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, ImplTable<TMapped, Allocator>>
 {
 public:
-    using Key = StringRef;
+    using Key = std::string_view;
     using Self = TwoLevelStringHashMap;
     using Base = TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, ImplTable<TMapped, Allocator>>;
     using LookupResult = typename Base::LookupResult;

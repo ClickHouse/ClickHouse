@@ -19,6 +19,7 @@ def started_cluster():
             "node_smol",
             main_configs=["configs/conf.xml", "configs/smol.xml"],
             with_minio=True,
+            mem_limit='15g'
         )
         cluster.start()
 

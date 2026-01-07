@@ -49,6 +49,7 @@
             --element-color-ok: #080;
             --element-background-color-fail: #FEE;
             --bar-color: #FF8; /* Light bar in background of table cells. */
+            --bar-color-negative: #FEE;
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
@@ -68,10 +69,8 @@
             --progress-color: #0C4;
             --progress: 0%;
 
-            ::selection {
-                color: #FFF;
-                background-color: #456;
-            }
+            --selection-color: #FFF;
+            --selection-background-color: #456;
         }
 
         [data-theme="dark"] {
@@ -81,6 +80,7 @@
             --element-color-ok: #8F8;
             --element-background-color-fail: #300;
             --bar-color: #320;
+            --bar-color-negative: #311;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -100,10 +100,13 @@
 
             --progress-color: #FF0;
 
-            ::selection {
-                color: #000;
-                background-color: #FF8;
-            }
+            --selection-color: #000;
+            --selection-background-color: #FF8;
+        }
+
+        ::selection {
+            color: var(--selection-color);
+            background-color: var(--selection-background-color);
         }
 
         *
@@ -155,6 +158,9 @@
         #main
         {
             overflow: auto;
+            grid-area: main;
+            padding: 0.5rem;
+            position: relative; /* for stacking context */
         }
 
         .menu-icon
@@ -203,7 +209,9 @@
             padding: 0;
             user-select: none;
             color: var(--text-color);
-            border-bottom: 1px dashed var(--text-color);
+            &:hover {
+                text-decoration: 1px underline dotted var(--text-color);
+            }
         }
 
         .database button:hover
@@ -243,7 +251,7 @@
         .table-addendum
         {
             position: absolute;
-            z-index: 1;
+            z-index: 999;
             display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
@@ -271,10 +279,13 @@
             display: inline-block;
         }
 
-        #main
+        .table-addendum-elem
         {
-            grid-area: main;
-            padding: 0.5rem;
+            display: block;
+            cursor: pointer;
+            &:hover {
+                text-decoration: 1px underline dotted var(--element-background-color);
+            }
         }
 
         #controls
@@ -329,6 +340,7 @@
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
             contain: strict; /* Less input lag even if the table is large. */
+            resize: none; /* Disable default browser resizer */
         }
 
         #inputs
@@ -363,8 +375,8 @@
             display: grid;
             place-items: center;
             gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto;
-            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
+            grid-template-columns: auto auto auto 1fr auto auto auto;
+            grid-template-areas: "run hint hourglass progress-bar download progress-text theme";
         }
 
         #run
@@ -379,7 +391,7 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus
+        #run:hover, #run:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -417,6 +429,98 @@
         #stats b
         {
             color: var(--progress-color);
+        }
+
+        #download-div
+        {
+            grid-area: download;
+            display: none;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 0.65rem;
+            cursor: pointer;
+            position: relative;
+        }
+
+        #download
+        {
+            width: 1em;
+            height: 1em;
+        }
+
+        #download-dropdown
+        {
+            display: none;
+            position: absolute;
+            background-color: var(--button-color);
+            border: 1px solid var(--button-text-color);
+            padding: 0.5rem;
+            z-index: 999;
+            box-shadow: 0 4px 6px var(--shadow-color);
+        }
+
+        #download-dropdown.show
+        {
+            display: block;
+        }
+
+        .download-option
+        {
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .download-option label
+        {
+            color: var(--button-text-color);
+            white-space: nowrap;
+            margin-right: 0.5rem;
+        }
+
+        .download-option select,
+        #download-format-other
+        {
+            flex: 1;
+            padding: 0.25rem;
+            background-color: var(--element-background-color);
+            color: var(--text-color);
+            border: 1px solid var(--shadow-color);
+
+            &:focus {
+                outline: none;
+            }
+        }
+
+        #download-format-other
+        {
+            display: none;
+            margin-top: 0.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        #download-format-other.show
+        {
+            display: block;
+        }
+
+        #download-button
+        {
+            width: 100%;
+            margin-top: 0rem;
+            padding: 0.5rem 0.5rem;
+            background-color: var(--element-background-color);
+            color: var(--text-color);
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+
+            &:hover {
+                background-color: var(--button-active-color);
+                color: var(--button-active-text-color);
+            }
         }
 
         #progress
@@ -464,6 +568,7 @@
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
+            border-collapse: collapse;
         }
 
         #data-table.fixed
@@ -527,13 +632,15 @@
             display: none;
             position: absolute;
             user-select: none;
-            right: 0;
-            top: -1.25em;
+            left: 0;
+            top: -1px;
+            transform: translateY(-100%);
             font-size: 75%;
             font-weight: normal;
             color: var(--misc-text-color);
-            z-index: 1;
             background: var(--element-background-color);
+            max-height: 5em;
+            white-space: pre;
         }
 
         th:hover .type-hint
@@ -555,6 +662,26 @@
         {
             border-radius: 0.25rem;
             background-color: var(--border-color-selected);
+        }
+
+        .textarea-resizer {
+            position: absolute;
+            bottom: -0.3rem;
+            left: 0;
+            width: 100%;
+            height: 0.5rem;
+            cursor: row-resize;
+            user-select: none;
+        }
+
+        .textarea-resizer:hover, .textarea-resizer-dragging
+        {
+            border-radius: 0.25rem;
+            background-color: var(--border-color);
+        }
+
+        #query_div {
+            position: relative;
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -581,6 +708,7 @@
             white-space: pre-wrap;
             max-width: none;
             outline: 2px solid var(--border-color-selected);
+            outline-offset: -2px;
         }
 
         td.empty-result
@@ -666,6 +794,8 @@
             text-align: center;
             margin-top: 5em;
             line-height: 0.75;
+            position: sticky;
+            left: 0;
         }
 
         #chart
@@ -764,6 +894,13 @@
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
+                <div id="download-div" class="shadow">
+                    <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </div>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
@@ -782,6 +919,24 @@
             </a>
             <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
         </p>
+        <div id="download-dropdown">
+            <div>
+                <div class="download-option">
+                    <label for="download-format">Format:</label>
+                    <select id="download-format">
+                        <option value="CSV">CSV</option>
+                        <option value="TSV">TSV</option>
+                        <option value="JSON">JSON</option>
+                        <option value="NDJSON" selected>JSONLines</option>
+                        <option value="Parquet">Parquet</option>
+                        <option value="Markdown">Markdown</option>
+                        <option value="other">Other...</option>
+                    </select>
+                </div>
+                <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
+            </div>
+            <button id="download-button">Download</button>
+        </div>
     </div>
 </body>
 
@@ -912,6 +1067,22 @@ async function loadDatabases(server_address, user, password) {
     let databases_elem = document.getElementById('databases');
     while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
 
+    // Use natural order for database names
+    json.data.sort((a, b) => {
+        // Maintain original order for default, system, information_schema
+        const getPriority = (name) => {
+            switch (name) {
+                case 'default': return 0;
+                case 'system': return 2;
+                case 'information_schema': return 3
+                default: return 1;
+            }
+        }
+
+        return getPriority(a.database) - getPriority(b.database)
+            || a.database.localeCompare(b.database, undefined, { numeric: true });
+    });
+
     for (let elem of json.data) {
         let database = document.createElement('div');
         database.className = 'database';
@@ -963,6 +1134,9 @@ async function loadTables(server_address, user, password, database, container) {
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
+    // Use natural order for table names
+    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
+
     for (let elem of json.data) {
         let table = document.createElement('div');
         table.className = 'table';
@@ -980,25 +1154,42 @@ async function loadTables(server_address, user, password, database, container) {
         let table_addendum = document.createElement('span');
         table_addendum.className = 'table-addendum';
 
-        let addendum = '';
-        if (+elem.total_bytes) addendum += formatReadableBytes(elem.total_bytes) + '\n';
-        if (+elem.total_rows) addendum += formatReadableRows(elem.total_rows) + ' rows\n';
-        addendum += elem.engine;
-        table_addendum.append(addendum);
-
-        table.appendChild(table_link);
-        table.appendChild(table_addendum);
-        tables_elem.appendChild(table);
-
-        table.addEventListener('click', e => {
-            const value = `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`;
+        const set_query_or_run = (e, value) => {
             if (query_area.value == value) {
                 /// Double click will run the query.
                 post();
             } else {
                 query_area.value = value;
             }
-        });
+            e.stopPropagation();
+        }
+
+        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = '${database}' AND table = '${elem.table}'`);
+
+        if (+elem.total_bytes) {
+            let bytes_elem = document.createElement('span');
+            bytes_elem.className = 'table-addendum-elem';
+            bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
+            bytes_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(bytes_elem);
+        }
+        if (+elem.total_rows) {
+            let rows_elem = document.createElement('span');
+            rows_elem.className = 'table-addendum-elem';
+            rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
+            rows_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(rows_elem);
+        }
+        let engine_elem = document.createElement('span');
+        engine_elem.textContent = elem.engine;
+        engine_elem.className = 'table-addendum-elem';
+        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        table_addendum.append(engine_elem);
+
+        table.appendChild(table_link);
+        table.appendChild(table_addendum);
+        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        tables_elem.appendChild(table);
     }
 
     if (json.data.length == 0) {
@@ -1044,19 +1235,29 @@ function checkCredentials() {
     });
 }
 
-user_elem.addEventListener('input', checkCredentials);
-password_elem.addEventListener('input', checkCredentials);
+function resetCredentialsStatus() {
+    [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
+}
+
+user_elem.addEventListener('input', resetCredentialsStatus);
+password_elem.addEventListener('input', resetCredentialsStatus);
+
+/// The password is usually copy-pasted.
+/// To not worry about extracting the clipboard data, but use the value instead,
+/// and not worry too much about input/paste race, add the timeout.
+user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
 
 
 function queryToColor(str) {
-    let hash = 0;
+    let hash = 2166136261;
     for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash = hash & hash;
+        hash ^= str.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
     }
 
     /// Limited range to avoid violet colors.
-    return 50 + Math.abs(hash % 200);
+    return 50 + ((hash >>> 0) % 200);
 }
 
 function toBase64(str) {
@@ -1098,6 +1299,9 @@ async function postImpl(posted_request_num, query)
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&default_format=' + default_format + '&enable_http_compression=1';
+    /// We will put the result in the query cache, so it can be used when download is initiated later.
+    /// But we don't use cached results, so the results that we get here, are always fresh.
+    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
@@ -1105,6 +1309,7 @@ async function postImpl(posted_request_num, query)
     last_query_start = performance.now();
 
     document.getElementById('check-mark').style.display = 'none';
+    document.getElementById('download-div').style.display = 'none';
     document.getElementById('hourglass').style.display = 'inline-block';
 
     clear();
@@ -1141,6 +1346,7 @@ async function postImpl(posted_request_num, query)
             }
 
             document.getElementById('hourglass').style.display = 'none';
+            document.getElementById('download-div').style.display = 'none';
             document.documentElement.style.setProperty('--progress', '0');
             return;
         } else if (format == default_format) {
@@ -1214,6 +1420,7 @@ async function postImpl(posted_request_num, query)
         }
         renderError(reply);
         document.getElementById('hourglass').style.display = 'none';
+        document.getElementById('download-div').style.display = 'none';
         document.documentElement.style.setProperty('--progress', '0');
         return;
     }
@@ -1227,6 +1434,8 @@ async function postImpl(posted_request_num, query)
 
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
+    document.getElementById('download-div').style.display = 'block';
+    last_query_for_download = query;
 
     if (is_raw) {
         elapsed_ns = 1e6 * (performance.now() - last_query_start);
@@ -1342,6 +1551,8 @@ async function restoreFromHistory(state) {
 
 let query_area = document.getElementById('query');
 
+appendTextareaResizer();
+
 window.onpopstate = function(event) {
     if (!event.state) return;
     restoreFromHistory(event.state);
@@ -1438,6 +1649,44 @@ query_area.onkeydown = (e) => {
         elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
         elem.selectionStart = cursor_pos + lead_spaces.length + 1;
         elem.selectionEnd = elem.selectionStart;
+
+        e.preventDefault();
+        return false;
+    } else if ((e.ctrlKey || e.metaKey) && e.key === '/' && !e.shiftKey) {
+        // Comment/uncomment selected lines on Ctrl+/ or Cmd+/
+        const elem = e.target;
+        const start = elem.selectionStart;
+        const end = elem.selectionEnd;
+        const value = elem.value;
+
+        let lineStart = value.lastIndexOf('\n', start - 1) + 1;
+        let lineEnd = value.indexOf('\n', end);
+        if (lineEnd === -1) lineEnd = value.length;
+
+        let selectedText = value.substring(lineStart, lineEnd);
+        let lines = selectedText.split('\n');
+
+        // Comment out each line, or uncomment if all lines are already commented
+        const allCommented = lines.every(line => /^\s*--/.test(line));
+
+        // If all lines are commented out, uncomment them
+        if (allCommented) {
+            lines = lines.map(line => line.replace(/^(\s*)-- ?/, '$1'));
+        } else {
+            lines = lines.map(line => {
+                if (/^\s*$/.test(line)) {
+                    return line;
+                }
+                return line.replace(/^(\s*)/, '$1-- ');
+            });
+        }
+
+        const replacedText = lines.join('\n');
+        elem.value = value.slice(0, lineStart) + replacedText + value.slice(lineEnd);
+
+        // Adjust selection to keep the user in flow and enable quick reversal 
+        elem.selectionStart = lineStart;
+        elem.selectionEnd = lineStart + replacedText.length;
 
         e.preventDefault();
         return false;
@@ -1783,6 +2032,58 @@ function appendHeaderResizer(header) {
     header.appendChild(resizer);
 }
 
+
+function appendTextareaResizer() {
+    const queryDiv = document.getElementById('query_div');
+    const textarea = document.getElementById('query');
+
+    let drag_state = {
+        elem: null,
+        is_dragging: false,
+        offset_y: null,
+        offset_height: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return; }
+
+        drag_state.offset_y = e.clientY;
+        drag_state.offset_height = textarea.offsetHeight;
+        drag_state.is_dragging = true;
+        drag_state.elem = e.target;
+        drag_state.elem.classList.add('textarea-resizer-dragging');
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
+
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dy = e.clientY - drag_state.offset_y;
+        const newHeight = drag_state.offset_height + dy;
+
+        textarea.style.height = `${newHeight}px`;
+    }
+
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+        drag_state.elem.classList.remove('textarea-resizer-dragging');
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'textarea-resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+    queryDiv.appendChild(resizer);
+}
+
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -1879,19 +2180,51 @@ function renderExtremes() {
             && extremes.min[name] !== undefined && extremes.max[name] !== undefined
             && Number(extremes.max[name]) > Number(extremes.min[name])) {
             let table = document.getElementById('data-table');
+
+            const double_sided = extremes.min[name] < 0;
+            const ratio_positive = extremes.max[name] / (extremes.max[name] - extremes.min[name]);
+            const ratio_negative = 1 - ratio_positive;
+
             for (let row of table.rows) {
                 let cell = row.cells[col_idx];
                 let value = +cell.innerText;
-                if (value > 0) {
-                    const ratio = 100 * value / extremes.max[name];
 
-                    cell.style.cssText = `
-                        background-size: 100% 50%;
-                        background-position: center;
-                        background-repeat: no-repeat;
-                        background: linear-gradient(to right,
-                            var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                            var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
+                if (!double_sided) {
+                    if (value > 0) {
+                        const ratio = value / extremes.max[name];
+
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
+                            background: linear-gradient(to right,
+                                var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
+                                var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
+                    }
+                } else {
+                    if (value > 0) {
+                        const ratio = value / extremes.max[name];
+
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
+                            background: linear-gradient(to right,
+                                var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
+                                var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
+                                var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
+                    } else if (value < 0) {
+                        const ratio = value / extremes.min[name];
+
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
+                            background: linear-gradient(to right,
+                                var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
+                                var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
+                                var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
+                    }
                 }
             }
         }
@@ -2209,15 +2542,6 @@ async function getQueryUnderCursor() {
     return all_queries;
 }
 
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
-}
-if (!theme) {
-    theme = 'light';
-}
-
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;
     if (update_preference) {
@@ -2225,6 +2549,11 @@ function setColorTheme(new_theme, update_preference) {
     }
     document.documentElement.setAttribute('data-theme', theme);
     redrawChart();
+}
+/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+let theme = current_url.searchParams.get('theme');
+if (['dark', 'light'].indexOf(theme) === -1) {
+    theme = window.localStorage.getItem('theme');
 }
 
 if (theme) {
@@ -2234,6 +2563,8 @@ if (theme) {
     const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
     if (media_query_list.matches) {
         setColorTheme('dark');
+    } else {
+        setColorTheme('light');
     }
 
     /// There is a rumor that on some computers, the theme is changing automatically on day/night.
@@ -2253,5 +2584,110 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+// Download functionality
+let last_query_for_download = '';
+
+// Toggle download dropdown
+document.getElementById('download-div').addEventListener('click', function(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('download-dropdown');
+    const button = document.getElementById('download-div');
+    const context = document.getElementById('main');
+
+    if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+    } else {
+        // Position the dropdown relative to the button
+        dropdown.classList.add('show');
+        const button_rect = button.getBoundingClientRect();
+        const context_rect = context.getBoundingClientRect();
+        const dropdown_rect = dropdown.getBoundingClientRect();
+
+        dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
+        dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+document.getElementById('download-dropdown').addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function() {
+    const dropdown = document.getElementById('download-dropdown');
+    dropdown.classList.remove('show');
+});
+
+// Handle "Other" format selection
+document.getElementById('download-format').addEventListener('change', function() {
+    const otherInput = document.getElementById('download-format-other');
+    if (this.value === 'other') {
+        otherInput.classList.add('show');
+        otherInput.focus();
+    } else {
+        otherInput.classList.remove('show');
+    }
+});
+
+// Handle download button click
+document.getElementById('download-button').addEventListener('click', async function() {
+    const formatSelect = document.getElementById('download-format');
+    const formatOther = document.getElementById('download-format-other');
+
+    let format = formatSelect.value;
+    if (format === 'other') {
+        format = formatOther.value.trim();
+        if (!format) {
+            alert('Please enter a format name');
+            return;
+        }
+    }
+
+    // Get current values
+    const user = user_elem.value;
+    const password = password_elem.value;
+    const server_address = url_elem.value;
+    const query = last_query_for_download;
+
+    if (!query) {
+        alert('No query to download results for');
+        return;
+    }
+
+    // Build download URL
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1' +
+        '&enable_http_compression=1' +
+        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save' +
+        '&default_format=' + encodeURIComponent(format) +
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
+    if (user) url += '&user=' + encodeURIComponent(user);
+    if (password) url += '&password=' + encodeURIComponent(password);
+
+    let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
+
+    // Create a form and submit it to trigger download
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    form.enctype = 'multipart/form-data';
+    form.style.display = 'none';
+
+    const queryInput = document.createElement('input');
+    queryInput.type = 'hidden';
+    queryInput.name = 'query';
+    queryInput.value = downloadQuery;
+    form.appendChild(queryInput);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+
+    // Close dropdown
+    document.getElementById('download-dropdown').classList.remove('show');
+});
 </script>
 </html>

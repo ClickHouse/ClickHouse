@@ -176,12 +176,14 @@ private:
         const std::string & comparison_function_name) const
     {
         auto result_function = std::make_shared<FunctionNode>("and");
+        result_function->markAsOperator();
         result_function->getArguments().getNodes() = std::move(tuple_arguments_equals_functions);
         resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
 
         if (comparison_function_name == "notEquals")
         {
             auto not_function = std::make_shared<FunctionNode>("not");
+            not_function->markAsOperator();
             not_function->getArguments().getNodes().push_back(std::move(result_function));
             resolveOrdinaryFunctionNodeByName(*not_function, not_function->getFunctionName(), getContext());
             result_function = std::move(not_function);
@@ -202,6 +204,7 @@ private:
         auto comparison_function = std::make_shared<FunctionNode>(comparison_function_name);
         comparison_function->getArguments().getNodes().push_back(std::move(lhs_argument));
         comparison_function->getArguments().getNodes().push_back(std::move(rhs_argument));
+        comparison_function->markAsOperator();
 
         resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), getContext());
 
