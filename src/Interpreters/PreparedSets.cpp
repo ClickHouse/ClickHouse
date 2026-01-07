@@ -8,6 +8,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Storages/IStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -187,7 +188,14 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
-void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { set_and_key->external_table = std::move(external_table_); }
+void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
+{
+    if (set_and_key->set->isCreated())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a ready set");
+    if (!source)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a set without a source");
+    set_and_key->external_table = std::move(external_table_);
+}
 
 DataTypes FutureSetFromSubquery::getTypes() const
 {
