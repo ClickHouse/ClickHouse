@@ -60,6 +60,17 @@
                 <background_download_queue_size_limit>0</background_download_queue_size_limit>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_plain_rewritable_cache>
+            <dynamically_resize_filesystem_cache>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>dynamically_resize_filesystem_cache/</path>
+                <max_size>2124</max_size>
+                <max_file_segment_size>100</max_file_segment_size>
+                <boundary_alignment>100</boundary_alignment>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <cache_policy>LRU</cache_policy>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
+            </dynamically_resize_filesystem_cache>
             <!-- local disks -->
             <local_disk>
                 <type>object_storage</type>

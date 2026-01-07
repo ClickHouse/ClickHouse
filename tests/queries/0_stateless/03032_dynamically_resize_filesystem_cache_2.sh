@@ -5,21 +5,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-disk_name="03032_dynamically_resize_filesystem_cache"
+disk_name="dynamically_resize_filesystem_cache"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(
-            type = cache,
-            name = '$disk_name',
-            max_size = 2000,
-            max_file_segment_size = 100,
-            boundary_alignment = 100,
-            path = '03032_dynamically_resize_filesystem_cache/',
-            cache_policy='LRU',
-            cache_on_write_operations= 1,
-            disk = 's3_disk');
+SETTINGS disk = 'dynamically_resize_filesystem_cache';
 INSERT INTO test SELECT randomString(10000);
 "
 
