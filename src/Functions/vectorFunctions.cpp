@@ -2335,12 +2335,12 @@ Calculates the approximate distance between two points (the values of the vector
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
+SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─L2DistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
-│                           1.4142135623730951 │
-└──────────────────────────────────────────────┘
+┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
+│                       1.4142135623730951 │
+└──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
     FunctionDocumentation::Category category_l2_distance_transposed = FunctionDocumentation::Category::Distance;
@@ -2376,12 +2376,12 @@ Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosin
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT cosineDistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
+SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
-┌─cosineDistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
-│                              0.10557281085638826 │
-└──────────────────────────────────────────────────┘
+┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
+│                          0.10557281085638826 │
+└──────────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
     FunctionDocumentation::Category category_cosine_distance_transposed = FunctionDocumentation::Category::Distance;
