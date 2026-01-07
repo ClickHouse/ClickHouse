@@ -571,15 +571,26 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         int error = 0;
         String error_message;
         /// Set a special error code if the block is duplicate
-        /// And remove attaching_ prefix
         if (deduplicate && deduplicated)
         {
             error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
             error_message = "The part was deduplicated";
-            if (!endsWith(part->getDataPartStorage().getRelativePath(), "detached/attaching_" + part->name + "/"))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a deduplicated part: {}", part->getDataPartStorage().getRelativePath());
-            fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
-            part->renameTo(new_relative_path, false);
+
+            const auto & relative_path = part->getDataPartStorage().getRelativePath();
+            if (endsWith(relative_path, "detached/attaching_" + part->name + "/"))
+            {
+                /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
+                fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
+                part->renameTo(new_relative_path, false);
+            }
+            else
+            {
+                /// Part came from RESTORE or other source with a temporary directory.
+                /// Just remove the temporary part since it's a duplicate.
+                /// The data already exists on another replica and will be fetched if needed.
+                LOG_DEBUG(log, "Removing deduplicated part {} from temporary path {}", part->name, relative_path);
+                part->remove();
+            }
         }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), {block_id}, ExecutionStatus(error, error_message));
         return deduplicated;
