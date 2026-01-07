@@ -65,9 +65,26 @@ class CIDB:
     ) -> str:
         """
         Build a link to query CI DB statistics for a specific test case.
-        The link format follows the Play-style URL: <self.url>[?user=<user>]#<base64(sql)>.
-        Groups by day and shows recent failures for the test. Optionally filters by job_name.
-        If failure_patterns provided and any pattern matches test_output, adds filter on test_context_raw.
+
+        The generated link includes a SQL query that filters historical failures by the same pattern
+        found in the current test output. This helps narrow down similar failures and check their history.
+
+        Args:
+            test_name: Name of the test case
+            job_name: Optional job name for filtering
+            failure_patterns: List of substring patterns configured in CI settings (Settings.TEST_FAILURE_PATTERNS)
+            test_output: The current test failure output to match against patterns
+            url: Optional base URL (defaults to self.url)
+            user: Optional username for ClickHouse Play authentication
+
+        Pattern Matching Logic:
+            - Scans test_output for first matching pattern from failure_patterns list
+            - If match found: adds "AND test_context_raw LIKE '%pattern%'" filter to SQL query
+            - If no match: adds commented placeholder for manual editing
+            - This ensures the CIDB link in PR comments and CI reports shows only relevant historical failures
+
+        Returns:
+            URL with base64-encoded SQL query for viewing test failure history
         """
         # Basic sanitization for SQL string literals
         tn = (test_name or "").replace("'", "''")
@@ -91,7 +108,8 @@ class CIDB:
             # Add commented placeholder for manual editing
             failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
 
-        info = Info()
+        git_branch = Info().git_branch or "master"
+        base_git_branch = Info().base_branch or "master"
         query = f"""\
 WITH
     90 AS interval_days
@@ -103,9 +121,9 @@ SELECT
 FROM {table}
 WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
-    -- AND check_name = '{job_name}'
+    -- AND check_name = '{jn}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND ((pull_request_number = 0 AND head_ref = '{info.git_branch}') OR (pull_request_number != 0 AND base_ref = '{info.base_branch}'))
+    AND ((pull_request_number = 0 AND head_ref = '{git_branch}') OR (pull_request_number != 0 AND base_ref = '{base_git_branch}'))
 {failure_filter}
 GROUP BY day
 ORDER BY day DESC
