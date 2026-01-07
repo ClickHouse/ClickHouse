@@ -18,6 +18,8 @@ using Strings = std::vector<String>;
   * SHOW CREATE [SETTINGS] PROFILES [name [, name2 ...]]
   * SHOW CREATE [ROW] POLICY name ON [database.]table
   * SHOW CREATE [ROW] POLICIES [name ON [database.]table [, name2 ON database2.table2 ...] | name | ON database.table]
+  * SHOW CREATE MASKING POLICY name ON [database.]table
+  * SHOW CREATE MASKING POLICIES [name [, name2 ...] | name ON [database.]table | ON [database.]table]
   * SHOW CREATE QUOTA [name]
   * SHOW CREATE QUOTAS [name [, name2 ...]]
   */

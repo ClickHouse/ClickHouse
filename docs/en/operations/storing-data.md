@@ -696,8 +696,9 @@ These settings should be defined in the disk configuration section.
 | `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` | Boolean | `false`                 | When enabled, uses cache only if data exists; new data won't be cached.                                                                                        |
 | `enable_filesystem_cache_on_write_operations`                 | Boolean | `false` (Cloud: `true`) | Enables write-through cache. Requires `cache_on_write_operations` in cache config.                                                                             |
 | `enable_filesystem_cache_log`                                 | Boolean | `false`                 | Enables detailed cache usage logging to `system.filesystem_cache_log`.                                                                                         |
+| `filesystem_cache_allow_background_download`                  | Boolean | `true`                  | Allows partially downloaded segments to be finished in the background. Disable to keep downloads in the foreground for the current query/session.             |
 | `max_query_cache_size`                                        | Size    | `false`                 | Maximum cache size per query. Requires `enable_filesystem_query_cache_limit` in cache config.                                                                  |
-| `skip_download_if_exceeds_query_cache`                        | Boolean | `true`                  | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`          | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
 
 :::warning
 Cache configuration settings and cache query settings correspond to the latest ClickHouse version, 

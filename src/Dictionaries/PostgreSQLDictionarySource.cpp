@@ -91,31 +91,39 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadAll()
+BlockIO PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadBase(load_all_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_all_query);
+    return io;
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadUpdatedAll()
+BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadBase(load_update_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_update_query);
+    return io;
 }
 
-QueryPipeline PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadBase(query);
+    BlockIO io;
+    io.pipeline = loadBase(query);
+    return io;
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadBase(query);
+    BlockIO io;
+    io.pipeline = loadBase(query);
+    return io;
 }
 
 
@@ -143,7 +151,9 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1)));
+
+    QueryPipeline pipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1));
+    return readInvalidateQuery(pipeline);
 }
 
 

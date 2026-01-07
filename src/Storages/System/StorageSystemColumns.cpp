@@ -29,10 +29,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_DATABASE;
-}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -148,24 +144,16 @@ protected:
                     continue;
                 }
 
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
                 columns = metadata_snapshot->getColumns();
-                serialization_hints = storage->getSerializationHints();
+                if (auto hints = storage->tryGetSerializationHints())
+                    serialization_hints = std::move(*hints);
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
                 {
-                    /// Can throw UNKNOWN_DATABASE in case of Merge table
-                    try
-                    {
-                        column_sizes = storage->getColumnSizes();
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
-                            throw;
-                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
-                    }
+                    if (auto sizes = storage->tryGetColumnSizes())
+                        column_sizes = std::move(*sizes);
                 }
 
                 if (columns_mask[11])
@@ -407,7 +395,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
 
-        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
 
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)

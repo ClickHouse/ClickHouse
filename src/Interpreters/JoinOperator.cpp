@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace Setting
@@ -49,7 +50,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsString temporary_files_codec;
-    extern const SettingsUInt64 temporary_files_buffer_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
@@ -92,7 +93,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
-    extern const QueryPlanSerializationSettingsUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_maximum_table_rows;
@@ -152,6 +153,9 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
+
+    if (temporary_files_buffer_size > 1_GiB)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)

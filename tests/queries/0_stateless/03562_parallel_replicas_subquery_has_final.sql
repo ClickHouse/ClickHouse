@@ -1,3 +1,5 @@
+SET allow_suspicious_primary_key = 1;
+
 CREATE OR REPLACE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple();
 INSERT INTO t0 VALUES (1);
 
