@@ -15,7 +15,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/quoteString.h>
-#include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
@@ -23,7 +22,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <base/sort.h>
-#include <base/scope_guard.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>

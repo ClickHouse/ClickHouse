@@ -2,7 +2,6 @@
 
 #include <Common/HistogramMetrics.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Types.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
