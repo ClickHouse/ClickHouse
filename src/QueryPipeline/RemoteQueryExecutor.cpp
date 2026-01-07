@@ -788,6 +788,9 @@ void RemoteQueryExecutor::finish()
     if (!isQueryPending() || hasThrownException())
         return;
 
+    /// To make sure finish is only called once
+    SCOPE_EXIT({ finished = true; });
+
     /** If you have not read all the data yet, but they are no longer needed.
       * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
       */

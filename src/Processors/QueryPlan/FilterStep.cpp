@@ -17,6 +17,8 @@
 #include <stack>
 #include <ranges>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -178,9 +180,15 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<ExpressionTransform>(header, convert_actions, dataflow_cache_updater); });
+    }
+    else
+    {
+        if (dataflow_cache_updater)
         {
-            return std::make_shared<ExpressionTransform>(header, convert_actions);
-        });
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+        }
     }
 }
 

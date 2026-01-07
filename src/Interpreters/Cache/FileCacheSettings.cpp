@@ -52,6 +52,7 @@ namespace ErrorCodes
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
+    DECLARE(Double, check_cache_probability, 0.01, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
@@ -232,7 +233,7 @@ void FileCacheSettings::validate()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
 
     if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute: {}", (*this)[FileCacheSetting::path].value);
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");

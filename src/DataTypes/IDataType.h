@@ -106,13 +106,13 @@ public:
     void updateHash(SipHash & hash) const;
     virtual void updateHashImpl(SipHash & hash) const = 0;
 
-    bool hasSubcolumn(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    bool hasSubcolumn(std::string_view subcolumn_name) const;
 
-    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
-    DataTypePtr getSubcolumnType(std::string_view subcolumn_name, SerializationPtr override_default = nullptr) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, SerializationPtr override_default = nullptr) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
@@ -145,7 +145,8 @@ public:
     SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to serialization kind stack.
-    SerializationPtr getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default = {}) const;
+    SerializationPtr getSerialization(
+        ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;

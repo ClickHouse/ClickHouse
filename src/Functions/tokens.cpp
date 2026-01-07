@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenExtractor.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -25,13 +26,16 @@ constexpr size_t arg_tokenizer = 1;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
-                                                : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer = arguments.size() < 2 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenExtractor::getExternalName()
+                                                                                    : arguments[arg_tokenizer].column->getDataAt(0);
 
     FieldVector params;
     for (size_t i = 2; i < arguments.size(); ++i)
     {
         const auto & col = arguments[i].column;
+        if (!col)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid argument of function {}", function_name);
+
         WhichDataType which_type(arguments[i].type);
         if (which_type.isUInt())
         {
@@ -57,7 +61,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
         }
     }
 
-    std::vector<String> allowed_tokenizers
+    static std::vector<String> allowed_tokenizers
         = {NgramsTokenExtractor::getExternalName(),
            SplitByNonAlphaTokenExtractor::getExternalName(),
            SplitByStringTokenExtractor::getExternalName(),
@@ -185,7 +189,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
     static FunctionOverloadResolverPtr create(ContextPtr)
     {
@@ -219,10 +223,10 @@ public:
 
                 if (tokenizer == SparseGramsTokenExtractor::getExternalName())
                 {
-                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
-                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                     if (arguments.size() == 5)
-                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
+                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 }
             }
         }
@@ -247,16 +251,25 @@ REGISTER_FUNCTION(Tokens)
 Splits a string into tokens using the given tokenizer.
 The default tokenizer uses non-alphanumeric ASCII characters as separators.
 
-In case of the `split` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
+In case of the `splitByString` tokenizer, if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
 To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 )";
-    FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
+    FunctionDocumentation::Syntax syntax = R"(
+tokens(value)
+tokens(value, tokenizer)
+tokens(value, 'ngrams'[, n])
+tokens(value, 'splitByString'[, separators])
+tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
+)";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
-        {"ngrams", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. Must be between 1 and 8. If not set explicitly, defaults to `3`.", {"const UInt8"}},
-        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
+        {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
+        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
+        {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
+        {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
+        {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {
@@ -277,7 +290,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTokensOverloadResolver>(documentation);
 }
