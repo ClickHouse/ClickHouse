@@ -62,6 +62,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsBool require_metadata_access;
 }
 
 namespace Setting
@@ -447,9 +448,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
-    if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
-        return nullptr;
-
+    if (settings[DatabaseDataLakeSetting::require_metadata_access].value)
+        catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+    else
+    {
+        if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+            return nullptr;
+    }
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
@@ -708,6 +713,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
+    std::cerr << "DatabaseDataLake::getLightweightTablesIterator\n";
     Tables tables;
 
     auto catalog = getCatalog();
@@ -721,6 +727,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     }
     catch (...)
     {
+        std::cerr << "iceberg_tables " << iceberg_tables.size() << '\n';
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
