@@ -194,6 +194,51 @@ AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
 
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("singleValueOrNull", createAggregateFunctionSingleValueOrNull);
+    FunctionDocumentation::Description description = R"(
+The aggregate function `singleValueOrNull` is used to implement subquery operators, such as `x = ALL (SELECT ...)`.
+It checks if there is only one unique non-NULL value in the data.
+If there is only one unique value, it returns it.
+If there are zero or at least two distinct values, it returns NULL.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+singleValueOrNull(x)
+    )";
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Column of any data type (except Map, Array or Tuple which cannot be of type Nullable).", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the unique value, if there is only one unique non-NULL value in `x`. `NULL`, if there are zero or at least two distinct values.", {"Nullable(T)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Single unique value",
+        R"(
+CREATE TABLE test (x UInt8 NULL) ENGINE=Log;
+INSERT INTO test (x) VALUES (NULL), (NULL), (5), (NULL), (NULL);
+SELECT singleValueOrNull(x) FROM test;
+        )",
+        R"(
+┌─singleValueOrNull(x)─┐
+│                    5 │
+└──────────────────────┘
+        )"
+    },
+    {
+        "Multiple distinct values",
+        R"(
+INSERT INTO test (x) VALUES (10);
+SELECT singleValueOrNull(x) FROM test;
+        )",
+        R"(
+┌─singleValueOrNull(x)─┐
+│                 ᴺᵁᴸᴸ │
+└──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, {}, documentation});
 }
 }
