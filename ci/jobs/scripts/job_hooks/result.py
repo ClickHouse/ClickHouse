@@ -420,6 +420,10 @@ def main():
     if not info.is_local_run:
         failed_suits = []
         # Collect docker compose configs used in tests
+        config_files = [
+            str(p)
+            for p in Path("./tests/integration/").glob("test_*/_instances*/*/configs/")
+        ]
         for test_result in test_results:
             if not test_result.is_ok() and ".py" in test_result.name:
                 failed_suits.append(test_result.name.split("/")[0])

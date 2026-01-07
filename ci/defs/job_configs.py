@@ -3,6 +3,8 @@ from praktika.utils import Utils
 
 from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
+import ci.jobs.scripts.job_hooks.result
+
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
 BINARY_DOCKER_COMMAND = (
@@ -103,6 +105,10 @@ common_integration_test_job_config = Job.Config(
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+    post_hooks=[
+        ci.jobs.scripts.job_hooks.result.finalize_pytest_results,
+    ],
+    timeout=60, # REMOVEME
 )
 
 BINARY_DOCKER_COMMAND = (

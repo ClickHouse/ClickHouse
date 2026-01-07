@@ -1,5 +1,6 @@
 import dataclasses
 import glob
+import inspect
 import json
 import os
 import re
@@ -463,6 +464,7 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+            result.create_from_fs()
 
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
@@ -478,12 +480,12 @@ class Runner:
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
             results_ = []
-            for check in job.post_hooks:
-                if callable(check):
-                    name = check.__name__
+            for hook in job.post_hooks:
+                if isinstance(hook, str):
+                    name = str(hook)
+                    results_.append(Result.from_commands_run(name=name, command=hook))
                 else:
-                    name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
+                    result = hook(result)
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
