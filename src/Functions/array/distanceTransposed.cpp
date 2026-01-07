@@ -33,13 +33,105 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
+/// Base kernel pattern for distance functions.
+/// Each kernel must provide:
+///   - static constexpr auto name: function name
+///   - static void distance<T>(...): main distance calculation using simsimd
+///   - static void distanceScalar<InputType, AccumulatorType>(...): fallback scalar implementation
+
 struct L2DistanceTransposed
 {
     static constexpr auto name = "L2DistanceTransposed";
-    struct ConstParams
+
+    template <typename T>
+    static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-        UInt8 groups;
-    };
+#if USE_SIMSIMD
+        if constexpr (std::is_same_v<T, BFloat16>)
+            simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            simsimd_l2_f32(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            simsimd_l2_f64(x, y, array_size, result);
+        return;
+#endif
+        if constexpr (std::is_same_v<T, BFloat16>)
+            distanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            distanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            distanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType d2 = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            d2 += (xi - yi) * (xi - yi);
+        }
+        *result = static_cast<Float64>(sqrt(d2));
+    }
+};
+
+struct CosineDistanceTransposed
+{
+    static constexpr auto name = "cosineDistanceTransposed";
+
+    template <typename T>
+    static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
+    {
+#if USE_SIMSIMD
+        if constexpr (std::is_same_v<T, BFloat16>)
+            simsimd_cos_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            simsimd_cos_f32(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            simsimd_cos_f64(x, y, array_size, result);
+        return;
+#endif
+        /// Fallback to scalar implementation if simsimd is not available. Algorithms also originate from simsimd, but are decoupled
+        if constexpr (std::is_same_v<T, BFloat16>)
+            distanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            distanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            distanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType ab = 0;
+        AccumulatorType a2 = 0;
+        AccumulatorType b2 = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            ab += xi * yi;
+            a2 += xi * xi;
+            b2 += yi * yi;
+        }
+        if (a2 == 0 && b2 == 0)
+        {
+            *result = 0;
+        }
+        else if (ab == 0)
+        {
+            *result = 1;
+        }
+        else
+        {
+            const auto unclipped_result = AccumulatorType(1) - ab / (sqrt(a2) * sqrt(b2));
+            *result = unclipped_result > 0 ? unclipped_result : 0;
+        }
+    }
 };
 
 /** L2DistanceTransposed has two calling conventions:
@@ -65,43 +157,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    template <typename T>
-    static void l2Distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
-    {
-        /// Benchmarks show simsimd has great performance. We do not need CPU dispatch because SimSimd provides it's own dynamic dispatch
-#if USE_SIMSIMD
-        if constexpr (std::is_same_v<T, BFloat16>)
-            simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
-        else if constexpr (std::is_same_v<T, Float32>)
-            simsimd_l2_f32(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float64>)
-            simsimd_l2_f64(x, y, array_size, result);
-        return;
-#endif
-
-        /// Fallback to scalar implementation if simsimd is not available. It also originates from simsimd, but is decoupled
-        if constexpr (std::is_same_v<T, BFloat16>)
-            l2DistanceScalar<BFloat16, Float32>(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float32>)
-            l2DistanceScalar<Float32, Float32>(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float64>)
-            l2DistanceScalar<Float64, Float64>(x, y, array_size, result);
-    }
-
-    template <typename InputType, typename AccumulatorType>
-    static void l2DistanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
-    {
-        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
-        AccumulatorType d2 = 0;
-        for (size_t i = 0; i != array_size; ++i)
-        {
-            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
-            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
-            d2 += (xi - yi) * (xi - yi);
-        }
-        *result = static_cast<Float64>(sqrt(d2));
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -432,14 +487,7 @@ private:
 
                 auto * dst = block_row(r);
 
-                if constexpr (std::is_same_v<CalcT, BFloat16>)
-                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
-                else if constexpr (std::is_same_v<CalcT, Float32>)
-                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
-                else if constexpr (std::is_same_v<CalcT, Float64>)
-                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
-                else
-                    UNREACHABLE();
+                Kernel::distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
             }
         }
 
@@ -451,5 +499,10 @@ private:
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<L2DistanceTransposed>::create(context_);
+}
+
+FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
+{
+    return FunctionArrayDistance<CosineDistanceTransposed>::create(context_);
 }
 }
