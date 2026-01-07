@@ -185,8 +185,8 @@ void TokenizerFactory::isAllowedTokenizer(std::string_view tokenizer, const std:
         WriteBufferFromOwnString buf;
         for (size_t i = 0; i < allowed_tokenizers.size(); ++i)
         {
-            if (i == 0)
-                buf << "'" << allowed_tokenizers[0] << "', ";
+            if (i < allowed_tokenizers.size() - 1)
+                buf << "'" << allowed_tokenizers[i] << "', ";
             else
                 buf << "and '" << allowed_tokenizers[i] << "'";
         }
