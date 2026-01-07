@@ -1,13 +1,16 @@
 #include <chrono>
 #include <variant>
+#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/Operators.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -18,6 +21,7 @@
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -188,12 +192,31 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
+void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
+{
+    const auto & set = *set_and_key->set;
+
+    LOG_TRACE(getLogger("FutureSetFromSubquery"), "Building external table from set of {} elements", set.getTotalRowCount());
+    if (set.empty())
+        return;
+
+    Chunk set_chunk(set.getSetElements(), set.getTotalRowCount());
+    auto pipeline = QueryPipeline(external_table_->write({}, external_table_->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+    PushingPipelineExecutor executor(pipeline);
+    executor.push(std::move(set_chunk));
+    executor.finish();
+}
+
 void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
 {
     if (set_and_key->set->isCreated())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a ready set");
-    if (!source)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a set without a source");
+    {
+        if (!set_and_key->set->hasExplicitSetElements())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a ready set without explicit elements");
+
+        buildExternalTableFromInplaceSet(external_table_);
+    }
+
     set_and_key->external_table = std::move(external_table_);
 }
 
