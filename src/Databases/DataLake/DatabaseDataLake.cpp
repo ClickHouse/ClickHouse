@@ -713,7 +713,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
-    std::cerr << "DatabaseDataLake::getLightweightTablesIterator\n";
     Tables tables;
 
     auto catalog = getCatalog();
@@ -727,7 +726,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     }
     catch (...)
     {
-        std::cerr << "iceberg_tables " << iceberg_tables.size() << '\n';
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
