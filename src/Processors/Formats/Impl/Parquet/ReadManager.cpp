@@ -72,14 +72,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
     /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
     double sum = 0;
-    stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
-    if (reader.format_filter_info->prewhere_info || reader.format_filter_info->row_level_filter)
-        stages[size_t(ReadStage::PrewhereData)].memory_target_fraction *= 5;
-    else
-    {
-        stages[size_t(ReadStage::PrewhereOffsetIndex)].memory_target_fraction = 0;
-        stages[size_t(ReadStage::PrewhereData)].memory_target_fraction = 0;
-    }
+    stages[size_t(ReadStage::ColumnData)].memory_target_fraction = 0;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
     for (const Stage & stage : stages)
@@ -140,9 +133,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         switch (stage)
         {
             case ReadStage::NotStarted:
-            case ReadStage::PrewhereData:
-            case ReadStage::MainOffsetIndex:
-            case ReadStage::MainData:
+            case ReadStage::ColumnData:
             case ReadStage::Deliver:
                 chassert(false);
                 break;
@@ -171,14 +162,14 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                             .stage = ReadStage::ColumnIndexAndOffsetIndex,
                             .row_group_idx = row_group_idx, .column_idx = i});
                 break;
-            case ReadStage::PrewhereOffsetIndex: // (first of the per-row-subgroup stages)
+            case ReadStage::OffsetIndex: // (first of the per-row-subgroup stages)
                 reader.intersectColumnIndexResultsAndInitSubgroups(row_group);
                 if (!row_group.subgroups.empty())
                 {
-                    row_group.stage.store(ReadStage::MainData);
+                    row_group.stage.store(ReadStage::ColumnData);
                     row_group.stage_tasks_remaining.store(row_group.subgroups.size(), std::memory_order_relaxed);
                     /// Start the first subgroup.
-                    finishRowSubgroupStage(row_group_idx, /*row_subgroup_idx=*/ 0, ReadStage::NotStarted, diff);
+                    finishRowSubgroupStage(row_group_idx, /*row_subgroup_idx=*/ 0, ReadStage::NotStarted, /*step_idx=*/ 0, diff);
                     return;
                 }
                 /// The whole row group was filtered out.
@@ -250,7 +241,7 @@ void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std:
     diff.scheduleStage(stage);
 }
 
-void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff)
+void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
@@ -258,13 +249,13 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
 
     while (true) // offset index, then data
     {
-        bool is_prewhere = stage == ReadStage::PrewhereOffsetIndex || stage == ReadStage::PrewhereData;
-        bool is_offset_index = stage == ReadStage::PrewhereOffsetIndex || stage == ReadStage::MainOffsetIndex;
+        bool is_offset_index = stage == ReadStage::OffsetIndex;
 
         for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
         {
-            if (reader.primitive_columns[i].use_prewhere != is_prewhere)
+            if (reader.primitive_columns[i].step_idx != step_idx)
                 continue;
+                
             ColumnChunk & c = row_group.columns.at(i);
             if (is_offset_index)
             {
@@ -273,7 +264,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                     /// If offset index for this column wasn't read by previous stages, make a task
                     /// to read it before reading data.
                     add_tasks.push_back(Task {
-                        .stage = is_prewhere ? ReadStage::PrewhereOffsetIndex : ReadStage::MainOffsetIndex,
+                        .stage = ReadStage::OffsetIndex,
+                        .step_idx = step_idx,
                         .row_group_idx = row_group_idx,
                         .row_subgroup_idx = row_subgroup_idx,
                         .column_idx = i});
@@ -282,7 +274,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
             else
             {
                 add_tasks.push_back(Task {
-                    .stage = is_prewhere ? ReadStage::PrewhereData : ReadStage::MainData,
+                    .stage = ReadStage::ColumnData,
+                    .step_idx = step_idx,
                     .row_group_idx = row_group_idx,
                     .row_subgroup_idx = row_subgroup_idx,
                     .column_idx = i});
@@ -291,8 +284,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
 
         if (add_tasks.empty() && is_offset_index)
         {
-            /// Don't need to read offset index, move on to next stage (PrewhereData or MainData).
-            stage = ReadStage(size_t(stage) + 1);
+            /// Don't need to read offset index, move on to next stage (ColumnData).
+            stage = ReadStage::ColumnData;
             continue;
         }
 
@@ -303,7 +296,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
             ///  (RowSubgroup.filter.memory) work correctly when PREWHERE expression doesn't use any
             ///  columns (note: the expression may still be nontrivial, e.g. `rand()%2=0`).)
             add_tasks.push_back(Task {
-                .stage = is_prewhere ? ReadStage::PrewhereData : ReadStage::MainData,
+                .stage = ReadStage::ColumnData,
+                .step_idx = step_idx,
                 .row_group_idx = row_group_idx,
                 .row_subgroup_idx = row_subgroup_idx,
                 .column_idx = UINT64_MAX});
@@ -317,70 +311,85 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
     }
 }
 
-void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff)
+void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
-    std::optional<size_t> advanced_read_ptr;
+    std::optional<size_t> advanced_ptr;
 
-    if (stage == ReadStage::PrewhereOffsetIndex || stage == ReadStage::MainOffsetIndex)
+    /// Handle OffsetIndex -> ColumnData transition
+    if (stage == ReadStage::OffsetIndex)
     {
-        addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage(size_t(stage) + 1), diff);
+        addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::ColumnData, step_idx, diff);
         return;
     }
 
     switch (stage)
     {
         case ReadStage::NotStarted:
-            if (!reader.prewhere_steps.empty())
+        {
+            /// 1 if there are prewhere steps, 0 otherwise
+            size_t first_step = reader.steps.empty() ? 0 : 1;
+            if (first_step < reader.steps.size() + 1)
             {
-                /// Start prewhere.
-                addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::PrewhereOffsetIndex, diff);
+                addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, first_step, diff);
                 return;
             }
-
-            /// No prewhere.
-            chassert(row_subgroup_idx == 0);
-            row_group.prewhere_ptr.store(row_group.subgroups.size(), std::memory_order_relaxed);
-            break; // proceed to advancing read_ptr (because we moved prewhere_ptr)
-        case ReadStage::PrewhereData:
+            /// No steps, go directly to step 0
+            addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, 0, diff);
+            return;
+        }
+        case ReadStage::ColumnData:
         {
-            chassert(!reader.prewhere_steps.empty());
-            reader.applyPrewhere(row_subgroup, row_group);
-            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-            chassert(prev == row_subgroup_idx);
-            if (row_subgroup_idx + 1 < row_group.subgroups.size())
+            if (step_idx > 0 && step_idx <= reader.steps.size())
             {
-                /// Can start prewhere in next subgroup.
-                addTasksToReadColumns(row_group_idx, row_subgroup_idx + 1, ReadStage::PrewhereOffsetIndex, diff);
+                const auto & step = reader.steps[step_idx - 1];
+                if (step.actions.has_value() && step.need_filter)
+                {
+                    reader.applyPrewhere(row_subgroup, row_group, step_idx);
+                }
+                
+                size_t next_step = (step_idx < reader.steps.size()) ? step_idx + 1 : 0;
+                if (next_step > 0)
+                {
+                    /// More prewhere steps to process.
+                    addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, next_step, diff);
+                    return;
+                }
+                else if (row_subgroup.filter.rows_pass > 0)
+                {
+                    /// All prewhere steps done, move to step 0
+                    addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, 0, diff);
+                    return;
+                }
+                else
+                {
+                    /// Subgroup was filtered out, skip to next subgroup.
+                    break;
+                }
+            }
+            else if (step_idx == 0)
+            {
+                /// Main step finished. Move to Deliver.
+                row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
+
+                /// Must add to delivery_queue before advancing next_subgroup_for_step to deliver subgroups in order.
+                {
+                    std::lock_guard lock(delivery_mutex);
+                    delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
+                }
+
+                size_t prev = row_group.next_subgroup_for_step[0].exchange(row_subgroup_idx + 1);
+                chassert(prev == row_subgroup_idx);
+                advanced_ptr = prev + 1;
+                delivery_cv.notify_one();
+                break;
             }
             else
             {
-                /// Finished prewhere in all subgroups.
-                for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
-                    if (reader.primitive_columns[i].use_prewhere)
-                        clearColumnChunk(row_group.columns.at(i), diff);
+                chassert(false);
+                break;
             }
-            break; // proceed to advancing read_ptr (because we moved prewhere_ptr)
-        }
-        case ReadStage::MainData:
-        {
-            row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
-
-            /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.
-            /// (If we advanced read_ptr first, another thread could start and finish reading the
-            ///  next subgroup before we add this one to delivery_queue, and ReadManager::read could
-            ///  pick up the later subgroup before we add this one.)
-            {
-                std::lock_guard lock(delivery_mutex);
-                delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
-            }
-
-            size_t prev = row_group.read_ptr.exchange(row_subgroup_idx + 1);
-            chassert(prev == row_subgroup_idx);
-            advanced_read_ptr = prev + 1;
-            delivery_cv.notify_one();
-            break; // proceed to advancing read_ptr
         }
         case ReadStage::Deliver:
         {
@@ -392,8 +401,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::BloomFilterHeader:
         case ReadStage::BloomFilterBlocksOrDictionary:
         case ReadStage::ColumnIndexAndOffsetIndex:
-        case ReadStage::PrewhereOffsetIndex:
-        case ReadStage::MainOffsetIndex:
+        case ReadStage::OffsetIndex:
         case ReadStage::Deallocated:
             chassert(false);
             break;
@@ -401,41 +409,46 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
     /// Start reading the next row subgroup if ready.
     /// Skip subgroups that were fully filtered out by prewhere.
-    size_t read_ptr = row_group.read_ptr.load();
-    size_t prewhere_ptr = row_group.prewhere_ptr.load();
-    while (read_ptr < row_group.subgroups.size() && read_ptr < prewhere_ptr)
+    size_t main_ptr = row_group.next_subgroup_for_step[0].load();
+    for (size_t s = 1; s < row_group.next_subgroup_for_step.size(); ++s)
     {
-        RowSubgroup & next_subgroup = row_group.subgroups[read_ptr];
-        ReadStage next_subgroup_stage = next_subgroup.stage.load();
-        if (next_subgroup_stage >= ReadStage::MainOffsetIndex)
-            break; // already reading
-
-        if (!next_subgroup.stage.compare_exchange_strong(
-                next_subgroup_stage, ReadStage::MainOffsetIndex))
-            break; // another thread got here first
-
-        if (next_subgroup.filter.rows_pass > 0)
+        size_t step_ptr = row_group.next_subgroup_for_step[s].load();
+        while (main_ptr < row_group.subgroups.size() && main_ptr < step_ptr)
         {
-            addTasksToReadColumns(row_group_idx, read_ptr, ReadStage::MainOffsetIndex, diff);
-            break;
+            RowSubgroup & next_subgroup = row_group.subgroups[main_ptr];
+            ReadStage next_subgroup_stage = next_subgroup.stage.load();
+            if (next_subgroup_stage >= ReadStage::OffsetIndex)
+                break; // already reading
+
+            if (!next_subgroup.stage.compare_exchange_strong(
+                    next_subgroup_stage, ReadStage::OffsetIndex))
+                break; // another thread got here first
+
+            if (next_subgroup.filter.rows_pass > 0)
+            {
+                /// Start with the first step.
+                size_t first_step = reader.steps.empty() ? 0 : 1;
+                addTasksToReadColumns(row_group_idx, main_ptr, ReadStage::OffsetIndex, first_step, diff);
+                break;
+            }
+
+            size_t prev = row_group.next_subgroup_for_step[0].exchange(main_ptr + 1);
+            chassert(prev == main_ptr);
+            main_ptr += 1;
+            advanced_ptr = main_ptr;
+
+            next_subgroup.stage.store(ReadStage::Deallocated);
+            clearRowSubgroup(next_subgroup, diff);
         }
-
-        /// Skip subgroup that was filtered out by prewhere.
-
-        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-        chassert(prev == read_ptr);
-        read_ptr += 1;
-        advanced_read_ptr = read_ptr;
-
-        next_subgroup.stage.store(ReadStage::Deallocated);
-        clearRowSubgroup(next_subgroup, diff);
+        if (main_ptr >= step_ptr)
+            break;
     }
 
-    if (advanced_read_ptr.has_value())
+    if (advanced_ptr.has_value())
     {
         advanceDeliveryPtrIfNeeded(row_group_idx, diff);
 
-        if (*advanced_read_ptr == row_group.subgroups.size())
+        if (*advanced_ptr == row_group.subgroups.size())
         {
             /// If we've read (not necessarily delivered) all subgroups, we can deallocate things
             /// like dictionary page and offset index.
@@ -449,7 +462,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             ///  happens after advancing prewhere_ptr, so another thread may do MainData+clearColumnChunk
             ///  before the thread that did prewhere is still clearing the corresponding columns).
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
-                if (!reader.primitive_columns[i].use_prewhere)
+                if (reader.primitive_columns[i].step_idx == 0)
                     clearColumnChunk(row_group.columns.at(i), diff);
         }
     }
@@ -538,7 +551,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
-        return row_group.read_ptr.load() == row_group.delivery_ptr.load();
+        return row_group.next_subgroup_for_step[0].load() == row_group.delivery_ptr.load();
     };
 
     while (true)
@@ -637,12 +650,10 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 prefetches.push_back(&column.column_index_prefetch);
                 prefetches.push_back(&column.offset_index_prefetch);
                 break;
-            case ReadStage::PrewhereOffsetIndex:
-            case ReadStage::MainOffsetIndex:
+            case ReadStage::OffsetIndex:
                 prefetches.push_back(&column.offset_index_prefetch);
                 break;
-            case ReadStage::PrewhereData:
-            case ReadStage::MainData:
+            case ReadStage::ColumnData:
             {
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
@@ -673,7 +684,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
         }
     }
 
-    if (task.stage == ReadStage::PrewhereData && is_first_in_group)
+    if (task.stage == ReadStage::ColumnData && is_first_in_group)
     {
         RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
         row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
@@ -758,13 +769,11 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
-            case ReadStage::PrewhereOffsetIndex:
-            case ReadStage::MainOffsetIndex:
+            case ReadStage::OffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 break;
-            case ReadStage::PrewhereData:
-            case ReadStage::MainData:
+            case ReadStage::ColumnData:
             {
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
                 {
@@ -804,7 +813,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
         size_t remaining = row_group.subgroups.at(task.row_subgroup_idx).stage_tasks_remaining.fetch_sub(1);
         chassert(remaining > 0);
         if (remaining == 1)
-            finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, task.stage, diff);
+            finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, task.stage, task.step_idx, diff);
     }
     else
     {
@@ -881,21 +890,11 @@ ReadManager::ReadResult ReadManager::read()
                 for (const RowGroup & row_group : reader.row_groups)
                 {
                     chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
-                    chassert(row_group.prewhere_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
-                    chassert(row_group.read_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
+                    for (size_t s = 0; s < row_group.next_subgroup_for_step.size(); ++s)
+                        chassert(row_group.next_subgroup_for_step[s].load(std::memory_order_relaxed) == row_group.subgroups.size());
                     chassert(row_group.delivery_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
                     for (const RowSubgroup & subgroup : row_group.subgroups)
                         chassert(subgroup.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
-                }
-                for (size_t i = 0; i < stages.size(); ++i)
-                {
-                    size_t mem = stages[i].memory_usage.load(std::memory_order_relaxed);
-                    size_t batches = stages[i].batches_in_progress.load(std::memory_order_relaxed);
-                    size_t unsched = 0;
-                    for (const auto & tasks : stages[i].row_group_tasks_to_schedule)
-                        unsched += tasks.size();
-                    if (mem != 0 || batches != 0 || unsched != 0)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Leak in memory or task accounting in parquet reader: got {} bytes, {} batches, {} tasks in stage {}", mem, batches, unsched, i);
                 }
                 return {};
             }
@@ -969,7 +968,7 @@ ReadManager::ReadResult ReadManager::read()
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);
-    finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, diff);
+    finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, /*step_idx=*/ 0, diff);
     flushMemoryUsageDiff(std::move(diff));
 
     return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read};

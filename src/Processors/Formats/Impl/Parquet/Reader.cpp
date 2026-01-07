@@ -14,6 +14,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
 #include <lz4.h>
@@ -32,6 +33,12 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int CHECKSUM_DOESNT_MATCH;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ParquetRowsFilterExpression;
+    extern const Event ParquetColumnsFilterExpression;
 }
 
 namespace DB::Parquet
@@ -644,49 +651,61 @@ void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
-    if (row_level_filter || prewhere_info)
+    
+    ExpressionActionsSettings actions_settings;
+    PrewhereExprInfo prewhere_expr_info;
+    
+    bool use_multistage = false;
+    if (prewhere_info)
     {
-        /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
-        ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
-        ///     and run them after decoding the corresponding columns, in parallel.
-        ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
-        ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
-
-        /// Convert ActionsDAG to ExpressionActions.
-        ExpressionActionsSettings actions_settings;
+        use_multistage = tryBuildPrewhereSteps(
+            prewhere_info,
+            actions_settings,
+            prewhere_expr_info,
+            /*force_short_circuit_execution*/ true);
+    }
+    
+    if (!use_multistage)
+    {
         if (row_level_filter)
         {
             ExpressionActions actions(row_level_filter->actions.clone(), actions_settings);
-            prewhere_steps.push_back(PrewhereStep
-                {
-                    .actions = std::move(actions),
-                    .result_column_name = row_level_filter->column_name,
-                });
-
-            if (!row_level_filter->do_remove_column)
-                prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(row_level_filter->column_name);
+            PrewhereExprStep step;
+            step.type = PrewhereExprStep::Filter;
+            step.actions = std::make_shared<ExpressionActions>(std::move(actions));
+            step.filter_column_name = row_level_filter->column_name;
+            step.need_filter = true;
+            prewhere_expr_info.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(step)));
         }
-
+        
         if (prewhere_info)
         {
             ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);
-            prewhere_steps.push_back(PrewhereStep
-                {
-                    .actions = std::move(actions),
-                    .result_column_name = prewhere_info->prewhere_column_name,
-                    .need_filter = prewhere_info->need_filter,
-                });
-
-            if (!prewhere_info->remove_prewhere_column)
-                prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
+            PrewhereExprStep step;
+            step.type = PrewhereExprStep::Filter;
+            step.actions = std::make_shared<ExpressionActions>(std::move(actions));
+            step.filter_column_name = prewhere_info->prewhere_column_name;
+            step.need_filter = prewhere_info->need_filter;
+            prewhere_expr_info.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(step)));
         }
     }
 
     /// Look up expression inputs in extended_sample_block.
-    std::unordered_set<size_t> seen_prewhere_outputs;
-    for (PrewhereStep & step : prewhere_steps)
+    std::unordered_set<size_t> seen_prewhere_outputs;    
+    for (size_t step_idx = 0; step_idx < prewhere_expr_info.steps.size(); ++step_idx)
     {
-        for (const auto & col : step.actions.getRequiredColumnsWithTypes())
+        const auto & prewhere_step = prewhere_expr_info.steps[step_idx];
+        if (prewhere_step->type == PrewhereExprStep::None)
+            continue;
+        prewhere_expr_info.steps[step_idx]->remove_filter_column = !sample_block->findColumnOrSubcolumnByName(prewhere_step->filter_column_name).has_value();
+
+        Step step;
+        if (prewhere_step->actions)
+            step.actions = std::move(*prewhere_step->actions->clone());
+        step.result_column_name = prewhere_step->filter_column_name;
+        step.need_filter = prewhere_step->need_filter;
+        
+        if (!prewhere_step->remove_filter_column)
         {
             size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
@@ -694,13 +713,29 @@ void Reader::preparePrewhere()
             {
                 OutputColumnInfo & output_info = output_columns[output_idx.value()];
                 output_info.use_prewhere = true;
+            step.idx_in_output_block = sample_block->getPositionByName(prewhere_step->filter_column_name);
+        }
+        
+        if (step.actions.has_value())
+        {
+            for (const auto & col : step.actions->getRequiredColumnsWithTypes())
+            {
+                size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
+                const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+                if (!output_idx.has_value())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
+                OutputColumnInfo & output_info = output_columns[output_idx.value()];
+
+                output_info.step_idx = step_idx + 1;
                 bool only_for_prewhere = idx_in_output_block >= sample_block->columns();
 
                 for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
                 {
-                    primitive_columns[primitive_idx].use_prewhere = true;
+                    primitive_columns[primitive_idx].step_idx = step_idx + 1;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
+                step.input_column_idxs.push_back(output_idx.value());
+
             }
             else
             {
@@ -725,6 +760,8 @@ void Reader::preparePrewhere()
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
         }
+        
+        steps.push_back(std::move(step));
     }
 }
 
@@ -1084,6 +1121,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         }
     }
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
+    row_group.next_subgroup_for_step = std::vector<std::atomic<size_t>>(steps.size() + 1);
 }
 
 void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
@@ -2045,12 +2083,11 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
     return state.column;
 }
 
-void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group)
+void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
 {
-    for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
+    chassert(step_idx > 0 && step_idx <= steps.size());
+    const Step & step = steps.at(step_idx - 1);
     {
-        const PrewhereStep & step = prewhere_steps.at(step_idx);
-
         Block block;
         for (size_t idx_in_output_block : step.input_idxs)
         {
@@ -2059,9 +2096,19 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         }
         addDummyColumnWithRowCount(block, row_subgroup.filter.rows_total);
 
-        step.actions.execute(block);
+        ColumnPtr filter_column;
+        if (step.actions.has_value())
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetRowsFilterExpression, block.rows());
+            ProfileEvents::increment(ProfileEvents::ParquetColumnsFilterExpression, block.columns());
 
-        ColumnPtr filter_column = block.getByName(step.result_column_name).column;
+            step.actions->execute(block);
+            filter_column = block.getByName(step.result_column_name).column;
+        }
+        else
+        {
+            return;
+        }
 
         if (step.idx_in_output_block.has_value())
         {
@@ -2071,14 +2118,14 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         }
 
         /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
-        if (step_idx == prewhere_steps.size() - 1)
+        if (step_idx == steps.size())
         {
             while (row_subgroup.output.size() > sample_block->columns())
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
         if (!step.need_filter)
-            continue;
+            return;
 
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
@@ -2093,7 +2140,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         }
         if (rows_pass == filter.size())
             /// Nothing was filtered out.
-            continue;
+            return;
 
         /// Filter columns that were already read.
 

@@ -67,6 +67,7 @@ private:
     struct Task
     {
         ReadStage stage;
+        size_t step_idx = 0; /// 0 = main step, (>=1) = prewhere steps
         size_t row_group_idx;
         size_t row_subgroup_idx = UINT64_MAX;
         size_t column_idx = UINT64_MAX;
@@ -118,13 +119,13 @@ private:
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
-    void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff);
+    void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.
     /// Call sites should be careful to not call it from multiple threads in parallel.
     void clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff);
     void clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
     void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
-    void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff);
+    void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void flushMemoryUsageDiff(MemoryUsageDiff && diff);
 };

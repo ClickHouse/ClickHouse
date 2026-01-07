@@ -174,7 +174,7 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        bool use_prewhere = false;
+        size_t step_idx = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
@@ -206,7 +206,7 @@ struct Reader
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
 
-        bool use_prewhere = false;
+        size_t step_idx = 0;
     };
 
     struct RowSet
@@ -416,24 +416,29 @@ struct Reader
 
 
         /// Fields below are used only by ReadManager.
+        std::vector<std::atomic<size_t>> next_subgroup_for_step;
 
-        /// Indexes of the first subgroup that didn't finish
-        /// {prewhere, reading main columns, delivering final chunk}.
-        /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
-        std::atomic<size_t> prewhere_ptr {0};
-        std::atomic<size_t> read_ptr {0};
         std::atomic<size_t> delivery_ptr {0};
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
 
-    struct PrewhereStep
+    struct Step
     {
-        ExpressionActions actions;
+        /// Columns needed for this step (indices in output_columns).
+        std::vector<size_t> input_column_idxs {};
+        
+        /// Optional expression to compute after reading columns.
+        /// If present, actions will be executed and result_column_name will contain the result.
+        std::optional<ExpressionActions> actions = std::nullopt;
         String result_column_name;
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
+        
+        /// Index in output block if this step produces a column that should be in the output.
         std::optional<size_t> idx_in_output_block = std::nullopt;
+        
+        /// Whether to filter rows using the result column after executing actions.
         bool need_filter = true;
     };
 
@@ -478,7 +483,7 @@ struct Reader
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<PrewhereStep> prewhere_steps;
+    std::vector<Step> steps;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -520,7 +525,7 @@ struct Reader
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);
+    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter
