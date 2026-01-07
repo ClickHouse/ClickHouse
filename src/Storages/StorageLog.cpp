@@ -110,6 +110,19 @@ public:
 
     String getName() const override { return "Log"; }
 
+    ProcessorPtr clone() const override
+    {
+        return std::make_shared<LogSource>(
+            block_size,
+            columns,
+            storage,
+            rows_limit,
+            offsets,
+            file_sizes,
+            limited_by_file_sizes,
+            read_settings);
+    }
+
 protected:
     Chunk generate() override;
 
