@@ -223,7 +223,7 @@ private:
     {
         /// The cell overlaps two bytes.
         return static_cast<UInt8>(
-            ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1)) 
+            ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
              | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l)));
     }
 
