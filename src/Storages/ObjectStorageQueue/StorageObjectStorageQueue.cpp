@@ -1,17 +1,14 @@
 #include <optional>
 
-#include <Common/Macros.h>
-#include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -21,19 +18,24 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
-#include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
-#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Storages/ObjectStorage/Utils.h>
-#include <Storages/AlterCommands.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/HivePartitioningUtils.h>
+#include <Common/FailPoint.h>
+#include <Common/Macros.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
 
 #include <filesystem>
 
@@ -104,6 +106,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
+    extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
@@ -114,6 +117,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_container;
     extern const ObjectStorageQueueSettingsString after_processing_tag_key;
     extern const ObjectStorageQueueSettingsString after_processing_tag_value;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -147,10 +151,11 @@ namespace
 
         if (queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] > queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms])
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
+                queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
+                queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -269,6 +274,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_tag_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_key],
         .after_processing_tag_value = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_value],
     })
+    , commit_on_select((*queue_settings_)[ObjectStorageQueueSetting::commit_on_select])
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
@@ -304,6 +310,31 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
+    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    {
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            columns, configuration->getRawPath().path, format_settings, context_);
+    }
+
+    auto hive_partition_columns_to_read_from_file_path_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+
+    for (const auto & column : columns.getAllPhysical())
+    {
+        auto hive_column = hive_partition_columns_to_read_from_file_path_set.find(column.getNameInStorage());
+        if (hive_column == hive_partition_columns_to_read_from_file_path_set.end())
+            file_columns.emplace_back(column);
+        else
+            hive_partition_columns_to_read_from_file_path_set.erase(hive_column);
+    }
+
+    /// All hive columns must be in storage schema
+    if (!hive_partition_columns_to_read_from_file_path_set.empty())
+    {
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "All hive partitioning columns must be in engine schema. Next columns not found: {}",
+            fmt::join(hive_partition_columns_to_read_from_file_path_set, ", "));
+    }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
@@ -313,10 +344,18 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
+    bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
+
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
+        zk_path, *queue_settings_,
+        storage_metadata.getColumns(),
+        configuration_->format,
+        context_,
+        is_attach,
+        is_path_with_hive_partitioning,
+        log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
@@ -328,7 +367,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
+        is_path_with_hive_partitioning);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -473,7 +513,8 @@ public:
         SharedHeader sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
-        size_t max_block_size_)
+        size_t max_block_size_,
+        bool commit_once_processed_)
         : SourceStepWithFilter(
             std::move(sample_block),
             column_names_,
@@ -483,13 +524,15 @@ public:
         , info(std::move(info_))
         , storage(std::move(storage_))
         , max_block_size(max_block_size_)
+        , commit_once_processed(commit_once_processed_)
     {
     }
 
 private:
-    ReadFromFormatInfo info;
-    std::shared_ptr<StorageObjectStorageQueue> storage;
-    size_t max_block_size;
+    const ReadFromFormatInfo info;
+    const std::shared_ptr<StorageObjectStorageQueue> storage;
+    const size_t max_block_size;
+    const bool commit_once_processed;
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> iterator;
 
@@ -529,16 +572,21 @@ void StorageObjectStorageQueue::read(
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
-                        "To enable use setting `stream_like_engine_allow_direct_select`");
+                        "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-
-    if (mv_attached)
+    bool do_commit_on_select;
+    {
+        std::lock_guard lock(mutex);
+        do_commit_on_select = commit_on_select;
+    }
+    if (do_commit_on_select && getDependencies() > 0)
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Cannot read from {} with attached materialized views", getName());
+                        "Cannot read from {} with attached materialized views and commit_on_select=1", getName());
     }
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
+
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
@@ -549,7 +597,8 @@ void StorageObjectStorageQueue::read(
         std::make_shared<const Block>(read_from_format_info.source_header),
         read_from_format_info,
         std::move(this_ptr),
-        max_block_size);
+        max_block_size,
+        do_commit_on_select);
 
     query_plan.addStep(std::move(reading));
 }
@@ -574,7 +623,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             iterator,
             max_block_size,
             context,
-            true /* commit_once_processed */));
+            commit_once_processed));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -679,9 +728,6 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             const size_t dependencies_count = getDependencies();
             if (dependencies_count)
             {
-                mv_attached.store(true);
-                SCOPE_EXIT({ mv_attached.store(false); });
-
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 files_metadata->registerActive(storage_id);
@@ -804,7 +850,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
             queue_context,
-            supportsSubsetOfColumns(queue_context));
+            supportsSubsetOfColumns(queue_context),
+            /*supports_tuple_elements*/ false,
+            PrepareReadingFromFormatHiveParams {file_columns,
+                hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+        );
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
@@ -915,63 +965,87 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
+    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
+    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
 
-    if (requests.empty())
+    size_t retry_count = 0;
+    constexpr size_t retry_limit = 5;
+
+    while (true)
     {
-        LOG_TEST(log, "Nothing to commit");
-        return;
-    }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
-
-    if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
-    {
-        postProcess(successful_objects);
-    }
-
-    auto context = getContext();
-    const auto & settings = context->getSettingsRef();
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-
-    std::optional<Coordination::Error> code;
-    Coordination::Responses responses;
-    size_t try_num = 0;
-    zk_retry.retryLoop([&]
-    {
-        if (zk_retry.isRetry())
+        if (requests.empty())
         {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
+            LOG_TEST(log, "Nothing to commit");
+            return;
         }
-        ++try_num;
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
+
+        if (!successful_objects.empty()
+            && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+        {
+            postProcess(successful_objects);
+        }
+
+        auto context = getContext();
+        const auto & settings = context->getSettingsRef();
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
+        std::optional<Coordination::Error> code;
+        Coordination::Responses responses;
+        size_t try_num = 0;
+        zk_retry.retryLoop([&]
+        {
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+
+            auto zk_client = getZooKeeper();
+            code = zk_client->tryMulti(requests, responses);
         });
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-        });
 
-        auto zk_client = getZooKeeper();
-        code = zk_client->tryMulti(requests, responses);
-    });
+        if (!code.has_value())
+        {
+            throw Exception(
+                ErrorCodes::KEEPER_EXCEPTION,
+                "Failed to commit files with {} retries, last error message: {}",
+                settings[Setting::keeper_max_retries].value,
+                zk_retry.getLastKeeperErrorMessage());
+        }
 
-    if (!code.has_value())
-    {
-        throw Exception(
-            ErrorCodes::KEEPER_EXCEPTION,
-            "Failed to commit files with {} retries, last error message: {}",
-            settings[Setting::keeper_max_retries].value, zk_retry.getLastKeeperErrorMessage());
-    }
+        if (code.value() == Coordination::Error::ZBADVERSION && retry_count < retry_limit)
+        {
+            ++retry_count;
+            LOG_INFO(log, "Keeper Bad Version error, other node wrote something, retry {}", retry_count);
+            /// Need to recreate requests list based on new keeper state
+            requests.clear();
+            for (auto & source : sources)
+                source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
+            ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+            continue;
+        }
 
-    chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-    if (code.value() != Coordination::Error::ZOK)
-    {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+        if (code.value() != Coordination::Error::ZOK)
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+            throw zkutil::KeeperMultiException(code.value(), requests, responses);
+        }
+
+        break;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
@@ -1010,8 +1084,7 @@ UInt64 StorageObjectStorageQueue::generateCommitID()
     return rng();
 }
 
-static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
-{
+static const std::unordered_set<std::string_view> changeable_settings_unordered_mode{
     "processing_threads_num",
     /// Is not allowed to change on fly:
     /// "parallel_inserts",
@@ -1043,10 +1116,10 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_move_container",
     "after_processing_tag_key",
     "after_processing_tag_value",
+    "commit_on_select",
 };
 
-static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
-{
+static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
     "loading_retries",
     "after_processing",
     "polling_min_timeout_ms",
@@ -1073,6 +1146,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_move_container",
     "after_processing_tag_key",
     "after_processing_tag_value",
+    "commit_on_select",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1262,6 +1336,9 @@ void StorageObjectStorageQueue::alter(
         std::set<std::string> new_settings_set;
 
         const auto mode = getTableMetadata().getMode();
+        const size_t dependencies_count = getDependencies();
+        bool requires_detached_mv = false;
+
         for (auto & setting : new_settings)
         {
             LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
@@ -1292,7 +1369,6 @@ void StorageObjectStorageQueue::alter(
 
             if (requiresDetachedMV(setting.name))
             {
-                const size_t dependencies_count = getDependencies();
                 if (dependencies_count)
                 {
                     throw Exception(
@@ -1301,12 +1377,34 @@ void StorageObjectStorageQueue::alter(
                         "(dependencies count: {})",
                         setting.name, dependencies_count);
                 }
+                requires_detached_mv = true;
             }
 
             changed_settings.push_back(setting);
         }
+        if (requires_detached_mv)
+        {
+            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+            for (auto & task : streaming_tasks)
+                task->deactivate();
+
+            LOG_TRACE(log, "Deactivated streaming tasks");
+        }
+        SCOPE_EXIT({
+            if (requires_detached_mv)
+            {
+                for (auto & task : streaming_tasks)
+                    task->activateAndSchedule();
+
+                LOG_TRACE(log, "Re-activated streaming tasks");
+            }
+        });
+
+        LOG_TRACE(
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            new_metadata.settings_changes->formatForLogging(),
+            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -1359,9 +1457,14 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
             else if (change.name == "after_processing_tag_value")
                 after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
+            else if (change.name == "commit_on_select")
+                commit_on_select = change.value.safeGet<UInt64>();
         }
 
         files_metadata->updateSettings(changed_settings);
+        /// Reset streaming_iterator as it can hold state which we could have just altered.
+        if (requires_detached_mv)
+            streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);
@@ -1403,6 +1506,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
+        hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
         enable_hash_ring_filtering_copy,
@@ -1461,6 +1565,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
         settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
         settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
+        settings[ObjectStorageQueueSetting::commit_on_select] = commit_on_select;
     }
 
     return settings;

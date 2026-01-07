@@ -74,11 +74,12 @@ def run_fuzz_job(check_name: str):
     dmesg_log = workspace_path / "dmesg.log"
     fatal_log = workspace_path / "fatal.log"
     server_log = workspace_path / "server.log"
+    stderr_log = workspace_path / "stderr.log"
     paths = [
         workspace_path / "core.zst",
         workspace_path / "dmesg.log",
         fatal_log,
-        workspace_path / "stderr.log",
+        stderr_log,
         server_log,
         fuzzer_log,
         dmesg_log,
@@ -98,14 +99,11 @@ def run_fuzz_job(check_name: str):
             server_exit_code = int(server_exit_code)
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
-        result.set_status(Result.Status.ERROR)
-        result.set_info("Unknown error in fuzzer runner script")
-        result.complete_job()
-        sys.exit(1)
+        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
+        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
 
     # parse runner script exit status
     status = Result.Status.FAILED
-    result_name = ""
     info = []
     is_failed = True
     if server_died:
@@ -155,9 +153,10 @@ def run_fuzz_job(check_name: str):
                 is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
-            if Shell.check(f"dmesg > {dmesg_log}"):
+            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
                 if Shell.check(
-                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q ."
+                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    verbose=True,
                 ):
                     info.append("ERROR: OOM in dmesg")
                     status = Result.Status.ERROR
@@ -168,10 +167,13 @@ def run_fuzz_job(check_name: str):
     if is_failed and status != Result.Status.ERROR:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
-            str(server_log),
-            str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
+            server_log=str(server_log),
+            stderr_log=str(stderr_log),
+            fuzzer_log=str(
+                workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
+            ),
         )
-        parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
 
         if parsed_name:
             results.append(
@@ -179,6 +181,7 @@ def run_fuzz_job(check_name: str):
                     name=parsed_name,
                     info=parsed_info,
                     status=Result.StatusExtended.FAIL,
+                    files=files,
                 )
             )
 
@@ -190,7 +193,7 @@ def run_fuzz_job(check_name: str):
         # generate fatal log
         Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
         for file in paths:
-            if file.exists():
+            if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
 
     result.complete_job()

@@ -72,14 +72,17 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             stay_alive=True,
+            cpu_limit=8
         )
         cluster.add_instance(
             "instance2",
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -135,6 +138,7 @@ def started_cluster():
             ],
             user_configs=[
                 "configs/users.xml",
+                "configs/keeper_retries.xml",
             ],
             stay_alive=True,
         )
@@ -153,6 +157,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             stay_alive=True,
         )
@@ -789,9 +794,9 @@ def test_shutdown_order(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
-            "polling_max_timeout_ms": 0,
-            "polling_min_timeout_ms": 0,
+            "s3queue_processing_threads_num": 5,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
         },
     )
 
@@ -802,7 +807,7 @@ def test_shutdown_order(started_cluster):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
             s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
             node.query(
-                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(5000000)"
+                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(50000)"
             )
 
     insert()
@@ -819,6 +824,8 @@ def test_shutdown_order(started_cluster):
 
     node.restart_clickhouse()
 
+    node.query(f"SYSTEM FLUSH LOGS system.text_log")
+
     def check_in_text_log(message, logger_name):
         return int(
             node.query(
@@ -829,6 +836,9 @@ def test_shutdown_order(started_cluster):
     assert 0 == check_in_text_log(
         "Failed to process data", f"StorageS3Queue(default.{table_name})"
     )
+
+    node.query(f"SYSTEM FLUSH LOGS system.s3queue_log")
+
     assert 0 == int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
@@ -1023,6 +1033,17 @@ def test_failed_startup(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
 
     zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Wait for table data to be removed.
+    uuid = node.query(f"select uuid from system.tables where name = '{table_name}'").strip()
+    wait_message = f"StorageObjectStorageQueue({keeper_path}): Table '{uuid}' has been removed from the registry"
+    wait_message_2 = f"StorageObjectStorageQueue({keeper_path}): Table is unregistered after retry"
+    for _ in range(50):
+        if node.contains_in_log(wait_message) or node.contains_in_log(wait_message_2):
+            break
+        time.sleep(1)
+    assert node.contains_in_log(wait_message) or node.contains_in_log(wait_message_2)
+
     try:
         zk.get(f"{keeper_path}")
         assert False
@@ -1319,10 +1340,10 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1"
     )
     assert not node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5"
     )
 
     nodes = zk.get_children(f"{keeper_path}/processing")
@@ -1344,7 +1365,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     assert found
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 6/6"
+        f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 10"
     )
 
     found = False

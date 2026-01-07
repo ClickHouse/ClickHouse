@@ -3,6 +3,8 @@
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
+#include <Common/BlobStorageLogWriter.h>
+#include <Common/Stopwatch.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -262,19 +264,26 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     if (write_settings.azure_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
         write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
         patchSettings(write_settings),
         settings.get(),
+        connection_params.getContainer(),
+        std::move(blob_storage_log),
         std::move(scheduler));
 }
 
 void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    bool if_exists)
+    bool if_exists,
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
     if (client_ptr->IsClientForDisk())
@@ -283,9 +292,14 @@ void AzureObjectStorage::removeObjectImpl(
     const auto & path = object.remote_path;
     LOG_TEST(log, "Removing single object: {}", path);
 
+    Stopwatch watch;
+    Int32 error_code = 0;
+    String error_message;
+    bool success = false;
     try
     {
         auto delete_info = client_ptr->GetBlobClient(path).Delete();
+        success = delete_info.Value.Deleted;
         if (!if_exists && !delete_info.Value.Deleted)
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
@@ -293,29 +307,71 @@ void AzureObjectStorage::removeObjectImpl(
     }
     catch (const Azure::Storage::StorageException & e)
     {
+        error_code = static_cast<Int32>(e.StatusCode);
+        error_message = e.Message;
+
         if (!if_exists)
+        {
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    /* bucket */ connection_params.getContainer(),
+                    /* remote_path */ path,
+                    object.local_path,
+                    object.bytes_size,
+                    watch.elapsedMicroseconds(),
+                    error_code,
+                    error_message);
             throw;
+        }
 
         /// If object doesn't exist.
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+        {
+            auto elapsed = watch.elapsedMicroseconds();
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    /* bucket */ connection_params.getContainer(),
+                    /* remote_path */ path,
+                    object.local_path,
+                    object.bytes_size,
+                    elapsed,
+                    error_code,
+                    error_message);
             return;
+        }
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
+    auto elapsed = watch.elapsedMicroseconds();
+
+    if (blob_storage_log)
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            /* bucket */ connection_params.getContainer(),
+            /* remote_path */ path,
+            object.local_path,
+            object.bytes_size,
+            elapsed,
+            success ? 0 : error_code,
+            success ? "" : error_message);
 }
 
 void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeObjectImpl(object, client.get(), true);
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+    removeObjectImpl(object, client.get(), true, std::move(blob_storage_log));
 }
 
 void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     auto client_ptr = client.get();
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
     for (const auto & object : objects)
     {
-        removeObjectImpl(object, client_ptr, true);
+        removeObjectImpl(object, client_ptr, true, blob_storage_log);
     }
 }
 

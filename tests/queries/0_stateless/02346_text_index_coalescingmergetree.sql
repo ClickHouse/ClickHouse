@@ -1,4 +1,4 @@
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 -- Tests text index with the 'CoalescingMergeTree' engine
 

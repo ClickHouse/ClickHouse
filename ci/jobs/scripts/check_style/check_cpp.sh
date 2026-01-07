@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|base/base/openpty\.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
@@ -226,6 +226,7 @@ std_cerr_cout_excludes=(
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/Common/ProgressIndication.h
+    src/Common/ZooKeeper/KeeperClientCLI/KeeperClient.h
     src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(

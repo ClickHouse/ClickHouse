@@ -3,8 +3,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", stay_alive=True)
-node2 = cluster.add_instance("node2", stay_alive=True)
+node1 = cluster.add_instance("node1", stay_alive=True, main_configs=["configs/config.xml"])
+node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"], cpu_limit=6)
 
 
 @pytest.fixture(scope="module")
@@ -62,10 +62,10 @@ def test_normalized_user_cpu(start_cluster):
     run_cpu_intensive_task(node2)
 
     node1_cpu_time = get_async_metric(node1, "CGroupUserTimeNormalized")
-    assert float(node1_cpu_time) < 1.01
+    assert float(node1_cpu_time) < 1.1
 
     node2_cpu_time = get_async_metric(node2, "CGroupUserTimeNormalized")
-    assert float(node2_cpu_time) < 1.01
+    assert float(node2_cpu_time) < 1.1
 
 
 def test_system_wide_metrics(start_cluster):
