@@ -11,8 +11,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-repo_dir = Utils.cwd()
-temp_path = f"{repo_dir}/ci/tmp"
+temp_path = Utils.temp_path()
 MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()

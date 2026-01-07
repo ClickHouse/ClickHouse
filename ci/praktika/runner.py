@@ -481,11 +481,12 @@ class Runner:
             sw_ = Utils.Stopwatch()
             results_ = []
             for hook in job.post_hooks:
-                if isinstance(hook, str):
+                assert isinstance(hook, str), "Post hook must be a string for a digest"
+                if hook.endswith("(result)"):
+                    result = Utils.call_from_ref(hook.removesuffix("(result)"), result)
+                else:
                     name = str(hook)
                     results_.append(Result.from_commands_run(name=name, command=hook))
-                else:
-                    result = hook(result)
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )

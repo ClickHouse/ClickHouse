@@ -1,6 +1,7 @@
 import base64
 import dataclasses
 import glob
+import importlib
 import json
 import multiprocessing
 import os
@@ -21,6 +22,9 @@ from shlex import quote
 from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
+from weakref import ref
+from .settings import Settings
+
 
 T = TypeVar("T", bound="Serializable")
 
@@ -538,6 +542,10 @@ class Utils:
         return str(Path.cwd())
 
     @staticmethod
+    def temp_path():
+        return str(Path.cwd() / Settings.TEMP_DIR)
+
+    @staticmethod
     def cpu_count():
         return multiprocessing.cpu_count()
 
@@ -821,6 +829,13 @@ class Utils:
         if path_cur:
             path += ":" + path_cur
         os.environ["PATH"] = path
+
+    @classmethod
+    def call_from_ref(ref, *args):
+        module_path, func_name = ref.rsplit(".", 1)
+
+        module = importlib.import_module(module_path)
+        return getattr(module, func_name)(*args)
 
     class Stopwatch:
         def __init__(self):

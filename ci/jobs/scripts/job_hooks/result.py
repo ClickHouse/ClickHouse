@@ -3,8 +3,7 @@ from pathlib import Path
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
-repo_dir = Utils.cwd()
-temp_path = f"{repo_dir}/ci/tmp"
+temp_path = Utils.temp_path()
 
 def finalize_pytest_result(result: Result) -> Result:
     """
