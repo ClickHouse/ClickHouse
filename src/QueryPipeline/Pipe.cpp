@@ -241,16 +241,77 @@ Pipe Pipe::clone() const
 
     res.header = header;
     res.max_parallel_streams = max_parallel_streams;
+    res.collected_processors = collected_processors;
 
     res.output_ports.reserve(output_ports.size());
     res.processors = std::make_shared<Processors>();
+
+    /// Map original processors to cloned ones
+    std::unordered_map<const IProcessor *, ProcessorPtr> processor_map;
+
+    /// Clone all processors
     for (const auto & processor : *processors)
     {
         auto cloned_processor = processor->clone();
+        processor_map[processor.get()] = cloned_processor;
         res.processors->emplace_back(cloned_processor);
-        for (auto & port : cloned_processor->getOutputs())
-            res.output_ports.push_back(&port);
     }
+
+    /// Recreate connections between processors
+    for (const auto & processor : *processors)
+    {
+        auto cloned_processor = processor_map[processor.get()];
+
+        auto original_inputs = processor->getInputs().begin();
+        auto cloned_inputs = cloned_processor->getInputs().begin();
+
+        for (; original_inputs != processor->getInputs().end(); ++original_inputs, ++cloned_inputs)
+        {
+            if (original_inputs->isConnected())
+            {
+                const auto & original_output = original_inputs->getOutputPort();
+                const auto * original_output_processor = &original_output.getProcessor();
+                auto cloned_output_processor = processor_map[original_output_processor];
+
+                /// Find the corresponding output port in the cloned processor
+                auto original_outputs = original_output_processor->getOutputs().begin();
+                auto cloned_outputs = cloned_output_processor->getOutputs().begin();
+
+                for (; original_outputs != original_output_processor->getOutputs().end(); ++original_outputs, ++cloned_outputs)
+                {
+                    if (&*original_outputs == &original_output)
+                    {
+                        connect(*cloned_outputs, *cloned_inputs);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Add only the originally disconnected output ports
+    for (const auto * output_port : output_ports)
+    {
+        const auto * output_processor = &output_port->getProcessor();
+        auto cloned_output_processor = processor_map[output_processor];
+
+        /// Find the corresponding output port in the cloned processor
+        auto original_outputs = output_processor->getOutputs().begin();
+        auto cloned_outputs = cloned_output_processor->getOutputs().begin();
+
+        for (; original_outputs != output_processor->getOutputs().end(); ++original_outputs, ++cloned_outputs)
+        {
+            if (&*original_outputs == output_port)
+            {
+                res.output_ports.push_back(&*cloned_outputs);
+                break;
+            }
+        }
+    }
+
+    if (collected_processors)
+        for (const auto & processor : *res.processors)
+            collected_processors->emplace_back(processor);
 
     return res;
 }
