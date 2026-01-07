@@ -1192,6 +1192,9 @@ void DatabaseCatalog::dropTemporaryDatabasesTask()
 
 void DatabaseCatalog::enqueueTemporaryDatabaseDrop(DatabasePtr db) noexcept
 {
+    if (is_shutting_down)
+        return;
+
     std::lock_guard lock{drop_temporary_databases_mutex};
     LOG_DEBUG(log, "Temporary database {} enqueued to drop", db->getDatabaseName());
     drop_temporary_databases_queue.emplace_back(std::move(db));

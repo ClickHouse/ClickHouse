@@ -48,4 +48,4 @@ Database with Memory engine != temporary database.
 **See also**
 
 - [CREATE TEMPORARY DATABASE](../statements/create/databases.md#temporary)
-- [show_others_temporary_databases_in_system_tables](/operations/settings/settings.md#show_others_temporary_databases_in_system_tables)
+- [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables)

@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -12,9 +13,9 @@ class Context;
 namespace detail
 {
 
+GetDatabasesOptions getDatabasesOptions(ContextPtr context);
 ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context);
-ColumnPtr
-getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, bool is_detached);
+ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, bool is_detached);
 
 }
 

@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-    extern const SettingsBool show_others_temporary_databases_in_system_tables;
+    extern const SettingsBool show_temporary_databases_from_other_sessions_in_system_tables;
 }
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
@@ -129,7 +129,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & settings = context->getSettingsRef();
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
         .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
-        .skip_temporary_owner_check = settings[Setting::show_others_temporary_databases_in_system_tables],
+        .skip_temporary_owner_check = settings[Setting::show_temporary_databases_from_other_sessions_in_system_tables],
     }, context); // todo: column with id of user that owns the temporary database
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 

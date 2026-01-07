@@ -7526,7 +7526,7 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     DECLARE(Bool, allow_experimental_temporary_databases, false, R"(
 Allow to create experimental temporary databases.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, show_others_temporary_databases_in_system_tables, false, R"(
+    DECLARE(Bool, show_temporary_databases_from_other_sessions_in_system_tables, false, R"(
 Show temporary databases from other sessions in system tables.
 )", EXPERIMENTAL) \
     \

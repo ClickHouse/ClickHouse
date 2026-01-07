@@ -84,23 +84,36 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
+    const auto & context = getContext();
+    if (drop.database)
+    {
+        const auto & db = DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase(), context);
+        if (db && db->isTemporary()) // todo: access didn't leak test
+        {
+            if (!drop.cluster.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
+            if (drop.kind == ASTDropQuery::Kind::Detach)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases or tables inside cannot be detached. Use DROP instead");
+        }
+    }
+
+    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, context))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(current_query_ptr, context, params);
     }
 
-    if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
+    if (context->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
         drop.sync = true;
 
     if (drop.table)
         return executeToTable(drop);
-    if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
+    if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, context))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(current_query_ptr, context, params);
     }
     if (drop.database)
         return executeToDatabase(drop);
@@ -416,15 +429,16 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     const auto & database_name = query.getDatabase();
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    const auto & context = getContext();
 
-    database = tryGetDatabase(database_name, query.if_exists, getContext());
+    database = tryGetDatabase(database_name, query.if_exists, context);
     if (!database)
         return {};
 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
 
-    getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
+    context->checkAccess(AccessType::DROP_DATABASE, database_name);
 
     auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
     if (truncate && db_replicated)
@@ -464,7 +478,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// Flush should not be done if shouldBeEmptyOnDetach() == false,
             /// since in this case getTablesIterator() may do some additional work,
             /// see DatabaseMaterialized...SQL::getTablesIterator()
-            auto table_context = Context::createCopy(getContext());
+            auto table_context = Context::createCopy(context);
             table_context->setInternalQuery(true);
 
             /// List the tables, then call flushAndPrepareForShutdown() on them in parallel, then call
@@ -554,7 +568,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
     if (truncate && query.has_tables && !query.like.empty())
     {
-        auto table_context = Context::createCopy(getContext());
+        auto table_context = Context::createCopy(context);
         table_context->setInternalQuery(true);
 
         std::vector<StorageID> tables_to_truncate;
@@ -627,7 +641,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
-        DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+    {
+        DatabaseCatalog::instance().detachDatabase(context, database_name, drop, database->shouldBeEmptyOnDetach());
+        if (database->isTemporary() && context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(database_name))
+            context->getSessionContext()->removeTemporaryDatabase(database_name);
+    }
 
     return {};
 }

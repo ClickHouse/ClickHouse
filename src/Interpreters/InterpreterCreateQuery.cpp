@@ -199,14 +199,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                             "Temporary databases are experimental. Set `allow_experimental_temporary_databases` setting to enable it");
 
         if (!context->hasSessionContext())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases cannot be created outside of a session");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases cannot be created outside a session");
 
         /// actually can, but it is very easy to misuse and occasionally delete data, while practical usage is questionable.
         if (create.attach)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH DATABASE query cannot be used for temporary databases");
-
-        if (is_on_cluster)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Temporary databases cannot be created with ON CLUSTER clause");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases or tables inside cannot be attached. Use CREATE instead");
 
         if (create.storage && create.storage->engine && create.storage->engine->name == "Replicated")
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Replicated databases cannot be temporary");
@@ -2400,10 +2397,23 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
+    bool is_create_database = create.database && !create.table;
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
-    bool is_create_database = create.database && !create.table;
+    if (create.database && !create.cluster.empty())
+    {
+        bool is_temp = create.temporary;
+        if (!is_temp)
+        {
+            // access check is not required here, because if db exists in context, and it's temporary - user has access anyway, and error will be appropriate.
+            const auto & db = DatabaseCatalog::instance().tryGetDatabase(create.getDatabase(), getContext());
+            is_temp = db && db->isTemporary();
+        }
+        if (is_temp)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())

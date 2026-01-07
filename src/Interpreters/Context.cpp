@@ -2371,14 +2371,13 @@ void Context::addTemporaryDatabase(const String & database_name, DatabasePtr dat
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
     std::lock_guard lock(mutex);
 
-    const auto res = temporary_databases_mapping.emplace(
-        database_name,
-        std::make_shared<TemporaryDatabaseHolder>(std::move(database)));
-    if (!res.second)
+    if (temporary_databases_mapping.contains(database_name))
         throw Exception(
             ErrorCodes::DATABASE_ALREADY_EXISTS,
             "Temporary database {} already exists in session context. It's a bug, please report it.",
             backQuoteIfNeed(database_name));
+
+    temporary_databases_mapping.emplace(database_name, std::make_shared<TemporaryDatabaseHolder>(std::move(database)));
 }
 
 bool Context::hasTemporaryDatabase(const String & database_name) const
@@ -2394,7 +2393,14 @@ void Context::renameTemporaryDatabase(const String & old_name, const String & ne
 {
     if (!isSessionContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
+    assert(new_name != old_name);
     std::lock_guard lock(mutex);
+
+    if (temporary_databases_mapping.contains(new_name))
+        throw Exception(
+            ErrorCodes::DATABASE_ALREADY_EXISTS,
+            "Temporary database {} already exists in session context. It's a bug, please report it.",
+            backQuoteIfNeed(new_name));
 
     auto old = temporary_databases_mapping.extract(old_name);
     if (!old)
@@ -2413,11 +2419,14 @@ void Context::removeTemporaryDatabase(const String & database_name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
     std::lock_guard lock(mutex);
 
-    if (temporary_databases_mapping.erase(database_name) != 1)
+    auto holder = temporary_databases_mapping.extract(database_name);
+    if (!holder)
         throw Exception(
         ErrorCodes::UNKNOWN_DATABASE,
         "Temporary database {} not found in session context. It's a bug, please report it.",
         backQuoteIfNeed(database_name));
+
+    holder.mapped()->clear();
 }
 
 void Context::addScalar(const String & name, const Block & block)

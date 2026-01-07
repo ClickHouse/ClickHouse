@@ -40,7 +40,7 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-    extern const SettingsBool show_others_temporary_databases_in_system_tables;
+    extern const SettingsBool show_temporary_databases_from_other_sessions_in_system_tables;
 }
 
 namespace
@@ -67,15 +67,21 @@ bool needTable(const DatabasePtr & database, const Block & header)
 
 namespace detail
 {
+
+GetDatabasesOptions getDatabasesOptions(ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+    return {
+        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+        .skip_temporary_owner_check = settings[Setting::show_temporary_databases_from_other_sessions_in_system_tables],
+    };
+}
+
 ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
-        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
-        .skip_temporary_owner_check = settings[Setting::show_others_temporary_databases_in_system_tables],
-    }, context);
+    const auto databases = DatabaseCatalog::instance().getDatabases(getDatabasesOptions(context), context);
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -125,7 +131,7 @@ ColumnPtr getFilteredTables(
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
         const auto database_name = filtered_databases_column->getDataAt(database_idx);
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name, context, getDatabasesOptions(context));
         if (!database)
             continue;
 
@@ -327,7 +333,7 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx);
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name, context);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name, context, detail::getDatabasesOptions(context));
 
                 if (!database)
                 {

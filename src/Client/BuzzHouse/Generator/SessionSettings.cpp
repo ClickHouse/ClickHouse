@@ -1211,7 +1211,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, -100, 100)); },
          {},
          false)},
-    {"show_others_temporary_databases_in_system_tables", trueOrFalseSettingNoOracle}};
+    {"show_temporary_databases_from_other_sessions_in_system_tables", trueOrFalseSettingNoOracle}};
 
 std::unordered_map<String, CHSetting> queryOracleSettings;
 
