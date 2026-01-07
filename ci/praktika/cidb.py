@@ -108,7 +108,6 @@ class CIDB:
             # Add commented placeholder for manual editing
             failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
 
-        git_branch = Info().git_branch or "master"
         base_git_branch = Info().base_branch or "master"
         query = f"""\
 WITH
@@ -123,7 +122,7 @@ WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
     -- AND check_name = '{jn}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND ((pull_request_number = 0 AND head_ref = '{git_branch}') OR (pull_request_number != 0 AND base_ref = '{base_git_branch}'))
+    AND (pull_request_number = 0 OR base_ref = '{base_git_branch}')
 {failure_filter}
 GROUP BY day
 ORDER BY day DESC
