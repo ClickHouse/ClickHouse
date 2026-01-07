@@ -1,4 +1,6 @@
 from pathlib import Path
+
+from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
 repo_dir = Utils.cwd()
