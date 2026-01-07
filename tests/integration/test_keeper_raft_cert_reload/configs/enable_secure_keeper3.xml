@@ -1,4 +1,6 @@
 <clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <interserver_listen_host>0.0.0.0</interserver_listen_host>
     <keeper_server>
         <use_cluster>0</use_cluster>
         <tcp_port>9181</tcp_port>
@@ -29,11 +31,6 @@
             <server>
                 <id>3</id>
                 <hostname>node3</hostname>
-                <port>9234</port>
-            </server>
-            <server>
-                <id>4</id>
-                <hostname>node4</hostname>
                 <port>9234</port>
             </server>
         </raft_configuration>

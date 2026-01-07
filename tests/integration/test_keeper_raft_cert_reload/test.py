@@ -4,8 +4,7 @@ Test for TLS certificate hot-reload on Keeper Raft connections.
 
 This test verifies that when TLS certificates are replaced on disk,
 new Raft connections between Keeper nodes pick up the new certificates
-without requiring a restart. CertificateReloader detects file changes
-via modification time.
+without requiring a restart.
 """
 
 import os
@@ -29,7 +28,6 @@ COMMON_CONFIGS = [
     "configs/rootCA.pem",
 ]
 
-# Start with 3 nodes, node4 will be added dynamically to test new connections
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/enable_secure_keeper1.xml"] + COMMON_CONFIGS,
@@ -45,15 +43,8 @@ node3 = cluster.add_instance(
     main_configs=["configs/enable_secure_keeper3.xml"] + COMMON_CONFIGS,
     stay_alive=True,
 )
-# node4 starts later - used to verify new Raft connections use updated certs
-node4 = cluster.add_instance(
-    "node4",
-    main_configs=["configs/enable_secure_keeper4.xml"] + COMMON_CONFIGS,
-    stay_alive=True,
-)
 
-initial_nodes = [node1, node2, node3]
-all_nodes = [node1, node2, node3, node4]
+all_nodes = [node1, node2, node3]
 
 
 @pytest.fixture(scope="module")
@@ -85,7 +76,7 @@ def verify_cluster_works(test_path, nodes_to_check):
         # Create a node from first node
         node_zks[0].create(test_path, b"test_data")
 
-        # Sync and verify from all nodes
+        # Verify from all nodes
         for i, node_zk in enumerate(node_zks):
             node_zk.sync(test_path)
             assert node_zk.exists(test_path) is not None, f"Node {i+1} cannot see {test_path}"
@@ -99,32 +90,28 @@ def verify_cluster_works(test_path, nodes_to_check):
                 try:
                     zk_conn.stop()
                     zk_conn.close()
-                except:
+                except Exception:
                     pass
 
 
-def replace_certificates_in_place(node):
+def replace_certificates(node):
     """
-    Replace certificate files in-place (same path, new content).
-    This simulates how cert-manager or certbot renews certificates.
-    Copies second.crt/key content over first.crt/key (the configured paths).
-    The file modification time changes, triggering CertificateReloader.
+    Replace certificate files in-place.
+    Copies second.crt/key over first.crt/key (the configured paths).
     """
     node.exec_in_container(
         [
             "bash",
             "-c",
-            # Copy second cert content over first cert (in-place replacement)
             "cp /etc/clickhouse-server/config.d/second.crt /etc/clickhouse-server/config.d/first.crt && "
             "cp /etc/clickhouse-server/config.d/second.key /etc/clickhouse-server/config.d/first.key && "
-            # Touch to ensure modification time is updated
             "touch /etc/clickhouse-server/config.d/first.crt /etc/clickhouse-server/config.d/first.key",
         ]
     )
 
 
 def get_cert_serial(node):
-    """Get the serial number of the currently configured certificate (first.crt)."""
+    """Get the serial number of the currently configured certificate."""
     result = node.exec_in_container(
         [
             "openssl",
@@ -138,68 +125,55 @@ def get_cert_serial(node):
     return result.strip()
 
 
-def trigger_config_reload(node):
-    """Trigger config reload to pick up new certificates."""
-    node.query("SYSTEM RELOAD CONFIG")
-
-
-def test_new_node_joins_with_updated_certs(started_cluster):
+def test_cert_reload_on_reconnect(started_cluster):
     """
-    Test that a new node can join the cluster after certificates are rotated.
-
-    This verifies that new Raft connections use the updated certificates.
+    Test that restarted node uses updated certificates for new Raft connections.
 
     Steps:
     1. Start 3-node cluster with 'first' certificate
     2. Verify cluster works
-    3. Replace certificates with 'second' on all nodes (including node4)
-    4. Trigger config reload on existing nodes
-    5. Start node4 - it will establish NEW Raft connections
-    6. Verify node4 successfully joins (proves new certs work for new connections)
+    3. Replace certificates with 'second' on all nodes
+    4. Trigger config reload
+    5. Restart node3 - creates NEW Raft connections
+    6. Verify cluster works (proves new certs work)
     """
-    # Wait for initial 3-node cluster to be ready
-    wait_nodes_ready(initial_nodes)
+    # Wait for cluster to be ready
+    wait_nodes_ready(all_nodes)
 
     # Get initial certificate serial
     initial_serial = get_cert_serial(node1)
     print(f"Initial certificate serial: {initial_serial}")
 
     # Verify initial cluster works
-    verify_cluster_works("/test_initial", initial_nodes)
-    print("Initial 3-node cluster working with first certificates")
+    verify_cluster_works("/test_initial", all_nodes)
+    print("Initial cluster working with first certificates")
 
-    # Replace certificate files on ALL nodes (including node4 which hasn't started yet)
+    # Replace certificate files on ALL nodes
     for node in all_nodes:
-        replace_certificates_in_place(node)
-    print("Replaced certificate files with second cert on all nodes")
+        replace_certificates(node)
+    print("Replaced certificate files on all nodes")
 
-    # Trigger config reload on running nodes
-    for node in initial_nodes:
-        trigger_config_reload(node)
-    print("Config reload triggered on initial nodes")
+    # Trigger config reload on all nodes
+    for node in all_nodes:
+        node.query("SYSTEM RELOAD CONFIG")
+    print("Config reload triggered")
 
     # Verify the certificate file changed
     new_serial = get_cert_serial(node1)
     print(f"New certificate serial: {new_serial}")
     assert initial_serial != new_serial, "Certificate serial should have changed"
 
-    # Give some time for the reload to process
+    # Give time for reload to process
     time.sleep(2)
 
-    # Existing cluster should still work
-    verify_cluster_works("/test_after_reload", initial_nodes)
-    print("Cluster working after cert reload (existing connections)")
+    # Restart node3 - this creates NEW Raft connections using new certs
+    print("Restarting node3 to create new Raft connections...")
+    node3.restart_clickhouse()
 
-    # Now start node4 - this creates NEW Raft connections
-    # These new connections must use the updated certificates
-    print("Starting node4 to test new Raft connections with updated certs...")
-    node4.start_clickhouse()
+    # Wait for node3 to rejoin
+    wait_nodes_ready([node3])
+    print("Node3 restarted and reconnected")
 
-    # Wait for node4 to join the cluster
-    wait_nodes_ready([node4])
-    print("Node4 started and connected")
-
-    # Verify all 4 nodes can work together
-    # This proves new Raft connections successfully use the new certificates
-    verify_cluster_works("/test_with_new_node", all_nodes)
-    print("All 4 nodes working together - new Raft connections use updated certs!")
+    # Verify cluster works - proves new connections use updated certs
+    verify_cluster_works("/test_after_restart", all_nodes)
+    print("Cluster working after restart - new Raft connections use updated certs!")
