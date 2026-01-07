@@ -46,21 +46,26 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Support USE db.prefix syntax for DataLakeCatalog databases
     /// Parse additional dot-separated parts and join them into the database name
-    String database_name;
-    tryGetIdentifierNameInto(database, database_name);
-
-    while (s_dot.ignore(pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
-        ASTPtr next_part;
-        if (!name_p.parse(pos, next_part, expected))
-            return false;
-        String part_name;
-        tryGetIdentifierNameInto(next_part, part_name);
-        database_name += "." + part_name;
+        String database_name;
+        tryGetIdentifierNameInto(database, database_name);
+
+        do
+        {
+            ASTPtr next_part;
+            if (!name_p.parse(pos, next_part, expected))
+                return false;
+            String part_name;
+            tryGetIdentifierNameInto(next_part, part_name);
+            database_name += "." + part_name;
+        } while (s_dot.ignore(pos, expected));
+
+        database = std::make_shared<ASTIdentifier>(database_name);
     }
 
     auto query = std::make_shared<ASTUseQuery>();
-    query->set(query->database, std::make_shared<ASTIdentifier>(database_name));
+    query->set(query->database, database);
     node = query;
 
     return true;
