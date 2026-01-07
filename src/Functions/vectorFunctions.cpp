@@ -2196,7 +2196,8 @@ SELECT L2Distance((1, 2), (2, 3))
 
     /// L2DistanceTransposed documentation
     FunctionDocumentation::Description description_l2_distance_transposed = R"(
-Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).    )";
+Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).    
+    )";
     FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
         = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
@@ -2206,7 +2207,7 @@ Calculates the approximate distance between two points (the values of the vector
             R"(
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;"
+SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;
 )",
             R"(
 ┌─L2DistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
@@ -2322,7 +2323,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
     /// cosineDistance documentation
     FunctionDocumentation::Description description_cosine_distance = R"(
-Calculates the cosine distance between two vectors (the elements of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
+Calculates the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity) between two vectors (the elements of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
     )";
     FunctionDocumentation::Syntax syntax_cosine_distance = "cosineDistance(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_cosine_distance = {
