@@ -5836,6 +5836,9 @@ Possible values:
 - `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
 - `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
 )", 0) \
+    DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
+Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
+)", 0) \
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \

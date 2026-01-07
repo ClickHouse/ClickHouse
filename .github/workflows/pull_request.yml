@@ -1338,7 +1338,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_flaky_check:
-    runs-on: [self-hosted, amd-small-mem]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, style_check, fast_test, build_arm_tidy, build_amd_asan]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZmxha3kgY2hlY2sp') }}
     name: "Stateless tests (amd_asan, flaky check)"

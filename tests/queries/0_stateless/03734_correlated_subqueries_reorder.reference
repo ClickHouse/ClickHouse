@@ -1,0 +1,156 @@
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> sum(__table1.l_extendedprice) Decimal(38, 2) : 0
+         COLUMN Const(Float64) -> 7._Float64 Float64 : 1
+         FUNCTION divide(sum(__table1.l_extendedprice) :: 0, 7._Float64 :: 1) -> divide(sum(__table1.l_extendedprice), 7._Float64) Float64 : 2
+         ALIAS divide(sum(__table1.l_extendedprice), 7._Float64) :: 2 -> avg_yearly Float64 : 1
+Positions: 1
+  Aggregating
+  Keys:
+  Aggregates:
+      sum(__table1.l_extendedprice)
+        Function: sum(Decimal(15, 2)) → Decimal(38, 2)
+        Arguments: __table1.l_extendedprice
+  Skip merging: 0
+    Expression (Before GROUP BY)
+    Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
+    Positions: 0
+      Filter (WHERE)
+      Filter column: less(__table1.l_quantity, __table3) (removed)
+      Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
+               INPUT : 1 -> __table1.l_quantity Decimal(15, 2) : 1
+               INPUT : 2 -> __table3 Nullable(Float64) : 2
+               FUNCTION less(__table1.l_quantity :: 1, __table3 :: 2) -> less(__table1.l_quantity, __table3) Nullable(UInt8) : 3
+      Positions: 3 0
+        JoinLogical (JOIN to generate result stream)
+        ResultRows: unknown
+        Type: INNER
+        Strictness: ALL
+        Locality: UNSPECIFIED
+        Expression: equals(__table3.__table2.p_partkey, __table2.p_partkey)
+        Expression:
+        Actions: INPUT :: 0 -> __table3 Nullable(Float64) : 0
+                 INPUT : 1 -> __table3.__table2.p_partkey Int32 : 1
+                 INPUT :: 2 -> __table1.l_extendedprice Decimal(15, 2) : 2
+                 INPUT :: 3 -> __table1.l_quantity Decimal(15, 2) : 3
+                 INPUT : 4 -> __table2.p_partkey Int32 : 4
+                 FUNCTION equals(__table3.__table2.p_partkey :: 1, __table2.p_partkey :: 4) -> equals(__table3.__table2.p_partkey, __table2.p_partkey) UInt8 : 5
+        Positions: 0 2 3
+        Expression Sources:
+        __table3: {0}
+        __table3.__table2.p_partkey: {0}
+        __table1.l_extendedprice: {1}
+        __table1.l_quantity: {1}
+        __table2.p_partkey: {1}
+          Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+          Actions: INPUT : 0 -> avg(__table4.l_quantity) Float64 : 0
+                   COLUMN Const(Float64) -> 0.2_Float64 Float64 : 1
+                   INPUT : 1 -> __table2.p_partkey Int32 : 2
+                   COLUMN Const(String) -> \'Nullable(Float64)\'_String String : 3
+                   FUNCTION multiply(0.2_Float64 :: 1, avg(__table4.l_quantity) :: 0) -> multiply(0.2_Float64, avg(__table4.l_quantity)) Float64 : 4
+                   ALIAS __table2.p_partkey :: 2 -> __table3.__table2.p_partkey Int32 : 0
+                   ALIAS multiply(0.2_Float64, avg(__table4.l_quantity)) :: 4 -> multiply(0.2, avg(l_quantity)) Float64 : 2
+                   FUNCTION _CAST(multiply(0.2, avg(l_quantity)) :: 2, \'Nullable(Float64)\'_String :: 3) -> __table3 Nullable(Float64) : 4
+          Positions: 4 0
+            Aggregating
+            Keys: __table2.p_partkey
+            Aggregates:
+                avg(__table4.l_quantity)
+                  Function: avg(Decimal(15, 2)) → Float64
+                  Arguments: __table4.l_quantity
+            Skip merging: 0
+              Expression ((Before GROUP BY + ))
+              Actions: INPUT :: 0 -> __table4.l_quantity Decimal(15, 2) : 0
+                       INPUT :: 1 -> __table4.l_partkey Int32 : 1
+                       INPUT :: 2 -> __table2.p_partkey Int32 : 2
+              Positions: 0 1 2
+                JoinLogical
+                Join: lineitem[100] ⋈ R1
+                ResultRows: unknown
+                Type: INNER
+                Strictness: ALL
+                Locality: UNSPECIFIED
+                Expression: equals(__table4.l_partkey, __table2.p_partkey)
+                Expression:
+                Actions: INPUT :: 0 -> __table4.l_quantity Decimal(15, 2) : 0
+                         INPUT : 1 -> __table4.l_partkey Int32 : 1
+                         INPUT : 2 -> __table2.p_partkey Int32 : 2
+                         FUNCTION equals(__table4.l_partkey : 1, __table2.p_partkey : 2) -> equals(__table4.l_partkey, __table2.p_partkey) UInt8 : 3
+                Positions: 0 1 2
+                Expression Sources:
+                __table4.l_quantity: {0}
+                __table4.l_partkey: {0}
+                __table2.p_partkey: {1}
+                  Expression (Change column names to column identifiers)
+                  Actions: INPUT : 0 -> l_quantity Decimal(15, 2) : 0
+                           INPUT : 1 -> l_partkey Int32 : 1
+                           ALIAS l_quantity :: 0 -> __table4.l_quantity Decimal(15, 2) : 2
+                           ALIAS l_partkey :: 1 -> __table4.l_partkey Int32 : 0
+                  Positions: 2 0
+                    ReadFromMergeTree (default.lineitem)
+                    ReadType: Default
+                    Parts: 1
+                    Granules: 1
+                  ReadFromCommonBuffer
+          SaveSubqueryResultToBuffer
+            JoinLogical
+            Join: part[10000] ⋈ lineitem[100]
+            ResultRows: 100
+            Type: INNER
+            Strictness: ALL
+            Locality: UNSPECIFIED
+            Expression: equals(__table2.p_partkey, __table1.l_partkey)
+            Expression:
+            Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
+                     INPUT : 1 -> __table1.l_partkey Int32 : 1
+                     INPUT :: 2 -> __table1.l_quantity Decimal(15, 2) : 2
+                     INPUT : 3 -> __table2.p_partkey Int32 : 3
+                     FUNCTION equals(__table2.p_partkey : 3, __table1.l_partkey :: 1) -> equals(__table2.p_partkey, __table1.l_partkey) UInt8 : 4
+            Positions: 0 2 3
+            Expression Sources:
+            __table1.l_extendedprice: {1}
+            __table1.l_partkey: {1}
+            __table1.l_quantity: {1}
+            __table2.p_partkey: {0}
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> p_partkey Int32 : 0
+                       ALIAS p_partkey :: 0 -> __table2.p_partkey Int32 : 1
+              Positions: 1
+                ReadFromMergeTree (default.part)
+                ReadType: Default
+                Parts: 1
+                Granules: 1
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> l_extendedprice Decimal(15, 2) : 0
+                       INPUT : 1 -> l_partkey Int32 : 1
+                       INPUT : 2 -> l_quantity Decimal(15, 2) : 2
+                       ALIAS l_extendedprice :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 3
+                       ALIAS l_partkey :: 1 -> __table1.l_partkey Int32 : 0
+                       ALIAS l_quantity :: 2 -> __table1.l_quantity Decimal(15, 2) : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.lineitem)
+                ReadType: Default
+                Parts: 1
+                Granules: 1
+        JoinLogical (JOIN to generate result stream)
+        Type: INNER
+                JoinLogical
+                Type: INNER
+                    ReadFromMergeTree (default.lineitem)
+                  ReadFromCommonBuffer
+          SaveSubqueryResultToBuffer
+              JoinLogical
+              Type: INNER
+                  ReadFromMergeTree (default.part)
+                  ReadFromMergeTree (default.lineitem)
+-- No join order optimization --
+        JoinLogical (JOIN to generate result stream)
+        Type: INNER
+                JoinLogical (JOIN to evaluate correlated expression)
+                Type: INNER
+                    ReadFromMergeTree (default.lineitem)
+                  ReadFromCommonBuffer
+          SaveSubqueryResultToBuffer
+              JoinLogical
+              Type: INNER
+                  ReadFromMergeTree (default.lineitem)
+                  ReadFromMergeTree (default.part)
