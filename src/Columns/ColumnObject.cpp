@@ -2201,4 +2201,15 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     shared_data = std::move(new_shared_data);
 }
 
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
+}
+
 }

@@ -1,0 +1,8 @@
+These tests just need to run, dont care about output
+Test repeated alias for literal as 2nd arg to IN operator:
+[1]	1
+Test repeated alias for statement which is not a literal:
+[0]	0
+Test repeated alias for negated col:
+Test that large max_query_size doesnt cause overflow:
+test

@@ -642,7 +642,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     Stopwatch stopwatch;
     UInt64 prepare_table_time = 0;
-    UInt64 prepare_reserve_block = 0;
     UInt64 prepare_insert_data_to_block = 0;
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
@@ -678,9 +677,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         for (auto & column : columns)
             column->reserve(to_flush.size());
-
-        prepare_reserve_block = stopwatch.elapsedMilliseconds();
-        stopwatch.restart();
 
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
@@ -728,17 +724,19 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     queue->confirm(to_flush_end);
     confirm_time = stopwatch.elapsedMilliseconds();
 
-    LOG_TRACE(
-        log,
-        "Flushed system log up to offset {}. Entries {}. Timings: prepare_table={}ms, reserve_block={}ms, insert_to_block={}ms, "
-        "execute_insert={}ms, confirm={}ms",
-        to_flush_end,
-        flush_size,
-        prepare_table_time,
-        prepare_reserve_block,
-        prepare_insert_data_to_block,
-        execute_insert_time,
-        confirm_time);
+    UInt64 total_time = prepare_table_time + prepare_insert_data_to_block + execute_insert_time + confirm_time;
+    if (total_time > 100)
+        LOG_TRACE(
+            log,
+            "Flushed system log up to offset {}. Entries {}. Timings: Prepare={}ms, Block={}ms, Insert={}ms, Confirm={}ms",
+            to_flush_end,
+            flush_size,
+            prepare_table_time,
+            prepare_insert_data_to_block,
+            execute_insert_time,
+            confirm_time);
+    else
+        LOG_TRACE(log, "Flushed system log up to offset {}. Entries {}. ({} ms)", to_flush_end, flush_size, total_time);
 }
 
 template <typename LogElement>
