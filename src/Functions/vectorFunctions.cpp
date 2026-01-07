@@ -1439,19 +1439,13 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        bool is_array_or_qbit = checkDataTypes<DataTypeArray>(arguments[0].type.get())
-            || checkDataTypes<DataTypeQBit>(arguments[0].type.get()) || checkDataTypes<DataTypeFixedString>(arguments[0].type.get());
+        bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
 
-        /// TODO: can remove QBit from equation in else as it can't be in untransposed
+        /// Transposed distance functions only support Array/QBit/FixedString inputs (validated in getReturnTypeImpl)
         if constexpr (IsTransposedTrait<Traits>::value)
-        {
-            /// Transposed functions only support array/qbit/fixedstring inputs (validated in getReturnTypeImpl)
             return array_function->executeImpl(arguments, result_type, input_rows_count);
-        }
         else
-        {
-            return (is_array_or_qbit ? array_function : tuple_function)->executeImpl(arguments, result_type, input_rows_count);
-        }
+            return (is_array ? array_function : tuple_function)->executeImpl(arguments, result_type, input_rows_count);
     }
 
 private:
