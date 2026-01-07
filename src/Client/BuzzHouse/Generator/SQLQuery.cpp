@@ -132,7 +132,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
         ExprColAlias * eca = i == 0 ? aj->mutable_constraint() : aj->add_other_constraints();
         Expr * expr = eca->mutable_expr();
 
-        if (!available_cols.empty() && rg.nextSmallNumber() < 8)
+        if (!available_cols.empty() && rg.nextSmallNumber() < 7)
         {
             addSargableColRef(rg, available_cols[i], expr);
         }
@@ -1757,14 +1757,14 @@ void StatementGenerator::generateGroupByExpr(
 {
     const uint32_t next_option = rg.nextSmallNumber();
 
-    if (!available_cols.empty() && (enforce_having || next_option < 8))
+    if (!available_cols.empty() && (enforce_having || next_option < 5))
     {
         const SQLRelationCol & rel_col = available_cols[offset];
 
         addSargableColRef(rg, rel_col, expr);
         gcols.emplace_back(GroupCol(rel_col, expr));
     }
-    else if (ncols && next_option < 9)
+    else if (ncols && next_option < 7)
     {
         LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1926,11 +1926,11 @@ void StatementGenerator::generateOrderBy(
             Expr * expr = eot->mutable_expr();
             const uint32_t next_option = rg.nextSmallNumber();
 
-            if (!available_cols.empty() && next_option < 7)
+            if (!available_cols.empty() && next_option < 5)
             {
                 refColumn(rg, available_cols[i], expr);
             }
-            else if (ncols && next_option < 9)
+            else if (ncols && next_option < 7)
             {
                 LiteralValue * lv = expr->mutable_lit_val();
 
@@ -2376,21 +2376,33 @@ void StatementGenerator::generateTopSelect(
         SelectIntoFile * sif = ts->mutable_intofile();
         const std::filesystem::path & qfile = fc.client_file_path / "file.data";
 
-        ts->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
         sif->set_path(qfile.generic_string());
-        if (fc.truncate_output || rg.nextSmallNumber() < 10)
+        if (fc.truncate_output)
         {
+            /// Don't randomize format/compression/level when truncating output for easier testing
+            ts->set_format(OutFormat::OUT_Null);
             sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
         }
-        if (rg.nextSmallNumber() < 4)
+        else
         {
-            sif->set_compression(rg.pickRandomly(compressionMethods));
-        }
-        if (rg.nextSmallNumber() < 4)
-        {
-            sif->set_level(rg.randomInt<uint32_t>(1, 22));
+            std::uniform_int_distribution<uint32_t> out_range(1, static_cast<uint32_t>(OutFormat_MAX));
+
+            ts->set_format(static_cast<OutFormat>(out_range(rg.generator)));
+            if (rg.nextSmallNumber() < 10)
+            {
+                std::uniform_int_distribution<uint32_t> step_range(
+                    1, static_cast<uint32_t>(SelectIntoFile_SelectIntoFileStep_SelectIntoFileStep_MAX));
+
+                sif->set_step(static_cast<SelectIntoFile_SelectIntoFileStep>(step_range(rg.generator)));
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                sif->set_compression(rg.pickRandomly(compressionMethods));
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                sif->set_level(rg.randomInt<uint32_t>(1, 22));
+            }
         }
     }
 }
