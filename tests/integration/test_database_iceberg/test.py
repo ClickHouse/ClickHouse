@@ -795,7 +795,5 @@ def test_use_database_with_namespace(started_cluster):
     assert count_full == 5, f"Expected 5 rows with full path, got {count_full}"
 
     # check that prefix is cleared when switching to regular db
-    result = node.query(f"USE {CATALOG_NAME}.{namespace}; USE default; SELECT 1 FROM {table_name}", ignore_error=True)
-    assert "UNKNOWN_TABLE" in result or "doesn't exist" in result, f"Expected UNKNOWN_TABLE error, got: {result}"
-
-
+    _, error = node.query_and_get_answer_with_error(f"USE {CATALOG_NAME}.{namespace}; USE default; SELECT 1 FROM {table_name}")
+    assert "UNKNOWN_TABLE" in error or "doesn't exist" in error, f"Expected UNKNOWN_TABLE error, got: {error}"
