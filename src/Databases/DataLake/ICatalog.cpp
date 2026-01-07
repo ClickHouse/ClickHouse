@@ -74,7 +74,7 @@ void TableMetadata::setLocation(const std::string & location_)
     /// Location has format:
     /// s3://<bucket>/path/to/table/data.
     /// We want to split s3://<bucket> and path/to/table/data.
-    
+
     /// For Azure ABFSS: abfss://<container>@<account>.dfs.core.windows.net/path/to/table/data
     /// We want to split the bucket/container and path.
 
