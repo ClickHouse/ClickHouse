@@ -222,6 +222,15 @@ public:
         offsets.push_back(old_size + buffer.count());
     }
 
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & /*nested_function*/,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
+    }
+
 private:
     String format_name;
     FormatSettings format_settings;
