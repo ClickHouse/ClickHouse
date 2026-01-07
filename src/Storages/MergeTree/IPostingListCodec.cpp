@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <IO/Operators.h>
-#include <config.h>
 
 namespace DB
 {
@@ -21,7 +20,7 @@ void PostingListCodecFactory::isAllowedCodec(std::string_view codec, const std::
         for (size_t i = 0; i < allowed_codecs.size(); ++i)
         {
             if (i < allowed_codecs.size() - 1)
-                buf << "'" << allowed_codecs[0] << "', ";
+                buf << "'" << allowed_codecs[i] << "', ";
             else
                 buf << "and '" << allowed_codecs[i] << "'";
         }

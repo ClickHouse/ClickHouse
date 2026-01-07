@@ -1,12 +1,12 @@
 #pragma once
 
-#include <base/types.h>
 #include <Common/assert_cast.h>
-#include <roaring/roaring.hh>
-#include <boost/noncopyable.hpp>
-#include <IO/WriteBufferFromString.h>
 #include <Core/Field.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
 
+#include <roaring/roaring.hh>
 
 namespace DB
 {
@@ -17,9 +17,9 @@ class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
 
-/// IPostingListCodec defines the Text Index posting list codec interface.
-/// The `encode` writes an encoded posting list to a WriteBuffer,
-/// and `decode` reads from a ReadBuffer, decodes the data, and produces a posting list instance.
+/// IPostingListCodec defines the text index posting list codec interface.
+/// The encode method encodes a posting list and writes it to a WriteBuffer.
+/// The decode method reads an encoded posting list from a ReadBuffer, decodes it, and produces a posting list instance.
 struct IPostingListCodec
 {
 public:
@@ -39,26 +39,13 @@ public:
 
     Type getType() const { return type; }
 
-    /// The `encode splits the posting list into blocks according to posting_list_block_size and encodes each block separately.
-    /// It also collects per-segment metadata into info and returns it to the caller.
-    virtual void encode(const PostingListBuilder & builder, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & wb) const = 0;
+    /// Splits the posting list into posting_list_block_size-large blocks and encodes each block separately.
+    /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
+    virtual void encode(const PostingListBuilder & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
-    /// Reads from a ReadBuffer, decodes the data, and fills the `posting_list.
-    virtual void decode(ReadBuffer & rb, PostingList & posting_list) const = 0;
+    virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
 private:
     Type type;
-};
-
-/// A no-op posting list codec.
-/// Used to represent the "none" codec explicitly (instead of nullptr).
-struct PostingListCodecNone : public IPostingListCodec
-{
-    static const char * getName() { return "none"; }
-
-    PostingListCodecNone() : IPostingListCodec(Type::None) {}
-
-    void encode(const PostingListBuilder &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer &, PostingList &) const override {}
 };
 
 class PostingListCodecFactory : public boost::noncopyable

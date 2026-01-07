@@ -50,6 +50,7 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
+        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
         "contrib/incbin",
@@ -57,7 +58,6 @@ def clone_submodules():
         "contrib/corrosion",
         "contrib/StringZilla",
         "contrib/rust_vendor",
-        "contrib/simdcomp",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
