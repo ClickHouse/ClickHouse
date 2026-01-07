@@ -23,11 +23,16 @@ namespace
 
 UInt8 isValidASCII(const UInt8 * data, UInt64 len)
 {
-    /// https://lemire.me/blog/2025/12/20/performance-trick-optimistic-vs-pessimistic-checks/
-    UInt8 res = 0;
+    if (len == 0)
+        return 1;
+
     for (UInt64 i = 0; i < len; ++i)
-        res |= data[i];
-    return res <= 0x7F;
+    {
+        if (data[i] > 0x7F)
+            return 0;
+    }
+
+    return 1;
 }
 
 }
@@ -130,7 +135,7 @@ private:
 REGISTER_FUNCTION(IsValidASCII)
 {
     factory.registerFunction<DB::FunctionIsValidASCII>(DB::FunctionDocumentation{
-        .description = R"(Returns 1 if the input String or FixedString contains only ASCII bytes (0x00–0x7F), otherwise 0. Optimized for the positive case (the input _is_ valid ASCII).)",
+        .description = R"(Returns 1 if the input String or FixedString contains only ASCII bytes (0x00–0x7F), otherwise 0.)",
         .examples = {{"isValidASCII", "SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii", ""}},
         .introduced_in = {25, 9},
         .category = DB::FunctionDocumentation::Category::String,
