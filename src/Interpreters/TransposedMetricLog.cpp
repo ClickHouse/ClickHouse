@@ -247,16 +247,21 @@ public:
     {
         std::optional<String> additional_name;
         MutableColumnPtr column_for_set = ColumnString::create();
+        CityHash_v1_0_2::uint128 set_hash{};
         for (const auto & column_name : column_names)
         {
             if (column_name.starts_with(TransposedMetricLog::PROFILE_EVENT_PREFIX) || column_name.starts_with(TransposedMetricLog::CURRENT_METRIC_PREFIX))
+            {
                 column_for_set->insertData(column_name.data(), column_name.size());
+                set_hash = CityHash_v1_0_2::CityHash128WithSeed(column_name.data(), column_name.size(), set_hash);
+            }
         }
 
         if (column_for_set->empty())
         {
             additional_name.emplace(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + std::string(ProfileEvents::getName(ProfileEvents::Event(0))));
             column_for_set->insertData(additional_name->data(), additional_name->size());
+            set_hash = CityHash_v1_0_2::CityHash128WithSeed(additional_name->data(), additional_name->size(), set_hash);
         }
 
 
@@ -267,7 +272,7 @@ public:
         SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
         auto in_function = FunctionFactory::instance().get("in", context->getQueryContext());
-        auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, nullptr, set_columns, false, size_limits_for_set);
+        auto future_set = std::make_shared<FutureSetFromTuple>(set_hash, nullptr, set_columns, false, size_limits_for_set);
         auto column_set = ColumnSet::create(1, std::move(future_set));
         ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
 
