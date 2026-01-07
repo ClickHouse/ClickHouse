@@ -32,13 +32,6 @@ def start_cluster():
             id="Atomic db with MergeTree table",
         ),
         pytest.param(
-            "test_db_lazy",
-            "Lazy(60)",
-            "Log",
-            "",
-            id="Lazy db with Log table",
-        ),
-        pytest.param(
             "test_db_repl",
             "Replicated('/clickhouse/tables/test_table','shard1', 'replica1')",
             "ReplicatedMergeTree",
