@@ -1,5 +1,6 @@
 -- Check that skip indexes are logged correctly in scenarios like filtering by single 
 -- and multiple indexed columns, and in JOINs with indexed join key in right table.
+-- Tags: no-parallel-replicas
 SET log_queries = 1;
 DROP TABLE IF EXISTS children;
 CREATE TABLE children (
