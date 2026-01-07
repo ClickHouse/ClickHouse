@@ -1,6 +1,7 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>

@@ -1,0 +1,20 @@
+Expression ((Project names + Projection))
+Header: c0 UInt8
+  Filter (Post Join Actions)
+  Header: __join_result_dummy UInt8
+    Join (JOIN FillRightFirst)
+    Header: __join_result_dummy UInt8
+            __table3.c0 UInt8
+      Expression (Left Pre Join Actions)
+      Header: __join_result_dummy UInt8
+        Expression ((Change column names to column identifiers + (Compute alias columns + (Project names + (Projection + Change column names to column identifiers)))))
+        Header: 
+          ReadFromStorage (SystemOne)
+          Header: dummy UInt8
+      Expression (Right Pre Join Actions)
+      Header: __table3.c0 UInt8
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table3.c0 UInt8
+          ReadFromStorage (SystemOne)
+          Header: dummy UInt8
+1

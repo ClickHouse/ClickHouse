@@ -16,7 +16,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_time64_type;
+    extern const SettingsBool enable_time_time64_type;
     extern const SettingsBool allow_experimental_qbit_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
@@ -40,7 +40,7 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
-    , enable_time_time64_type(settings[Setting::allow_experimental_time_time64_type])
+    , enable_time_time64_type(settings[Setting::enable_time_time64_type])
     , allow_experimental_qbit_type(settings[Setting::allow_experimental_qbit_type])
 {
 }

@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationObject::SerializationObject(
@@ -395,7 +396,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
             const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
             for (size_t i = 0; i != shared_data_paths->size(); ++i)
             {
-                auto path = shared_data_paths->getDataAt(i).toView();
+                auto path = shared_data_paths->getDataAt(i);
                 if (auto it = shared_data_paths_statistics.find(path); it != shared_data_paths_statistics.end())
                     ++it->second;
                 else if (shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -789,7 +790,6 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     const auto & column_object = assert_cast<const ColumnObject &>(column);
-    column_object.validateDynamicPathsSizes();
     const auto & typed_paths = column_object.getTypedPaths();
 
     if (object_state->serialization_version.value == SerializationVersion::FLATTENED)
@@ -816,6 +816,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
+    column_object.validateDynamicPathsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
@@ -864,7 +865,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
         for (size_t i = start; i != end; ++i)
         {
-            auto path = shared_data_paths->getDataAt(i).toView();
+            auto path = shared_data_paths->getDataAt(i);
             if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
                 ++it->second;
             else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -1041,12 +1042,27 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
     }
 
+    size_t shared_data_previous_size = shared_data->size();
     settings.path.push_back(Substream::ObjectSharedData);
     object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(shared_data, rows_offset, limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
 
-    column_object.validateDynamicPathsSizes();
+    /// Verify that all typed paths, dynamic paths and shared data has consistent sizes
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, path_column] : typed_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of typed path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    for (const auto & [path, path_column] : dynamic_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
@@ -1109,7 +1125,7 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     {
         writeStringBinary(shared_data_paths->getDataAt(i), ostr);
         auto value = shared_data_values->getDataAt(i);
-        ostr.write(value.data, value.size);
+        ostr.write(value.data(), value.size());
     }
 }
 
@@ -1118,6 +1134,14 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     Object object;
     size_t number_of_paths;
     readVarUInt(number_of_paths, istr);
+    if (settings.binary.max_object_size && number_of_paths > settings.binary.max_object_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many paths in a single object: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_object_size",
+            number_of_paths,
+            settings.binary.max_object_size);
+
     /// Read pairs (path, value).
     for (size_t i = 0; i != number_of_paths; ++i)
     {
@@ -1319,8 +1343,6 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         if (column->size() == prev_size)
             column->insertDefault();
     }
-
-    column_object.validateDynamicPathsSizes();
 }
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
