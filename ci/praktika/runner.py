@@ -413,7 +413,7 @@ class Runner:
         # The ownership fix below ensures all root-owned files are changed to the current user
         if job.run_in_docker and not no_docker and from_root:
             print(f"--- Fixing file ownership after running docker as root")
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find . -user root -exec chown $(id -u):$(id -g) {{}} +'"
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown $(id -u):$(id -g) {{}} +'"
             print(f"--- Run ownership fix command [{chown_cmd}]")
             Shell.check(chown_cmd, verbose=True)
 
