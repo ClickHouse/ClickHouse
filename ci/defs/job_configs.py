@@ -1,7 +1,7 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.defs import LLVM_ARTIFACTS_LIST, ArtifactConfigs, ArtifactNames, BuildTypes, JobNames, RunnerLabels
+from ci.defs.defs import LLVM_ARTIFACTS_LIST, LLVM_FT_NUM_BATCHES, LLVM_IT_NUM_BATCHES, ArtifactConfigs, ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
@@ -606,7 +606,7 @@ class JobConfigs:
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
             )
-            for total_batches in (8,)
+            for total_batches in (LLVM_FT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -818,7 +818,7 @@ class JobConfigs:
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],
             )
-            for total_batches in (5,)
+            for total_batches in (LLVM_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         )

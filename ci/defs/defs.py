@@ -364,9 +364,9 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_LLVM_COVERAGE_BUILD = "CH_AMD_LLVM_COVERAGE_BUILD" # this is llvm coverage!!
-    LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # this is llvm coverage!!
-    LLVM_COVERAGE_HTML_REPORT = "LLVM_COVERAGE_HTML_REPORT"
+    CH_AMD_LLVM_COVERAGE_BUILD = "CH_AMD_LLVM_COVERAGE_BUILD" # build with LLVM coverage enabled
+    LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
+    LLVM_COVERAGE_HTML_REPORT = "LLVM_COVERAGE_HTML_REPORT" # .tar.gz file with html report
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
@@ -416,17 +416,19 @@ class ArtifactNames:
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
+LLVM_FT_NUM_BATCHES = 3
+LLVM_IT_NUM_BATCHES = 5
 LLVM_FT_ARTIFACTS_LIST = [
-        # defualt.profraw files for 8 batches from Stateless(Functional) tests
+        # defualt.profraw files for 3 batches from Stateless(Functional) tests
         ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
-        for total_batches in (8,)
+        for total_batches in (LLVM_FT_NUM_BATCHES,)
         for batch in range(1, total_batches + 1)
     ] 
 
 LLVM_IT_ARTIFACTS_LIST = [
         # defualt.profraw files for 5 batches from Integration tests
         ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
-        for total_batches in (5,)
+        for total_batches in (LLVM_IT_NUM_BATCHES,)
         for batch in range(1, total_batches + 1)
     ] 
 LLVM_ARTIFACTS_LIST = LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]

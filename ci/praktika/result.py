@@ -321,11 +321,6 @@ class Result(MetaClasses.Serializable):
         else:
             self.ext["labels"].append(label)
         return self
-    
-    def has_label(self, label):
-        if not self.ext.get("labels", None):
-            return False
-        return label in self.ext["labels"]
 
     def remove_label(self, label):
         if not self.ext.get("labels", None):
@@ -584,7 +579,6 @@ class Result(MetaClasses.Serializable):
         :return: Result
         """
 
-        # run just small subset of tests for faster feedback during PRs
         command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
         if command_launcher:
             command = f"{command_launcher} {command}"

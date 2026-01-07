@@ -1325,7 +1325,8 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
     r1 = node1.is_built_with_llvm_coverage()
     r2 = node2.is_built_with_llvm_coverage()
     print(f"Node1 llvm_coverage={r1}, Node2 llvm_coverage={r2}")
-    pytest.skip("Flaky under llvm_coverage")
+    if r1 or r2:
+        pytest.skip("Flaky under llvm_coverage")
     
     try:
         node1.query_with_retry(

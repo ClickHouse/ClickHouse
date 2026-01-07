@@ -221,6 +221,7 @@ def main():
         runner_options += f" --jobs {nproc}"
 
     if is_llvm_coverage:
+        # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
 
     rerun_count = 1

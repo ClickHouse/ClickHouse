@@ -11,7 +11,7 @@ if __name__ == "__main__":
     
     result = Result.from_commands_run(
         name="Merge LLVM Coverage",
-        command=["bash ci/jobs/merge_llvm_coverage.sh"],
+        command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
     
     # Compress coverage artifacts
@@ -25,6 +25,5 @@ if __name__ == "__main__":
     
     Result.create_from(
         results=[result],
-        files=[f"{temp_dir}/llvm_coverage_html_report.tar.gz"],
         info="LLVM Coverage Merge Job Completed",
     ).complete_job()
