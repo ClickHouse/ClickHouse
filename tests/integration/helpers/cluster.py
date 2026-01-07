@@ -3967,11 +3967,12 @@ class ClickHouseCluster:
                         failure_logs.append(msg)
                         logging.error(msg)
 
-                    fatal_log = instance.grep_in_log("Fatal", from_host=True)
-                    if fatal_log and "Child process was terminated by signal 9 (KILL)" not in fatal_log:
-                         msg = f"Crash in instance {name}:\n{fatal_log}"
-                         failure_logs.append(msg)
-                         logging.error(msg)
+                    if instance.contains_in_log("<Fatal>", from_host=True):
+                        fatal_log = instance.grep_in_log("<Fatal>", from_host=True)
+                        if fatal_log and "Child process was terminated by signal 9 (KILL)" not in fatal_log:
+                             msg = f"Crash in instance {name}:\n{fatal_log}"
+                             failure_logs.append(msg)
+                             logging.error(msg)
 
             try:
                 subprocess_check_call(self.base_cmd + ["down", "--volumes"])
