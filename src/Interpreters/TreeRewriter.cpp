@@ -646,7 +646,7 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
     if (eval_res.isNull())
         return false;
 
-    UInt8 res = eval_res.template safeGet<UInt8>();
+    auto res = eval_res.template safeGet<UInt8>();
     return res > 0;
 }
 

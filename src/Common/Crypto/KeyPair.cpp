@@ -62,7 +62,7 @@ KeyPair KeyPair::fromPEMString(const std::string & pem, const std::string & pass
 
 KeyPair KeyPair::fromPEMString(const std::string_view & pem, const std::string & password)
 {
-    BIO_ptr pem_bio(BIO_new_mem_buf(pem.data(), pem.length()), BIO_free);
+    BIO_ptr pem_bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.length())), BIO_free);
 
     if (!pem_bio)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
@@ -96,7 +96,7 @@ KeyPair KeyPair::fromBuffer(const std::string & buffer, const std::string & pass
 
     /// Try to load a private key.
     {
-        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), static_cast<int>(buffer.size())), BIO_free);
 
         if (!bio_buffer)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
@@ -107,7 +107,7 @@ KeyPair KeyPair::fromBuffer(const std::string & buffer, const std::string & pass
     /// Maybe it is a public key.
     if (!key)
     {
-        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), static_cast<int>(buffer.size())), BIO_free);
 
         if (!bio_buffer)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());

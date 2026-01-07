@@ -197,7 +197,7 @@ Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArra
     FixedImplicitZeroHashMapWithCalculatedSize<UInt8, StatePtr> map;
 
     for (size_t i = 0; i < 256; ++i)
-        map[i] = new (arena.alloc<State>()) State();
+        map[static_cast<UInt8>(i)] = new (arena.alloc<State>()) State();
 
     size_t size = keys.size();
     for (size_t i = 0; i < size; ++i)
@@ -560,7 +560,7 @@ int main(int argc, char ** argv)
     /// Fill source data
     for (size_t i = 0; i < size; ++i)
     {
-        keys[i] = std::countr_zero(i + 1); /// Make keys to have just slightly more realistic distribution.
+        keys[i] = static_cast<UInt8>(std::countr_zero(i + 1)); /// Make keys to have just slightly more realistic distribution.
         values[i] = 1234.5; /// The distribution of values does not affect execution speed.
     }
 

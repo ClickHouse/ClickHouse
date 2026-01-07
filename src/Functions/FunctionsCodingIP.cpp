@@ -634,17 +634,17 @@ public:
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
         /// Higher two bytes in UInt64 are just ignored.
 
-        writeHexByteUppercase(mac >> 40, &out[0]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 40), &out[0]);
         out[2] = ':';
-        writeHexByteUppercase(mac >> 32, &out[3]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 32), &out[3]);
         out[5] = ':';
-        writeHexByteUppercase(mac >> 24, &out[6]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 24), &out[6]);
         out[8] = ':';
-        writeHexByteUppercase(mac >> 16, &out[9]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 16), &out[9]);
         out[11] = ':';
-        writeHexByteUppercase(mac >> 8, &out[12]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 8), &out[12]);
         out[14] = ':';
-        writeHexByteUppercase(mac, &out[15]);
+        writeHexByteUppercase(static_cast<UInt8>(mac), &out[15]);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

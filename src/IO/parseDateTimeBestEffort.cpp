@@ -197,7 +197,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    fractional->digits = static_cast<UInt8>(readDigits(digits, sizeof(digits), in));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
@@ -212,7 +212,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    fractional->digits = static_cast<UInt8>(readDigits(digits, sizeof(digits), in));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
@@ -530,7 +530,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     // fit into result type. To provide less precise value rather than bogus one.
                     num_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
 
-                    fractional->digits = num_digits;
+                    fractional->digits = static_cast<UInt8>(num_digits);
                     readDecimalNumber(fractional->value, num_digits, digits);
                 }
                 else if (strict)

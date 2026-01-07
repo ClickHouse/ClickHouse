@@ -204,7 +204,7 @@ public:
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 else
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(0);
+                to_concrete.getNullMapData().push_back(false);
             }
             else
             {

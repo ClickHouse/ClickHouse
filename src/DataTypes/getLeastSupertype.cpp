@@ -628,7 +628,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     if (scale >= max_scale)
                     {
                         max_scale_date_time_index = i;
-                        max_scale = scale;
+                        max_scale = static_cast<UInt8>(scale);
                     }
                 }
             }
@@ -670,7 +670,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     if (scale >= max_scale)
                     {
                         max_scale_time64_index = i;
-                        max_scale = scale;
+                        max_scale = static_cast<UInt8>(scale);
                     }
                 }
             }

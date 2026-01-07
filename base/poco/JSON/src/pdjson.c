@@ -176,7 +176,7 @@ static int pushchar(json_stream *json, int c)
             json->data.string = buffer;
         }
     }
-    json->data.string[json->data.string_fill++] = c;
+    json->data.string[json->data.string_fill++] = (char)c;
     return 0;
 }
 

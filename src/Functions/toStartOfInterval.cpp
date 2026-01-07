@@ -283,15 +283,27 @@ private:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(
+                    assert_cast<const DataTypeDateTime64 &>(time_column_type),
+                    *time_column_vec,
+                    interval_column,
+                    origin_column,
+                    result_type,
+                    time_zone,
+                    static_cast<UInt16>(scale));
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
-        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
-        const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
+        const TimeDataType & time_data_type,
+        const TimeColumnType & time_column,
+        const ColumnWithTypeAndName & interval_column,
+        const ColumnWithTypeAndName & origin_column,
+        const DataTypePtr & result_type,
+        const DateLUTImpl & time_zone,
+        UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -413,7 +425,8 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
+                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
+                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
             }
         }
         else // Overload: Default

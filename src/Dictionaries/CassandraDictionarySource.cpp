@@ -64,7 +64,7 @@ CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
-    , port(config.getUInt(config_prefix + ".port", 0))
+    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", 0)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
     , db(config.getString(config_prefix + ".keyspace"))

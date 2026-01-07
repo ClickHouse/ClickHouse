@@ -2601,12 +2601,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, true);
                 return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
             else if (result_type->isNullable())
             {
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);

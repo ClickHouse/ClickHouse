@@ -36,8 +36,8 @@ struct DecimalOpHelpers
      */
     static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
-        UInt16 const len1 = num1.size();
-        UInt16 const len2 = num2.size();
+        const auto len1 = static_cast<UInt16>(num1.size());
+        const auto len2 = static_cast<UInt16>(num2.size());
         if (len1 == 0 || len2 == 0)
             return {0};
 
@@ -194,9 +194,9 @@ struct DecimalArithmeticsImpl
         using SecondArgColumnType = typename SecondArgType::ColumnType;
         using ResultColumnType = typename ResultType::ColumnType;
 
-        UInt16 scale_a = getDecimalScale(*arguments[0].type);
-        UInt16 scale_b = getDecimalScale(*arguments[1].type);
-        UInt16 result_scale = getDecimalScale(*result_type->getPtr());
+        auto scale_a = static_cast<UInt16>(getDecimalScale(*arguments[0].type));
+        auto scale_b = static_cast<UInt16>(getDecimalScale(*arguments[1].type));
+        auto result_scale = static_cast<UInt16>(getDecimalScale(*result_type->getPtr()));
 
         auto op = Processor<ResultType, Transform>{std::move(transform)};
 
@@ -255,7 +255,8 @@ public:
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for {} function must be Decimal", getName());
 
-        UInt8 scale = std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
+        auto scale
+            = static_cast<UInt8>(std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr())));
 
         if (arguments.size() == 3)
         {

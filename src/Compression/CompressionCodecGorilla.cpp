@@ -192,8 +192,8 @@ BinaryValueInfo getBinaryValueInfo(const T & value)
 {
     constexpr UInt8 bit_size = sizeof(T) * 8;
 
-    const UInt8 lz = getLeadingZeroBits(value);
-    const UInt8 tz = getTrailingZeroBits(value);
+    const UInt8 lz = static_cast<UInt8>(getLeadingZeroBits(value));
+    const UInt8 tz = static_cast<UInt8>(getTrailingZeroBits(value));
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
 
     return {lz, data_size, tz};
@@ -316,8 +316,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
             if (reader.readBit() == 1)
             {
                 // 0b11 prefix
-                curr_xored_info.leading_zero_bits = reader.readBits(LEADING_ZEROES_BIT_LENGTH);
-                curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
+                curr_xored_info.leading_zero_bits = static_cast<UInt8>(reader.readBits(LEADING_ZEROES_BIT_LENGTH));
+                curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
             }
             // else: 0b10 prefix - use prev_xored_info

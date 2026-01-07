@@ -134,7 +134,7 @@ namespace DB
             {
                 ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
                 insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
-                column_nullable.getNullMapData().emplace_back(0);
+                column_nullable.getNullMapData().emplace_back(false);
             }
             else
                 insertValue(*columns[idx], description.types[idx].first, value);

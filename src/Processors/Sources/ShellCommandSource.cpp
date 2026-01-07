@@ -120,7 +120,7 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 {
     pollfd pfd;
     pfd.fd = fd;
-    pfd.events = events;
+    pfd.events = static_cast<short>(events);
     pfd.revents = 0;
 
     return pollWithTimeout(&pfd, 1, timeout_milliseconds) > 0;

@@ -111,7 +111,7 @@ X509Certificate::List X509Certificate::fromFile(const std::string & path)
 
 X509Certificate::List X509Certificate::fromBuffer(const std::string & buffer)
 {
-    BIO_ptr bio(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+    BIO_ptr bio(BIO_new_mem_buf(buffer.c_str(), static_cast<int>(buffer.size())), BIO_free);
     if (!bio)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
 
@@ -300,8 +300,8 @@ X509Certificate::Subjects X509Certificate::extractAllSubjects()
         return subjects;
 
     const auto * names = reinterpret_cast<const STACK_OF(GENERAL_NAME) *>(cert_names.get());
-    uint8_t count = OPENSSL_sk_num(reinterpret_cast<const _STACK *>(names));
-    for (uint8_t i = 0; i < count; ++i)
+    int count = OPENSSL_sk_num(reinterpret_cast<const _STACK *>(names));
+    for (int i = 0; i < count; ++i)
     {
         const GENERAL_NAME * name = static_cast<const GENERAL_NAME *>(OPENSSL_sk_value(reinterpret_cast<const _STACK *>(names), i));
 

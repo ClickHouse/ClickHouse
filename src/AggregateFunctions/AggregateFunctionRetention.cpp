@@ -102,7 +102,7 @@ public:
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
-                data(place).add(i);
+                data(place).add(static_cast<UInt8>(i));
             }
         }
     }

@@ -578,13 +578,13 @@ void Server::createServer(
     auto port = config.getInt(port_name);
     try
     {
-        servers.push_back(func(port));
+        servers.push_back(func(static_cast<UInt16>(port)));
         if (start_server)
         {
             servers.back().start();
             LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
         }
-        global_context->registerServerPort(port_name, port);
+        global_context->registerServerPort(port_name, static_cast<UInt16>(port));
     }
     catch (const Poco::Exception &)
     {
@@ -1856,7 +1856,7 @@ try
             if (port < 0 || port > 0xFFFF)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
-            global_context->setInterserverIOAddress(this_host, port);
+            global_context->setInterserverIOAddress(this_host, static_cast<UInt16>(port));
             global_context->setInterserverScheme(scheme);
         }
     }

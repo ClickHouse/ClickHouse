@@ -62,7 +62,7 @@ namespace detail
             if (unlikely(x > BIG_THRESHOLD))
                 x = BIG_THRESHOLD;
 
-            elems[count] = x;
+            elems[count] = static_cast<UInt16>(x);
             ++count;
         }
 
@@ -154,7 +154,7 @@ namespace detail
             if (unlikely(x > BIG_THRESHOLD))
                 x = BIG_THRESHOLD;
 
-            elems.emplace_back(x);
+            elems.emplace_back(static_cast<UInt16>(x));
         }
 
         void merge(const QuantileTimingMedium & rhs)
@@ -264,8 +264,9 @@ namespace detail
         /// Get value of quantile by index in array `count_big`.
         static UInt16 indexInBigToValue(size_t i)
         {
-            return (i * BIG_PRECISION) + SMALL_THRESHOLD
-                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
+            return static_cast<UInt16>(
+                (i * BIG_PRECISION) + SMALL_THRESHOLD
+                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2)));    /// A small randomization so that it is not noticeable that all the values are even.
         }
 
         /// Lets you scroll through the histogram values, skipping zeros.
@@ -302,7 +303,7 @@ namespace detail
             UInt16 key() const
             {
                 return pos - begin < SMALL_THRESHOLD
-                    ? pos - begin
+                    ? static_cast<UInt16>(pos - begin)
                     : indexInBigToValue(pos - begin - SMALL_THRESHOLD);
             }
         };

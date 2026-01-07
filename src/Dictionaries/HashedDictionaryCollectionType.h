@@ -137,7 +137,7 @@ public:
         {
             /// Slightly more optimal than HashTableGrowerWithPrecalculation
             /// and takes into account max_load_factor.
-            size_degree = static_cast<size_t>(log2(num_elems - 1)) + 1;
+            size_degree = static_cast<UInt8>(static_cast<size_t>(log2(num_elems - 1)) + 1);
             if ((1ULL << size_degree) * max_load_factor < num_elems)
                 ++size_degree;
         }
@@ -146,7 +146,7 @@ public:
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        size_degree = static_cast<UInt8>(static_cast<size_t>(log2(buf_size_ - 1) + 1));
         increaseSizeDegree(0);
     }
 };

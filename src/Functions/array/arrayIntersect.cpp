@@ -662,7 +662,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(1);
+                null_map.push_back(true);
                 null_added = true;
             }
         }
@@ -679,7 +679,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(1);
+                null_map.push_back(true);
                 null_added = true;
             }
         }
@@ -699,7 +699,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     {
                         ++result_offset;
                         result_data.insertDefault();
-                        null_map.push_back(1);
+                        null_map.push_back(true);
                         null_added = true;
                     }
                     if (null_added)
@@ -758,7 +758,7 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
         result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)
-        null_map.push_back(0);
+        null_map.push_back(false);
 }
 
 

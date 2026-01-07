@@ -84,12 +84,6 @@ struct NgramDistanceImpl
 #endif
     }
 
-    template <size_t Offset, class Container, size_t... I>
-    static ALWAYS_INLINE inline void unrollLowering(Container & cont, const std::index_sequence<I...> &)
-    {
-        ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
-    }
-
     static size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
     {
         /// Offset before which we copy some data.
@@ -111,8 +105,10 @@ struct NgramDistanceImpl
         {
             /// Due to PODArray padding accessing more elements should be OK
             __msan_unpoison(code_points + (N - 1), padding_offset * sizeof(CodePoint));
-            /// We really need template lambdas with C++20 to do it inline
-            unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
+            [&]<size_t... I>(std::index_sequence<I...>)
+            {
+                ((code_points[N - 1 + I] = static_cast<CodePoint>(std::tolower(code_points[N - 1 + I]))), ...);
+            }(std::make_index_sequence<padding_offset>());
         }
         pos += padding_offset;
         if (pos > end)

@@ -292,7 +292,7 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        size_t res = -1U;
+        size_t res = static_cast<size_t>(-1U);
 
         do
         {

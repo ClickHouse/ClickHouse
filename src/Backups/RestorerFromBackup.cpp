@@ -77,7 +77,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = std::toupper(str[0]);
+            str[0] = static_cast<char>(std::toupper(str[0]));
         return str;
     }
 

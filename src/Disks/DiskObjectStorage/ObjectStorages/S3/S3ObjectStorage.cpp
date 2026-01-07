@@ -280,7 +280,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
-        request.SetMaxKeys(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]);
+        request.SetMaxKeys(static_cast<int>(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]));
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do

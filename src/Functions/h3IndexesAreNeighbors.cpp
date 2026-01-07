@@ -97,7 +97,7 @@ public:
             const UInt64 hindex_origin = data_hindex_origin[row];
             const UInt64 hindex_dest = data_hindex_dest[row];
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            auto res = static_cast<UInt8>(areNeighborCells(hindex_origin, hindex_dest));
 
             dst_data[row] = res;
         }

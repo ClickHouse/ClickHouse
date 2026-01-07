@@ -250,12 +250,12 @@ public:
 
         if (rows_count && current_hour == -1)
         {
-            current_hour = hour_column.getInt(0);
+            current_hour = static_cast<Int32>(hour_column.getInt(0));
         }
 
         for (size_t i = 0; i < rows_count; ++i)
         {
-            Int32 hour = hour_column.getInt(i);
+            Int32 hour = static_cast<Int32>(hour_column.getInt(i));
             if (hour != current_hour)
             {
                 flushToChunk();
@@ -270,11 +270,11 @@ public:
             auto second_in_hour = time - hour;
             max_second_in_hour = std::max<Int64>(second_in_hour, max_second_in_hour);
             min_second_in_hour = std::min<Int64>(second_in_hour, min_second_in_hour);
-            times[second_in_hour] = time;
+            times[second_in_hour] = static_cast<UInt32>(time);
             filter[second_in_hour] = 1;
 
             if (need_date)
-                dates[second_in_hour] = date_column.getUInt(i);
+                dates[second_in_hour] = static_cast<UInt16>(date_column.getUInt(i));
 
             if (need_hostname)
                 hostnames[second_in_hour] = hostname_column.getDataAt(i);

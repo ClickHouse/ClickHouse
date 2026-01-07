@@ -670,7 +670,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     Block evaluated = structure->literals.cloneWithColumns(std::move(columns));
     columns = structure->literals.cloneEmptyColumns();
     if (!structure->literals.columns())
-        evaluated.insert({ColumnConst::create(ColumnUInt8::create(1, 0), rows_count), std::make_shared<DataTypeUInt8>(), "_dummy"});
+        evaluated.insert({ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows_count), std::make_shared<DataTypeUInt8>(), "_dummy"});
     structure->actions_on_literals->execute(evaluated);
 
     if (evaluated.empty() || evaluated.rows() != rows_count)

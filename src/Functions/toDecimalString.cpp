@@ -229,7 +229,7 @@ private:
 
             if (from_col)
             {
-                UInt8 from_scale = from_col->getScale();
+                UInt8 from_scale = static_cast<UInt8>(from_col->getScale());
                 if (precision_col_const)
                     vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets, from_scale, input_rows_count);
                 else if (precision_col)

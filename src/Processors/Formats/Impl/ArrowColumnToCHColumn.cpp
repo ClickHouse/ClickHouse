@@ -506,7 +506,7 @@ static ColumnWithTypeAndName readColumnWithDecimalData(const std::shared_ptr<arr
 static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column)
 {
     if (!arrow_column->null_count())
-        return ColumnUInt8::create(arrow_column->length(), 0);
+        return ColumnUInt8::create(arrow_column->length(), static_cast<UInt8>(0));
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -682,15 +682,15 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         ///     indexes: [1, 2, 1]
         /// LowCardinality(Nullable):
         ///     dict: [null, "", "one", "two"]
-        ///     indexes: [2, 3, 2]
+        ///     indexes: [2, 3, 2]`
         else if (default_value_index == -1)
         {
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
                 if (chunk->IsNull(i))
-                    column_data.push_back(0);
+                    column_data.push_back(static_cast<NumericType>(0));
                 else
-                    column_data.push_back(data[i] + shift);
+                    column_data.push_back(static_cast<NumericType>(data[i] + shift));
             }
         }
         /// If dictionary contains default value, we change all indexes of it to
@@ -716,7 +716,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
                 if (chunk->IsNull(i))
-                    column_data.push_back(0);
+                    column_data.push_back(static_cast<NumericType>(0));
                 else
                 {
                     NumericType value = data[i];

@@ -427,7 +427,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
             {
                 /// It's well defined for unsigned data types.
                 /// In contrast, it's undefined to do negation of the most negative signed number due to overflow.
-                double_delta = -double_delta;
+                double_delta = static_cast<UnsignedDeltaType>(-double_delta);
             }
         }
 

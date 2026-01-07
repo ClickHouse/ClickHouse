@@ -214,7 +214,7 @@ struct ByteJaccardIndexImpl
                 else
                     ++rit;
             }
-            union_size = haystack_utf8_set.size() + needle_utf8_set.size() - intersection;
+            union_size = static_cast<UInt8>(haystack_utf8_set.size() + needle_utf8_set.size() - intersection);
         }
 
         for (size_t i = 0; i < max_size; ++i)

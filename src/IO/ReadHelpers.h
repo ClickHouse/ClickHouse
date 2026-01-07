@@ -570,7 +570,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             month = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
-                month = month * 10 + pos[1] - '0';
+                month = static_cast<UInt8>(month * 10 + pos[1] - '0');
                 pos += 3;
             }
             else
@@ -585,7 +585,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             day = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
-                day = day * 10 + pos[1] - '0';
+                day = static_cast<UInt8>(day * 10 + pos[1] - '0');
                 pos += 2;
             }
             else
@@ -601,20 +601,20 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (unlikely(from < 0))
+    if (from < 0) [[unlikely]]
         date = 0;
-    else if (unlikely(from > 0xFFFF))
+    else if (from > 0xFFFF) [[unlikely]]
         date = 0xFFFF;
     else
-        date = from;
+        date = static_cast<UInt16>(from);
 }
 
 inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (unlikely(from < 0 || from > 0xFFFF))
+    if (from < 0 || from > 0xFFFF) [[unlikely]]
         return false;
 
-    date = from;
+    date = static_cast<UInt16>(from);
     return true;
 }
 

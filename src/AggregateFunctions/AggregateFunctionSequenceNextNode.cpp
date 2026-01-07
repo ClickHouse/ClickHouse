@@ -206,7 +206,7 @@ public:
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
         , data_type(this->argument_types[0])
-        , events_size(arguments.size() - min_required_args)
+        , events_size(static_cast<UInt8>(arguments.size() - min_required_args))
         , max_elems(max_elems_)
     {
     }
@@ -429,7 +429,7 @@ public:
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             value[event_idx]->insertInto(to_concrete.getNestedColumn());
-            to_concrete.getNullMapData().push_back(0);
+            to_concrete.getNullMapData().push_back(false);
         }
         else
         {

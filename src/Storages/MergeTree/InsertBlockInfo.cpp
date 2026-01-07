@@ -80,7 +80,7 @@ void AsyncInsertBlockInfo::filterBlockDuplicate(const BlockIDsType & block_paths
 
     /// construct filter
     size_t rows = current_block_with_partition->block.rows();
-    auto filter_col = ColumnUInt8::create(rows, 1u);
+    auto filter_col = ColumnUInt8::create(rows, static_cast<UInt8>(1));
     ColumnUInt8::Container & vec = filter_col->getData();
     UInt8 * pos = vec.data();
     for (auto & offset : offsets)

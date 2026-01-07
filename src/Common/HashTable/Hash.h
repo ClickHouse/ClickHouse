@@ -182,7 +182,7 @@ inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_va
                 UNREACHABLE();
         }
 
-        reinterpret_cast<unsigned char *>(&value)[7] = size;
+        reinterpret_cast<unsigned char *>(&value)[7] = static_cast<unsigned char>(size);
         return static_cast<UInt32>(intHashCRC32(value, updated_value));
     }
 
@@ -199,7 +199,7 @@ inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_va
     {
         /// If string size is not divisible by 8.
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
-        UInt8 tail_size = end - pos;
+        UInt8 tail_size = static_cast<UInt8>(end - pos);
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
         auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.

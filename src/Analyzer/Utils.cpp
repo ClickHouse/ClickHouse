@@ -368,7 +368,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     if (value.isNull())
         return false;
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
+    auto predicate_value = static_cast<UInt8>(value.safeGet<UInt8>());
     return predicate_value > 0;
 }
 

@@ -94,7 +94,7 @@ public:
 
         ColumnUInt8::MutablePtr col_null_map;
         if constexpr (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, 0);
+            col_null_map = ColumnUInt8::create(input_rows_count, false);
 
         auto & res_data = col_res->getData();
 

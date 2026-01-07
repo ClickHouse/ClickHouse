@@ -654,7 +654,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     auto size = x.size();
 
     if (impl.hasEmptyBound())
-        return ColumnVector<UInt8>::create(size, 0);
+        return ColumnVector<UInt8>::create(size, static_cast<UInt8>(0));
 
     auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();

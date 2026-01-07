@@ -1003,7 +1003,7 @@ namespace
             {
                 auto & nested_column = nullable_column.getNestedColumn();
                 nested_serializer->readRow(nested_column, struct_reader, nested_slot_offset);
-                nullable_column.getNullMapData().push_back(0);
+                nullable_column.getNullMapData().push_back(false);
             }
         }
 

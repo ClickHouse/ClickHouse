@@ -184,7 +184,7 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
     DataLake::ICatalog::Namespaces result;
     Aws::Glue::Model::GetDatabasesRequest request;
     if (limit != 0)
-        request.SetMaxResults(limit);
+        request.SetMaxResults(static_cast<int>(limit));
 
     LOG_TEST(log, "Getting databases for prefix '{}'", prefix);
     std::string next_token;
@@ -229,7 +229,7 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     Aws::Glue::Model::GetTablesRequest request;
     request.SetDatabaseName(db_name);
     if (limit != 0)
-        request.SetMaxResults(limit);
+        request.SetMaxResults(static_cast<int>(limit));
 
     std::string next_token;
     do

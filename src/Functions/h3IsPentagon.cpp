@@ -76,7 +76,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            UInt8 res = isPentagon(data[row]);
+            auto res = static_cast<UInt8>(isPentagon(data[row]));
             dst_data[row] = res;
         }
         return dst;

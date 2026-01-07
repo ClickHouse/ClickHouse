@@ -248,7 +248,7 @@ struct TimeWindowImpl<TUMBLE>
         for (size_t i = 0; i != input_rows_count; ++i)
         {
             start_data[i] = ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone);
-            end_data[i] = AddTime<unit>::execute(start_data[i], num_units, time_zone);
+            end_data[i] = static_cast<ToType>(AddTime<unit>::execute(start_data[i], num_units, time_zone));
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
@@ -448,8 +448,8 @@ struct TimeWindowImpl<HOP>
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
-            ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
-            wstart = AddTime<kind>::execute(wend, -window_num_units, time_zone);
+            ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
+            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
             ToType wend_latest;
 
             if (wstart > wend)
@@ -458,11 +458,11 @@ struct TimeWindowImpl<HOP>
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -hop_num_units, time_zone);
+                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
-            start_data[i] = AddTime<kind>::execute(wend_latest, -window_num_units, time_zone);
+            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, -window_num_units, time_zone));
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
@@ -583,7 +583,7 @@ struct TimeWindowImpl<WINDOW_ID>
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
-            ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
+            ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
             ToType wend_latest;
 
             if (wstart > wend)
@@ -592,7 +592,7 @@ struct TimeWindowImpl<WINDOW_ID>
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -gcd_num_units, time_zone);
+                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -gcd_num_units, time_zone));
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
