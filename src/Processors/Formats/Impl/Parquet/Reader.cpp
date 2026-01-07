@@ -691,7 +691,7 @@ void Reader::preparePrewhere()
     }
 
     /// Look up expression inputs in extended_sample_block.
-    std::unordered_set<size_t> seen_prewhere_outputs;    
+    std::unordered_set<size_t> seen_prewhere_outputs;
     for (size_t step_idx = 0; step_idx < prewhere_expr_info.steps.size(); ++step_idx)
     {
         const auto & prewhere_step = prewhere_expr_info.steps[step_idx];
@@ -704,18 +704,12 @@ void Reader::preparePrewhere()
             step.actions = std::move(*prewhere_step->actions->clone());
         step.result_column_name = prewhere_step->filter_column_name;
         step.need_filter = prewhere_step->need_filter;
-        
+
         if (!prewhere_step->remove_filter_column)
         {
-            size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
-            const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
-            if (output_idx.has_value())
-            {
-                OutputColumnInfo & output_info = output_columns[output_idx.value()];
-                output_info.use_prewhere = true;
             step.idx_in_output_block = sample_block->getPositionByName(prewhere_step->filter_column_name);
         }
-        
+
         if (step.actions.has_value())
         {
             for (const auto & col : step.actions->getRequiredColumnsWithTypes())
@@ -735,14 +729,8 @@ void Reader::preparePrewhere()
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
                 step.input_column_idxs.push_back(output_idx.value());
-
+                step.input_idxs.push_back(idx_in_output_block);
             }
-            else
-            {
-                if (!seen_prewhere_outputs.contains(idx_in_output_block))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
-            }
-            step.input_idxs.push_back(idx_in_output_block);
         }
         if (step.idx_in_output_block.has_value())
         {
@@ -750,6 +738,7 @@ void Reader::preparePrewhere()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate PREWHERE output column: {}", extended_sample_block.getByPosition(*step.idx_in_output_block).name);
             seen_prewhere_outputs.insert(*step.idx_in_output_block);
         }
+        steps.push_back(std::move(step));
     }
 
     /// Assert that sample_block_to_output_columns_idx is valid.
@@ -760,8 +749,6 @@ void Reader::preparePrewhere()
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
         }
-        
-        steps.push_back(std::move(step));
     }
 }
 
