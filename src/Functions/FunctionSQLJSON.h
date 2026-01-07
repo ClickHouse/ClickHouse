@@ -221,7 +221,7 @@ public:
                     for (size_t i = 0; i < tuple_column->tupleSize(); ++i)
                     {
                         const auto* path_column = checkAndGetColumn<ColumnString>(tuple_column->getColumnPtr(i).get());
-                        String path = path_column->getDataAt(0).toString();
+                        std::string_view path = path_column->getDataAt(0);
                         generator_json_paths.emplace_back(parse_json_path(path));
                     }
                 }
@@ -231,7 +231,7 @@ public:
                     size_t path_size = array_column->getOffsetsPtr()->get64(0);
                     for (size_t i = 0; i < path_size; ++i)
                     {
-                        String path = path_column->getDataAt(i).toString();
+                        std::string_view path = path_column->getDataAt(i);
                         generator_json_paths.emplace_back(parse_json_path(path));
                     }
                 }
