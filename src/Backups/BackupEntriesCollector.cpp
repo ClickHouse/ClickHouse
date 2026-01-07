@@ -814,8 +814,12 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
                 return false;
 
             const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-            const auto & create_query = info.create_table_query->template as<const ASTCreateQuery &>();
-            bool append = create_query.refresh_strategy && create_query.refresh_strategy->append;
+            bool append = false;
+            if (const auto & metadata = table->getInMemoryMetadataPtr())
+            {
+                const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<const ASTRefreshStrategy>() : nullptr;
+                append = refresh_strategy && refresh_strategy->append;
+            }
             return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
         };
 
