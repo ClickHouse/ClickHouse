@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas, no-async-insert
 
 --- GitHub issue 56144 
 --- Tests number values of enum are validated during insertion.
