@@ -101,6 +101,7 @@ public:
 private:
     std::unique_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
+    ContextPtr local_context;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;

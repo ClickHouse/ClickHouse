@@ -81,10 +81,6 @@ struct ManifestFileEntry : public boost::noncopyable
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
-    // Resolved storage and key (set by SingleThreadIcebergKeysIterator)
-    ObjectStoragePtr storage_to_use;
-    String resolved_key;
-
     // Constructor
     ManifestFileEntry(
         const String& file_path_from_metadata_,
