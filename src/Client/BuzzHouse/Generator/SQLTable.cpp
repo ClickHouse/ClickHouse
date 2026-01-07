@@ -1974,10 +1974,6 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
         {
             generateHotTableSettingsValues(rg, false, svs);
         }
-        if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
-        {
-            generateSettingValues(rg, serverSettings, svs);
-        }
     }
     to_add.insert(pname);
 }
