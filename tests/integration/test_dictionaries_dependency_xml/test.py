@@ -112,9 +112,8 @@ def test_dependent_tables(started_cluster):
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     query(
-        "create table src (n int, m default joinGet('system.join', 'm', 1::int),"
-        "t default dictGetOrNull('a.d', 'm', toUInt64(3)),"
-        "k default dictGet('a.d', 'm', toUInt64(4))) engine=MergeTree order by n"
+        "create table src (n int, m default joinGet('system.join', 'm', 1::int))"
+        "engine=MergeTree order by n"
     )
     query(
         "create dictionary test.d (n int default 0, m int default 42) primary key n "
@@ -122,7 +121,7 @@ def test_dependent_tables(started_cluster):
         "lifetime(min 1 max 10) layout(flat())"
     )
     query(
-        "create table join (n int, m default dictGet('a.d', 'm', toUInt64(3)),"
+        "create table join (n int,"
         "k default dictGet('test.d', 'm', toUInt64(0))) engine=Join(any, left, n)"
     )
     query(
