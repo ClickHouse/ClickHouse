@@ -406,6 +406,20 @@ class Runner:
                     ).set_info("---")
             result.dump()
 
+        # When running Docker containers as root (non-rootless mode), any files created
+        # by the job will be owned by root. This causes issues when:
+        # 1. Files need to be read/compressed/uploaded by subsequent steps
+        # 2. Root-owned files remain in the repository working directory
+        # The ownership fix below ensures all root-owned files are changed to the current user
+        if job.run_in_docker and not no_docker and from_root:
+            print(f"--- Fixing file ownership after running docker as root")
+            # Get host user's UID and GID (not from inside the container)
+            uid = os.getuid()
+            gid = os.getgid()
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
+            print(f"--- Run ownership fix command [{chown_cmd}]")
+            Shell.check(chown_cmd, verbose=True)
+
         return exit_code
 
     def _post_run(

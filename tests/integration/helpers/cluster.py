@@ -4783,7 +4783,7 @@ class ClickHouseInstance:
             )
             if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
-                return
+                return False
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
@@ -4791,42 +4791,38 @@ class ClickHouseInstance:
             )
 
             start_time = time.time()
-            stopped = False
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
-                    stopped = True
-                    break
+                    return True
                 else:
                     time.sleep(1)
 
-            if not stopped:
-                # Some sanitizer report in progress?
-                while self.get_process_pid("llvm-symbolizer") is not None:
-                    time.sleep(1)
+            # Some sanitizer report in progress?
+            while self.get_process_pid("llvm-symbolizer") is not None:
+                time.sleep(1)
 
-                pid = self.get_process_pid("clickhouse")
-                if pid is not None:
-                    logging.warning(
-                        f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
-                    )
-                    self.exec_in_container(
-                        [
-                            "bash",
-                            "-c",
-                            f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                        ],
-                        user="root",
-                    )
-                    self.stop_clickhouse(kill=True)
-                else:
-                    ps_all = self.exec_in_container(
-                        ["bash", "-c", "ps aux"], nothrow=True, user="root"
-                    )
-                    logging.warning(
-                        f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
-                    )
-                    return
+            pid = self.get_process_pid("clickhouse")
+            if pid is not None:
+                logging.warning(
+                    f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
+                )
+                self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                    ],
+                    user="root",
+                )
+                self.stop_clickhouse(kill=True)
+            else:
+                ps_all = self.exec_in_container(
+                    ["bash", "-c", "ps aux"], nothrow=True, user="root"
+                )
+                logging.warning(
+                    f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
+                )
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
