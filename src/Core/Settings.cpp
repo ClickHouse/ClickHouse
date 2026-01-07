@@ -7529,6 +7529,9 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
  - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
 Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

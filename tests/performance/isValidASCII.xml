@@ -1,27 +1,38 @@
 <?xml version="1.0"?>
 <clickhouse>
-    <create_query>CREATE TABLE IF NOT EXISTS test_ascii_data (
-        id UInt32,
-        ascii_string String,
-        mixed_string String,
-        long_string String,
-        empty_string String
-    ) ENGINE = Memory</create_query>
-    
-    <fill_query>INSERT INTO test_ascii_data SELECT 
-        number as id,
-        repeat('A', 100) as ascii_string,
-        repeat('Hello World!', 50) as mixed_string,
-        repeat('Pure ASCII 123 !@#', 30) as long_string,
-        '' as empty_string
-    FROM numbers(1000000)</fill_query>
-    
-    <query>SELECT isValidASCII(ascii_string) FROM test_ascii_data FORMAT Null</query>
-    <query>SELECT isValidASCII(mixed_string) FROM test_ascii_data FORMAT Null</query>
-    <query>SELECT isValidASCII(long_string) FROM test_ascii_data FORMAT Null</query>
-    <query>SELECT isValidASCII(empty_string) FROM test_ascii_data FORMAT Null</query>
-    
-    <query>SELECT isValidASCII('Mixed\x80Content') FROM test_ascii_data LIMIT 1000000 FORMAT Null</query>
-    
-    <query>DROP TABLE IF EXISTS test_ascii_data</query>
+    <create_query>
+        CREATE TABLE IF NOT EXISTS tab (
+            id UInt32,
+            empty String,
+            short_ascii String,
+            medium_ascii String,
+            long_ascii String,
+            short_utf8 String,
+            medium_utf8 String,
+            long_utf8 String,
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO tab SELECT
+            number as id,
+            '',
+            repeat('aaaaaaaaaaaaaaaa', 1),
+            repeat('aaaaaaaaaaaaaaaa', 16),
+            repeat('aaaaaaaaaaaaaaaa', 16 * 16),
+            repeat('ääääääääääääääää', 1),
+            repeat('ääääääääääääääää', 16),
+            repeat('ääääääääääääääää', 16 * 16),
+        FROM numbers(1000000)
+    </fill_query>
+
+    <query>SELECT isValidASCII(empty) FROM tab FORMAT Null</query>
+    <query>SELECT isValidASCII(short_ascii) FROM tab FORMAT Null</query>
+    <query>SELECT isValidASCII(medium_ascii) FROM tab FORMAT Null</query>
+    <query>SELECT isValidASCII(long_ascii) FROM tab FORMAT Null</query>
+    <query>SELECT isValidASCII(short_utf8) FROM tab FORMAT Null</query>
+    <query>SELECT isValidASCII(medium_utf8) FROM tab FORMAT Null</query>
+    <query>SELECT isValidASCII(long_utf8) FROM tab FORMAT Null</query>
+
+    <query>DROP TABLE tab</query>
 </clickhouse>
