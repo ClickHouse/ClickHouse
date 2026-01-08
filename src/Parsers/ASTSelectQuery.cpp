@@ -77,9 +77,12 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
 
+    // Surround SELECT expr in parens to avoid AST inconsistencies with EXCEPT
+    FormatStateStacked frame_nested = frame;
+    frame_nested.surround_each_list_element_with_parens = true;
     s.one_line
-        ? select()->format(ostr, s, state, frame)
-        : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        ? select()->format(ostr, s, state, frame_nested)
+        : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame_nested);
 
     if (tables())
     {

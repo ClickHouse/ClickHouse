@@ -3,6 +3,8 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -53,13 +55,6 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         return "";
     };
 
-    auto is_except = [](SelectUnionMode mode)
-    {
-        return mode == SelectUnionMode::EXCEPT_DEFAULT
-            || mode == SelectUnionMode::EXCEPT_ALL
-            || mode == SelectUnionMode::EXCEPT_DISTINCT;
-    };
-
     auto get_mode = [&](ASTs::const_iterator it)
     {
         return is_normalized
@@ -79,17 +74,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
 
         bool need_parens = false;
 
-        /// EXCEPT can be confused with the asterisk modifier:
-        /// SELECT * EXCEPT SELECT 1 -- two queries
-        /// SELECT * EXCEPT col      -- a modifier for asterisk
-        /// For this reason, add parentheses when formatting any side of EXCEPT.
-        ASTs::const_iterator next = it;
-        ++next;
-        if ((it != list_of_selects->children.begin() && is_except(get_mode(it)))
-            || (next != list_of_selects->children.end() && is_except(get_mode(next))))
-            need_parens = true;
-
-        /// If this is a subtree with another chain of selects, we also need parens.
+        /// If this is a subtree with another chain of selects, we need parens.
         auto * union_node = (*it)->as<ASTSelectWithUnionQuery>();
         if (union_node)
             need_parens = true;
