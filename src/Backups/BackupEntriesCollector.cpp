@@ -13,18 +13,15 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
-#include <Storages/StorageMaterializedView.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
 #include <Common/escapeForFileName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
-#include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -400,7 +397,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -798,44 +795,10 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    auto filter_fn = [&](const auto & item) -> bool
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
+    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        if (backup_settings.backup_data_from_refreshable_materialized_view_targets)
-            return true;
-
-        const auto & [name, info] = item;
-
-        /// Skip table data for refreshable materialized view targets.
-        auto dependents = DatabaseCatalog::instance().getReferentialDependents(info.storage->getStorageID());
-        auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
-        {
-            auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
-            if (!table || table->getName() != "MaterializedView")
-                return false;
-
-            const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-            const auto & create_query = info.create_table_query->template as<const ASTCreateQuery &>();
-            bool append = create_query.refresh_strategy && create_query.refresh_strategy->append;
-            return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
-        };
-
-        if (!dependents.empty()
-            && std::all_of(
-                dependents.begin(),
-                dependents.end(),
-                [&](const auto & dependent) { return is_rmv_targeting_table(dependent, info.storage); }))
-        {
-            LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", name.getFullName());
-            return false;
-        }
-        return true;
-    };
-
-
-    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    for (const auto & table_name : table_infos | std::views::filter(filter_fn) | std::views::keys)
-    {
-        runner.enqueueAndKeepTrack([&]()
+        runner([&]()
         {
             makeBackupEntriesForTableData(table_name);
         });

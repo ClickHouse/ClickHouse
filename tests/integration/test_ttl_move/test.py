@@ -26,7 +26,7 @@ node1 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
+    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 1},
     stay_alive=True,
 )
@@ -40,7 +40,7 @@ node2 = cluster.add_instance(
         "configs/config.d/cluster.xml",
     ],
     with_zookeeper=True,
-    tmpfs=["/test_ttl_move_jbod1:size=40M", "/test_ttl_move_jbod2:size=40M", "/test_ttl_move_external:size=200M"],
+    tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -87,7 +87,7 @@ def check_used_disks_with_retry(node, table_name, expected_disks, retries=1):
 
 # Use unique table name for flaky checker, that run tests multiple times
 def unique_table_name(base_name):
-    return f"{base_name.replace('[', '_').replace(']', '_').replace('-', '_')}_{int(time.time())}"
+    return f"{base_name}_{int(time.time())}"
 
 
 def wait_parts_mover(node, table, *args, **kwargs):

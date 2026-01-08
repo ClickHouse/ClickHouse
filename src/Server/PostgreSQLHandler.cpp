@@ -51,9 +51,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -163,7 +160,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    DB::setThreadName(ThreadName::POSTGRES_HANDLER);
+    setThreadName("PostgresHandler");
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
@@ -354,8 +351,7 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
             ctx = Poco::Net::SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
     }
-    ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));
-    changeIO(*ss);
+    ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));    changeIO(*ss);
 }
 #else
 void PostgreSQLHandler::makeSecureConnectionSSL() {}
@@ -365,9 +361,9 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
 {
     std::unordered_map<String, String> & parameters = start_up_message.parameters;
 
-    if (parameters.contains("application_name"))
+    if (parameters.find("application_name") != parameters.end())
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("application_name", parameters["application_name"]));
-    if (parameters.contains("client_encoding"))
+    if (parameters.find("client_encoding") != parameters.end())
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("client_encoding", parameters["client_encoding"]));
     else
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("client_encoding", "UTF8"));
@@ -388,7 +384,7 @@ void PostgreSQLHandler::cancelRequest()
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(std::move(replacement), *out, query_context, {});
+    executeQuery(std::move(replacement), *out, true, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -453,6 +449,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
+        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
         String format;
         switch (copy_query->format)
         {
@@ -467,8 +464,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             break;
         }
 
-        const Settings & settings = query_context->getSettingsRef();
-
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();
         while (true)
@@ -481,21 +476,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
                 ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(
-                    format,
-                    buf,
-                    io.pipeline.getHeader(),
-                    query_context,
-                    settings[Setting::max_insert_block_size],
-                    std::nullopt,
-                    nullptr,
-                    nullptr,
-                    false,
-                    CompressionMethod::None,
-                    false,
-                    settings[Setting::max_insert_block_size_bytes],
-                    settings[Setting::min_insert_block_size_rows],
-                    settings[Setting::min_insert_block_size_bytes]);
+                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();
@@ -626,19 +607,18 @@ void PostgreSQLHandler::processQuery()
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
-        for (auto & spl_query : queries)
+        for (const auto & spl_query : queries)
         {
             secret_key = dis(gen);
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
+            auto read_buf = std::make_unique<ReadBufferFromString>(spl_query);
+            executeQuery(std::move(read_buf), *out, false, query_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);
-
-            UInt64 affected_rows = executeQueryWithTracking(std::move(spl_query), query_context, command);
-
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
         }
 
     }
@@ -650,41 +630,6 @@ void PostgreSQLHandler::processQuery()
             true);
         throw;
     }
-}
-
-std::function<void(const Progress&)> PostgreSQLHandler::createProgressCallback(
-    ContextMutablePtr query_context,
-    std::atomic<UInt64>& result_rows,
-    std::atomic<UInt64>& written_rows)
-{
-    auto prev_callback = query_context->getProgressCallback();
-    return [&, my_prev = prev_callback](const Progress & progress)
-    {
-        if (my_prev)
-            my_prev(progress);
-        result_rows += progress.result_rows;   // For SELECT
-        written_rows += progress.written_rows; // For INSERT
-    };
-}
-
-UInt64 PostgreSQLHandler::executeQueryWithTracking(
-    String && sql_query,
-    ContextMutablePtr query_context,
-    PostgreSQLProtocol::Messaging::CommandComplete::Command command)
-{
-    // Track affected rows using progress callback (similar to MySQL handler)
-    std::atomic<UInt64> result_rows {0};
-    std::atomic<UInt64> written_rows {0};
-    query_context->setProgressCallback(createProgressCallback(query_context, result_rows, written_rows));
-
-    // Execute query with PostgreSQLWire output format
-    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
-    executeQuery(std::move(read_buf), *out, query_context, {});
-
-    // Determine affected rows based on command type
-    return (command == PostgreSQLProtocol::Messaging::CommandComplete::Command::INSERT)
-        ? written_rows.load()
-        : result_rows.load();
 }
 
 bool PostgreSQLHandler::processPrepareStatement(const String & query)
@@ -727,10 +672,10 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
 
     CurrentThread::QueryScope query_scope{query_context};
+    auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(result_query));
+    executeQuery(std::move(read_buf), *out, false, query_context, {});
 
-    UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
-
-    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
 
     return true;
 }
@@ -832,13 +777,11 @@ void PostgreSQLHandler::processExecuteQuery()
 
         CurrentThread::QueryScope query_scope{query_context};
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
+        auto read_buf = std::make_unique<ReadBufferFromString>(std::move(sql_query));
+        executeQuery(std::move(read_buf), *out, false, query_context, {});
 
-        PostgreSQLProtocol::Messaging::CommandComplete::Command command =
-            PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
-
-        UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
-
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
     }
     catch (const Exception & e)
     {

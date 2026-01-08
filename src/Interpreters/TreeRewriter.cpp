@@ -48,6 +48,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <IO/WriteHelpers.h>
@@ -286,7 +287,7 @@ struct ExistsExpressionData
 
         auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
-        auto function = makeASTOperator("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
     }
 };
@@ -372,7 +373,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
                 continue;
 
             size_t i = 1;
-            while (all_column_names.contains(name + "_" + toString(i)))
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
@@ -1012,6 +1013,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     if (storage)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
+        options.withExtendedObjects();
         options.withSubcolumns(storage->supportsSubcolumns());
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
@@ -1022,6 +1024,11 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
+    }
+    else
+    {
+        source_columns_ordinary = source_columns;
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1188,6 +1195,33 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
     }
 
+    /// Collect missed object subcolumns
+    if (!unknown_required_source_columns.empty())
+    {
+        for (const NameAndTypePair & pair : source_columns_ordinary)
+        {
+            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+            {
+                size_t object_pos = it->find('.');
+                if (object_pos != std::string::npos)
+                {
+                    String object_name = it->substr(0, object_pos);
+                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::ObjectDeprecated)
+                    {
+                        const auto * object_type = typeid_cast<const DataTypeObjectDeprecated *>(pair.type.get());
+                        if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                        {
+                            missed_subcolumns.insert(*it);
+                            it = unknown_required_source_columns.erase(it);
+                            continue;
+                        }
+                    }
+                }
+                ++it;
+            }
+        }
+    }
+
     /// Check for subcolumns in unknown required columns.
     if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
     {
@@ -1195,25 +1229,19 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         {
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
-                bool found = false;
-                for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(*it))
+                auto [column_name, subcolumn_name] = Nested::splitName(*it);
+
+                if (column_name == pair.name)
                 {
-                    if (column_name == pair.name)
+                    if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
                     {
-                        if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
-                        {
-                            source_columns.emplace_back(*it, subcolumn_type);
-                            it = unknown_required_source_columns.erase(it);
-                            found = true;
-                            break;
-                        }
+                        source_columns.emplace_back(*it, subcolumn_type);
+                        it = unknown_required_source_columns.erase(it);
+                        continue;
                     }
                 }
 
-                if (found)
-                    continue;
-                else
-                    ++it;
+                ++it;
             }
         }
     }
@@ -1369,11 +1397,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand ORDER BY ALL
     if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
-
-    if (select_query->limit_by_all)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
-    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

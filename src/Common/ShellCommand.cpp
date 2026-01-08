@@ -3,8 +3,6 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
-#include <csignal>
-
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>

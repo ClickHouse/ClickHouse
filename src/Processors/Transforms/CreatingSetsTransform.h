@@ -6,7 +6,6 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
-#include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
