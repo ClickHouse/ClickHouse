@@ -1,4 +1,4 @@
-#include <Functions/GatherUtils/GatherUtils.h>
+#include "GatherUtils.h"
 
 namespace DB::GatherUtils
 {

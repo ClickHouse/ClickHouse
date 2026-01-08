@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, long
+# Tags: no-fasttest, no-parallel, no-object-storage
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,8 +21,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-# In case of listen_try we can have 'Address already in use'
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 cat $config_path \
@@ -30,7 +29,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 cat $config_path \
@@ -38,7 +37,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 cat $config_path \
@@ -46,7 +45,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 cat $config_path \
@@ -54,7 +53,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 cat $config_path \
@@ -62,5 +61,5 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use'
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"

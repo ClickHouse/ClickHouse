@@ -1,5 +1,4 @@
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -77,13 +76,13 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (null_modifier)
     {
-        ostr << ' '
-                      << (*null_modifier ? "" : "NOT ") << "NULL" ;
+        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
+                      << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)
     {
-        ostr << ' '  << default_specifier ;
+        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
         if (!ephemeral_default)
         {
             ostr << ' ';
@@ -93,7 +92,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (comment)
     {
-        ostr << ' '  << "COMMENT"  << ' ';
+        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
         comment->format(ostr, format_settings, state, frame);
     }
 
@@ -111,22 +110,19 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (ttl)
     {
-        ostr << ' '  << "TTL"  << ' ';
-        auto nested_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        ttl->format(ostr, format_settings, state, nested_frame);
+        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ttl->format(ostr, format_settings, state, frame);
     }
 
     if (collation)
     {
-        ostr << ' '  << "COLLATE"  << ' ';
+        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
         collation->format(ostr, format_settings, state, frame);
     }
 
     if (settings)
     {
-        ostr << ' '  << "SETTINGS"  << ' ' << '(';
+        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
         settings->format(ostr, format_settings, state, frame);
         ostr << ')';
     }

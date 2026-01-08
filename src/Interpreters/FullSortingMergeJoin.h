@@ -21,7 +21,7 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_,
+    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
                                   int null_direction_ = 1)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
@@ -36,12 +36,12 @@ public:
 
     bool isCloneSupported() const override
     {
-        return getTotals().empty();
+        return !getTotals();
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        SharedHeader,
-        SharedHeader right_sample_block_) const override
+        const Block &,
+        const Block & right_sample_block_) const override
     {
         return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction);
     }
@@ -82,7 +82,7 @@ public:
         for (size_t i = 0; i < onexpr.key_names_left.size(); ++i)
         {
             DataTypePtr left_type = left_block.getByName(onexpr.key_names_left[i]).type;
-            DataTypePtr right_type = right_sample_block->getByName(onexpr.key_names_right[i]).type;
+            DataTypePtr right_type = right_sample_block.getByName(onexpr.key_names_right[i]).type;
 
             bool type_equals
                 = table_join->hasUsing() ? left_type->equals(*right_type) : removeNullable(left_type)->equals(*removeNullable(right_type));
@@ -101,12 +101,11 @@ public:
     }
 
     /// Used just to get result header
-    JoinResultPtr joinBlock(Block block) override
+    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /* not_processed */) override
     {
-        for (const auto & col : *right_sample_block)
+        for (const auto & col : right_sample_block)
             block.insert(col);
         block = materializeBlock(block).cloneEmpty();
-        return IJoinResult::createFromBlock(std::move(block));
     }
 
     void setTotals(const Block & block) override { totals = block; }
@@ -135,7 +134,7 @@ public:
 
 private:
     std::shared_ptr<TableJoin> table_join;
-    SharedHeader right_sample_block;
+    Block right_sample_block;
     Block totals;
     int null_direction;
 };

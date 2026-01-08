@@ -19,6 +19,13 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     /// Table location in catalog metadata always starts with one of s3://, file://, etc.
     /// So just extract this part of the path and deduce storage type from it.
 
+    auto capitalize_first_letter = [] (const std::string & s)
+    {
+        auto result = Poco::toLower(s);
+        result[0] = std::toupper(result[0]);
+        return result;
+    };
+
     auto pos = location.find("://");
     if (pos == std::string::npos)
     {
@@ -27,32 +34,9 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
             "Unexpected path format: {}", location);
     }
 
-    return parseStorageTypeFromString(location.substr(0, pos));
-}
-
-StorageType parseStorageTypeFromString(const std::string & type)
-{
-    auto capitalize_first_letter = [] (const std::string & s)
-    {
-        auto result = Poco::toLower(s);
-        if (!result.empty())
-            result[0] = std::toupper(result[0]);
-        return result;
-    };
-
-    std::string storage_type_str = type;
-    auto pos = storage_type_str.find("://");
-    if (pos != std::string::npos)
-    {
-        // convert s3://, file://, etc. to s3, file etc.
-        storage_type_str = storage_type_str.substr(0,pos);
-    }
+    auto storage_type_str = location.substr(0, pos);
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
-    else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss")
-        storage_type_str = "S3";
-    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
-        storage_type_str = "Azure";
 
     auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
@@ -79,8 +63,6 @@ void TableMetadata::setLocation(const std::string & location_)
     if (pos == std::string::npos)
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
 
-    // pos+3 to account for ://
-    storage_type_str = location_.substr(0, pos+3);
     auto pos_to_bucket = pos + std::strlen("://");
     auto pos_to_path = location_.substr(pos_to_bucket).find('/');
 
@@ -128,7 +110,8 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
 
     if (location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
-    return std::filesystem::path(location) / bucket / path / "";
+    else
+        return std::filesystem::path(location) / bucket / path / "";
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)
@@ -180,10 +163,6 @@ std::optional<DataLakeSpecificProperties> TableMetadata::getDataLakeSpecificProp
 
 StorageType TableMetadata::getStorageType() const
 {
-    if (!storage_type_str.empty())
-    {
-        return parseStorageTypeFromString(storage_type_str);
-    }
     return parseStorageTypeFromLocation(location_without_path);
 }
 
@@ -198,56 +177,6 @@ bool TableMetadata::hasSchema() const
 bool TableMetadata::hasStorageCredentials() const
 {
     return storage_credentials != nullptr;
-}
-
-std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
-{
-    std::string metadata_location = iceberg_metadata_file_location;
-    if (!metadata_location.empty())
-    {
-        std::string data_location = getLocation();
-
-        // Use the actual storage type prefix (e.g., s3://, file://, etc.)
-        if (metadata_location.starts_with(storage_type_str))
-            metadata_location = metadata_location.substr(storage_type_str.size());
-        if (data_location.starts_with(storage_type_str))
-            data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
-            data_location = data_location.substr(endpoint.size());
-
-        if (metadata_location.starts_with(data_location))
-        {
-            size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
-            metadata_location = metadata_location.substr(data_location.size() + remove_slash);
-        }
-    }
-    return metadata_location;
-}
-
-DB::SettingsChanges CatalogSettings::allChanged() const
-{
-    DB::SettingsChanges changes;
-    changes.emplace_back("storage_endpoint", storage_endpoint);
-    changes.emplace_back("aws_access_key_id", aws_access_key_id);
-    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
-    changes.emplace_back("region", region);
-
-    return changes;
-}
-
-void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
-}
-
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
-}
-
-void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }
 
 }

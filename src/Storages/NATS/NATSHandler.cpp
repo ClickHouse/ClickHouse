@@ -156,6 +156,7 @@ std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfigura
             }
             catch (...)
             {
+                tryLogCurrentException(log);
                 try
                 {
                     connect_promise->set_exception(std::current_exception());

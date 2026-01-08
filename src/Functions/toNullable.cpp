@@ -4,10 +4,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>
 
-#if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-#endif
-
 
 namespace DB
 {
@@ -45,49 +41,13 @@ public:
     {
         return makeNullable(arguments[0].column);
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        return nativeCast(b, arguments[0], result_type);
-    }
-#endif
-
-
 };
 
 }
 
 REGISTER_FUNCTION(ToNullable)
 {
-    FunctionDocumentation::Description description = R"(
-Converts the provided argument type to `Nullable`.
-    )";
-    FunctionDocumentation::Syntax syntax = "toNullable(x)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "A value of any non-compound type.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the input value but of `Nullable` type.", {"Nullable(Any)"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example",
-         R"(
-SELECT toTypeName(10), toTypeName(toNullable(10));
-        )",
-         R"(
-┌─toTypeName(10)─┬─toTypeName(toNullable(10))─┐
-│ UInt8          │ Nullable(UInt8)            │
-└────────────────┴────────────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in{1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionToNullable>(documentation);
+    factory.registerFunction<FunctionToNullable>();
 }
 
 }
