@@ -475,3 +475,30 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
         assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
+
+
+def test_reload_cluster_config_if_host_address_change(cluster_ready):
+    node = node8
+    # Back up DNS configuration (resolv.conf and hosts)
+    resolv_conf_bak = node.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
+    hosts_bak = node.exec_in_container(["bash", "-c", "cat /etc/hosts"])
+    # Clear DNS configuration to simulate DNS service outage
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/resolv.conf",], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", "echo '' > /etc/hosts"], privileged=True, user="root")
+
+    node.restart_clickhouse()
+
+    # Failed to resolve DNS at cluster initialization
+    assert node.wait_for_log_line(
+        regexp="Cluster: Code: 198. DB::NetException: Not found address of host: node8.",
+        filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        timeout=3
+    )
+    # `is_local` is set to false by default as failure in DNS resolution
+    assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "0\n"
+
+    # Restore the original DNS configuration to simulate DNS service recovery
+    node.exec_in_container(["bash", "-c", f"echo '{resolv_conf_bak}' > /etc/resolv.conf"], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
+    # Wait a bit until dns cache will be updated
+    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1")
