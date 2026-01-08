@@ -94,7 +94,7 @@ struct Options
     /// avoid_* are flags to ignore some known issues.
     /// Would be good to fix the issues and disable the flags.
 
-    /// Some functions return ColumnNullable where null_map says some value is null, but nested column
+    /// Many functions return ColumnNullable where null_map says some value is null, but nested column
     /// has non-default value for that row. Some other functions break when receiving such column
     /// as input (e.g. maybe they look at the nested column, see invalid value, and throw exception
     /// before checking the null map; or maybe a hash function hashes the nested column value even
@@ -463,7 +463,7 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_error_
     /// Some overflow checks while resolving overload if args are const.
     "minus",
 
-    /// E.g. this succeeds materialize but throws DECIMAL_OVERFLOW without it:
+    /// E.g. this succeeds with materialize but throws DECIMAL_OVERFLOW without it:
     ///   SELECT subtractWeeks(materialize(CAST('1970-01-16 06:39:51' AS DateTime)), CAST(-3.4390291839770234e307 AS Float64))
     "subtractNanoseconds",
     "subtractMicroseconds",
@@ -492,6 +492,8 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_error_
     ///   SELECT substringUTF8(materialize(CAST('0007c454-b371-d83b-0000-000000000000' AS String)), materialize(CAST(7.201535e-38 AS Float32)))
     "substringUTF8",
     "substring",
+
+    "polygonsDistanceCartesian",
 };
 
 /// Normally, we expect a deterministic function to return the same result on the same arguments
@@ -500,6 +502,26 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_error_
 const std::unordered_set<std::string_view> functions_with_const_dependent_semantics = {
     /// Different semantics: const string is type name, non-const string is example value.
     "getTypeSerializationStreams",
+};
+
+/// These functions throw when called on default value, and don't do anything special to avoid
+/// throwing when called on NULL (which has default value behind it).
+/// (Some of them do try to avoid it, but fail in some cases.)
+/// See https://github.com/ClickHouse/ClickHouse/issues/93660
+/// Remove this when that issue is fixed.
+const std::unordered_set<std::string_view> functions_with_broken_nullable_input_handling = {
+    "intDiv",
+    "modulo",
+    "moduloLegacy",
+    "gcd",
+    "lcm",
+    "concat",
+    "concatAssumeInjective",
+    "parseDateTimeBestEffort",
+    "parseDateTimeBestEffortUS",
+    "parseDateTime32BestEffort",
+    "parseDateTime64BestEffort",
+    "parseDateTime64BestEffortUS",
 };
 
 static constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
@@ -950,36 +972,32 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
     for (const auto & arg : args)
     {
         bool has_string = false;
+        auto apply = [&](const IDataType & type)
+        {
+            has_string |= isStringOrFixedString(type);
+            found_enum |= isEnum(type);
+        };
+        apply(*arg.type);
         /// The string and enum may be inside a tuple, nullable, low-cardinality, maybe other things.
-        arg.type->forEachChild([&](const IDataType & type)
-            {
-                has_string |= isStringOrFixedString(type);
-                found_enum |= isEnum(type);
-            });
+        arg.type->forEachChild(apply);
         found_const_string |= has_string && arg.column->isConst();
     }
     return found_const_string && found_enum;
 }
 
-/// This fails:
-///   select modulo(if(number=0,null,0), CAST(number AS IPv4)) from numbers(2)
-/// But if you do it for one row at a time (numbers(1) and numbers(1, 1)), it succeeds.
-/// Same with IPv6:
-///   select modulo(if(number=0,null,0), CAST('::'||toString(number) AS IPv6)) from numbers(2)
-bool isNullableDivisionQuirk(const String & function_name, const ColumnsWithTypeAndName & args, int error_code)
+bool isAnyArgumentNullable(const ColumnsWithTypeAndName & args)
 {
-    static const std::unordered_set<String> names = {"intDiv", "modulo", "moduloLegacy", "gcd", "lcm"};
-    if (error_code != ErrorCodes::ILLEGAL_DIVISION || !names.contains(function_name) || args.size() != 2)
-        return false;
-    bool found_ip = false;
+    bool found_nullable = false;
     for (const auto & arg : args)
     {
-        arg.type->forEachChild([&](const IDataType & type)
-            {
-                found_ip |= isIPv4(type) || isIPv6(type);
-            });
+        auto apply = [&](const IDataType & type)
+        {
+            found_nullable |= type.isNullable();
+        };
+        apply(*arg.type);
+        arg.type->forEachChild(apply);
     }
-    return found_ip;
+    return found_nullable;
 }
 
 }
@@ -1347,7 +1365,6 @@ struct FunctionsStressTestThread
         }
 
         std::exception_ptr bulk_exception;
-        std::optional<int> bulk_error_code;
         chassert(!result && valid_args.empty());
         try
         {
@@ -1357,7 +1374,6 @@ struct FunctionsStressTestThread
         {
             if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 throw;
-            bulk_error_code = e.code();
             bulk_exception = std::current_exception();
         }
         catch (...)
@@ -1604,7 +1620,8 @@ struct FunctionsStressTestThread
             }
             if (bulk_exception)
             {
-                if (!bulk_error_code.has_value() || !isNullableDivisionQuirk(function_info.name, operation.args, bulk_error_code.value()))
+                bool ignore = functions_with_broken_nullable_input_handling.contains(function_info.name) && isAnyArgumentNullable(operation.args);
+                if (!ignore)
                 {
                     LOG_ERROR(logger, "function failed when executed on multiple rows (see below), but succeeded when executed on each of those rows separately");
                     std::rethrow_exception(bulk_exception);
