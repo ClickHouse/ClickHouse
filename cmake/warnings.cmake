@@ -26,6 +26,7 @@ no_warning(c++20-compat) # Use C++20 features incompatible with older standards 
 no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(implicit-int-conversion) # TODO: Fix the code and enable it
 no_warning(implicit-int-float-conversion) # TODO: Fix the code and enable it
+no_warning(deprecated-declarations) # TODO: Fix the code and enable it
 no_warning(disabled-macro-expansion)
 no_warning(documentation-unknown-command)
 no_warning(double-promotion)
@@ -46,8 +47,6 @@ no_warning(switch-default) # conflicts with "defaults in a switch covering all e
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
 if (ARCH_E2K)
-    # disable "__builtin_ia32_pcmpestric128 / __builtin_ia32_pcmpestri128 is deprecated: The function may be slow due to inefficient implementation" warning
-    no_warning(deprecated-declarations)
     # disable "use of GNU statement expression extension from macro expansion" warning
     no_warning(gnu-statement-expression-from-macro-expansion)
 endif ()
