@@ -107,6 +107,11 @@ class _Settings:
     CI_DB_READ_USER: str = ""
     CI_DB_READ_URL: str = ""
 
+    # Substrings to classify test failures. Used to generate helper queries for checking failure history.
+    # Not required to cover all failures, but recommended to maximize coverage.
+    # Choose values wisely to effectively differentiate between different failure types.
+    TEST_FAILURE_PATTERNS: Optional[List[str]] = None
+
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
@@ -152,6 +157,7 @@ _USER_DEFINED_SETTINGS = [
     "COMPRESS_THRESHOLD_MB",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
+    "TEST_FAILURE_PATTERNS",
 ]
 
 
