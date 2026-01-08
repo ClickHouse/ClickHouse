@@ -2293,7 +2293,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
             add_parent_update_delta();
         }
 
-        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
+        return new_deltas;
     }
 
     ToDeleteTreeCollector<Storage> collector(storage, zxid, session_id, zk_request.remove_nodes_limit);
