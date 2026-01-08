@@ -4341,6 +4341,15 @@ if __name__ == "__main__":
         print(e, file=sys.stderr)
         sys.exit(1)
 
+    # When using --record, disable engine replacement to ensure we record
+    # the original test's output, not a modified version
+    if args.record:
+        if args.replace_replicated_with_shared or args.replace_non_replicated_with_shared:
+            print("INFO: Disabling engine replacement (--replace-replicated-with-shared, --replace-non-replicated-with-shared)", file=sys.stderr)
+            print("      when using --record to ensure reference files are updated with original test output.", file=sys.stderr)
+        args.replace_replicated_with_shared = False
+        args.replace_non_replicated_with_shared = False
+
     # Collect explicit settings (if any)
     args.fixed_settings = {}
     args.fixed_merge_tree_settings = {}
