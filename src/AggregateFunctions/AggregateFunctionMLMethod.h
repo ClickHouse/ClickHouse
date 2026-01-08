@@ -33,8 +33,8 @@ public:
 
     /// Adds computed gradient in new point (weights, bias) to batch_gradient
     virtual void compute(
-        StrictVector<Float64> & batch_gradient,
-        const StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & batch_gradient,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -47,7 +47,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const StrictVector<Float64> & weights,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         ContextPtr context) const
         = 0;
@@ -60,8 +60,8 @@ public:
     LinearRegression() = default;
 
     void compute(
-        StrictVector<Float64> & batch_gradient,
-        const StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & batch_gradient,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -73,7 +73,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const StrictVector<Float64> & weights,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         ContextPtr context) const override;
 };
@@ -85,8 +85,8 @@ public:
     LogisticRegression() = default;
 
     void compute(
-        StrictVector<Float64> & batch_gradient,
-        const StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & batch_gradient,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -98,7 +98,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        const StrictVector<Float64> & weights,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         ContextPtr context) const override;
 };
@@ -115,9 +115,9 @@ public:
 
     /// Calls GradientComputer to update current mini-batch
     virtual void addToBatch(
-        StrictVector<Float64> & batch_gradient,
+        VectorWithMemoryTracking<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
-        const StrictVector<Float64> & weights,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -126,7 +126,7 @@ public:
 
     /// Updates current weights according to the gradient from the last mini-batch
     virtual void
-    update(UInt64 batch_size, StrictVector<Float64> & weights, Float64 & bias, Float64 learning_rate, const StrictVector<Float64> & gradient)
+    update(UInt64 batch_size, VectorWithMemoryTracking<Float64> & weights, Float64 & bias, Float64 learning_rate, const VectorWithMemoryTracking<Float64> & gradient)
         = 0;
 
     /// Used during the merge of two states
@@ -145,10 +145,10 @@ class StochasticGradientDescent : public IWeightsUpdater
 public:
     void update(
         UInt64 batch_size,
-        StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & weights,
         Float64 & bias,
         Float64 learning_rate,
-        const StrictVector<Float64> & batch_gradient) override;
+        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
 };
 
 
@@ -163,10 +163,10 @@ public:
 
     void update(
         UInt64 batch_size,
-        StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & weights,
         Float64 & bias,
         Float64 learning_rate,
-        const StrictVector<Float64> & batch_gradient) override;
+        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
 
     void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -176,7 +176,7 @@ public:
 
 private:
     Float64 alpha{0.1};
-    StrictVector<Float64> accumulated_gradient;
+    VectorWithMemoryTracking<Float64> accumulated_gradient;
 };
 
 
@@ -189,9 +189,9 @@ public:
     }
 
     void addToBatch(
-        StrictVector<Float64> & batch_gradient,
+        VectorWithMemoryTracking<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
-        const StrictVector<Float64> & weights,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -200,10 +200,10 @@ public:
 
     void update(
         UInt64 batch_size,
-        StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & weights,
         Float64 & bias,
         Float64 learning_rate,
-        const StrictVector<Float64> & batch_gradient) override;
+        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
 
     void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -213,7 +213,7 @@ public:
 
 private:
     const Float64 alpha = 0.9;
-    StrictVector<Float64> accumulated_gradient;
+    VectorWithMemoryTracking<Float64> accumulated_gradient;
 };
 
 
@@ -231,9 +231,9 @@ public:
     }
 
     void addToBatch(
-        StrictVector<Float64> & batch_gradient,
+        VectorWithMemoryTracking<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
-        const StrictVector<Float64> & weights,
+        const VectorWithMemoryTracking<Float64> & weights,
         Float64 bias,
         Float64 l2_reg_coef,
         Float64 target,
@@ -242,10 +242,10 @@ public:
 
     void update(
         UInt64 batch_size,
-        StrictVector<Float64> & weights,
+        VectorWithMemoryTracking<Float64> & weights,
         Float64 & bias,
         Float64 learning_rate,
-        const StrictVector<Float64> & batch_gradient) override;
+        const VectorWithMemoryTracking<Float64> & batch_gradient) override;
 
     void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -261,8 +261,8 @@ private:
     Float64 beta1_powered;
     Float64 beta2_powered;
 
-    StrictVector<Float64> average_gradient;
-    StrictVector<Float64> average_squared_gradient;
+    VectorWithMemoryTracking<Float64> average_gradient;
+    VectorWithMemoryTracking<Float64> average_squared_gradient;
 };
 
 
@@ -298,7 +298,7 @@ public:
 
     void returnWeights(IColumn & to) const;
 private:
-    StrictVector<Float64> weights;
+    VectorWithMemoryTracking<Float64> weights;
     Float64 bias{0.0};
 
     Float64 learning_rate;
@@ -306,7 +306,7 @@ private:
     UInt64 batch_capacity;
 
     UInt64 iter_num = 0;
-    StrictVector<Float64> gradient_batch;
+    VectorWithMemoryTracking<Float64> gradient_batch;
     UInt64 batch_size;
 
     std::shared_ptr<IGradientComputer> gradient_computer;

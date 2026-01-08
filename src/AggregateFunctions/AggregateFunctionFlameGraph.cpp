@@ -102,7 +102,7 @@ struct AggregateFunctionFlameGraphTree
         return node;
     }
 
-    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, StrictVector<UInt64> & frame)
+    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, VectorWithMemoryTracking<UInt64> & frame)
     {
         UInt64 prev = offsets.empty() ? 0 : offsets.back();
         offsets.push_back(prev + frame.size());
@@ -112,7 +112,7 @@ struct AggregateFunctionFlameGraphTree
 
     struct Trace
     {
-        using Frames = StrictVector<UInt64>;
+        using Frames = VectorWithMemoryTracking<UInt64>;
 
         Frames frames;
 
@@ -124,15 +124,15 @@ struct AggregateFunctionFlameGraphTree
         size_t allocated_self = 0;
     };
 
-    using Traces = StrictVector<Trace>;
+    using Traces = VectorWithMemoryTracking<Trace>;
 
     Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
-        StrictVector<size_t> allocated_total;
-        StrictVector<size_t> allocated_self;
-        StrictVector<ListNode *> nodes;
+        VectorWithMemoryTracking<size_t> allocated_total;
+        VectorWithMemoryTracking<size_t> allocated_self;
+        VectorWithMemoryTracking<ListNode *> nodes;
 
         nodes.push_back(root.children);
         allocated_total.push_back(root.allocated);
@@ -224,7 +224,7 @@ static void dumpFlameGraphImpl(
 {
     WriteBufferFromOwnString out;
 
-    StrictUnorderedMap<uintptr_t, size_t> mapping;
+    UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
@@ -401,7 +401,7 @@ struct AggregateFunctionFlameGraphData
     void merge(const AggregateFunctionFlameGraphTree & other_tree, Arena * arena)
     {
         AggregateFunctionFlameGraphTree::Trace::Frames frames;
-        StrictVector<AggregateFunctionFlameGraphTree::ListNode *> nodes;
+        VectorWithMemoryTracking<AggregateFunctionFlameGraphTree::ListNode *> nodes;
 
         nodes.push_back(other_tree.root.children);
 

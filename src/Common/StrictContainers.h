@@ -26,39 +26,39 @@ namespace DB
 /// `AllocatorWithMemoryTracking`, which tracks memory using throwing methods of the `MemoryTracker`.
 
 template <typename T>
-using StrictList = std::list<T, AllocatorWithMemoryTracking<T>>;
+using ListWithMemoryTracking = std::list<T, AllocatorWithMemoryTracking<T>>;
 
 template <typename T>
-using StrictVector = std::vector<T, AllocatorWithMemoryTracking<T>>;
+using VectorWithMemoryTracking = std::vector<T, AllocatorWithMemoryTracking<T>>;
 
 template <typename T>
-using StrictDeque = std::deque<T, AllocatorWithMemoryTracking<T>>;
+using DequeWithMemoryTracking = std::deque<T, AllocatorWithMemoryTracking<T>>;
 
 template <typename T>
-using StrictQueue = std::queue<T, AllocatorWithMemoryTracking<T>>;
+using QueueWithMemoryTracking = std::queue<T, AllocatorWithMemoryTracking<T>>;
 
 template <typename K, typename V>
-using StrictMap = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using MapWithMemoryTracking = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K, typename V>
 using StrictMultiMap = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K>
-using StrictSet = std::set<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
+using SetWithMemoryTracking = std::set<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
 
 template <typename K>
-using StrictMultiSet = std::multiset<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
+using MultiSetWithMemoryTracking = std::multiset<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
 
 template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using StrictUnorderedMap = std::unordered_map<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using UnorderedMapWithMemoryTracking = std::unordered_map<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using StrictUnorderedMultiMap = std::unordered_multimap<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using UnorderedMultiMapWithMemoryTracking
+    = std::unordered_multimap<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using StrictUnorderedSet = std::unordered_set<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+using UnorderedSetWithMemoryTracking = std::unordered_set<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
 
 template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using StrictUnorderedMultiSet = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
-
+using UnorderedMultiSetWithMemoryTracking = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
 }

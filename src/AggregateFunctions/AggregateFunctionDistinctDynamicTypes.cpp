@@ -67,7 +67,7 @@ struct AggregateFunctionDistinctDynamicTypesData
         /// Insert types in sorted order for better output.
         auto & array_column = assert_cast<ColumnArray &>(column);
         auto & string_column = assert_cast<ColumnString &>(array_column.getData());
-        StrictVector<String> sorted_data(data.begin(), data.end());
+        VectorWithMemoryTracking<String> sorted_data(data.begin(), data.end());
         std::sort(sorted_data.begin(), sorted_data.end());
         for (const auto & type : sorted_data)
             string_column.insertData(type.data(), type.size());

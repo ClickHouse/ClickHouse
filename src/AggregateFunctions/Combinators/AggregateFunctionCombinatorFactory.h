@@ -25,7 +25,7 @@ private:
         /// for combiners with common prefix (i.e. "State" and "SimpleState").
         bool operator<(const CombinatorPair & rhs) const { return name.length() > rhs.name.length(); }
     };
-    using Dict = StrictVector<CombinatorPair>;
+    using Dict = VectorWithMemoryTracking<CombinatorPair>;
     Dict dict;
 
 public:

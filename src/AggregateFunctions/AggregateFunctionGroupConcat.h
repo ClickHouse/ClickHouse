@@ -59,9 +59,9 @@ public:
 
     String getName() const override;
 
-    static const StrictVector<std::string> & getNameAndAliases()
+    static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
-        static const StrictVector<std::string> aliases = {"groupConcat", "group_concat"};
+        static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat"};
         return aliases;
     }
 

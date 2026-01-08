@@ -535,11 +535,11 @@ struct AnalysisOfVarianceMoments
     constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
 
     /// Sums of values within a group
-    StrictVector<T> xs1{};
+    VectorWithMemoryTracking<T> xs1{};
     /// Sums of squared values within a group
-    StrictVector<T> xs2{};
+    VectorWithMemoryTracking<T> xs2{};
     /// Sizes of each group. Total number of observations is just a sum of all these values
-    StrictVector<size_t> ns{};
+    VectorWithMemoryTracking<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)
     {

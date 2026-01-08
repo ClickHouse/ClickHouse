@@ -77,7 +77,7 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        StrictUnorderedSet<size_t> arguments_that_can_be_only_null;
+        UnorderedSetWithMemoryTracking<size_t> arguments_that_can_be_only_null;
         if (nested_function)
             arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
 

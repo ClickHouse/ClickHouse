@@ -59,7 +59,7 @@ public:
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        StrictUnorderedMap<size_t, Bucket> buckets;
+        UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
     };
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,

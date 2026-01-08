@@ -330,7 +330,7 @@ protected:
     template <typename EventEntry>
     bool dfaMatch(EventEntry & events_it, const EventEntry events_end) const
     {
-        using ActiveStates = StrictVector<bool>;
+        using ActiveStates = VectorWithMemoryTracking<bool>;
 
         /// Those two vectors keep track of which states should be considered for the current
         /// event as well as the states which should be considered for the next event.
@@ -384,7 +384,7 @@ protected:
     }
 
     template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, StrictVector<T> * best_matched_events = nullptr) const
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -397,8 +397,8 @@ protected:
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
-        StrictVector<T> current_matched_events;
-        StrictVector<decltype(action_it)> current_matched_actions;
+        VectorWithMemoryTracking<T> current_matched_events;
+        VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
 
         const auto do_push_event = [&]
         {
@@ -554,10 +554,10 @@ protected:
     }
 
     template <typename EventEntry>
-    StrictVector<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
+    VectorWithMemoryTracking<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
     {
 
-        StrictVector<T> best_matched_events;
+        VectorWithMemoryTracking<T> best_matched_events;
         backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
 
         return best_matched_events;
@@ -656,7 +656,7 @@ private:
         DFATransition transition;
     };
 
-    using DFAStates = StrictVector<DFAState>;
+    using DFAStates = VectorWithMemoryTracking<DFAState>;
 
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
@@ -743,9 +743,9 @@ public:
     }
 
 private:
-    StrictVector<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
     {
-        StrictVector<T> res;
+        VectorWithMemoryTracking<T> res;
         const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);

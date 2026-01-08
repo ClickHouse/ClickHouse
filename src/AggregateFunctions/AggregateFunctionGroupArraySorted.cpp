@@ -63,7 +63,7 @@ struct GroupArraySortedData
     static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = typename std::conditional_t<is_value_generic_field, StrictVector<T>, PODArray<T, 32, Allocator>>;
+    using Array = typename std::conditional_t<is_value_generic_field, VectorWithMemoryTracking<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
 
