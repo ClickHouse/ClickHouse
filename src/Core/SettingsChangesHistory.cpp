@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
             {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
             {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},
             {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},

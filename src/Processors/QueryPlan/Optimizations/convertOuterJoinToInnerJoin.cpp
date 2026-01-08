@@ -99,16 +99,63 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     if (result_for_not_matched_rows != FilterResult::FALSE)
         return 0;
 
-    auto key_dags = join_step->preCalculateKeys(join_node->children.front()->step->getOutputHeader(), join_node->children.back()->step->getOutputHeader());
-    if (!key_dags)
+    NameSet join_keys_interesting_side;
+
+    const auto add_key_recursively = [&](const ActionsDAG::Node * node) -> void
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            std::stack<const ActionsDAG::Node *> nodes_to_process;
+            nodes_to_process.push(node);
+            while (!nodes_to_process.empty())
+            {
+                const auto * current_node = nodes_to_process.top();
+                nodes_to_process.pop();
+
+                if (current_node->type == ActionsDAG::ActionType::INPUT)
+                    join_keys_interesting_side.insert(current_node->result_name);
+
+                if (current_node->type == ActionsDAG::ActionType::FUNCTION && current_node->function_base->isInjective({}))
+                {
+                    for (const auto * child : current_node->children)
+                        nodes_to_process.push(child);
+                }
+            }
+            return;
+        }
+
+        join_keys_interesting_side.insert(node->result_name);
+    };
+
+    const auto handle_interesting_side_key = [&](const JoinActionRef & left_side, const JoinActionRef & right_side)
+    {
+        if (check_left_stream)
+            add_key_recursively(left_side.getNode());
+        else
+            add_key_recursively(right_side.getNode());
+    };
+
+    for (const auto & expr : join_step->getJoinOperator().expression)
+    {
+        auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
+
+        /// In case of the presence non equality predicate we cannot guarantee uniqueness of matching rows, e.g:
+        /// Grouping keys: name, uid
+        /// JOIN condition: t1.name = t2.name and t1.uid > t2.uid
+        /// There can be multiple rows matching the join condition (same name, but different uid).
+        if (predicate_op != JoinConditionOperator::Equals)
+            return 0;
+
+        if (lhs.fromLeft() && rhs.fromRight())
+            handle_interesting_side_key(lhs, rhs);
+        else if (lhs.fromRight() && rhs.fromLeft())
+            handle_interesting_side_key(rhs, lhs);
+    }
+
+    if (join_keys_interesting_side.empty())
         return 0;
 
-    const auto & key_dags_interesting_side = check_left_stream ? key_dags->first : key_dags->second;
-    NameSet join_keys_interesting_side = std::ranges::to<NameSet>(key_dags_interesting_side.keys | std::views::transform(
-        [](const auto * e) { return e->result_name; }
-    ));
-
-    /// During scalar subquery decorrelation process, at the end there added renamings of useful columns.
+    /// During scalar subquery decorrelation process, at the end there added remaining of useful columns.
     /// This is done to avoid name conflicts. Instead of JOIN condition like 'a = a' it becomes 'a = <subquery name>.a'.
     /// So, we need to revert such renaming to be able to compare columns with the aggregating step keys.
     if (auto * expr_step = typeid_cast<ExpressionStep *>(interesting_side_plan_node->step.get()))
