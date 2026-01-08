@@ -323,6 +323,9 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
 
 SourceStepWithFilter * findReadingStep(const QueryPlan::Node * top_of_single_replica_plan)
 {
+    if (!top_of_single_replica_plan)
+        return nullptr;
+
     const auto * reading_step = top_of_single_replica_plan;
     while (reading_step && !reading_step->children.empty())
     {
@@ -413,8 +416,6 @@ void considerEnablingParallelReplicas(
 
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
-    if (!corresponding_node_in_single_replica_plan)
-        return;
 
     /// Now we need to identify the reading step that should be instrumented for statistics collection
     SourceStepWithFilter * const source_reading_step = findReadingStep(corresponding_node_in_single_replica_plan);
@@ -430,13 +431,12 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("optimizeTree"), "rows={}", rows);
-
-    bool skip_optimization = optimization_settings.automatic_parallel_replicas_mode == 2;
+    bool skip_stats_collection = false;
 
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
     if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
     {
+        bool skip_optimization = optimization_settings.automatic_parallel_replicas_mode == 2;
         if (std::max(stats->total_rows_from_storage, rows) > std::min(stats->total_rows_from_storage, rows) * 2)
         {
             LOG_DEBUG(
@@ -445,6 +445,10 @@ void considerEnablingParallelReplicas(
                 stats->total_rows_from_storage,
                 rows);
             skip_optimization = true;
+        }
+        else
+        {
+            skip_stats_collection = true;
         }
 
         if (!skip_optimization)
@@ -479,6 +483,12 @@ void considerEnablingParallelReplicas(
     else
     {
         LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
+    }
+
+    if (skip_stats_collection)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Skipping statistics collection as cache is up to date");
+        return;
     }
 
     auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
