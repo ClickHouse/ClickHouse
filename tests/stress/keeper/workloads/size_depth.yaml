@@ -1,0 +1,5 @@
+name: size_depth
+clients: 32
+sweep:
+  sizes: [0, 64, 256, 1024, 4096, 65536, 1048576]
+  depths: [1, 5, 20, 50, 100]

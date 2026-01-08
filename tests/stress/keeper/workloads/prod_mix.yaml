@@ -1,0 +1,8 @@
+name: prod_mix
+clients: 64
+ops:
+  - { kind: create, percent: 20, path_prefix: /e2e/prod/create, value_bytes: 128 }
+  - { kind: set,    percent: 35, path_prefix: /e2e/prod/set,    value_bytes: 256 }
+  - { kind: get,    percent: 40, path_prefix: /e2e/prod }
+  - { kind: delete, percent: 5,  path_prefix: /e2e/prod/set }
+

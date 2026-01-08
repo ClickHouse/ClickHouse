@@ -1,0 +1,67 @@
+ 
+
+class ScenarioBuilder:
+    def __init__(self, sid, name, topology=3, backend="default"):
+        self._sid = sid
+        self._name = name
+        self._topology = int(topology)
+        self._backend = backend
+        self._workload = {}
+        self._pre = []
+        self._faults = []
+        self._gates = []
+
+    def set_workload_config(self, path, duration):
+        self._workload = {"config": path, "duration": int(duration)}
+
+    def pre(self, step):
+        if step:
+            self._pre.append(step)
+
+    def fault(self, step):
+        if step:
+            self._faults.append(step)
+
+    def during(self, kind, on, steps):
+        self._faults.append({"kind": str(kind), "on": on, "steps": list(steps or [])})
+
+    def gate(self, gate):
+        if gate:
+            self._gates.append(gate)
+
+    def build(self):
+        out = {
+            "id": self._sid,
+            "name": self._name,
+            "topology": self._topology,
+            "backend": self._backend,
+        }
+        if self._workload:
+            out["workload"] = dict(self._workload)
+        if self._pre:
+            out["pre"] = list(self._pre)
+        if self._faults:
+            out["faults"] = list(self._faults)
+        if self._gates:
+            out["gates"] = list(self._gates)
+        return out
+
+# Helpers for presets
+
+def with_jitter(sb, delay_ms=10, jitter_ms=5, loss_pct=0, duration_s=120, target_parallel=True):
+    step = {"kind": "netem", "on": "all", "delay_ms": int(delay_ms)}
+    if jitter_ms:
+        step["jitter_ms"] = int(jitter_ms)
+    if loss_pct:
+        step["loss_pct"] = int(loss_pct)
+    step["duration_s"] = int(duration_s)
+    if target_parallel:
+        step["target_parallel"] = True
+    sb.fault(step)
+
+
+def with_gp3_disk(sb, ms=3, duration_s=120, target_parallel=True):
+    step = {"kind": "dm_delay", "on": "all", "ms": int(ms), "duration_s": int(duration_s)}
+    if target_parallel:
+        step["target_parallel"] = True
+    sb.fault(step)

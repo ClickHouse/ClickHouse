@@ -1,0 +1,353 @@
+import time, pathlib, pytest, json, uuid, yaml, copy
+import os, shutil
+from ..faults import apply_step as apply_step_dispatcher
+from ..workloads.keeper_bench import KeeperBench
+from ..workloads.adapter import servers_arg
+from ..framework.io.probes import is_leader, mntr, prom_metrics, ch_metrics, ch_async_metrics
+from ..framework.io.prom_parse import parse_prometheus_text
+from ..gates.base import single_leader, apply_gate
+from ..framework.io.sink import sink_clickhouse
+from ..framework.metrics.sampler import MetricsSampler
+from ..framework.core.preflight import ensure_environment
+from ..framework.fuzz import generate_fuzz_scenario
+from ..framework.core.registry import fault_registry
+from ..framework.fuzz import _EXCLUDE as _FUZZ_EXCLUDE
+from ..framework.core.settings import parse_bool
+
+WORKDIR = pathlib.Path(__file__).parents[2]
+
+def _apply_step(step, nodes, leader, ctx):
+    apply_step_dispatcher(step, nodes, leader, ctx)
+
+def _apply_gate(gate, nodes, leader, ctx, summary):
+    apply_gate(gate, nodes, leader, ctx, summary)
+
+def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_id=""):
+    if not sink_url:
+        return
+    metrics_ts_rows=[]
+    # For fail stage, only snapshot leader to reduce volume
+    snap_nodes = nodes
+    if stage == "fail":
+        try:
+            leaders = [n for n in nodes if is_leader(n)]
+            if leaders:
+                snap_nodes = leaders[:1]
+        except Exception:
+            snap_nodes = nodes[:1]
+    for n in snap_nodes:
+        try:
+            m=mntr(n)
+            for _k, _v in (m or {}).items():
+                try:
+                    _val = float(_v)
+                except Exception:
+                    continue
+                metrics_ts_rows.append({
+                    "run_id": run_id,
+                    "commit_sha": run_meta.get("commit_sha","local"),
+                    "backend": run_meta.get("backend","default"),
+                    "scenario": scenario_id,
+                    "topology": topo,
+                    "node": n.name,
+                    "stage": stage,
+                    "source": "mntr",
+                    "name": str(_k),
+                    "value": _val,
+                    "labels_json": "{}",
+                })
+        except Exception:
+            pass
+        try:
+            p=prom_metrics(n)
+            for r in parse_prometheus_text(p):
+                name = r.get("name","")
+                val = 0.0
+                try:
+                    val = float(r.get("value", 0.0))
+                except Exception:
+                    val = 0.0
+                lj = r.get("labels_json", "{}")
+                metrics_ts_rows.append({
+                    "run_id": run_id,
+                    "commit_sha": run_meta.get("commit_sha","local"),
+                    "backend": run_meta.get("backend","default"),
+                    "scenario": scenario_id,
+                    "topology": topo,
+                    "node": n.name,
+                    "stage": stage,
+                    "source": "prom",
+                    "name": name,
+                    "value": val,
+                    "labels_json": lj,
+                })
+        except Exception:
+            pass
+        try:
+            for r in ch_metrics(n):
+                nm = r.get("name","")
+                try:
+                    val = float(r.get("value",0))
+                except Exception:
+                    val = 0.0
+                metrics_ts_rows.append({
+                    "run_id": run_id,
+                    "commit_sha": run_meta.get("commit_sha","local"),
+                    "backend": run_meta.get("backend","default"),
+                    "scenario": scenario_id,
+                    "topology": topo,
+                    "node": n.name,
+                    "stage": stage,
+                    "source": "ch_metrics",
+                    "name": nm,
+                    "value": val,
+                    "labels_json": "{}",
+                })
+        except Exception:
+            pass
+        try:
+            for r in ch_async_metrics(n):
+                nm = r.get("name","")
+                try:
+                    val = float(r.get("value",0))
+                except Exception:
+                    val = 0.0
+                metrics_ts_rows.append({
+                    "run_id": run_id,
+                    "commit_sha": run_meta.get("commit_sha","local"),
+                    "backend": run_meta.get("backend","default"),
+                    "scenario": scenario_id,
+                    "topology": topo,
+                    "node": n.name,
+                    "stage": stage,
+                    "source": "ch_async_metrics",
+                    "name": nm,
+                    "value": val,
+                    "labels_json": "{}",
+                })
+        except Exception:
+            pass
+    if metrics_ts_rows:
+        sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
+
+@pytest.mark.timeout(2400)
+def test_scenario(scenario, cluster_factory, request, run_meta):
+    start_ts = time.time()
+    topo=scenario.get("topology",3)
+    backend = scenario.get("backend") or request.config.getoption("--keeper-backend")
+    # Effective run_meta per test with the scenario-selected backend
+    run_meta_eff = dict(run_meta or {})
+    try:
+        run_meta_eff["backend"] = backend
+    except Exception:
+        pass
+    opts=scenario.get("opts", {})
+    try:
+        faults_mode = request.config.getoption("--faults")
+    except Exception:
+        faults_mode = os.environ.get("KEEPER_FAULTS", "on")
+    try:
+        rnd_count = int(request.config.getoption("--random-faults-count") or 1)
+    except Exception:
+        rnd_count = int(os.environ.get("KEEPER_RANDOM_FAULTS_COUNT", "1"))
+    try:
+        seed_val = int(request.config.getoption("--seed") or 0)
+    except Exception:
+        seed_val = 0
+    fs_original = scenario.get("faults", []) or []
+    fs_effective = fs_original
+    if faults_mode == "off":
+        fs_effective = []
+    elif faults_mode == "random":
+        try:
+            dur_default = int((scenario.get("workload") or {}).get("duration") or request.config.getoption("--duration"))
+        except Exception:
+            dur_default = int(os.environ.get("KEEPER_DURATION", "120"))
+        if seed_val <= 0:
+            import os as _os
+            seed_val = int.from_bytes(_os.urandom(4), 'big')
+        try:
+            try:
+                inc_raw = request.config.getoption("--random-faults-include") or os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", "")
+            except Exception:
+                inc_raw = os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", "")
+            try:
+                exc_raw = request.config.getoption("--random-faults-exclude") or os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", "")
+            except Exception:
+                exc_raw = os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", "")
+            inc = set([x.strip() for x in (inc_raw or "").split(",") if x.strip()])
+            exc = set([x.strip() for x in (exc_raw or "").split(",") if x.strip()])
+            cands = [k for k in list(getattr(fault_registry, 'keys', lambda: [])()) if k not in _FUZZ_EXCLUDE]
+            if not cands and isinstance(fault_registry, dict):
+                cands = [k for k in fault_registry.keys() if k not in _FUZZ_EXCLUDE]
+            weights = {}
+            if inc:
+                for k in cands:
+                    weights[k] = 1 if k in inc else 0
+            else:
+                for k in cands:
+                    weights[k] = 0 if k in exc else 1
+            fz = generate_fuzz_scenario(seed_val, max(1, rnd_count), dur_default, weights=weights)
+            rnd_faults = fz.get("faults", []) or []
+            rb = {"kind": "run_bench", "duration_s": dur_default}
+            fs_effective = [{"kind": "parallel", "steps": [rb] + rnd_faults}]
+        except Exception:
+            fs_effective = fs_original
+    try:
+        uses_dm = any((f.get("kind") in ("dm_delay","dm_error")) for f in fs_effective)
+        if uses_dm:
+            os.environ.setdefault("KEEPER_PRIVILEGED", "1")
+    except Exception:
+        pass
+    # compute run_id early for reproducible artifact paths
+    run_id=f"{scenario.get('id','')}-{run_meta.get('commit_sha','local')}-{uuid.uuid4().hex[:8]}"
+    # Use a unique cluster name per test to avoid instance-dir collisions
+    try:
+        cname = run_id.replace('/', '_').replace(' ', '_')
+        os.environ["KEEPER_CLUSTER_NAME"] = cname
+    except Exception:
+        pass
+    cluster, nodes = cluster_factory(topo, backend, opts)
+    summary={}; ctx={}
+    try:
+        try:
+            scenario_for_env = copy.deepcopy(scenario)
+            scenario_for_env["faults"] = fs_effective
+        except Exception:
+            scenario_for_env = scenario
+        ensure_environment(nodes, scenario_for_env)
+        single_leader(nodes)
+        leader=[n for n in nodes if is_leader(n)][0]
+        sink_url=request.config.getoption("--sink-url")
+        _snapshot_and_sink(nodes, "pre", scenario.get("id",""), topo, run_meta_eff, sink_url, run_id)
+        ctx["cluster"] = cluster
+        try:
+            ctx["faults_mode"] = request.config.getoption("--faults")
+        except Exception:
+            ctx["faults_mode"] = ctx.get("faults_mode", "on")
+        # removed unused log_allow plumbing
+        # propagate seed if provided
+        try:
+            ctx["seed"] = int(request.config.getoption("--seed") or 0)
+        except Exception:
+            ctx["seed"] = 0
+        sampler=None
+        if sink_url:
+            interval=int(opts.get("monitor_interval_s", 5)) if isinstance(opts, dict) else 5
+            prom_allow = opts.get("prom_allow_prefixes") if isinstance(opts, dict) else None
+            sampler=MetricsSampler(nodes, run_meta_eff, scenario.get("id",""), topo, sink_url=sink_url, interval_s=interval, stage_prefix="run", run_id=run_id, prom_allow_prefixes=prom_allow, ctx=ctx)
+            sampler.start()
+        for step in scenario.get("pre", []): _apply_step(step, nodes, leader, ctx)
+        kb=None
+        if faults_mode != "random" and "workload" in scenario and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
+            wl=scenario["workload"]
+            # Environment overrides for workload paths and bench clients
+            try:
+                rp = os.environ.get("KEEPER_REPLAY_PATH", "").strip()
+                if rp:
+                    wl = dict(wl or {})
+                    wl["replay"] = rp
+            except Exception:
+                pass
+            try:
+                wc = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
+                if wc:
+                    wl = dict(wl or {})
+                    wl["config"] = wc
+            except Exception:
+                pass
+            clients_env = None
+            try:
+                ce = os.environ.get("KEEPER_BENCH_CLIENTS")
+                clients_env = int(ce) if ce not in (None, "") else None
+            except Exception:
+                clients_env = None
+            secure = False
+            kb=KeeperBench(
+                nodes[0],
+                servers_arg(nodes),
+                cfg_path=str(WORKDIR/wl.get("config")) if wl.get("config") else None,
+                duration_s=wl.get("duration", request.config.getoption("--duration")),
+                replay_path=wl.get("replay"),
+                secure=secure,
+                clients=clients_env,
+            )
+            ctx["workload"]=wl; ctx["bench_node"]=nodes[0]; ctx["bench_secure"]=secure; ctx["bench_servers"]=servers_arg(nodes)
+        for action in fs_effective: _apply_step(action, nodes, leader, ctx)
+        if kb:
+            summary = kb.run()
+        elif ctx.get("bench_summary"):
+            summary = ctx.get("bench_summary") or {}
+        for gate in scenario.get("gates", []): _apply_gate(gate, nodes, leader, ctx, summary)
+        _snapshot_and_sink(nodes, "post", scenario.get("id",""), topo, run_meta_eff, sink_url, run_id)
+    except Exception:
+        # Emit minimal reproducible scenario to a file for debugging
+        try:
+            repro_path = f"/tmp/keeper_repro_{run_id}.yaml"
+            with open(repro_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(scenario, f, sort_keys=False)
+            print(f"[keeper] reproducible scenario written: {repro_path}")
+        except Exception:
+            pass
+        # Attempt to snapshot fail state as well
+        try:
+            sink_url=request.config.getoption("--sink-url")
+            _snapshot_and_sink(nodes, "fail", scenario.get("id",""), topo, run_meta_eff, sink_url, run_id)
+        except Exception:
+            pass
+        
+        try:
+            setattr(request.node, "keeper_failed", True)
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            if 'sampler' in locals() and sampler:
+                sampler.stop(); sampler.flush()
+        except Exception:
+            pass
+        # Close any pooled KeeperClient resources
+        try:
+            if ctx.get("_kc_pool"):
+                ctx["_kc_pool"].close()
+        except Exception:
+            pass
+        try:
+            clients = ctx.get("_kc_clients") or {}
+            for c in clients.values():
+                try:
+                    c.stop()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Keep containers on fail (for debugging) if requested
+        try:
+            keep = bool(request.config.getoption("--keep-containers-on-fail"))
+            failed = getattr(request.node, "keeper_failed", False)
+            if keep and failed:
+                return
+        except Exception:
+            pass
+        cluster.shutdown()
+        # Optional cleanup of generated artifacts if run succeeded
+        try:
+            failed = getattr(request.node, "keeper_failed", False)
+            clean = parse_bool(os.environ.get("KEEPER_CLEAN_ARTIFACTS"))
+            if clean and not failed:
+                try:
+                    inst_dir = pathlib.Path(getattr(cluster, "instances_dir", ""))
+                    if inst_dir and inst_dir.exists():
+                        shutil.rmtree(inst_dir, ignore_errors=True)
+                except Exception:
+                    pass
+                try:
+                    base_dir = pathlib.Path(getattr(cluster, "base_dir", ""))
+                    conf_dir = base_dir / "configs"
+                    if conf_dir.exists():
+                        shutil.rmtree(conf_dir, ignore_errors=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
