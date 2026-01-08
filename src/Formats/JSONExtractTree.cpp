@@ -1837,6 +1837,7 @@ public:
                     SerializationObject::restoreColumnObject(column_object, prev_size);
                     return false;
                 }
+                value_buf.finalize();
                 shared_data_values_offsets.push_back(shared_data_values_chars.size());
                 shared_data_paths->insertData(path.data(), path.size());
             }
@@ -1931,7 +1932,7 @@ private:
         else if (element.isNull())
         {
         }
-        /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path ane value to shared data.
+        /// Don't check for dynamic paths if max_dynamic_paths=0 and add this path and value to shared data.
         else if (column_object.getMaxDynamicPaths() == 0)
         {
             paths_and_values_for_shared_data.emplace_back(current_path, element);
@@ -2033,7 +2034,7 @@ private:
             {
                 if (variant_info.variant_name_to_discriminator.contains("UInt64") || column_dynamic.addNewVariant(getDataTypesCache().getType("UInt64"), "UInt64"))
                 {
-                    insertValueIntoNumericVariant<ColumnUInt64, UInt64>(variant_info, variant_column, element.getInt64(), "UInt64");
+                    insertValueIntoNumericVariant<ColumnUInt64, UInt64>(variant_info, variant_column, element.getUInt64(), "UInt64");
                     return true;
                 }
 
@@ -2043,7 +2044,7 @@ private:
             {
                 if (variant_info.variant_name_to_discriminator.contains("Float64") || column_dynamic.addNewVariant(getDataTypesCache().getType("Float64"), "Float64"))
                 {
-                    insertValueIntoNumericVariant<ColumnFloat64, Float64>(variant_info, variant_column, element.getInt64(), "Float64");
+                    insertValueIntoNumericVariant<ColumnFloat64, Float64>(variant_info, variant_column, element.getDouble(), "Float64");
                     return true;
                 }
 
@@ -2053,20 +2054,20 @@ private:
             {
                 std::string_view data = element.getString();
 
-                /// With String value we shoud consider Date/DateTime/DateTime64 inference.
+                /// With String value we should consider Date/DateTime/DateTime64 inference.
                 /// If inference is disabled, just insert String.
                 if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
                 {
                     if (variant_info.variant_name_to_discriminator.contains("String") || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
                     {
-                        insertValueIntoNumericVariant<ColumnInt64, Int64>(variant_info, variant_column, element.getInt64(), "Int64");
+                        insertValueIntoStringVariant(variant_column, data, variant_info.variant_name_to_discriminator.at("String"));
                         return true;
                     }
                 }
 
                 /// In most cases data is consistent and the same path contains the same type of values.
                 /// So for Date/DateTime/DateTime64 we check if variant info already has these types and try
-                /// to parse data from stirng into existing variant.
+                /// to parse data from string into existing variant.
                 if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
                 {
                     DayNum date;
