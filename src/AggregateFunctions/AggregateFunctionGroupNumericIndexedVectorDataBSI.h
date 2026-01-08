@@ -1671,7 +1671,7 @@ public:
 
             if ((sum & 1) == 1)
             {
-                getDataArrayAt(j)->add(static_cast<UInt8>(ele));
+                getDataArrayAt(j)->add(static_cast<IndexType>(ele));
             }
 
             cin = cin & x_xor_y;

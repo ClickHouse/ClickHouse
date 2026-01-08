@@ -407,13 +407,13 @@ struct ToStartOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const UInt16 res = static_cast<UInt16>(time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode));
-        return std::max<UInt16>(res, 0);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return static_cast<UInt16>(std::max(res, 0));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        const UInt16 res = static_cast<UInt16>(time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode));
-        return std::max<UInt16>(res, 0);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return static_cast<UInt16>(std::max(res, 0));
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {

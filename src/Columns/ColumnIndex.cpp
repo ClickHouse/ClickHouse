@@ -264,7 +264,7 @@ void ColumnIndex::insertIndexesRangeWithShift(const IColumn & column, size_t off
             indexes_data.resize(size + limit);
 
             for (size_t i = 0; i < limit; ++i)
-                indexes_data[size + i] = static_cast<CurIndexType>(column_data[offset + i] + shift);
+                indexes_data[size + i] = static_cast<CurIndexType>(static_cast<CurIndexType>(column_data[offset + i]) + shift);
         };
 
         callForType(std::move(copy), size_of_type);

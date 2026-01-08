@@ -179,7 +179,7 @@ public:
                 if (isDate(result_type))
                     result_col_data[i] = static_cast<UInt16>(getChangedDate(time, value_col_data[i], result_type, date_lut));
                 else
-                    result_col_data[i] = static_cast<UInt16>(getChangedDate(time, value_col_data[i], result_type, date_lut));
+                    result_col_data[i] = static_cast<ResultDataType::FieldType>(getChangedDate(time, value_col_data[i], result_type, date_lut));
             }
         }
 

@@ -179,7 +179,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min(d, static_cast<UInt16>(MAX_DATETIME_DAY_NUM));
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -241,7 +241,7 @@ struct ToTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min(d, static_cast<UInt16>(MAX_DATETIME_DAY_NUM));
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         return static_cast<Int32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(time_zone.toTime(d)))));
     }
@@ -250,7 +250,7 @@ struct ToTimeImpl
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min(d, static_cast<Int32>(MAX_DATETIME_DAY_NUM));
+            d = static_cast<Int32>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -262,7 +262,7 @@ struct ToTimeImpl
 
     static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
-        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(static_cast<Int32>(time_zone.toTime(static_cast<Int32>(dt)))))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(static_cast<Int32>(dt))))));
     }
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
@@ -319,7 +319,7 @@ struct ToDateTransformFromSecondsOrDays
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return time_zone.toDayNum(std::min(static_cast<UInt16>(from), static_cast<UInt16>(MAX_DATETIME_TIMESTAMP)));
+                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
 
         return static_cast<UInt16>(from);
     }
