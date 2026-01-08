@@ -228,6 +228,7 @@ parser.add_argument("--with-redis", action="store_true", help="With Redis integr
 parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
+parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -325,6 +326,18 @@ parser.add_argument(
     "--set-shared-mergetree-disk",
     action="store_true",
     help="Set shared merge tree disk or policy",
+)
+parser.add_argument(
+    "--without-monitoring",
+    action="store_false",
+    dest="with_monitoring",
+    help="Remove periodic monitoring of the cluster",
+)
+parser.add_argument(
+    "--time-between-monitoring-runs",
+    type=ordered_pair,
+    default=(5, 10),
+    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
 )
 
 args = parser.parse_args()
@@ -466,6 +479,7 @@ for i in range(0, len(args.replica_values)):
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
+            with_kafka=args.with_kafka,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -585,6 +599,8 @@ if args.with_mongodb:
     integrations.append("mongo")
 if args.with_redis:
     integrations.append("redis")
+if args.with_kafka:
+    integrations.append("kafka")
 
 # This is the main loop, run while client and server are running
 all_running = True
@@ -594,6 +610,7 @@ lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
 )
+monitoring_lower_bound, monitoring_upper_bound = args.time_between_monitoring_runs
 # Leak detection
 leak_detector: ElOracloDeLeaks = ElOracloDeLeaks()
 leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
@@ -623,6 +640,9 @@ while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
     next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
+    next_monitoring = start + random.randint(
+        monitoring_lower_bound, monitoring_upper_bound
+    )
 
     while all_running and start < finish:
         interval = 1
@@ -643,6 +663,11 @@ while all_running:
         ):
             leak_detector.run_next_leak_detection(cluster, client)
             next_leak_detection += random.randint(leak_lower_bound, leak_upper_bound)
+        if all_running and args.with_monitoring and next_monitoring < time.time():
+            tables_oracle.run_health_check(cluster, servers, logger)
+            next_monitoring += random.randint(
+                monitoring_lower_bound, monitoring_upper_bound
+            )
         time.sleep(interval)
         start += interval
 
@@ -707,6 +732,7 @@ while all_running:
             "mysql8": ["mysql80"],
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
+            "kafka": ["kafka1"],
         }
 
         restart_choices = list(available_options[next_pick])

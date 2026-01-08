@@ -101,7 +101,7 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
-    CI_DB_INSERT_TIMEOUT_SEC = 5
+    CI_DB_INSERT_TIMEOUT_SEC = 20
 
     # to post links for reading statistics in html report (with read-only user)
     CI_DB_READ_USER: str = ""

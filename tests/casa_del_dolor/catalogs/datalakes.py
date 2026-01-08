@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
+from .kafkatest import KafkaHandler
 from .laketables import (
     TableStorage,
     LakeFormat,
@@ -221,6 +222,8 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
+        if cluster.with_kafka:
+            self.kafka_handler = KafkaHandler(cluster)
 
     def start_uc_server(self):
         with self.catalogs_lock:
@@ -696,7 +699,7 @@ logger.jetty.level = warn
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
         next_catalog_impl = None
 
@@ -780,9 +783,19 @@ logger.jetty.level = warn
 
     def create_lake_table(self, cluster, data) -> bool:
         saved_exception = None
+        if data["engine"] == "kafka":
+            # At the moment, this is an ugly hack
+            return self.kafka_handler.create_kafka_table(
+                cluster,
+                data["database_name"],
+                data["table_name"],
+                data["topic"],
+                data["format"],
+                data["columns"],
+            )
         catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
         catalog_type = LakeCatalogs.NoCatalog
         catalog_impl = None
@@ -858,13 +871,19 @@ logger.jetty.level = warn
 
     def update_or_check_table(self, cluster, data) -> bool:
         res = False
+        next_table = None
+        next_session = None
         saved_exception = None
         catalog_name = data["catalog_name"]
-        run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
         catalog_type = LakeCatalogs.NoCatalog
-        with self.catalogs_lock:
-            next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
-            catalog_type = self.catalogs[catalog_name].catalog_type
+        run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
+
+        if data["engine"] != "kafka":
+            with self.catalogs_lock:
+                next_table = self.catalogs[catalog_name].spark_tables[
+                    data["table_name"]
+                ]
+                catalog_type = self.catalogs[catalog_name].catalog_type
 
         if run_background_worker:
 
@@ -879,33 +898,43 @@ logger.jetty.level = warn
                     command=cluster.client_bin_path,
                 )
                 nloops = random.randint(1, 50)
+                tbl = (
+                    f"{data["catalog_name"]}.{data["table_name"]}"
+                    if data["engine"] == "kafka"
+                    else next_table.get_clickhouse_path()
+                )
                 for _ in range(nloops):
-                    client.query(
-                        f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
-                    )
+                    client.query(f"SELECT * FROM {tbl} LIMIT 100;")
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
             self.worker.resume()
 
-        next_session = self.get_next_session(
-            cluster,
-            catalog_name,
-            next_table.storage,
-            next_table.lake_format,
-            catalog_type,
-        )
-        try:
-            res = (
-                self.data_generator.update_table(next_session, next_table)
-                if random.randint(1, 10) < 9
-                else self.table_check.check_table(cluster, next_session, next_table)
+        if data["engine"] != "kafka":
+            next_session = self.get_next_session(
+                cluster,
+                catalog_name,
+                next_table.storage,
+                next_table.lake_format,
+                catalog_type,
             )
+        try:
+            if data["engine"] == "kafka":
+                res = self.kafka_handler.update_table(
+                    cluster, data["catalog_name"], data["table_name"]
+                )
+            elif data["engine"] in ["iceberg", "deltalake"]:
+                res = (
+                    self.data_generator.update_table(next_session, next_table)
+                    if random.randint(1, 10) < 9
+                    else self.table_check.check_table(cluster, next_session, next_table)
+                )
         except Exception as e:
             saved_exception = e
         if run_background_worker:
             self.worker.pause()
-        next_session.stop()
+        if next_session is not None:
+            next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return res

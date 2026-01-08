@@ -49,7 +49,7 @@ StorageType parseStorageTypeFromString(const std::string & type)
     }
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
-    else if (capitalize_first_letter(storage_type_str) == "S3a")
+    else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss")
         storage_type_str = "S3";
     else if (storage_type_str == "abfss") /// Azure Blob File System Secure
         storage_type_str = "Azure";

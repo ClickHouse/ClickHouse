@@ -156,6 +156,7 @@ class BuzzHouseGenerator(Generator):
             or args.with_hms
             or args.with_rest
             or args.with_unity
+            or args.with_kafka
         ):
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
@@ -190,6 +191,13 @@ class BuzzHouseGenerator(Generator):
                     "port": 8085,
                     "path": "/api/2.1/unity-catalog",
                     "warehouse": "unity",
+                }
+            if args.with_kafka:
+                buzz_config["kafka"] = {
+                    "server_hostname": cluster.kafka_host,
+                    "port": cluster.kafka_port,
+                    "user": "",
+                    "password": "",
                 }
 
         with open(self.temp.name, "w+") as file2:
