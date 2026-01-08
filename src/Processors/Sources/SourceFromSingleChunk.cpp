@@ -32,11 +32,6 @@ String SourceFromSingleChunk::getName() const
     return "SourceFromSingleChunk";
 }
 
-ProcessorPtr SourceFromSingleChunk::clone() const
-{
-    return std::make_shared<SourceFromSingleChunk>(getOutputs().front().getSharedHeader(), chunk.clone());
-}
-
 Chunk SourceFromSingleChunk::generate()
 {
     return std::move(chunk);

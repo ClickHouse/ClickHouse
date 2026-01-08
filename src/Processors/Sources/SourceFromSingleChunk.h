@@ -14,8 +14,6 @@ public:
     explicit SourceFromSingleChunk(SharedHeader data);
     String getName() const override;
 
-    ProcessorPtr clone() const override;
-
 protected:
     Chunk generate() override;
 
