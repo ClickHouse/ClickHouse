@@ -18,37 +18,37 @@ protected:
     void TearDown() override {}
 };
 
-TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromString_Abfss)
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfss)
 {
     auto storage_type = parseStorageTypeFromString("abfss");
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
-TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromString_AbfssWithProtocol)
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfssWithProtocol)
 {
     auto storage_type = parseStorageTypeFromString("abfss://");
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
-TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocation_AzureAbfss)
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfss)
 {
     auto storage_type = parseStorageTypeFromLocation("abfss://container@account.dfs.core.windows.net/path/to/data");
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
-TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromString_S3)
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringS3)
 {
     auto storage_type = parseStorageTypeFromString("s3");
     EXPECT_EQ(storage_type, StorageType::S3);
 }
 
-TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromString_S3a)
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringS3a)
 {
     auto storage_type = parseStorageTypeFromString("s3a");
     EXPECT_EQ(storage_type, StorageType::S3);
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_AzureAbfss)
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfss)
 {
     TableMetadata metadata;
     metadata.withLocation();
@@ -58,7 +58,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_AzureAbfss)
     EXPECT_TRUE(metadata.hasLocation());
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_AzureAbfss_GetLocation)
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfssGetLocation)
 {
     TableMetadata metadata;
     metadata.withLocation();
@@ -68,7 +68,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_AzureAbfss_GetLocation)
     EXPECT_EQ(location, "abfss://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_AzureAbfss_WithEndpoint)
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfssWithEndpoint)
 {
     TableMetadata metadata;
     metadata.withLocation();
@@ -79,7 +79,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_AzureAbfss_WithEndpoint)
     EXPECT_EQ(location, "https://mystorageaccount.dfs.core.windows.net/mycontainer/path/to/table/");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_S3)
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationS3)
 {
     TableMetadata metadata;
     metadata.withLocation();
@@ -92,7 +92,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_S3)
     EXPECT_EQ(location, "s3://mybucket/path/to/table");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_InvalidFormat)
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationInvalidFormat)
 {
     TableMetadata metadata;
     metadata.withLocation();
@@ -102,7 +102,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_InvalidFormat)
     }, DB::Exception);
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadata_SetLocation_MissingPath)
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationMissingPath)
 {
     TableMetadata metadata;
     metadata.withLocation();
