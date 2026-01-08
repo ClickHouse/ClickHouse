@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
@@ -37,6 +39,7 @@
 #include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
+#include <base/types.h>
 
 #include <pcg_random.hpp>
 
@@ -155,6 +158,37 @@ size_t estimateValueSize(
     }
 }
 
+}
+
+/// Helper function to calculate estimated size JSON Object type
+size_t estimateJSONValueSize(
+    UInt64 max_array_length,
+    UInt64 max_string_length,
+    UInt64 max_json_keys,
+    UInt64 max_json_depth,
+    double null_ratio,
+    size_t depth = 0)
+{
+    const size_t key_size = max_string_length + sizeof(UInt64);
+    
+    const size_t avg_scalar_size = (sizeof(UInt64) + max_string_length) / 2;
+    const size_t array_size = max_array_length * avg_scalar_size;
+
+    size_t value_size;
+    if (depth>=max_json_depth)
+    {
+        value_size = (avg_scalar_size * 6 + array_size * 4) / 10;
+    }
+    else
+    {
+        size_t nested_object_size = estimateJSONValueSize(max_array_length, max_string_length, std::max<UInt64>(max_json_keys/2, 1), max_json_depth, null_ratio, depth+1);
+        value_size = (avg_scalar_size * 5 + array_size * 3 + nested_object_size * 2) / 10;
+    }
+
+    /// Dynamic JSON paths: NULL values are represented as missing keys which consume zero bytes in ColumnObject storage. Please recheck.
+    size_t expected_keys = std::max<size_t>(1,static_cast<size_t>(max_json_keys * (1.0 - null_ratio)));
+
+    return (key_size + value_size) * expected_keys;
 }
 
 ColumnPtr fillColumnWithRandomData(
