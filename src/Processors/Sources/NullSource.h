@@ -1,5 +1,4 @@
 #pragma once
-#include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 
 
