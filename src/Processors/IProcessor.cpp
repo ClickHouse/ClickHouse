@@ -31,11 +31,6 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-ProcessorPtr IProcessor::clone() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {} processor", getName());
-}
-
 void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;

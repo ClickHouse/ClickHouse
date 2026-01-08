@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 static void checkSource(const IProcessor & source)
@@ -231,79 +230,6 @@ Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(proce
     if (collected_processors)
         for (const auto & processor : *processors)
             collected_processors->emplace_back(processor);
-}
-
-Pipe Pipe::clone() const
-{
-    Pipe res;
-
-    if (totals_port != nullptr || extremes_port != nullptr)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone Pipe with totals or extremes");
-
-    res.header = header;
-    res.max_parallel_streams = max_parallel_streams;
-    res.collected_processors = collected_processors;
-
-    res.output_ports.reserve(output_ports.size());
-    res.processors = std::make_shared<Processors>();
-    res.processors->reserve(processors->size());
-
-    std::unordered_map<InputPort *, InputPort *> input_map;
-    std::unordered_map<const OutputPort *, OutputPort *> output_map;
-
-    /// Clone all processors
-    for (const auto & processor : *processors)
-    {
-        auto cloned_processor = processor->clone();
-
-        auto original_output = processor->getOutputs().begin();
-        auto cloned_output = cloned_processor->getOutputs().begin();
-
-        for (; original_output != processor->getOutputs().end(); ++original_output, ++cloned_output)
-        {
-            output_map[&*original_output] = &*cloned_output;
-        }
-
-        auto original_inputs = processor->getInputs().begin();
-        auto cloned_inputs = cloned_processor->getInputs().begin();
-
-        for (; original_inputs != processor->getInputs().end(); ++original_inputs, ++cloned_inputs)
-        {
-            input_map[&*original_inputs] = &*cloned_inputs;
-        }
-        res.processors->emplace_back(cloned_processor);
-    }
-
-    /// Recreate connections between processors
-    for (const auto & processor : *processors)
-    {
-        for (auto & original_input : processor->getInputs())
-        {
-            if (original_input.isConnected())
-            {
-                const auto & original_output = original_input.getOutputPort();
-
-                auto it = output_map.find(&original_output);
-                if (it == output_map.end())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find cloned output port for connection during cloning {} processor",
-                        processor->getName());
-
-                connect(*it->second, *input_map[&original_input]);
-            }
-        }
-    }
-
-    /// Add only the originally disconnected output ports
-    for (const auto * output_port : output_ports)
-        res.output_ports.push_back(output_map[output_port]);
-
-    if (collected_processors)
-        for (const auto & processor : *res.processors)
-            collected_processors->emplace_back(processor);
-
-    return res;
 }
 
 static Pipes removeEmptyPipes(Pipes pipes)

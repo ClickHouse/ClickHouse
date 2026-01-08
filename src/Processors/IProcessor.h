@@ -129,8 +129,6 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual ProcessorPtr clone() const;
-
     String getUniqID() const { return fmt::format("{}_{}", getName(), processor_index); }
 
     enum class Status : uint8_t

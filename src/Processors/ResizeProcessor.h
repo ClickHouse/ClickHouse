@@ -28,11 +28,6 @@ public:
 
     String getName() const override { return "Resize"; }
 
-    ProcessorPtr clone() const override
-    {
-        return std::make_shared<ResizeProcessor>(inputs.front().getSharedHeader(), inputs.size(), outputs.size());
-    }
-
     Status prepare() override;
     Status prepare(const PortNumbers &, const PortNumbers &) override;
 

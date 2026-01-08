@@ -72,11 +72,6 @@ public:
         const Block & sample_block_,
         const StreamSettings & settings_);
 
-    ProcessorPtr clone() const override
-    {
-        return std::make_unique<MySQLWithFailoverSource>(pool, query_str, getPort().getHeader(), *settings);
-    }
-
     Chunk generate() override;
 
 private:

@@ -20,11 +20,6 @@ public:
     String getName() const override { return "ReadFromPreparedSource"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<ReadFromPreparedSource>(pipe.clone());
-    }
-
 protected:
     Pipe pipe;
 };
@@ -37,11 +32,6 @@ public:
     String getName() const override { return "ReadFromStorage"; }
 
     const StoragePtr & getStorage() const { return storage; }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<ReadFromStorageStep>(pipe.clone(), storage, context, query_info);
-    }
 
 private:
     StoragePtr storage;

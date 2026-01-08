@@ -41,8 +41,6 @@ public:
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
 
-    Pipe clone() const;
-
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
     bool empty() const { return processors->empty(); }
