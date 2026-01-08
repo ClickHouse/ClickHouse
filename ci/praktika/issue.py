@@ -88,6 +88,7 @@ class IssueLabels:
     FLAKY_TEST = "flaky test"
     FUZZ = "fuzz"
     INFRASTRUCTURE = "infrastructure"
+    SANITIZER = "sanitizer"
 
 
 @dataclass

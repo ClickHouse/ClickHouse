@@ -4281,10 +4281,10 @@ class ClickHouseInstance:
         if mem_limit is not None:
             self.mem_limit = f"mem_limit: {mem_limit}"
         else:
-            self.mem_limit = "mem_limit: 10g"
+            self.mem_limit = "mem_limit: 12g"
 
         if cpu_limit is None:
-            self.cpu_limit = "cpus: 3"
+            self.cpu_limit = "cpus: 5"
         elif cpu_limit == False:
             self.cpu_limit = ""
         else:
