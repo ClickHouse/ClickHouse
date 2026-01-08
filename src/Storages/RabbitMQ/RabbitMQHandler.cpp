@@ -1,8 +1,9 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <base/scope_guard.h>
 #include <Core/Field.h>
+#include <base/scope_guard.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -111,7 +112,7 @@ void RabbitMQHandler::updateLoopState(UInt8 state)
     if (state == Loop::RUN && prev_loop_state == Loop::RUN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Loop is already in state RUN");
 
-    LOG_TRACE(log, "Updated loop state from {} to {}", toString(prev_loop_state), toString(state));
+    LOG_TEST(log, "Updated loop state from {} to {}", toString(prev_loop_state), toString(state));
     loop_state.store(state);
 }
 
