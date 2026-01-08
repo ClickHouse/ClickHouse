@@ -583,7 +583,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
-    const char * original_dst = dst;
+    const char * const original_dst = dst;
     UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
     memcpy(dst, src, bytes_to_skip);
 
@@ -669,6 +669,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         reverseTranspose<T, full>(src, buf, num_bits, tail);
         restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
         store<T>(buf, dst, tail);
+        dst += tail * sizeof(T);
     }
 
     return dst - original_dst;

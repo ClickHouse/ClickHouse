@@ -372,7 +372,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
 
     const char * source_end = source + source_size;
     const char * output_end = dest + output_size;
-    const char * const input_dest = dest;
+    const char * const original_dest = dest;
 
     if (source + sizeof(UInt32) > source_end)
         return 0;
@@ -397,7 +397,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
 
     // decoding second item
     if (source + sizeof(UnsignedDeltaType) > source_end || items_count < 2)
-        return input_dest - dest;
+        return dest - original_dest;
 
     prev_delta = unalignedLoadLittleEndian<UnsignedDeltaType>(source);
     prev_value = prev_value + static_cast<ValueType>(prev_delta);
@@ -443,7 +443,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         prev_value = curr_value;
     }
 
-    return input_dest - dest;
+    return dest - original_dest;
 }
 
 UInt8 getDataBytesSize(const IDataType * column_type)

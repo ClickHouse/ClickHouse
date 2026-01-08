@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int BAD_ARGUMENTS;
-    extern const int UNREACHABLE;
+    extern const int LOGICAL_ERROR;
 }
 
 CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_)

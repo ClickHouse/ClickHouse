@@ -120,9 +120,10 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
     if (decompressed_size != final_decompressed_size)
         throw Exception(
             decompression_error_code,
-            "Can't decompress data: The size after decompression ({}) is different than the expected size ({}) ",
+            "Can't decompress data: The size after decompression ({}) is different than the expected size ({}) for codec '{}'",
             final_decompressed_size,
-            decompressed_size);
+            decompressed_size,
+            getCodecDesc()->formatForErrorMessage());
 
     return final_decompressed_size;
 }
