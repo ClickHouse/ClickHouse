@@ -485,7 +485,7 @@ void considerEnablingParallelReplicas(
         LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 
-    if (skip_stats_collection)
+    if (skip_stats_collection && optimization_settings.automatic_parallel_replicas_mode != 2)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Skipping statistics collection as cache is up to date");
         return;
