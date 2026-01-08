@@ -806,6 +806,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
+    column_object.validateDynamicPathsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
