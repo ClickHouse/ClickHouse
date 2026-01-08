@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -213,6 +214,7 @@ static void splitAndModifyMutationCommands(
         NameSet dropped_columns;
         NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
+        auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
         for (const auto & command : commands)
         {
@@ -273,8 +275,9 @@ static void splitAndModifyMutationCommands(
                             auto required_columns = index.expression->getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
-                                if (!part_columns.has(column))
-                                    extra_columns_for_indices_and_projections.insert(column);
+                                auto column_in_storage = String(Nested::getColumnFromSubcolumn(column, storage_columns));
+                                if (!part_columns.has(column_in_storage))
+                                    extra_columns_for_indices_and_projections.insert(column_in_storage);
                             }
                             break;
                         }
@@ -290,8 +293,9 @@ static void splitAndModifyMutationCommands(
                         {
                             for (const auto & column : projection.required_columns)
                             {
-                                if (!part_columns.has(column))
-                                    extra_columns_for_indices_and_projections.insert(column);
+                                auto column_in_storage = String(Nested::getColumnFromSubcolumn(column, storage_columns));
+                                if (!part_columns.has(column_in_storage))
+                                    extra_columns_for_indices_and_projections.insert(column_in_storage);
                             }
                             break;
                         }
