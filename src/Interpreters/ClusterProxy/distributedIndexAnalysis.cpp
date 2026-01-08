@@ -27,7 +27,9 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -40,6 +42,7 @@
 namespace DB::ErrorCodes
 {
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace DB::Setting
@@ -158,14 +161,19 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     auto connection = pool->get(timeouts, settings);
 
-    RemoteQueryExecutor executor(*connection, analyze_index_query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
-    executor.setLogger(logger);
-    for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
-    {
-        current = convertBLOBColumns(current);
+    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(*connection, analyze_index_query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
+    remote_query_executor->setLogger(logger);
+    auto remote_source = std::make_shared<RemoteSource>(std::move(remote_query_executor), false, false, false);
+    QueryPipeline pipeline(std::move(remote_source));
+    PullingPipelineExecutor executor(pipeline);
 
-        const auto & col_part_name = assert_cast<const ColumnString &>(*current.getByName("part_name").column);
-        const auto & col_ranges_array = assert_cast<const ColumnArray &>(*current.getByName("ranges").column);
+    Block block;
+    while (executor.pull(block))
+    {
+        block = convertBLOBColumns(block);
+
+        const auto & col_part_name = assert_cast<const ColumnString &>(*block.getByName("part_name").column);
+        const auto & col_ranges_array = assert_cast<const ColumnArray &>(*block.getByName("ranges").column);
         const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();
         const auto & col_ranges_tuple = assert_cast<const ColumnTuple &>(col_ranges_array.getData());
         const auto & col_range_start = assert_cast<const ColumnUInt64 &>(col_ranges_tuple.getColumn(0)).getData();
@@ -178,7 +186,6 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
                 ranges_dst.push_back(MarkRange{col_range_start[range_i], col_range_end[range_i]});
         }
     }
-    executor.finish();
 
     return res;
 }
@@ -294,6 +301,14 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, execution_context, external_tables, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i].second = std::move(parts_ranges);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                        throw;
+                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisFailedReplicas);
+                    /// Ignore any exceptions, everything will be analyzed on a local replica
+                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_address, i), LogsLevel::warning);
                 }
                 catch (...)
                 {
