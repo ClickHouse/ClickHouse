@@ -465,6 +465,9 @@ static void addFilters(
     if (!table_node)
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+        if (!inner_query_node)
+            return;
+
         table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
