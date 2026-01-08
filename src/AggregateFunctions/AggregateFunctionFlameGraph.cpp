@@ -13,7 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/SymbolIndex.h>
 
 namespace DB

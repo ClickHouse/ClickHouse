@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>

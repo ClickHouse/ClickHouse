@@ -8,7 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>

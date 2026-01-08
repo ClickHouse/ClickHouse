@@ -8,7 +8,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Common/StrictString.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
 
@@ -97,9 +97,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<StrictString, Block>
+    struct DataChunk : public std::variant<StringWithMemoryTracking, Block>
     {
-        using std::variant<StrictString, Block>::variant;
+        using std::variant<StringWithMemoryTracking, Block>::variant;
 
         size_t byteSize() const
         {
@@ -130,7 +130,7 @@ private:
             }, *this);
         }
 
-        const StrictString * asString() const { return std::get_if<StrictString>(this); }
+        const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 

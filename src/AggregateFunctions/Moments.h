@@ -7,7 +7,7 @@
 #include <boost/math/distributions/fisher_f.hpp>
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/students_t.hpp>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 
 namespace DB

@@ -10,7 +10,7 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/Exception.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 

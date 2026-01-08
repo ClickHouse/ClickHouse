@@ -15,7 +15,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/ArenaAllocator.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>

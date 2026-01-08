@@ -22,7 +22,7 @@ namespace DB
 ///     3. The allocation succeeds (potentially, OS overcommits memory)
 ///     4. We go over the limit
 ///     5. OOM killer rightfully kills the server process
-/// To prevent this, we provide these `Strict-` aliases to standard containers that use the
+/// To prevent this, we provide these `-WithMemoryTracking` aliases to standard containers that use the
 /// `AllocatorWithMemoryTracking`, which tracks memory using throwing methods of the `MemoryTracker`.
 
 template <typename T>
@@ -41,7 +41,7 @@ template <typename K, typename V>
 using MapWithMemoryTracking = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K, typename V>
-using StrictMultiMap = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using MultiMapWithMemoryTracking = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 template <typename K>
 using SetWithMemoryTracking = std::set<K, std::less<K>, AllocatorWithMemoryTracking<K>>;

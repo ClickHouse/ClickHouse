@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 
 namespace DB
 {

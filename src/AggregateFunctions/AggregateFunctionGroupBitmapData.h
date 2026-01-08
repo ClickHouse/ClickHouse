@@ -6,7 +6,7 @@
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
-#include <Common/StrictContainers.h>
+#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/PODArray.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
