@@ -875,22 +875,15 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
         f" SETTINGS storage_policy='{storage_policy}'"
     )
     node.query("SYSTEM STOP MERGES test_merge_canceled_by_s3_errors")
-    output, insert_error = node.query_and_get_answer_with_error(
+    node.query(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT number, toString(number) FROM numbers(10000)"
     )
-    output_2, insert_error_2 = node.query_and_get_answer_with_error(
+    node.query(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
     )
-    assert (
-            "Connection reset by peer." in insert_error
-            or "Code: 1000, e.code() = 104, Connection reset by peer" in insert_error
-    ), insert_error
-    assert (
-            "Connection reset by peer." in insert_error_2
-            or "Code: 1000, e.code() = 104, Connection reset by peer" in insert_error_2
-    ), insert_error_2
-    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
-    assert int(min_key) == 0, min_key
+
+    rows_count = node.query("SELECT count(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(rows_count) == 20000, rows_count
 
     broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()
