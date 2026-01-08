@@ -2791,7 +2791,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     sql_security->type = original_view_metadata->sql_security_type;
     if (original_view_metadata->definer)
         sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
-    create.sql_security = sql_security;
+    create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);

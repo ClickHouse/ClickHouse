@@ -1503,7 +1503,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
-        create.sql_security = std::make_shared<ASTSQLSecurity>();
+        create.set(create.sql_security, std::make_shared<ASTSQLSecurity>());
 
     if (create.sql_security)
         processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
