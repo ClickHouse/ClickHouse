@@ -17,8 +17,9 @@ MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
-MAX_CPUS_PER_WORKER = 4
-MAX_MEM_PER_WORKER = 7
+
+MAX_CPUS_PER_WORKER = 5
+MAX_MEM_PER_WORKER = 11
 
 
 def _start_docker_in_docker():
@@ -328,7 +329,7 @@ def main():
             args.test or targeted_tests or changed_test_modules,
             workers,
             args.options,
-            info
+            info,
         )
     )
 
