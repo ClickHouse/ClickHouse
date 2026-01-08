@@ -22,8 +22,6 @@ struct hash<Int8> /// NOLINT (cert-dcl58-cpp)
 };
 }
 
-using size_t = std::size_t;
-
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;

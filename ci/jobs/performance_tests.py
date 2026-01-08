@@ -451,9 +451,7 @@ def main():
     if res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster(
-                url="https://play.clickhouse.com?user=play", user="", pwd=""
-            )
+            cidb = CIDBCluster()
             assert cidb.is_ready()
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3

@@ -50,7 +50,6 @@
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
@@ -66,7 +65,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/S3/Credentials.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -111,16 +109,16 @@
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Server/CloudPlacementInfo.h>
-#include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/KeeperHTTPHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/ArrowFlightHandler.h>
+#include <Server/HTTP/HTTPServer.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -145,7 +143,6 @@
 #    include <Server/SSH/SSHPtyHandlerFactory.h>
 #    include <Common/LibSSHInitializer.h>
 #    include <Common/LibSSHLogger.h>
-#    include <Server/ACME/Client.h>
 #endif
 
 #if USE_GRPC
@@ -154,7 +151,6 @@
 
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
-#    include <Coordination/KeeperAsynchronousMetrics.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
@@ -189,7 +185,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
-    extern const ServerSettingsBool asynchronous_metrics_keeper_metrics_only;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
@@ -220,7 +215,6 @@ namespace ServerSetting
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
-    extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
@@ -232,7 +226,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
     extern const ServerSettingsUInt64 http_connections_store_limit;
-    extern const ServerSettingsUInt64 http_connections_hard_limit;
     extern const ServerSettingsUInt64 http_connections_warn_limit;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
@@ -241,18 +234,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
-    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
-    extern const ServerSettingsString text_index_header_cache_policy;
-    extern const ServerSettingsUInt64 text_index_header_cache_size;
-    extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
-    extern const ServerSettingsDouble text_index_header_cache_size_ratio;
-    extern const ServerSettingsString text_index_postings_cache_policy;
-    extern const ServerSettingsUInt64 text_index_postings_cache_size;
-    extern const ServerSettingsUInt64 text_index_postings_cache_max_entries;
-    extern const ServerSettingsDouble text_index_postings_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -322,7 +303,6 @@ namespace ServerSetting
     extern const ServerSettingsBool shutdown_wait_unfinished_queries;
     extern const ServerSettingsUInt64 storage_connections_soft_limit;
     extern const ServerSettingsUInt64 storage_connections_store_limit;
-    extern const ServerSettingsUInt64 storage_connections_hard_limit;
     extern const ServerSettingsUInt64 storage_connections_warn_limit;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
@@ -366,7 +346,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
     extern const ServerSettingsString allowed_disks_for_table_engines;
-    extern const ServerSettingsUInt64 s3_credentials_provider_max_cache_size;
 }
 
 namespace ErrorCodes
@@ -921,12 +900,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-                startup_context->setCurrentQueryId("");
-
-                {
-                    CurrentThread::QueryScope query_scope(startup_context);
-                    executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
-                }
+                executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
                 if (result != "1\n" && result != "true\n")
@@ -955,11 +929,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-            startup_context->setCurrentQueryId("");
-
-            CurrentThread::QueryScope query_scope(startup_context);
-
-            executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+            executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
         if (!skipped_startup_scripts.empty())
@@ -1060,33 +1030,6 @@ try
     Stopwatch startup_watch;
     Poco::Logger * log = &logger();
 
-    const size_t physical_server_memory = getMemoryAmount();
-
-    LOG_INFO(
-        log,
-        "Available RAM: {}; logical cores: {}; used cores: {}.",
-        formatReadableSizeWithBinarySuffix(physical_server_memory),
-        std::thread::hardware_concurrency(),
-        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
-    );
-
-#if defined(__x86_64__)
-    String cpu_info;
-#define COLLECT_FLAG(X) \
-    if (CPU::have##X()) \
-    {                   \
-        if (!cpu_info.empty()) \
-            cpu_info += ", ";  \
-        cpu_info += #X; \
-    }
-
-    CPU_ID_ENUMERATE(COLLECT_FLAG)
-#undef COLLECT_FLAG
-
-    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
-#endif
-
-
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
@@ -1099,44 +1042,35 @@ try
 
     if (config().getBool("mlock_executable", false))
     {
-        size_t min_physical_server_memory_to_mlock = config().getUInt64("mlock_executable_min_total_memory_amount_bytes", 5'000'000'000);
-        if (physical_server_memory >= min_physical_server_memory_to_mlock)
+        if (hasLinuxCapability(CAP_IPC_LOCK))
         {
-            if (hasLinuxCapability(CAP_IPC_LOCK))
+            try
             {
-                try
-                {
-                    /// Get the memory area with (current) code segment.
-                    /// It's better to lock only the code segment instead of calling "mlockall",
-                    /// because otherwise debug info will be also locked in memory, and it can be huge.
-                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+                /// Get the memory area with (current) code segment.
+                /// It's better to lock only the code segment instead of calling "mlockall",
+                /// because otherwise debug info will be also locked in memory, and it can be huge.
+                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
 
-                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                    if (0 != mlock(addr, len))
-                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
-                    else
-                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
-                }
-                catch (...)
-                {
-                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
-                }
+                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlock(addr, len))
+                    LOG_WARNING(log, "Failed mlock: {}", errnoToString());
+                else
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
             }
-            else
+            catch (...)
             {
-                LOG_INFO(
-                    log,
-                    "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                    " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
-                    " Note that it will not work on 'nosuid' mounted filesystems.",
-                    executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
+                LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
             }
         }
         else
         {
-            LOG_INFO(log, "Skip mlock for the clickhouse executable, because the total memory in the system ({}) is less than the minimum configured threshold (`mlock_executable_min_total_memory_amount_bytes` = {})",
-                ReadableSize(physical_server_memory), ReadableSize(min_physical_server_memory_to_mlock));
+            LOG_INFO(
+                log,
+                "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                " It could happen due to incorrect ClickHouse package installation."
+                " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
+                " Note that it will not work on 'nosuid' mounted filesystems.",
+                executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
         }
     }
 #endif
@@ -1195,10 +1129,6 @@ try
         LOG_INFO(
             log, "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
     }
-
-#if USE_AWS_S3
-    DB::S3::setCredentialsProviderCacheMaxSize(server_settings[ServerSetting::s3_credentials_provider_max_cache_size]);
-#endif
 
     registerInterpreters();
     registerFunctions();
@@ -1259,6 +1189,32 @@ try
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
+#endif
+
+    const size_t physical_server_memory = getMemoryAmount();
+
+    LOG_INFO(
+        log,
+        "Available RAM: {}; logical cores: {}; used cores: {}.",
+        formatReadableSizeWithBinarySuffix(physical_server_memory),
+        std::thread::hardware_concurrency(),
+        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
+    );
+
+#if defined(__x86_64__)
+    String cpu_info;
+#define COLLECT_FLAG(X) \
+    if (CPU::have##X()) \
+    {                   \
+        if (!cpu_info.empty()) \
+            cpu_info += ", ";  \
+        cpu_info += #X; \
+    }
+
+    CPU_ID_ENUMERATE(COLLECT_FLAG)
+#undef COLLECT_FLAG
+
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
     bool has_trace_collector = false;
@@ -1374,56 +1330,32 @@ try
         global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
-    std::unique_ptr<AsynchronousMetrics> async_metrics;
+    ServerAsynchronousMetrics async_metrics(
+        global_context,
+        server_settings[ServerSetting::asynchronous_metrics_update_period_s],
+        server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
+        server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
+        [&]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> metrics;
 
-    DB::AsynchronousMetrics::ProtocolServerMetricsFunc asynchronous_metrics_protocol_server_metrics_func = [&]() -> std::vector<ProtocolServerMetrics>
-    {
-        std::vector<ProtocolServerMetrics> metrics;
+            std::lock_guard lock(servers_lock);
+            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
-        std::lock_guard lock(servers_lock);
-        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+            for (const auto & server : servers_to_start_before_tables)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
-        for (const auto & server : servers_to_start_before_tables)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-
-        for (const auto & server : servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-        return metrics;
-    };
-    const unsigned async_metrics_update_period_s = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
-    const bool async_metrics_update_jemalloc_epoch = memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc;
-    const bool async_metrics_update_rss = memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None;
-
-#if USE_NURAFT
-    const bool async_metrics_keeper_metrics_only = server_settings[ServerSetting::asynchronous_metrics_keeper_metrics_only];
-    if (async_metrics_keeper_metrics_only)
-    {
-        async_metrics = std::make_unique<KeeperAsynchronousMetrics>(
-            global_context,
-            async_metrics_update_period_s,
-            asynchronous_metrics_protocol_server_metrics_func,
-            async_metrics_update_jemalloc_epoch,
-            async_metrics_update_rss
-        );
-    }
-    else
-#endif
-    {
-        async_metrics = std::make_unique<ServerAsynchronousMetrics>(
-            global_context,
-            async_metrics_update_period_s,
-            server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
-            server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
-            asynchronous_metrics_protocol_server_metrics_func,
-            async_metrics_update_jemalloc_epoch,
-            async_metrics_update_rss
-        );
-    }
+            for (const auto & server : servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            return metrics;
+        },
+        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
+        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
-        async_metrics->stop();
+        async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
@@ -1662,20 +1594,7 @@ try
         }
     }
 
-    /// Inject and enable failpoints declared in the configuration
-    {
-        auto & conf = config();
-        String root_key = "fail_points_active";
-        Poco::Util::AbstractConfiguration::Keys fail_point_names;
-        conf.keys(root_key, fail_point_names);
-
-        for (const auto & fail_point_name : fail_point_names)
-        {
-            if (ConfigHelper::getBool(conf, root_key + "." + fail_point_name))
-                FailPointInjection::enableFailPoint(fail_point_name);
-        }
-    }
-
+    FailPointInjection::enableFromGlobalConfig(config());
 #endif
 
     memory_worker.start();
@@ -1707,7 +1626,7 @@ try
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
         auto cancellation_task_holder = global_context->getSchedulePool().createTask(
-            StorageID::createEmpty(), "CancellationChecker",
+            "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
         cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
@@ -1929,39 +1848,6 @@ try
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_entries, vector_similarity_index_cache_size_ratio);
 
-    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
-    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
-    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
-    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
-    if (text_index_dictionary_block_cache_size > max_cache_size)
-    {
-        text_index_dictionary_block_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
-    }
-    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
-
-    String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
-    size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
-    size_t text_index_header_cache_max_count = server_settings[ServerSetting::text_index_header_cache_max_entries];
-    double text_index_header_cache_size_ratio = server_settings[ServerSetting::text_index_header_cache_size_ratio];
-    if (text_index_header_cache_size > max_cache_size)
-    {
-        text_index_header_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_header_cache_size));
-    }
-    global_context->setTextIndexHeaderCache(text_index_header_cache_policy, text_index_header_cache_size, text_index_header_cache_max_count, text_index_header_cache_size_ratio);
-
-    String text_index_postings_cache_policy = server_settings[ServerSetting::text_index_postings_cache_policy];
-    size_t text_index_postings_cache_size = server_settings[ServerSetting::text_index_postings_cache_size];
-    size_t text_index_postings_cache_max_count = server_settings[ServerSetting::text_index_postings_cache_max_entries];
-    double text_index_postings_cache_size_ratio = server_settings[ServerSetting::text_index_postings_cache_size_ratio];
-    if (text_index_postings_cache_size > max_cache_size)
-    {
-        text_index_postings_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_postings_cache_size));
-    }
-    global_context->setTextIndexPostingsCache(text_index_postings_cache_policy, text_index_postings_cache_size, text_index_postings_cache_max_count, text_index_postings_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -2056,29 +1942,6 @@ try
             extra_paths.emplace_back(cert_path);
         if (!key_path.empty())
             extra_paths.emplace_back(key_path);
-    }
-
-    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
-    /// and thus this object must be created after the SCOPE_EXIT object where shared
-    /// context is destroyed.
-    /// In addition this object has to be created before any scenario that requires
-    /// DNS resolution (e.g. the loading of tables and clusters config).
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (server_settings[ServerSetting::disable_internal_dns_cache])
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
-        DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
-
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
-        dns_cache_updater->start();
     }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
@@ -2340,7 +2203,7 @@ try
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, server_pool, *async_metrics, servers, servers_to_start_before_tables);
+                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
                 }
             }
 
@@ -2357,10 +2220,10 @@ try
             global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
 
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
             NamedCollectionFactory::instance().reloadFromConfig(*config);
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
@@ -2369,19 +2232,16 @@ try
                     new_server_settings[ServerSetting::disk_connections_soft_limit],
                     new_server_settings[ServerSetting::disk_connections_warn_limit],
                     new_server_settings[ServerSetting::disk_connections_store_limit],
-                    new_server_settings[ServerSetting::disk_connections_hard_limit],
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::storage_connections_soft_limit],
                     new_server_settings[ServerSetting::storage_connections_warn_limit],
                     new_server_settings[ServerSetting::storage_connections_store_limit],
-                    new_server_settings[ServerSetting::storage_connections_hard_limit],
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::http_connections_soft_limit],
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
-                    new_server_settings[ServerSetting::http_connections_hard_limit],
                 });
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
@@ -2501,11 +2361,10 @@ try
                     "HTTP Control: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(http_context),
-                        createKeeperHTTPHandlerFactory(
-                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
+                        createKeeperHTTPControlMainHandlerFactory(
+                            config_getter(),
+                            global_context->getKeeperDispatcher(),
+                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
             });
         }
 #else
@@ -2525,7 +2384,7 @@ try
             interserver_listen_hosts,
             listen_try,
             server_pool,
-            *async_metrics,
+            async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
     }
@@ -2551,13 +2410,6 @@ try
             LOG_INFO(log, "Listening for {}", server.getDescription());
         }
     }
-
-#if USE_SSL
-    /// ACME client is necessary for CertificateReloader to work in case Let's Encrypt is configured,
-    /// but can not start before Keeper server can be initialized (in case of embedded Keeper).
-    /// Let's try deferring until servers are started.
-    ACME::Client::instance().initialize(config());
-#endif
 
     const auto & cache_disk_name = server_settings[ServerSetting::temporary_data_in_cache].value;
 
@@ -2634,7 +2486,7 @@ try
             listen_hosts,
             listen_try,
             server_pool,
-            *async_metrics,
+            async_metrics,
             servers,
             /* start_servers= */ true,
             server_type);
@@ -2688,6 +2540,29 @@ try
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before the loading of the tables.
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (server_settings[ServerSetting::disable_internal_dns_cache])
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
+
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
+    }
+
+    if (dns_cache_updater)
+        dns_cache_updater->start();
 
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
 
@@ -2805,11 +2680,11 @@ try
 #endif
 
     {
-        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), *async_metrics);
+        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, listen_try, server_pool, *async_metrics, servers);
+            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
@@ -2822,14 +2697,13 @@ try
                              "to configuration file.)");
 
 #if USE_SSL
-        ACME::Client::instance().initialize(config());
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics->start();
-        global_context->setAsynchronousMetrics(async_metrics.get());
+        async_metrics.start();
+        global_context->setAsynchronousMetrics(&async_metrics);
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -2942,13 +2816,6 @@ try
         systemdNotify("READY=1\n");
 #endif
 
-        auto stop_acme_instance = []{
-#if USE_SSL
-            /// Stop ACME tasks.
-            ACME::Client::instance().shutdown();
-#endif
-        };
-
         SCOPE_EXIT_SAFE({
             if (config().has("logger.shutdown_level") && !config().getString("logger.shutdown_level").empty())
             {
@@ -2968,8 +2835,6 @@ try
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
-
-            stop_acme_instance();
 
             is_cancelled = true;
 
@@ -3038,7 +2903,7 @@ try
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                global_context->getConfigRef(), graphite_key, *async_metrics));
+                global_context->getConfigRef(), graphite_key, async_metrics));
         }
 
         waitForTerminationRequest();
@@ -3088,12 +2953,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         if (type == "prometheus")
-        {
-            const std::string handler_name = config.getBool("prometheus.keeper_metrics_only", false) ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
-        }
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
@@ -3468,9 +3330,6 @@ void Server::createServers(
         {
             /// Prometheus (if defined and not setup yet with http_port)
             port_name = "prometheus.port";
-
-            const char * handler_name = config.getBool("prometheus.keeper_metrics_only", false) ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
-
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
@@ -3482,7 +3341,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
             });
         }
     }

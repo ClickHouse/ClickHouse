@@ -53,20 +53,13 @@ class MetaClasses:
 
         @classmethod
         def from_fs(cls: Type[T], name) -> T:
-            return cls.from_file(cls.file_name_static(name))
-
-        @classmethod
-        def from_file(cls: Type[T], path) -> T:
-            """
-            For non-default result file locations
-            """
-            with open(path, "r", encoding="utf8") as f:
+            with open(cls.file_name_static(name), "r", encoding="utf8") as f:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
                     print(f"ERROR: failed to parse json, ex [{ex}]")
-                    print(f"JSON content [{path}]")
-                    Shell.check(f"cat {path}")
+                    print(f"JSON content [{cls.file_name_static(name)}]")
+                    Shell.check(f"cat {cls.file_name_static(name)}")
                     raise ex
 
         @classmethod
@@ -472,10 +465,6 @@ class Utils:
         return False
 
     @staticmethod
-    def is_mac():
-        return platform.system() == "Darwin"
-
-    @staticmethod
     def terminate_process_group(pid, force=False):
         try:
             if not force:
@@ -736,27 +725,18 @@ class Utils:
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
                 path_out = f"{parent}/{name}.tar.gz"
-                archive_name = f"{name}.tar.gz"
                 Shell.check(
-                    f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
+                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
                 path_out = f"{path}.gz"
                 Shell.check(
-                    f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
                     verbose=True,
                     strict=True,
                 )
-            elif not path_obj.exists():
-                raise RuntimeError(
-                    f"Failed to compress file [{path}]: path does not exist"
-                )
-            else:
-                raise RuntimeError(f"Failed to compress file [{path}]")
-        else:
-            raise RuntimeError(f"Failed to compress file [{path}]: no gzip installed")
         return path_out
 
     @classmethod
@@ -983,7 +963,12 @@ class TeePopen:
         # Search backwards for "Traceback"
         for i in range(len(buffer) - 1, -1, -1):
             if "Traceback" in buffer[i]:
-                return "".join(buffer[i:])
+                return "\n".join(buffer[i:])
 
         # Fallback: return last max_lines
-        return "".join(buffer[-max_lines:])
+        return "\n".join(buffer[-max_lines:])
+
+
+if __name__ == "__main__":
+
+    Utils.compress_gz("/tmp/test/")

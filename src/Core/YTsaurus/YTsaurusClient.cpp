@@ -60,7 +60,7 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     if (!json_ptr->has("type"))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
 
-    if (json_ptr->getValue<String>("type") == "table" || json_ptr->getValue<String>("type") == "replicated_table")
+    if (json_ptr->getValue<String>("type") == "table")
     {
         if (!json_ptr->has("dynamic"))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'dynamic'.");
@@ -73,24 +73,11 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & column_names_str = "*")
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, column_names_str));
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
     return executeQuery(select_rows_query);
 }
-
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName & columns)
-{
-    String columns_names_str;
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        columns_names_str += columns[i].name;
-        if (i + 1 != columns.size())
-            columns_names_str += ", ";
-    }
-    return selectRows(cypress_path, columns_names_str);
-}
-
 
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
 {
@@ -257,7 +244,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     return {true, std::move(yt_columns)};
 }
 
-bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable)
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason)
 {
     auto yt_schema = getTableSchema(table_path);
 
@@ -273,7 +260,12 @@ bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const S
             return false;
         }
         auto yt_column_type = iter->second;
-        if (!isYTSaurusTypesCompatible(column_type_with_name.type, yt_column_type, allow_nullable))
+
+        if (
+            yt_column_type->getColumnType() != TypeIndex::Dynamic &&
+            column_type_with_name.type->getColumnType() != TypeIndex::Dynamic &&
+            column_type_with_name.type->getColumnType() != yt_column_type->getColumnType()
+        )
         {
             reason = fmt::format("Column {} types mismatch. YtSaurus converted type {} table column type {}", column_type_with_name.name, yt_column_type->getName(), column_type_with_name.type->getName());
             return false;

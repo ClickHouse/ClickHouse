@@ -3,7 +3,7 @@ description: 'Documentation for Special Table Engines'
 sidebar_label: 'Special'
 sidebar_position: 50
 slug: /engines/table-engines/special/
-title: 'Special table engines'
+title: 'Special Table Engines'
 doc_type: 'reference'
 ---
 

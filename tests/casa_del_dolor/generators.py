@@ -4,7 +4,6 @@ import pathlib
 import random
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
@@ -45,13 +44,8 @@ class Generator:
 
 
 class BuzzHouseGenerator(Generator):
-    def __init__(self, args, cluster, catalog_server, server_settings):
+    def __init__(self, args, cluster, catalog_server):
         super().__init__(args.client_binary, args.client_config, ".json")
-
-        tree = ET.parse(server_settings)
-        root = tree.getroot()
-        if root.tag != "clickhouse":
-            raise Exception("<clickhouse> element not found")
 
         # Load configuration
         buzz_config = {}
@@ -148,15 +142,12 @@ class BuzzHouseGenerator(Generator):
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
-        # Set SMT disk only when property.py doesn't do it
-        buzz_config["set_smt_disk"] = root.find("shared_merge_tree") is None
         if (
             args.with_spark
             or args.with_glue
             or args.with_hms
             or args.with_rest
             or args.with_unity
-            or args.with_kafka
         ):
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
@@ -191,13 +182,6 @@ class BuzzHouseGenerator(Generator):
                     "port": 8085,
                     "path": "/api/2.1/unity-catalog",
                     "warehouse": "unity",
-                }
-            if args.with_kafka:
-                buzz_config["kafka"] = {
-                    "server_hostname": cluster.kafka_host,
-                    "port": cluster.kafka_port,
-                    "user": "",
-                    "password": "",
                 }
 
         with open(self.temp.name, "w+") as file2:

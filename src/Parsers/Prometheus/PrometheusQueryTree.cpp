@@ -130,6 +130,7 @@ PrometheusQueryResultType PrometheusQueryTree::getResultType() const
     return root->result_type;
 }
 
+
 namespace
 {
     constexpr const size_t NUM_SPACES_PER_INDENT = 2;

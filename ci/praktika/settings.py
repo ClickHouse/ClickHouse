@@ -67,7 +67,6 @@ class _Settings:
     SECRET_GH_APP_PEM_KEY: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
-    WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
@@ -101,7 +100,7 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
-    CI_DB_INSERT_TIMEOUT_SEC = 20
+    CI_DB_INSERT_TIMEOUT_SEC = 5
 
     # to post links for reading statistics in html report (with read-only user)
     CI_DB_READ_USER: str = ""

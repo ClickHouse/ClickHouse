@@ -255,7 +255,7 @@ public:
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
-            std::string_view copy_str = col_const->getDataColumn().getDataAt(0);
+            std::string_view copy_str = col_const->getDataColumn().getDataAt(0).toView();
 
             if (castType(arguments[1].type.get(), [&](const auto & type)
                 {
@@ -303,7 +303,7 @@ Concatenates a string as many times with itself as specified.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRepeat>(documentation, FunctionFactory::Case::Insensitive);
 }
