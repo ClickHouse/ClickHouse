@@ -93,10 +93,12 @@ workflow = Workflow.Config(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         *[
+            # All functional tests should wait for Keeper; the "blocking" ones
+            # do not depend on each other but still depend on Keeper.
             j.set_dependency(
                 BLOCKERS_AFTER_KEEPER
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                else []
+                else [KEEPER_STRESS_PR_NAME]
             )
             for j in JobConfigs.functional_tests_jobs
         ],
