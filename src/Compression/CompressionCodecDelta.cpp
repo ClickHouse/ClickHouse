@@ -21,7 +21,7 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 
@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
@@ -88,8 +89,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename T>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
+    const char * const input_dest = dest;
     const char * const output_end = dest + output_size;
 
     if (source_size % sizeof(T) != 0)
@@ -107,6 +109,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         source += sizeof(T);
         dest += sizeof(T);
     }
+
+    return dest - input_dest;
 }
 
 }
@@ -136,13 +140,13 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
     return 1 + 1 + source_size;
 }
 
-void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
 
     if (uncompressed_size == 0)
-        return;
+        return 0;
 
     UInt8 bytes_size = source[0];
 
@@ -157,20 +161,19 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+    default:
+        /// This should be unreachable due to the check above
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decompress delta-encoded data. File has unknown byte size {}", UInt32{bytes_size});
     }
 }
 
