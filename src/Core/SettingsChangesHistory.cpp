@@ -56,7 +56,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
-            {"insert_select_deduplicate", InsertSelectDeduplicateMode::ENABLE_EVEN_FOR_BAD_QUERIES, InsertSelectDeduplicateMode::ENABLE_WHEN_PROSSIBLE, "New setting"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_PROSSIBLE"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
