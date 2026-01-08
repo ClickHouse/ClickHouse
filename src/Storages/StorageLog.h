@@ -204,7 +204,7 @@ private:
     const Names column_names;
     ContextPtr local_context;
     StorageLog & storage;
-    const StorageSnapshotPtr & storage_snapshot;
+    const StorageSnapshotPtr storage_snapshot;
     const size_t max_block_size;
     const size_t num_streams;
 };
