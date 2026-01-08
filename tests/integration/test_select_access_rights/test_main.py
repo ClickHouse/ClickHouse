@@ -36,12 +36,18 @@ def test_select_single_column():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(a) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT(a) ON default.table1 TO A")
     assert instance.query(select_query, user="A") == ""
 
     instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -57,12 +63,18 @@ def test_select_single_column_with_table_grant():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(a) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT ON default.table1 TO A")
     assert instance.query(select_query, user="A") == ""
 
     instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -78,15 +90,21 @@ def test_select_all_columns():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT(d) ON default.table1 TO A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
     instance.query("GRANT SELECT(a) ON default.table1 TO A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -105,6 +123,12 @@ def test_select_all_columns_with_table_grant():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT ON default.table1 TO A")
     assert instance.query(select_query, user="A") == ""
 
@@ -117,6 +141,12 @@ def test_alias():
     select_query = "SELECT x, y, x + y AS s FROM table1"
     assert (
         "it's necessary to have the grant SELECT ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(x, y) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -135,12 +165,18 @@ def test_alias_columns():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(x, y) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT(x,y) ON default.table1 TO A")
     assert instance.query(select_query, user="A") == ""
 
     select_query = "SELECT s FROM table1"
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(s) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -162,12 +198,18 @@ def test_materialized_columns():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(x, y) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT(x,y) ON default.table1 TO A")
     assert instance.query(select_query, user="A") == ""
 
     select_query = "SELECT p FROM table1"
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(p) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -213,18 +255,23 @@ def test_select_join():
     table2_match = match_error(response, None, "table2")
     assert table1_match or table2_match, response
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    instance.query("GRANT SHOW COLUMNS ON default.table2 TO A")
+    response = instance.query_and_get_error(select_query, user="A")
+    table1_match = match_error(response, "d, a, b", "table1")
+    table2_match = match_error(response, "d, x, y", "table2")
+    assert table1_match or table2_match, response
+
     instance.query("GRANT SELECT(d, x, y) ON default.table2 TO A")
     response = instance.query_and_get_error(select_query, user="A")
-    assert match_error(response, None, "table1")
+    assert match_error(response, "d, a, b", "table1")
 
-    response = instance.query_and_get_error(select_query, user="A")
     instance.query("GRANT SELECT(d, a, b) ON default.table1 TO A")
-
     assert instance.query(select_query, user="A") == ""
 
     instance.query("REVOKE SELECT ON default.table2 FROM A")
     response = instance.query_and_get_error(select_query, user="A")
-    assert match_error(response, None, "table2")
+    assert match_error(response, "d, x, y", "table2")
 
 
 def test_select_union():
@@ -241,9 +288,16 @@ def test_select_union():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    instance.query("GRANT SHOW COLUMNS ON default.table2 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
     instance.query("GRANT SELECT(a, b) ON default.table1 TO A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table2"
+        "it's necessary to have the grant SELECT(a, b) ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -252,7 +306,7 @@ def test_select_union():
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -296,7 +350,6 @@ def test_select_where():
         "CREATE TABLE table1(a String, b UInt8) ENGINE = MergeTree ORDER BY b"
     )
     instance.query("INSERT INTO table1 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0)")
-    instance.query("GRANT SELECT(a) ON default.table1 TO A")
 
     select_query = "SELECT a FROM table1 WHERE b = 0"
     assert (
@@ -304,12 +357,19 @@ def test_select_where():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
+    instance.query("GRANT SELECT(a) ON default.table1 TO A")
     instance.query("GRANT SELECT(b) ON default.table1 TO A")
     assert instance.query(select_query, user="A") == "xxx\nzzz\n"
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -323,7 +383,6 @@ def test_select_prewhere():
         "CREATE TABLE table1(a String, b UInt8) ENGINE = MergeTree ORDER BY b"
     )
     instance.query("INSERT INTO table1 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0)")
-    instance.query("GRANT SELECT(a) ON default.table1 TO A")
 
     select_query = "SELECT a FROM table1 PREWHERE b = 0"
     assert (
@@ -331,12 +390,19 @@ def test_select_prewhere():
         in instance.query_and_get_error(select_query, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+
+    instance.query("GRANT SELECT(a) ON default.table1 TO A")
     instance.query("GRANT SELECT(b) ON default.table1 TO A")
     assert instance.query(select_query, user="A") == "xxx\nzzz\n"
 
     instance.query("REVOKE SELECT ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(a, b) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
 
@@ -350,6 +416,7 @@ def test_select_with_row_policy():
         "CREATE TABLE table1(a String, b UInt8) ENGINE = MergeTree ORDER BY b"
     )
     instance.query("INSERT INTO table1 VALUES ('xxx', 0), ('yyy', 1), ('zzz', 0)")
+    instance.query("DROP ROW POLICY IF EXISTS pol1 ON table1")
     instance.query("CREATE ROW POLICY pol1 ON table1 USING b = 0 TO A")
 
     select_query = "SELECT a FROM table1"
@@ -363,13 +430,23 @@ def test_select_with_row_policy():
         in instance.query_and_get_error(select_query2, user="A")
     )
 
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SELECT(a) ON default.table1"
+        in instance.query_and_get_error(select_query, user="A")
+    )
+    assert (
+        "it's necessary to have the grant SELECT for at least one column on default.table1"
+        in instance.query_and_get_error(select_query2, user="A")
+    )
+
     instance.query("GRANT SELECT(a) ON default.table1 TO A")
     assert instance.query(select_query, user="A") == "xxx\nzzz\n"
     assert instance.query(select_query2, user="A") == "2\n"
 
     instance.query("REVOKE SELECT(a) ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT ON default.table1"
+        "it's necessary to have the grant SELECT(a) ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
     assert (
