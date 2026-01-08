@@ -153,7 +153,7 @@ endif()
 
 if (TARGET ch_contrib::zstd)
     target_compile_definitions(
-        _libarchive PUBLIC
+        _libarchive PRIVATE
         HAVE_ZSTD_H=1
         HAVE_LIBZSTD=1
         HAVE_ZSTD_compressStream=1
@@ -169,7 +169,7 @@ endif()
 
 if (OS_LINUX)
     target_compile_definitions(
-        _libarchive PUBLIC
+        _libarchive PRIVATE
             MAJOR_IN_SYSMACROS=1
             HAVE_LINUX_FS_H=1
             HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC=1
