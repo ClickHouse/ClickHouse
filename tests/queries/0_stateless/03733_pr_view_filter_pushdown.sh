@@ -59,5 +59,5 @@ SELECT * FROM v1_03733 WHERE c = 0 SETTINGS parallel_replicas_local_plan=0;
 $CLICKHOUSE_CLIENT --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
 select trimLeft(explain) from
-  (explain description=0, actions=1 select * from vv_03733 where a = 0 settings parallel_replicas_local_plan=1)
+  (explain description=0, actions=1 select * from v1_03733 where c = 0 settings parallel_replicas_local_plan=1)
 where explain ilike '%Prewhere%' limit 1;"
