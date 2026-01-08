@@ -24,6 +24,7 @@ except Exception:
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 from praktika.settings import Settings
+from praktika.info import Info
 
 
  
@@ -267,13 +268,13 @@ def main():
     extra.append("--timeout-method=signal")
     try:
         cpus = os.cpu_count() or 8
-        heuristic_workers = str(min(16, max(6, cpus // 2)))
+        heuristic_workers = "16"
     except Exception:
-        heuristic_workers = "12"
+        heuristic_workers = "16"
     _xd_env = (os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or "").lower()
     if _xd_env in ("", "auto"):
-        # Lower default concurrency on PRs to reduce resource pressure on self-hosted runners
-        xdist_workers = "6" if is_pr else heuristic_workers
+        # Use default heuristic unless explicitly overridden
+        xdist_workers = heuristic_workers
     else:
         xdist_workers = _xd_env
     extra.append(f"-n {xdist_workers}")
@@ -287,7 +288,8 @@ def main():
     extra.append(f"--report-log={report_file}")
     base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
     if is_parallel:
-        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "--max-worker-restart=2", "--dist", "load"])
+        # Reduce report size/noise: disable pytest logging plugin and stdout capture for workers
+        extra.extend(["-o", "log_cli=false", "-o", "log_level=WARNING", "-p", "no:cacheprovider", "-p", "no:logging", "--max-worker-restart=2", "--dist", "load", "--capture=no"])
         cmd = (" ".join(base + extra)).rstrip()
     else:
         cmd = (" ".join(["-s"] + base + extra)).rstrip()
@@ -348,13 +350,18 @@ def main():
     try:
         need = (not env.get("COMMIT_SHA")) or env.get("COMMIT_SHA") in ("", "local")
         if need:
-            sha = (
-                os.environ.get("GITHUB_SHA")
-                or os.environ.get("GITHUB_HEAD_SHA")
-                or os.environ.get("SHA")
-                or ""
-            )
-            # Try to resolve via PRInfo if GH envs are not present
+            sha = ""
+            try:
+                sha = Info().sha or ""
+            except Exception:
+                sha = ""
+            if not sha:
+                sha = (
+                    os.environ.get("GITHUB_SHA")
+                    or os.environ.get("GITHUB_HEAD_SHA")
+                    or os.environ.get("SHA")
+                    or ""
+                )
             if not sha:
                 try:
                     from tests.ci.pr_info import PRInfo  # type: ignore
@@ -462,6 +469,36 @@ def main():
         )
     )
 
+    # Avoid uploading extremely large jsonl report to S3: detach if it exceeds threshold (default 512MB)
+    try:
+        max_mb = int(os.environ.get("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", "512") or "512")
+    except Exception:
+        max_mb = 512
+    try:
+        size_bytes = os.path.getsize(report_file) if os.path.exists(report_file) else 0
+        if size_bytes > max_mb * 1024 * 1024:
+            try:
+                if results and isinstance(results[-1], Result):
+                    new_files = []
+                    if os.path.exists(pytest_log_file):
+                        new_files.append(pytest_log_file)
+                    # replace nested pytest result attachments with smaller stdout log only
+                    results[-1].files = new_files
+            except Exception:
+                pass
+            try:
+                sz_gb = round(size_bytes / (1024**3), 2)
+                results.append(
+                    Result.from_commands_run(
+                        name=f"Trim pytest report attachment: {sz_gb} GiB > {max_mb} MB (skipped)",
+                        command=["true"],
+                    )
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     # Stop keepalive once pytest completes
     try:
         if keepalive_proc and keepalive_proc.poll() is None:
@@ -486,9 +523,29 @@ def main():
     except Exception:
         pass
     try:
+        # Skip attaching gigantic report jsonl to artifacts to prevent multi-GB uploads
+        try:
+            max_mb = int(os.environ.get("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", "512") or "512")
+        except Exception:
+            max_mb = 512
         for p in [pytest_log_file, report_file, junit_file]:
             try:
                 if Path(p).exists():
+                    if p == report_file:
+                        sz = os.path.getsize(p)
+                        if sz > max_mb * 1024 * 1024:
+                            # attach note instead of the huge file
+                            try:
+                                sz_gb = round(sz / (1024**3), 2)
+                                results.append(
+                                    Result.from_commands_run(
+                                        name=f"Skip attaching pytest.jsonl: {sz_gb} GiB > {max_mb} MB",
+                                        command=["true"],
+                                    )
+                                )
+                            except Exception:
+                                pass
+                            continue
                     files_to_attach.append(str(p))
             except Exception:
                 pass

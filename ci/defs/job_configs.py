@@ -937,6 +937,7 @@ class JobConfigs:
                 "./tests/integration/helpers/",
             ],
         ),
+        result_name_for_cidb="Keeper Stress",
     )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
