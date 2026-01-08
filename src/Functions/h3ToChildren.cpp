@@ -12,11 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-
-
-
 static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 namespace DB
 {

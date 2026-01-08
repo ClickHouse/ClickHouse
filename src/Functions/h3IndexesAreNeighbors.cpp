@@ -9,8 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-
-
 namespace DB
 {
 namespace ErrorCodes
