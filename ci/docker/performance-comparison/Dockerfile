@@ -3,6 +3,9 @@
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
+# Remove problematic Kitware repository
+RUN rm -f /etc/apt/sources.list.d/*kitware* || true
+
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
             bash \
