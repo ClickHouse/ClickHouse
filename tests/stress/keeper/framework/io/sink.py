@@ -6,6 +6,20 @@ import time
 
 _SEEDED = False
 
+
+def _sanitize_filename_component(x: object) -> str:
+    try:
+        s = str(x)
+    except Exception:
+        s = ""
+    s = s.strip().replace(" ", "_")
+    allowed = set(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    )
+    res = [ch if ch in allowed else "_" for ch in s]
+    name = "".join(res) or "unknown"
+    return name[:80]
+
 def _autocreate_enabled() -> bool:
     try:
         v = os.environ.get("KEEPER_AUTOCREATE_SCHEMA", "").strip().lower()
@@ -108,7 +122,11 @@ def ensure_sink_schema(_url_ignored=None):
 
 
 def sink_clickhouse(_url_ignored, table, rows):
-    """Write rows to sidecar JSONL for host-side ingestion."""
+    """Write rows to sidecar JSONL for host-side ingestion.
+
+    Supports per-test splitting when KEEPER_METRICS_SPLIT_PER_TEST is truthy.
+    Files are grouped by (run_id, scenario) to limit file size and simplify ingestion.
+    """
     if not rows:
         return
     try:
@@ -117,6 +135,40 @@ def sink_clickhouse(_url_ignored, table, rows):
         sidecar = ""
     if not sidecar:
         return
+    # Ensure directory exists (host-side preflight)
+    try:
+        d = os.path.dirname(sidecar) or "."
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    split = False
+    try:
+        split = (os.environ.get("KEEPER_METRICS_SPLIT_PER_TEST", "0").strip().lower() in ("1", "true", "yes", "on"))
+    except Exception:
+        split = False
+    if split:
+        base = sidecar
+        ext = ".jsonl"
+        if base.lower().endswith(ext):
+            base = base[: -len(ext)]
+        groups = {}
+        for r in rows:
+            rid = _sanitize_filename_component((r or {}).get("run_id") or "run")
+            scen = _sanitize_filename_component((r or {}).get("scenario") or "scenario")
+            path = f"{base}__{rid}__{scen}{ext}"
+            groups.setdefault(path, []).append(r)
+        for path, rs in groups.items():
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    for r in rs:
+                        try:
+                            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        return
+    # Fallback: single file
     try:
         with open(sidecar, "a", encoding="utf-8") as f:
             for r in rows:

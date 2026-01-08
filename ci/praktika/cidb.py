@@ -378,8 +378,8 @@ ORDER BY day DESC
         if not file_path or not os.path.exists(file_path):
             return 0, 0
 
-        # Collect run_ids for deduplication
-        run_ids = set()
+        # Collect (run_id, scenario) pairs for deduplication to support per-test files
+        pairs = set()
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -389,19 +389,22 @@ ORDER BY day DESC
                     try:
                         obj = json.loads(s)
                         rid = str(obj.get("run_id") or "")
+                        scen = str(obj.get("scenario") or "")
                         if rid:
-                            run_ids.add(rid)
+                            pairs.add((rid, scen))
                     except Exception:
                         continue
         except Exception:
-            run_ids = set()
+            pairs = set()
 
-        # Dedupe: check if any rows exist for these run_ids in recent window
-        if run_ids:
-            filt_in = ",".join("'" + r.replace("'", "''") + "'" for r in sorted(run_ids))
+        # Dedupe: check if any rows exist for these (run_id, scenario) in recent window
+        if pairs:
+            def _q(s: str) -> str:
+                return "'" + s.replace("'", "''") + "'"
+            filt_in = ",".join(f"({_q(rid)}, {_q(scen)})" for rid, scen in sorted(pairs))
             q = (
                 f"SELECT count() FROM {metrics_db}.{table} "
-                f"WHERE run_id IN ({filt_in}) AND ts > now() - INTERVAL {dedupe_days} DAY FORMAT TabSeparated"
+                f"WHERE (run_id, scenario) IN ({filt_in}) AND ts > now() - INTERVAL {dedupe_days} DAY FORMAT TabSeparated"
             )
             try:
                 for attempt in range(retries):
@@ -416,7 +419,7 @@ ORDER BY day DESC
                         existing = int(float(txt.splitlines()[0])) if txt else 0
                         if existing > 0:
                             print(
-                                f"INFO: keeper metrics dedupe skip: existing={existing} run_ids={len(run_ids)}"
+                                f"INFO: keeper metrics dedupe skip: existing={existing} pairs={len(pairs)}"
                             )
                             return 0, 1
                         break
