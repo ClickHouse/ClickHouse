@@ -39,7 +39,7 @@ def start_bearer_token_server():
         shell=True
     )
 
-    # build paimon rest catalog from chunk
+    # build paimon rest catalog from chunks
     run_and_check(
         ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && cat chunk_* > paimon-server-starter-1.0-SNAPSHOT.jar\"".format(
             cont_id=instance_id,
