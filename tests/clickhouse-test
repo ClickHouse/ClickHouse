@@ -1176,7 +1176,9 @@ class SettingsRandomizer:
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
-        "query_plan_optimize_join_order_algorithm": lambda: random.choice(['dpsize', 'greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
+        # That is why we use it with fallback to 'greedy'.
+        "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         **randomize_external_sort_group_by(),
     }
 
