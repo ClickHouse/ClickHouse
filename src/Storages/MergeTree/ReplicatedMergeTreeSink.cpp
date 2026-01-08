@@ -595,7 +595,11 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             }
             else
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected path for a deduplicated part: {}", relative_path);
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected path for a deduplicated part: {}. "
+                    "Expected path to end with 'detached/attaching_{}/' or part directory to start with 'tmp_restore_'.",
+                    relative_path, part->name);
             }
         }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), {block_id}, ExecutionStatus(error, error_message));
