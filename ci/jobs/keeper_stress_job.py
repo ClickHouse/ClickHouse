@@ -24,6 +24,7 @@ except Exception:
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 from praktika.settings import Settings
+from praktika.cidb import CIDB
 
 
 def _resolve_cidb():
@@ -557,100 +558,14 @@ def main():
                 )
             else:
                 try:
-                    run_ids = set()
-                    with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
-                        for line in f:
-                            s = line.strip()
-                            if not s:
-                                continue
-                            try:
-                                obj = json.loads(s)
-                                rid = str(obj.get("run_id") or "")
-                                if rid:
-                                    run_ids.add(rid)
-                            except Exception:
-                                pass
-                    have_existing = False
-                    existing = 0
-                    if run_ids:
-                        filt_in = ",".join("'" + r.replace("'", "''") + "'" for r in sorted(run_ids))
-                        q = (
-                            f"SELECT count() FROM {metrics_db_local}.keeper_metrics_ts "
-                            f"WHERE run_id IN ({filt_in}) AND ts > now() - INTERVAL 7 DAY FORMAT TabSeparated"
-                        )
-                        last_err = ""
-                        for attempt in range(1, 4):
-                            try:
-                                r = requests.get(host_url, params={"query": q}, headers=host_auth, timeout=30)
-                                t = (r.text or "").strip()
-                                existing = int(float(t.splitlines()[0])) if t else 0
-                                have_existing = existing > 0
-                                break
-                            except Exception as e:
-                                last_err = str(e)[:300]
-                                time.sleep(min(5, 2 ** attempt))
-                        debug_lines.append(f"run_ids={len(run_ids)} existing={existing} err='{last_err}'")
-                    if not have_existing:
-                        chunk = []
-                        chunk_size = 1000
-                        with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
-                            for line in f:
-                                s = line.strip()
-                                if not s:
-                                    continue
-                                chunk.append(s)
-                                if len(chunk) >= chunk_size:
-                                    body = "\n".join(chunk)
-                                    params = {
-                                        "database": metrics_db_local,
-                                        "query": f"INSERT INTO {metrics_db_local}.keeper_metrics_ts FORMAT JSONEachRow",
-                                        "date_time_input_format": "best_effort",
-                                        "send_logs_level": "warning",
-                                    }
-                                    posted = False
-                                    post_err = ""
-                                    for attempt in range(1, 4):
-                                        try:
-                                            rr = requests.post(url=host_url, params=params, data=body, headers=host_auth, timeout=60)
-                                            rr.raise_for_status()
-                                            posted = True
-                                            break
-                                        except Exception as e:
-                                            post_err = str(e)[:300]
-                                            time.sleep(min(10, 2 ** attempt))
-                                    if posted:
-                                        pushed += len(chunk)
-                                    else:
-                                        errors += len(chunk)
-                                        debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
-                                    chunk = []
-                        if chunk:
-                            body = "\n".join(chunk)
-                            params = {
-                                "database": metrics_db_local,
-                                "query": f"INSERT INTO {metrics_db_local}.keeper_metrics_ts FORMAT JSONEachRow",
-                                "date_time_input_format": "best_effort",
-                                "send_logs_level": "warning",
-                            }
-                            posted = False
-                            post_err = ""
-                            for attempt in range(1, 4):
-                                try:
-                                    rr = requests.post(url=host_url, params=params, data=body, headers=host_auth, timeout=60)
-                                    rr.raise_for_status()
-                                    posted = True
-                                    break
-                                except Exception as e:
-                                    post_err = str(e)[:300]
-                                    time.sleep(min(10, 2 ** attempt))
-                            if posted:
-                                pushed += len(chunk)
-                            else:
-                                errors += len(chunk)
-                                debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
-                    else:
-                        skipped = 1
+                    cidb = CIDB(host_url, host_user, host_key)
+                    inserted, skipped_flag = cidb.insert_keeper_metrics_from_file(
+                        sidecar_path, db=metrics_db_local
+                    )
+                    pushed = inserted
+                    skipped = 1 if skipped_flag else 0
                 except Exception as e:
+                    errors = extracted_rows
                     debug_lines.append(f"fatal='{str(e)[:300]}'")
                 try:
                     dbg_path = f"{temp_dir}/keeper_metrics_push_debug.txt"
@@ -709,145 +624,7 @@ def main():
         )
     except Exception:
         pass
-    # Host-side push of per-test rows into default.checks (parse JUnit)
-    try:
-        from tests.ci.report import TestResult as _TR  # type: ignore
-        from tests.ci.clickhouse_helper import prepare_tests_results_for_clickhouse as _prep  # type: ignore
-        from tests.ci.pr_info import PRInfo as _PR  # type: ignore
-        test_results = []
-        total_time = 0.0
-        try:
-            p = Path(junit_file)
-            if p.exists():
-                root = ET.parse(str(p)).getroot()
-                suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-                for ts in suites:
-                    for tc in list(ts.findall("testcase")):
-                        name = tc.attrib.get("name", "")
-                        classname = tc.attrib.get("classname", "")
-                        file_attr = tc.attrib.get("file", "")
-                        try:
-                            tsec = float(tc.attrib.get("time", 0) or 0)
-                        except Exception:
-                            tsec = 0.0
-                        total_time += tsec
-                        status = "OK"
-                        if tc.findall("skipped"):
-                            status = "SKIPPED"
-                        if tc.findall("failure") or tc.findall("error"):
-                            status = "FAIL"
-                        if file_attr:
-                            tname = f"{file_attr}::{name}"
-                        elif classname:
-                            tname = f"{classname}::{name}"
-                        else:
-                            tname = name
-                        test_results.append(_TR(tname, status, time=tsec))
-        except Exception:
-            test_results = []
-        # Prepare rows and push only per-test entries (skip the first common check row)
-        inserted = 0
-        if test_results:
-            try:
-                pr = _PR()
-                check_status = "success" if pytest_result_ok else "failure"
-                check_start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(max(0, int(time.time() - total_time))))
-                report_url = ""
-                check_name = jn or "Keeper Stress"
-                events = _prep(pr, test_results, check_status, float(total_time), check_start_time, report_url, check_name)
-                # Slice off the first common row; we'll keep job-level row from the main aggregator to avoid duplication
-                per_test_events = events[1:] if len(events) > 1 else []
-            except Exception:
-                per_test_events = []
-            if per_test_events:
-                host_url, auth = _resolve_cidb()
-                host_user = auth.get("X-ClickHouse-User", "")
-                host_key = auth.get("X-ClickHouse-Key", "")
-                debug_lines = [
-                    f"url_present={(1 if bool(host_url) else 0)}",
-                    f"events={len(per_test_events)}",
-                    f"check_name={check_name}",
-                ]
-                if not host_url or not host_user or not host_key:
-                    results.append(
-                        Result.from_commands_run(
-                            name=(
-                                "Keeper Checks Push (per-test): skipped missing_config "
-                                f"url={'yes' if host_url else 'no'} user={'yes' if host_user else 'no'} key={'yes' if host_key else 'no'}"
-                            ),
-                            command=["true"],
-                        )
-                    )
-                else:
-                    chunk = []
-                    chunk_size = 1000
-                    for ev in per_test_events:
-                        try:
-                            chunk.append(json.dumps(ev, ensure_ascii=False))
-                        except Exception:
-                            pass
-                        if len(chunk) >= chunk_size:
-                            body = "\n".join(chunk)
-                            params = {
-                                "database": Settings.CI_DB_DB_NAME or "default",
-                                "query": f"INSERT INTO {Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'} FORMAT JSONEachRow",
-                                "date_time_input_format": "best_effort",
-                                "send_logs_level": "warning",
-                            }
-                            posted = False
-                            post_err = ""
-                            for attempt in range(1, 4):
-                                try:
-                                    rr = requests.post(url=host_url, params=params, data=body, headers=auth, timeout=60)
-                                    rr.raise_for_status()
-                                    posted = True
-                                    break
-                                except Exception as e:
-                                    post_err = str(e)[:300]
-                                    time.sleep(min(10, 2 ** attempt))
-                            if posted:
-                                inserted += len(chunk)
-                            else:
-                                debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
-                            chunk = []
-                    if chunk:
-                        body = "\n".join(chunk)
-                        params = {
-                            "database": Settings.CI_DB_DB_NAME or "default",
-                            "query": f"INSERT INTO {Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'} FORMAT JSONEachRow",
-                            "date_time_input_format": "best_effort",
-                            "send_logs_level": "warning",
-                        }
-                        posted = False
-                        post_err = ""
-                        for attempt in range(1, 4):
-                            try:
-                                rr = requests.post(url=host_url, params=params, data=body, headers=auth, timeout=60)
-                                rr.raise_for_status()
-                                posted = True
-                                break
-                            except Exception as e:
-                                post_err = str(e)[:300]
-                                time.sleep(min(10, 2 ** attempt))
-                        if posted:
-                            inserted += len(chunk)
-                        else:
-                            debug_lines.append(f"chunk_post_failed size={len(chunk)} err='{post_err}'")
-                    try:
-                        dbg_path = f"{temp_dir}/keeper_checks_push_debug.txt"
-                        with open(dbg_path, "w", encoding="utf-8") as df:
-                            df.write("\n".join(debug_lines) + "\n")
-                        files_to_attach.append(dbg_path)
-                    except Exception:
-                        pass
-        results.append(
-            Result.from_commands_run(
-                name=f"Keeper Checks Push (per-test): junit_tests={tests} inserted={inserted}",
-                command=["true"],
-            )
-        )
-    except Exception:
-        pass
+    # Rely on praktika post-run insertion to CIDB for per-test checks (same as integration job)
     try:
         try:
             files_to_attach
