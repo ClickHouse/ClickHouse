@@ -3646,6 +3646,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             }
         }
 
+        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
         for (auto & [alias_column_to_resolve_name, alias_column_to_resolve] : alias_columns_to_resolve)
         {
             /** Alias column could be potentially resolved during resolve of other ALIAS column.
@@ -3653,10 +3654,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               *
               * During resolve of alias_value_1, alias_value_2 column will be resolved.
               */
-            alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
+            alias_column_to_resolve = table_expression_data.column_name_to_column_node[alias_column_to_resolve_name];
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
-            alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
+            alias_column_resolve_scope.table_expression_data_for_alias_resolution = &table_expression_data;
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
@@ -3670,11 +3671,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
-            column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
-            column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
+            table_expression_data.column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
-
-        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
     }
     else if (query_node || union_node)
     {
