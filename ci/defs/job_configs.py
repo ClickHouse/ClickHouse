@@ -525,11 +525,15 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter=f"amd_msan, parallel",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_MSAN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_LARGE,
+                requires=[ArtifactNames.CH_AMD_MSAN],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, sequential, {batch}/{total_batches}",
@@ -865,6 +869,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",

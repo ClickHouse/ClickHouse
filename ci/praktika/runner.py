@@ -599,9 +599,15 @@ class Runner:
                                 "cidb",
                                 ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
+                                    failure_patterns=Settings.TEST_FAILURE_PATTERNS,
+                                    test_output=test_case_result.info,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
+                                    pr_base_branches=[
+                                        env.BASE_BRANCH,
+                                        Settings.MAIN_BRANCH,
+                                    ],
                                 ),
                             )
                     result.dump()
