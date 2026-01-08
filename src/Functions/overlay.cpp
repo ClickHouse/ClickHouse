@@ -97,8 +97,8 @@ public:
         res_offsets.resize_exact(input_rows_count);
         if (col_input_const)
         {
-            std::string_view input = col_input_const->getDataAt(0);
-            res_data.reserve(input.size() * input_rows_count);
+            StringRef input = col_input_const->getDataAt(0);
+            res_data.reserve((input.size + 1) * input_rows_count);
         }
         else
         {
@@ -219,8 +219,8 @@ private:
     template <bool has_four_args, bool offset_is_const, bool length_is_const>
     void constantConstant(
         size_t rows,
-        const std::string_view & input,
-        const std::string_view & replace,
+        const StringRef & input,
+        const StringRef & replace,
         const ColumnPtr & column_offset,
         const ColumnPtr & column_length,
         Int64 const_offset,
@@ -236,12 +236,12 @@ private:
             return;
         }
 
-        size_t input_size = getSliceSize(reinterpret_cast<const UInt8 *>(input.data()), input.size());
+        size_t input_size = getSliceSize(reinterpret_cast<const UInt8 *>(input.data), input.size);
         size_t valid_offset = 0; // start from 0, not negative
         if constexpr (offset_is_const)
             valid_offset = getValidOffset(const_offset, input_size);
 
-        size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data()), replace.size());
+        size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data), replace.size);
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
@@ -255,8 +255,8 @@ private:
 
         Int64 offset = 0; // start from 1, maybe negative
         Int64 length = 0; // maybe negative
-        const UInt8 * input_begin = reinterpret_cast<const UInt8 *>(input.data());
-        const UInt8 * input_end = reinterpret_cast<const UInt8 *>(input.data() + input.size());
+        const UInt8 * input_begin = reinterpret_cast<const UInt8 *>(input.data);
+        const UInt8 * input_end = reinterpret_cast<const UInt8 *>(input.data + input.size);
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
@@ -277,33 +277,33 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data(), prefix_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data, prefix_size);
                 res_offset += prefix_size;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace_size);
                 res_offset += replace_size;
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_size is zero.
                 if (suffix_size)
                 {
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + prefix_size + valid_length, suffix_size);
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data + prefix_size + valid_length, suffix_size);
                     res_offset += suffix_size;
                 }
             }
             else
             {
                 const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
-                size_t prefix_bytes = prefix_end > input_end ? input.size() : prefix_end - input_begin;
+                size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
 
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size() + suffix_bytes;
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -311,8 +311,8 @@ private:
                 res_offset += prefix_bytes;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace.size());
-                res_offset += replace.size();
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace.size);
+                res_offset += replace.size;
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_bytes is zero.
                 if (suffix_bytes)
@@ -321,6 +321,10 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
+
+            /// add zero terminator
+            res_data[res_offset] = 0;
+            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
@@ -331,7 +335,7 @@ private:
         size_t rows,
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const std::string_view & replace,
+        const StringRef & replace,
         const ColumnPtr & column_offset,
         const ColumnPtr & column_length,
         Int64 const_offset,
@@ -347,7 +351,7 @@ private:
             return;
         }
 
-        size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data()), replace.size());
+        size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data), replace.size);
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
@@ -366,7 +370,7 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1] - 1;
             size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
 
             if constexpr (offset_is_const)
@@ -390,7 +394,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -398,7 +402,7 @@ private:
                 res_offset += prefix_size;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace_size);
                 res_offset += replace_size;
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_size is zero.
@@ -418,7 +422,7 @@ private:
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size() + suffix_bytes;
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -426,8 +430,8 @@ private:
                 res_offset += prefix_bytes;
 
                 /// copy replace
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data(), replace.size());
-                res_offset += replace.size();
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replace.data, replace.size);
+                res_offset += replace.size;
 
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_bytes is zero.
                 if (suffix_bytes)
@@ -437,6 +441,10 @@ private:
                 }
             }
 
+            /// add zero terminator
+            res_data[res_offset] = 0;
+            ++res_offset;
+
             res_offsets[i] = res_offset;
         }
     }
@@ -444,7 +452,7 @@ private:
     template <bool has_four_args, bool offset_is_const, bool length_is_const>
     void constantVector(
         size_t rows,
-        const std::string_view & input,
+        const StringRef & input,
         const ColumnString::Chars & replace_data,
         const ColumnString::Offsets & replace_offsets,
         const ColumnPtr & column_offset,
@@ -462,7 +470,7 @@ private:
             return;
         }
 
-        size_t input_size = getSliceSize(reinterpret_cast<const UInt8 *>(input.data()), input.size());
+        size_t input_size = getSliceSize(reinterpret_cast<const UInt8 *>(input.data), input.size);
         size_t valid_offset = 0; // start from 0, not negative
         if constexpr (offset_is_const)
             valid_offset = getValidOffset(const_offset, input_size);
@@ -475,14 +483,14 @@ private:
             valid_length = const_length;
         }
 
-        const auto * input_begin = reinterpret_cast<const UInt8 *>(input.data());
-        const auto * input_end = reinterpret_cast<const UInt8 *>(input.data() + input.size());
+        const auto * input_begin = reinterpret_cast<const UInt8 *>(input.data);
+        const auto * input_end = reinterpret_cast<const UInt8 *>(input.data + input.size);
         Int64 offset = 0; // start from 1, maybe negative
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
             size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1] - 1;
             size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (!offset_is_const)
@@ -506,11 +514,11 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data(), prefix_size);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data, prefix_size);
                 res_offset += prefix_size;
 
                 /// copy replace
@@ -520,17 +528,17 @@ private:
                 /// copy suffix after replaced region. It is not necessary to copy if suffix_size is zero.
                 if (suffix_size)
                 {
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + prefix_size + valid_length, suffix_size);
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data + prefix_size + valid_length, suffix_size);
                     res_offset += suffix_size;
                 }
             }
             else
             {
                 const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
-                size_t prefix_bytes = prefix_end > input_end ? input.size() : prefix_end - input_begin;
+                size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
-                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes;
+                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -548,6 +556,10 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
+
+            /// add zero terminator
+            res_data[res_offset] = 0;
+            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
@@ -599,11 +611,11 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1] - 1;
             size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
 
             size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1] - 1;
             size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (offset_is_const)
@@ -631,7 +643,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -658,7 +670,7 @@ private:
                 size_t prefix_bytes = prefix_end > input_end ? input_bytes : prefix_end - input_begin;
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
-                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes;
+                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -677,6 +689,10 @@ private:
                 }
             }
 
+            /// add zero terminator
+            res_data[res_offset] = 0;
+            ++res_offset;
+
             res_offsets[i] = res_offset;
         }
     }
@@ -686,69 +702,20 @@ private:
 
 REGISTER_FUNCTION(Overlay)
 {
-    FunctionDocumentation::Description description = R"(
-Replaces part of the string `input` with another string `replace`, starting at the 1-based index `offset`.
-)";
-    FunctionDocumentation::Syntax syntax = "overlay(s, replace, offset[, length])";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "The input string.", {"String"}},
-        {"replace", "The replacement string", {"const String"}},
-        {"offset", "An integer type `Int` (1-based). If `offset` is negative, it is counted from the end of the string `s`.", {"Int"}},
-        {"length", "Optional. An integer type `Int`. `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed.", {"Int"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with replacement.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Basic replacement",
-        "SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;",
-        R"(
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
-        )"
-    },
-    {
-        "Replacement with length",
-        "SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;",
-        R"(
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 9};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation overlay_documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionOverlay<false>>(
+        {.description = R"(
+Replace a part of a string `input` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `input` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
+)",
+         .category{"Strings - Replacing"}},
+        FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<FunctionOverlay<false>>(overlay_documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionOverlay<true>>(
+        {.description = R"(
+Replace a part of a string `input` with another string `replace`, starting at 1-based index `offset`. By default, the number of characters removed from `input` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of characters is removed.
 
-    FunctionDocumentation::Description utf8_description = R"(
-Replace part of the string `s` with another string `replace`, starting at the 1-based index `offset`.
-Assumes that the string contains valid UTF-8 encoded text.
-If this assumption is violated, no exception is thrown and the result is undefined.
-)";
-    FunctionDocumentation::Syntax utf8_syntax = "overlayUTF8(s, replace, offset[, length])";
-    FunctionDocumentation::Arguments utf8_arguments = {
-        {"s", "The input string.", {"String"}},
-        {"replace", "The replacement string.", {"const String"}},
-        {"offset", "An integer type `Int` (1-based). If `offset` is negative, it is counted from the end of the input string `s`.", {"(U)Int*"}},
-        {"length", "Optional. Specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of characters removed from `s` equals the length of `replace`, otherwise `length` characters are removed.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::ReturnedValue utf8_returned_value = {"Returns a string with replacement.", {"String"}};
-    FunctionDocumentation::Examples utf8_examples = {
-    {
-        "UTF-8 replacement",
-        "SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;",
-        R"(
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation overlayutf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, introduced_in, category};
-
-    factory.registerFunction<FunctionOverlay<true>>(overlayutf8_documentation, FunctionFactory::Case::Sensitive);
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+)",
+         .category{"Strings - Replacing"}},
+        FunctionFactory::Case::Sensitive);
 }
 }

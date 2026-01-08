@@ -46,7 +46,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log(getLogger(log_name))
     , sleep_ms((*storage.getSettings())[MergeTreeSetting::cleanup_delay_period] * 1000)
 {
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -206,7 +206,6 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
 
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
-        cleaned_part_like += storage.clearUnusedPatchParts();
     }
 
     cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();

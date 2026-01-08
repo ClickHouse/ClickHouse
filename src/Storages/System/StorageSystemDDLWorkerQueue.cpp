@@ -29,11 +29,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
 }
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
 enum class Status : uint8_t
 {
     INACTIVE,
@@ -67,7 +62,7 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
         {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Version of the entry."},
         {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Host that initiated the DDL operation."},
         {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Port used by the initiator."},
-        {"cluster",             std::make_shared<DataTypeString>(), "Cluster name, empty if not determined."},
+        {"cluster",             std::make_shared<DataTypeString>(), "Cluster name."},
         {"query",               std::make_shared<DataTypeString>(), "Query executed."},
         {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings used in the DDL operation."},
         {"query_create_time",   std::make_shared<DataTypeDateTime>(), "Query created time."},
@@ -90,23 +85,8 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
 
     String description = fmt::format("from {}", task.entry_path);
     ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
-    ASTPtr query;
-
-    try
-    {
-        query = parseQuery(
-            parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-    }
-    catch (const Exception & e)
-    {
-        LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
-        if (e.code() == ErrorCodes::SYNTAX_ERROR)
-        {
-            /// ignore parse error and present available information
-            return "";
-        }
-        throw;
-    }
+    ASTPtr query = parseQuery(
+        parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
     String cluster_name;
     if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
@@ -152,7 +132,7 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         {
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(fieldToString(change.value));
+            pair.push_back(toString(change.value));
             settings_map.push_back(std::move(pair));
         }
     }
@@ -238,7 +218,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 {
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
-    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 
@@ -307,7 +287,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             for (const auto & host_id_str : finished_hosts.names)
                 finished_status_paths.push_back(fs::path(task.entry_path) / "finished" / host_id_str);
 
-            auto finished_statuses = zookeeper->tryGet(finished_status_paths);
+            auto finished_statuses = zookeeper->get(finished_status_paths);
             for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
             {
                 const auto & host_id_str = finished_hosts.names[host_idx];

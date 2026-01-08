@@ -1,11 +1,7 @@
 #pragma once
 
-#if !defined(LEXER_STANDALONE_BUILD)
-
 #include <stddef.h>
-#include <stdint.h>
-
-#endif
+#include <cstdint>
 
 
 namespace DB
@@ -88,10 +84,8 @@ APPLY_FOR_TOKENS(M)
 #undef M
 };
 
-#if !defined(LEXER_STANDALONE_BUILD)
 const char * getTokenName(TokenType type);
 const char * getErrorTokenDescription(TokenType type);
-#endif
 
 
 struct Token
@@ -115,11 +109,7 @@ class Lexer
 {
 public:
     Lexer(const char * begin_, const char * end_, size_t max_query_size_ = 0)
-        : begin(begin_), pos(begin_), end(end_),
-        max_query_size(max_query_size_ <= max_query_size_limit ? max_query_size_ : max_query_size_limit)
-    {
-    }
-
+            : begin(begin_), pos(begin_), end(end_), max_query_size(max_query_size_) {}
     Token nextToken();
 
 private:
@@ -128,9 +118,6 @@ private:
     const char * const end;
 
     const size_t max_query_size;
-
-    /// Some reasonable size to at least avoid pointer overflows.
-    static constexpr size_t max_query_size_limit = 1'000'000'000;
 
     Token nextTokenImpl();
 

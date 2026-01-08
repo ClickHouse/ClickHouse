@@ -1,5 +1,3 @@
--- Tags: memory-engine
-
 EXPLAIN SYNTAX CREATE TABLE t (x varchar(255) COLLATE binary NOT NULL) ENGINE=Memory;
 
 EXPLAIN SYNTAX CREATE TABLE t (x varchar(255) COLLATE NOT NULL) ENGINE=Memory; -- {clientError SYNTAX_ERROR}

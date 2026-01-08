@@ -1,19 +1,18 @@
 #pragma once
 
-#include <Core/LogsLevel.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <base/types.h>
-#include <Common/FramePointers.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/StackTrace.h>
+#include <Core/LogsLevel.h>
 
-#include <atomic>
 #include <cerrno>
 #include <exception>
 #include <vector>
 
 #include <fmt/format.h>
 #include <Poco/Exception.h>
+
 
 namespace Poco
 {
@@ -32,12 +31,11 @@ class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
-extern std::atomic_bool abort_on_logical_error;
 
 class Exception : public Poco::Exception
 {
 public:
-    using Trace = std::vector<void *>;
+    using FramePointers = std::vector<void *>;
 
     Exception()
     {
@@ -46,7 +44,7 @@ public:
         capture_thread_frame_pointers = getThreadFramePointers();
     }
 
-    Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code, std::string(msg.format_string))
+    Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
         if (terminate_on_any_exception)
             std::terminate();
@@ -55,73 +53,18 @@ public:
         message_format_string_args = msg.format_string_args;
     }
 
-    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code, std::string(msg.format_string))
+    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
     {
         if (terminate_on_any_exception)
             std::terminate();
         capture_thread_frame_pointers = getThreadFramePointers();
         message_format_string = msg.format_string;
-        message_format_string_args = std::move(msg.format_string_args);
-    }
-
-    ~Exception() override;
-
-    Exception(const Exception & o)
-        : Poco::Exception(o)
-    {
-        remote = o.remote;
-        logged.store(o.logged.load());
-        error_index = o.error_index;
-        message_format_string = o.message_format_string;
-        message_format_string_args = o.message_format_string_args;
-        capture_thread_frame_pointers = o.capture_thread_frame_pointers;
-    }
-
-    Exception(Exception && o) noexcept
-    {
-        remote = o.remote;
-        logged.store(o.logged.load());
-        error_index = o.error_index;
-        message_format_string = o.message_format_string;
-        message_format_string_args = std::move(o.message_format_string_args);
-        capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
-        Poco::Exception::operator=(std::move(o));
-    }
-
-    Exception & operator=(const Exception & o)
-    {
-        if (this != &o)
-        {
-            remote = o.remote;
-            logged.store(o.logged.load());
-            error_index = o.error_index;
-            message_format_string = o.message_format_string;
-            message_format_string_args = o.message_format_string_args;
-            capture_thread_frame_pointers = o.capture_thread_frame_pointers;
-            Poco::Exception::operator=(o);
-        }
-        return *this;
-    }
-
-
-    Exception & operator=(Exception && o) noexcept
-    {
-        if (this != &o)
-        {
-            remote = o.remote;
-            logged.store(o.logged.load());
-            error_index = o.error_index;
-            message_format_string = o.message_format_string;
-            message_format_string_args = std::move(o.message_format_string_args);
-            capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
-            Poco::Exception::operator=(std::move(o));
-        }
-        return *this;
+        message_format_string_args = msg.format_string_args;
     }
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
-    using ThreadFramePointersBase = std::vector<FramePointers>;
+    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
 
     /// If thread is going to use thread_frame_pointers then this initializer should be called at the beginning of a thread function.
     /// It is necessary to force thread_frame_pointers to be initialized - static thread_local members are lazy initializable.
@@ -135,7 +78,7 @@ public:
     static void clearThreadFramePointers();
 
     /// Callback for any exception
-    static std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> callback;
+    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
 
 protected:
     static thread_local bool can_use_thread_frame_pointers;
@@ -157,26 +100,23 @@ protected:
     struct MessageMasked
     {
         std::string msg;
-        std::string format_string;
-        explicit MessageMasked(const std::string & msg_, std::string format_string_);
-        explicit MessageMasked(std::string && msg_, std::string format_string_);
-        explicit MessageMasked(const std::string & msg_) : msg(msg_) {}
-        explicit MessageMasked(std::string && msg_) : msg(msg_) {}
+        explicit MessageMasked(const std::string & msg_);
+        explicit MessageMasked(std::string && msg_);
     };
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
     Exception(MessageMasked && msg_masked, int code, bool remote_);
 
     // delegating constructor to mask sensitive information from the message
-    Exception(const std::string & msg, int code, std::string format_string = "", bool remote_ = false): Exception(MessageMasked(msg, std::move(format_string)), code, remote_) {}
-    Exception(std::string && msg, int code, std::string format_string = "", bool remote_ = false): Exception(MessageMasked(std::move(msg), std::move(format_string)), code, remote_) {}
+    Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_) {}
+    Exception(std::string && msg, int code, bool remote_ = false): Exception(MessageMasked(std::move(msg)), code, remote_) {}
 
 public:
     /// This creator is for exceptions that should format a message using fmt::format from the variadic ctor Exception(code, fmt, ...),
     /// but were not rewritten yet. It will be removed.
     static Exception createDeprecated(const std::string & msg, int code, bool remote_ = false)
     {
-        return Exception(msg, code, "", remote_);
+        return Exception(msg, code, remote_);
     }
 
     /// These creators are for messages that were received by network or generated by a third-party library in runtime.
@@ -220,20 +160,17 @@ public:
 
     std::string getStackTraceString() const;
     /// Used for system.errors
-    Trace getStackFramePointers() const;
+    FramePointers getStackFramePointers() const;
 
     std::string_view tryGetMessageFormatString() const { return message_format_string; }
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
-    void markAsLogged() { logged.store(true, std::memory_order_relaxed); }
-
-    /// Indicates if the error code triggers alerts in ClickHouse Cloud
-    bool isErrorCodeImportant() const;
-
 private:
+#ifndef STD_EXCEPTION_HAS_STACK_TRACE
+    StackTrace trace;
+#endif
     bool remote = false;
-    std::atomic<bool> logged = false;
 
     /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
     size_t error_index = static_cast<size_t>(-1);
@@ -244,13 +181,10 @@ protected:
     std::string_view message_format_string;
     std::vector<std::string> message_format_string_args;
     /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
-    mutable std::vector<FramePointers> capture_thread_frame_pointers;
+    mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
-/// Most common exception constructor (just a string). Forward declare to avoid many unnecessary instantiations
-extern template Exception::Exception(int, FormatStringHelperImpl<>);
-
-[[noreturn]] void abortOnFailedAssertion(const String & description, std::string_view format_string, void * const * trace, size_t trace_offset, size_t trace_size);
+[[noreturn]] void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size);
 [[noreturn]] void abortOnFailedAssertion(const String & description);
 
 std::string getExceptionStackTraceString(const std::exception & e);
@@ -356,16 +290,10 @@ void tryLogCurrentException(const AtomicLogger & logger, const std::string & sta
   *  only this stack trace will be printed.
   * with_extra_info - add information about the filesystem in case of "No space left on device" and similar.
   */
-std::string getCurrentExceptionMessage(
-    bool with_stacktrace,
-    bool check_embedded_stacktrace = false,
-    bool with_extra_info = true,
-    bool with_version = true);
-PreformattedMessage getCurrentExceptionMessageAndPattern(
-    bool with_stacktrace,
-    bool check_embedded_stacktrace = false,
-    bool with_extra_info = true,
-    bool with_version = true);
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
+                                       bool with_extra_info = true);
+PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace = false,
+                                       bool with_extra_info = true);
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
@@ -385,7 +313,7 @@ struct ExecutionStatus
     explicit ExecutionStatus(int return_code, const std::string & exception_message = "")
     : code(return_code), message(exception_message) {}
 
-    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "", bool with_stacktrace = false, bool with_version = true);
+    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "", bool with_stacktrace = false);
 
     static ExecutionStatus fromText(const std::string & data);
 
@@ -398,11 +326,10 @@ struct ExecutionStatus
 
 /// TODO: Logger leak constexpr overload
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
-void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message = "");
 void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message = "");
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
-std::string getExceptionMessageForLogging(Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 
@@ -424,9 +351,5 @@ T current_exception_cast()
         return nullptr;
     }
 }
-
-/// Return copy of a current exception if it is a Poco::Exception (DB::Exception), since this exception is mutable, and returning reference is unsafe.
-/// And a reference otherwise.
-std::exception_ptr copyMutableException(std::exception_ptr ptr);
 
 }

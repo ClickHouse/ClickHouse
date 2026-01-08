@@ -19,13 +19,13 @@ TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
 
 void TTLUpdateInfoAlgorithm::execute(Block & block)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     for (size_t i = 0; i < block.rows(); ++i)
     {
-        Int64 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
+        UInt32 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);
         new_ttl_info.update(cur_ttl);
     }
 }

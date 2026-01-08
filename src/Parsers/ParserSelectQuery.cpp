@@ -6,11 +6,13 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
 #include <Poco/String.h>
@@ -318,8 +320,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         return false;
                     if (!close_bracket.ignore(pos, expected))
                         return false;
-                }
-                else
+                } else
                     interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
         }
@@ -390,16 +391,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_length = nullptr;
             limit_offset = nullptr;
 
-            if (s_all.ignore(pos, expected))
-            {
-                select_query->limit_by_all = true;
-                limit_by_expression_list = std::make_shared<ASTExpressionList>();
-            }
-            else
-            {
-                if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                    return false;
-            }
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                return false;
         }
 
         if (top_length && limit_length)

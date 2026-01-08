@@ -97,24 +97,16 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
 
 REGISTER_FUNCTION(Factorial)
 {
-    FunctionDocumentation::Description description = R"(
-Computes the factorial of an integer value.
-The factorial of 0 is 1. Likewise, the `factorial()` function returns `1` for any negative value.
-The maximum positive value for the input argument is `20`, a value of `21` or greater will cause an exception.
-    )";
-    FunctionDocumentation::Syntax syntax = "factorial(n)";
-    FunctionDocumentation::Arguments arguments = {
-        {"n", "Integer value for which to calculate the factorial. Maximum value is 20.", {"(U)Int8/16/32/64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the factorial of the input as UInt64. Returns 1 for input 0 or any negative value.", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example", "factorial(10)", "3628800"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionFactorial>(FunctionDocumentation
+        {
+            .description=R"(
+Computes the factorial of an integer value. It works with any native integer type including UInt(8|16|32|64) and Int(8|16|32|64). The return type is UInt64.
 
-    factory.registerFunction<FunctionFactorial>(documentation, FunctionFactory::Case::Insensitive);
+The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
+)",
+            .examples{{"factorial", "SELECT factorial(10)", ""}},
+            .category{"Mathematical"}},
+        FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -45,7 +45,6 @@ private:
     std::unique_lock<Mutex> unique_lock;
     bool locked = true;
 };
-_LIBCPP_CTAD_SUPPORTED_FOR_TYPE(UniqueLock);
 
 template <template<typename> typename TUniqueLock, typename Mutex>
 class TSA_SCOPED_LOCKABLE LockAndOverCommitTrackerBlocker

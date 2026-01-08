@@ -1,4 +1,4 @@
-#include <Common/QueryProfiler.h>
+#include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>

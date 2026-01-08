@@ -7,7 +7,6 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
-                <metadata_path>/var/lib/clickhouse/disks/custom_path</metadata_path>
             </s3>
             <unstable_s3>
                 <type>s3</type>
@@ -63,7 +62,7 @@
             <s3_with_cache_and_jbod>
                 <type>cache</type>
                 <disk>s3</disk>
-                <path>/test_merge_tree_s3_jbod1/</path>
+                <path>/jbod1/</path>
                 <max_size>1000000</max_size>
                 <max_file_segment_size>1Gi</max_file_segment_size>
             </s3_with_cache_and_jbod>
@@ -157,7 +156,6 @@
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
-        <serialization_info_version>basic</serialization_info_version>
         <min_bytes_for_full_part_storage>0</min_bytes_for_full_part_storage>
         <disable_freeze_partition_for_zero_copy_replication>0</disable_freeze_partition_for_zero_copy_replication>
         <disable_detach_partition_for_zero_copy_replication>0</disable_detach_partition_for_zero_copy_replication>
