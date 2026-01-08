@@ -275,9 +275,9 @@ static void splitAndModifyMutationCommands(
                             auto required_columns = index.expression->getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
-                                auto column_in_storage = String(Nested::getColumnFromSubcolumn(column, storage_columns));
-                                if (!part_columns.has(column_in_storage))
-                                    extra_columns_for_indices_and_projections.insert(column_in_storage);
+                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                if (column_in_storage && !part_columns.has(*column_in_storage))
+                                    extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
                             break;
                         }
@@ -293,9 +293,9 @@ static void splitAndModifyMutationCommands(
                         {
                             for (const auto & column : projection.required_columns)
                             {
-                                auto column_in_storage = String(Nested::getColumnFromSubcolumn(column, storage_columns));
-                                if (!part_columns.has(column_in_storage))
-                                    extra_columns_for_indices_and_projections.insert(column_in_storage);
+                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                if (column_in_storage && !part_columns.has(*column_in_storage))
+                                    extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
                             break;
                         }
