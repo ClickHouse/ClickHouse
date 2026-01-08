@@ -25,7 +25,7 @@ struct PostingListBuilder;
 /// - A posting list may be split into "segments" (logical chunks, controlled by postings_list_block_size)
 ///   to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
-class PostingListCodecImpl
+class PostingListCodecSIMDCompImpl
 {
     /// Per-segment header written before each segment payload.
     struct Header
@@ -84,15 +84,15 @@ class PostingListCodecImpl
         /// Payload size in bytes (excluding header)
         size_t compressed_data_size = 0;
         /// Row range covered by this segment.
-        uint32_t row_begin = 0;
-        uint32_t row_end = 0;
+        uint32_t row_id_begin = 0;
+        uint32_t row_id_end = 0;
 
         SegmentDescriptor() = default;
     };
 
 public:
-    PostingListCodecImpl() = default;
-    explicit PostingListCodecImpl(size_t postings_list_block_size);
+    PostingListCodecSIMDCompImpl() = default;
+    explicit PostingListCodecSIMDCompImpl(size_t postings_list_block_size);
 
     size_t size() const { return total_rows; }
     bool empty() const { return size() == 0; }
@@ -104,7 +104,7 @@ public:
     /// Internally we store deltas (gaps) in `current_segment` until reaching BLOCK_SIZE,
     /// then compress the full block into `compressed_data`.
     /// When the segment reaches `posting_list_block_size`, flush it.
-    void insert(uint32_t row);
+    void insert(uint32_t row_id);
 
     /// Add exactly one full block of BLOCK_SIZE-many rows.
     ///
@@ -113,7 +113,7 @@ public:
     /// - total is aligned by BLOCK_SIZE
     ///
     /// It computes deltas in-place using adjacent_difference for better throughput.
-    void insert(std::span<uint32_t> rows);
+    void insert(std::span<uint32_t> row_ids);
 
     /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
     ///
@@ -150,7 +150,7 @@ private:
     {
         current_segment.clear();
         rows_in_current_segment = 0;
-        prev_row = 0;
+        prev_row_id = 0;
     }
 
     /// Flush current segment:
@@ -186,17 +186,17 @@ private:
     ///
     /// - Reads bits-width byte
     /// - Codec::decode fills `current_segment` with delta values
-    /// - inclusive_scan converts deltas -> row ids using `prev_row` as initial prefix
-    /// - Updates prev_row to the last decoded row id
-    static void decodeOneBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row, std::vector<uint32_t> & current_segment);
+    /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
+    /// - Updates prev_row_id to the last decoded row id
+    static void decodeBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment);
 
     /// All segments
     std::string compressed_data;
-    uint32_t prev_row = 0;
+    uint32_t prev_row_id = 0;
     /// Number of values added in the current segment.
     size_t rows_in_current_segment = 0;
     std::vector<uint32_t> current_segment;
-    size_t posting_list_block_size = 1024 * 1024;
+    const size_t posting_list_block_size = 1024 * 1024;
     std::vector<SegmentDescriptor> segment_descriptors;
     /// Total number of postings added across all segments.
     size_t total_rows = 0;

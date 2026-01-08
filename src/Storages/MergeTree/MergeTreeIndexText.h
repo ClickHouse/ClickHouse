@@ -148,7 +148,7 @@ struct PostingsSerialization
         EmbeddedPostings = 1ULL << 1,
         /// If unset, the number of blocks is stored as an additional VarUInt.
         SingleBlock = 1ULL << 2,
-        /// If set, the posting list will be encoded/decoded using the codec specified by `posting_list_codec`.
+        /// If set, the posting list is encoded using posting_list_codec.
         HasCodec = 1ULL << 3,
     };
 
@@ -254,6 +254,9 @@ public:
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
     ~MergeTreeIndexGranuleText() override = default;
 
+    const MergeTreeIndexTextParams & getParams() const { return params; }
+    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
+
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
@@ -277,8 +280,6 @@ public:
         size_t block_idx,
         PostingListCodecPtr posting_list_codec);
 
-    const MergeTreeIndexTextParams & getParams() const { return params; }
-    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
 private:
     void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
@@ -423,6 +424,7 @@ public:
     static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
+
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
