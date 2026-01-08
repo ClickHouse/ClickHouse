@@ -42,12 +42,10 @@ static ITransformingStep::Traits getTraits()
 CreatingSetStep::CreatingSetStep(
     const SharedHeader & input_header_,
     SetAndKeyPtr set_and_key_,
-    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
-    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -58,7 +56,6 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
         std::move(set_and_key),
-        std::move(external_table),
         network_transfer_limits,
         std::move(prepared_sets_cache));
 }

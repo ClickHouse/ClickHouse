@@ -163,6 +163,11 @@ def main():
     attach_files = []
     job_info = ""
 
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         results.append(
             Result.from_commands_run(
