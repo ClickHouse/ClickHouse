@@ -166,7 +166,7 @@ def test_size_adjustment(started_cluster):
     # A few GB, see configs/smol.xml
     memory_limit = int(node.query("select value from system.server_settings where name='max_server_memory_usage'"))
 
-    # Insert more data than than max_server_memory_usage.
+    # Insert more data than max_server_memory_usage.
     node.query(
         "create table a (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3';"
         "system stop merges a;"
