@@ -203,8 +203,11 @@ PaimonTableStatePtr PaimonMetadata::getCurrentState() const
 PaimonTableStatePtr PaimonMetadata::loadLatestState() const
 {
     /// Get latest snapshot info
-    auto snapshot_info = table_client->getLastestTableSnapshotInfo();
-    auto snapshot = table_client->getSnapshot(snapshot_info);
+    auto snapshot_info_opt = table_client->getLastestTableSnapshotInfo();
+    if (!snapshot_info_opt)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon table has no snapshots");
+
+    auto snapshot = table_client->getSnapshot(*snapshot_info_opt);
 
     /// Ensure schema for this snapshot is cached in processor (use schema_id, not "latest")
     if (!persistent_components.schema_processor->hasSchema(snapshot.schema_id))
