@@ -577,19 +577,25 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             error_message = "The part was deduplicated";
 
             const auto & relative_path = part->getDataPartStorage().getRelativePath();
+            const auto part_dir = fs::path(relative_path).filename().string();
+
             if (endsWith(relative_path, "detached/attaching_" + part->name + "/"))
             {
                 /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
                 fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
                 part->renameTo(new_relative_path, false);
             }
-            else
+            else if (part_dir.starts_with("tmp_restore_"))
             {
-                /// Part came from RESTORE or other source with a temporary directory.
+                /// Part came from RESTORE with a temporary directory.
                 /// Just remove the temporary part since it's a duplicate.
                 /// The data already exists on another replica and will be fetched if needed.
                 LOG_DEBUG(log, "Removing deduplicated part {} from temporary path {}", part->name, relative_path);
                 part->remove();
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected path for a deduplicated part: {}", relative_path);
             }
         }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), {block_id}, ExecutionStatus(error, error_message));
