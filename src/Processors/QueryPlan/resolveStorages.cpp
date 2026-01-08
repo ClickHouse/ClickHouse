@@ -250,8 +250,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     auto converting_actions = ActionsDAG::makeConvertingActions(
         reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
         header->getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
