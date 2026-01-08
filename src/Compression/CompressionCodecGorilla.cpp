@@ -401,7 +401,7 @@ UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 sourc
     UInt32 result_size = 0;
 
     const UInt32 compressed_size = getMaxCompressedDataSize(source_size);
-    switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (data_bytes_size)
     {
     case 1:
         result_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
@@ -415,6 +415,8 @@ UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 sourc
     case 8:
         result_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
+    default:
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to Gorilla-encoded data. Invalid byte size {}", UInt32{data_bytes_size});
     }
 
     return 2 + bytes_to_skip + result_size;
@@ -441,7 +443,7 @@ UInt32 CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sou
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     UInt32 uncompressed_size_left = uncompressed_size - bytes_to_skip;
-    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (bytes_size)
     {
     case 1:
         return bytes_to_skip + decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);

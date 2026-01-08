@@ -122,7 +122,7 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
-    switch (delta_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (delta_bytes_size)
     {
     case 1:
         compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -136,6 +136,8 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
     case 8:
         compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
+    default:
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to delta-encoded data. Invalid byte size {}", UInt32{delta_bytes_size});
     }
     return 1 + 1 + source_size;
 }

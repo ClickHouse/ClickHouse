@@ -501,7 +501,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
     size_t start_pos = 2 + bytes_to_skip;
     UInt32 compressed_size = 0;
 
-    switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (data_bytes_size)
     {
     case 1:
         compressed_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -515,6 +515,8 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
     case 8:
         compressed_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
+    default:
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to double delta-encoded data. Invalid byte size {}", UInt32{data_bytes_size});
     }
 
     return 1 + 1 + compressed_size + UInt32(bytes_to_skip);

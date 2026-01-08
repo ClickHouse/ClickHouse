@@ -180,7 +180,7 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
-    switch (gcd_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (gcd_bytes_size)
     {
     case 1:
         compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -200,6 +200,8 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     case 32:
         compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
+    default:
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to GCD-encoded data. Invalid byte size {}", UInt32{gcd_bytes_size});
     }
     return 2 + gcd_bytes_size + source_size;
 }
