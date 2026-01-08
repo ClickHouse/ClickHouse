@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <config.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
+#include <Storages/MergeTree/PostingListCompression.h>
 
 #include <cstddef>
 #include <random>
@@ -9,9 +9,9 @@
 #include <algorithm>
 
 
-using Portable = BlockCodecTrait<false>;
+using Portable = DB::impl::BlockCodecImpl<false>;
 #if USE_SIMDCOMP
-using SIMDComp = BlockCodecTrait<true>;
+using SIMDComp = DB::impl::BlockCodecImpl<true>;
 #endif
 
 static void RoundTripCheck(std::vector<uint32_t> data)

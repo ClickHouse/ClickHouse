@@ -107,8 +107,8 @@ OPTIMIZE TABLE table_uncompressed FINAL;
 SELECT
     `table`,
     sum(rows) AS `rows-count`,
-    formatReadableSize(sum(bytes_on_disk)) AS `total-bytes`,
-    formatReadableSize(sum(secondary_indices_compressed_bytes)) AS `text-index-bytes`
+    sum(bytes_on_disk) AS `total-bytes`,
+    sum(secondary_indices_compressed_bytes) AS `text-index-bytes`
 FROM system.parts
 WHERE active AND table IN ('tab_bitpacking','table_uncompressed')
 GROUP BY `table`;
