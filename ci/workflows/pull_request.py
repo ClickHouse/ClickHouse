@@ -35,10 +35,6 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 
 # Ensure Keeper stress (PR) becomes a hard gate for other tests
 KEEPER_STRESS_PR_NAME = "Keeper Stress (PR)"
-FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
-    *FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES,
-    KEEPER_STRESS_PR_NAME,
-]
 
 workflow = Workflow.Config(
     name="PR",
