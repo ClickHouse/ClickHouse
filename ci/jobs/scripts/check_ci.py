@@ -152,6 +152,8 @@ Test output:
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FUZZ]
+        if "sanitizer" in result.name.lower():
+            labels.append(IssueLabels.SANITIZER)
 
         return cls.create_and_link_gh_issue(title, body, labels)
 
