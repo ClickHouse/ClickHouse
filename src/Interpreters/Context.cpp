@@ -961,7 +961,13 @@ struct ContextSharedPart : boost::noncopyable
 
             /// Stop trace collector if any
             trace_collector.reset();
+        }
+
+        {
             /// Stop zookeeper connection
+            std::lock_guard lock(zookeeper_mutex);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
             zookeeper.reset();
         }
 
