@@ -178,6 +178,9 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
     if (isMerge(*argc, *argv))
         return 0;
 
+    // Initialize as a main thread
+    DB::MainThreadStatus::getInstance();
+
     // Collect clickhouse arguments
     bool ignore = false;
     for (int i = 1; i < *argc; ++i)
@@ -228,6 +231,9 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
 void DB::ClientBase::runLibFuzzer()
 {
+    // Initialize thread_status
+    ThreadStatus thread_status;
+
     {
         std::lock_guard lock(mutex);
         state = FuzzerState::WAITING_FOR_INPUT;
