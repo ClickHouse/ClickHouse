@@ -542,12 +542,14 @@ void BackupEntriesCollector::gatherTablesMetadata()
             }
 
             /// Add information to `table_infos`.
-            auto & res_table_info = table_infos[QualifiedTableName{database_name, table_name}];
+            const auto qualified_name = QualifiedTableName{database_name, table_name};
+            auto & res_table_info = table_infos[qualified_name];
             res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
+            res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
 
             if (!backup_settings.structure_only)
             {
@@ -798,46 +800,8 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    auto filter_fn = [&](const auto & item) -> bool
-    {
-        if (backup_settings.backup_data_from_refreshable_materialized_view_targets)
-            return true;
-
-        const auto & [name, info] = item;
-
-        /// Skip table data for refreshable materialized view targets.
-        auto dependents = DatabaseCatalog::instance().getReferentialDependents(info.storage->getStorageID());
-        auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
-        {
-            auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
-            if (!table || table->getName() != "MaterializedView")
-                return false;
-
-            const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-            bool append = false;
-            if (const auto & metadata = table->getInMemoryMetadataPtr())
-            {
-                const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<const ASTRefreshStrategy>() : nullptr;
-                append = refresh_strategy && refresh_strategy->append;
-            }
-            return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
-        };
-
-        if (!dependents.empty()
-            && std::all_of(
-                dependents.begin(),
-                dependents.end(),
-                [&](const auto & dependent) { return is_rmv_targeting_table(dependent, info.storage); }))
-        {
-            LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", name.getFullName());
-            return false;
-        }
-        return true;
-    };
-
-
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    for (const auto & table_name : table_infos | std::views::filter(filter_fn) | std::views::keys)
+    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
         runner.enqueueAndKeepTrack([&]()
         {
@@ -853,6 +817,9 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         return;
 
     const auto & table_info = table_infos.at(table_name);
+    if (!table_info.should_backup_data)
+        return;
+
     const auto & storage = table_info.storage;
     const auto & data_path_in_backup = table_info.data_path_in_backup;
 
@@ -879,6 +846,42 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         e.addMessage("While collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
+}
+
+bool BackupEntriesCollector::shouldBackupTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
+{
+    if (backup_settings.backup_data_from_refreshable_materialized_view_targets)
+        return true;
+
+    if (!storage)
+        return true;
+
+    /// Skip table data for refreshable materialized view targets.
+    auto dependents = DatabaseCatalog::instance().getReferentialDependents(storage->getStorageID());
+
+    auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
+    {
+        auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
+        if (!table || table->getName() != "MaterializedView")
+            return false;
+
+        const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
+        bool append = false;
+        if (const auto & metadata = table->getInMemoryMetadataPtr())
+        {
+            const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<const ASTRefreshStrategy>() : nullptr;
+            append = refresh_strategy && refresh_strategy->append;
+        }
+        return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
+    };
+    if (!dependents.empty()
+        && std::all_of(
+            dependents.begin(), dependents.end(), [&](const auto & dependent) { return is_rmv_targeting_table(dependent, storage); }))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
+        return false;
+    }
+    return true;
 }
 
 void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)
