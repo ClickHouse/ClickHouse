@@ -50,7 +50,7 @@ def start_bearer_token_server():
 
     # build paimon rest catalog
     run_and_check(
-        ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && mvn clean package > /dev/null 2>&1\"".format(
+        ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && mvn clean package\"".format(
             cont_id=instance_id,
         )]
         , 
