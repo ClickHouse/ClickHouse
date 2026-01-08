@@ -90,6 +90,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION = 54465;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION = 54466;
 
+/// The server will send query CPU time in the Progress packet.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_CPU_TIME_IN_PROGRESS = 54484;
+
 /// Send read-only flag for Replicated tables as well
 static constexpr auto DBMS_MIN_REVISION_WITH_TABLE_READ_ONLY_CHECK = 54467;
 
@@ -132,5 +135,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION = 544
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54483;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54484;
 }

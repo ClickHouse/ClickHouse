@@ -54,6 +54,10 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
     {
         readVarUInt(elapsed_ns, in);
     }
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CPU_TIME_IN_PROGRESS)
+    {
+        readVarUInt(cpu_time_us, in);
+    }
 }
 
 
@@ -80,6 +84,10 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     if (client_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS)
     {
         writeVarUInt(elapsed_ns, out);
+    }
+    if (client_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CPU_TIME_IN_PROGRESS)
+    {
+        writeVarUInt(cpu_time_us, out);
     }
 }
 
@@ -273,6 +281,8 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
     written_bytes.store(values.written_bytes, std::memory_order_relaxed);
 
     elapsed_ns.store(values.elapsed_ns, std::memory_order_relaxed);
+
+    cpu_time_us.store(values.cpu_time_us, std::memory_order_relaxed);
 
     memory_usage.store(values.memory_usage, std::memory_order_relaxed);
 }

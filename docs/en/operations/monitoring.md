@@ -59,6 +59,16 @@ ClickHouse server has embedded instruments for self-state monitoring.
 
 To track server events use server logs. See the [logger](../operations/server-configuration-parameters/settings.md#logger) section of the configuration file.
 
+## HTTP progress headers {#http-progress-headers}
+
+When running queries over HTTP with `send_progress_in_http_headers=1`, ClickHouse emits `X-ClickHouse-Progress` during execution and a final `X-ClickHouse-Summary`. These JSON payloads mirror query log statistics, including `read_rows`, `read_bytes`, `result_rows`, `result_bytes`, `memory_usage`, `elapsed_ns`, and `cpu_time_us` (user + system CPU time in microseconds). Example:
+
+```
+< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","result_rows":"10","result_bytes":"1360","cpu_time_us":"12345","memory_usage":"0"}
+```
+
+You can consume these headers in clients to track progress without polling system tables.
+
 ClickHouse collects:
 
 - Different metrics of how the server uses computational resources.
