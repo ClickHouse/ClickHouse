@@ -211,5 +211,6 @@ class BuzzHouseGenerator(Generator):
             f"{server.ip_address}",
             "--port",
             "9000",
+            "--max_memory_usage_in_client=1000000000",
             f"--buzz-house-config={self.temp.name}",
         ]

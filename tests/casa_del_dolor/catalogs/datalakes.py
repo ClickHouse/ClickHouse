@@ -343,7 +343,7 @@ logger.jetty.level = warn
             raise Exception("Unknown lake format")
 
         os.environ["PYSPARK_SUBMIT_ARGS"] = (
-            f"--packages {",".join(all_jars)} pyspark-shell"
+            f"--packages {','.join(all_jars)} pyspark-shell"
         )
         for k, val in env.items():
             os.environ[k] = val

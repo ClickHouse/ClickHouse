@@ -1,0 +1,106 @@
+<clickhouse>
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+    <listen_try>true</listen_try>
+    <path>/var/lib/clickhouse/</path>
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+
+    <default_profile>default</default_profile>
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+    <default_database>default</default_database>
+    <max_session_timeout>3600</max_session_timeout>
+    <default_session_timeout>60</default_session_timeout>
+
+    <logger>
+        <level>error</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>10</count>
+        <stderr>/var/log/clickhouse-server/stderr.log</stderr>
+        <stdout>/var/log/clickhouse-server/stdout.log</stdout>
+        <rotateOnOpen>true</rotateOnOpen>
+    </logger>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+        <aes_256_gcm_siv>
+            <key_hex>a32902703dab1cedd7ff7287067787caa32902703dab1cedd7ff7287067787ca</key_hex>
+        </aes_256_gcm_siv>
+    </encryption_codecs>
+
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+            <dhParamsFile>/etc/clickhouse-server/config.d/dhparam.pem</dhParamsFile>
+            <verificationMode>none</verificationMode>
+            <cacheSessions>true</cacheSessions>
+        </server>
+        <client>
+            <cacheSessions>true</cacheSessions>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+    <core_dump>
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+
+    <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+    </query_log>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+    </text_log>
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+    </trace_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+    </part_log>
+
+    <remote_servers>
+        <cluster0>
+            <shard>
+                <replica>
+                    <host>node0</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster0>
+        <!--<cluster1>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster1>
+        <cluster2>
+            <shard>
+                <replica>
+                    <host>node0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster2>-->
+    </remote_servers>
+</clickhouse>

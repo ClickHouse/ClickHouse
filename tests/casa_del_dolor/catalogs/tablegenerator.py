@@ -124,7 +124,7 @@ class LakeTableGenerator:
             )
             generated = self.add_generated_col(columns_spark, spark_type)
             columns_def.append(
-                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}{generated}"
+                f"{val['name']} {str_type}{'' if nullable else ' NOT NULL'}{generated}"
             )
             columns_spark[val["name"]] = SparkColumn(
                 val["name"], spark_type, nullable, len(generated) > 0
@@ -328,7 +328,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Return created table information for logging
         schema_summary = ", ".join(
             [
-                f"{field.name}:{field.field_type}{" NOT NULL" if field.required else ""}"
+                f"{field.name}:{field.field_type}{' NOT NULL' if field.required else ''}"
                 for field in ctable.schema().fields
             ]
         )
