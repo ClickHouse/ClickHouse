@@ -195,6 +195,13 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 }
 
 template <typename Type>
+void DataTypeEnum<Type>::add(IDataType & rhs) const
+{
+    auto & rhs_enum = typeid_cast<DataTypeEnum<Type> &>(rhs);
+    this->addAll(rhs_enum);
+}
+
+template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationEnum<Type>>(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
@@ -338,11 +345,43 @@ static DataTypePtr create(const ASTPtr & arguments)
     return createExact<DataTypeEnum8>(arguments);
 }
 
+static DataTypePtr addToEnum(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.empty())
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "addToEnum cannot be empty");
+
+    /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
+    for (const ASTPtr & child : arguments->children)
+    {
+        checkASTStructure(child);
+
+        const auto * func = child->as<ASTFunction>();
+        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+
+        if (!value_literal
+            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                                    "Elements of Enum data type must be of form: "
+                                    "'name' = number or 'name', where name is string literal and number is an integer");
+
+        Int64 value = value_literal->value.safeGet<Int64>();
+
+        if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
+            return createExact<DataTypeEnum16>(arguments);
+    }
+    auto dtptr = createExact<DataTypeEnum8>(arguments);
+    const auto * dt_enum8 = typeid_cast<const DataTypeEnum8 *>(dtptr.get());
+    const_cast<DataTypeEnum8 *>(dt_enum8)->setAdd();
+
+    return dtptr;
+}
+
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
     factory.registerDataType("Enum8", createExact<DataTypeEnum<Int8>>);
     factory.registerDataType("Enum16", createExact<DataTypeEnum<Int16>>);
     factory.registerDataType("Enum", create);
+    factory.registerDataType("addToEnum", addToEnum);
 
     /// MySQL
     factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);

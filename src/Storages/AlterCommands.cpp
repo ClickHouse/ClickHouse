@@ -37,6 +37,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -65,6 +66,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -90,6 +92,48 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::SETTINGS;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
+}
+
+template <typename T>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<T> & base, const DataTypeEnum<T> & add)
+{
+    using Values = typename DataTypeEnum<T>::Values;
+
+    Values merged = base.getValues();
+    std::unordered_map<String, T> name_to_value;
+    std::unordered_map<T, String> value_to_name;
+
+    name_to_value.reserve(merged.size());
+    value_to_name.reserve(merged.size());
+
+    for (const auto & value : merged)
+    {
+        name_to_value.emplace(value.first, value.second);
+        value_to_name.emplace(value.second, value.first);
+    }
+
+    for (const auto & value : add.getValues())
+    {
+        auto name_it = name_to_value.find(value.first);
+        auto value_it = value_to_name.find(value.second);
+
+        if (name_it != name_to_value.end() && name_it->second != value.second)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Enum element '{}' has old value {}, but new value is {}",
+                value.first, name_it->second, value.second);
+
+        if (value_it != value_to_name.end() && value_it->second != value.first)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Enum value {} already used by '{}', cannot use it for '{}'",
+                value.second, value_it->second, value.first);
+
+        if (name_it == name_to_value.end() && value_it == value_to_name.end())
+        {
+            merged.push_back(value);
+            name_to_value.emplace(value.first, value.second);
+            value_to_name.emplace(value.second, value.first);
+        }
+    }
+
+    return std::make_shared<DataTypeEnum<T>>(merged);
 }
 
 }
@@ -1360,7 +1404,27 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                     command.default_kind = column_from_table.default_desc.kind;
                     command.default_expression = column_from_table.default_desc.expression;
                 }
-
+                if (const auto * column_enum_type = dynamic_cast<const IDataTypeEnum*>(column_from_table.type.get()) /*command.data_type.get()*/)
+                {
+                    const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum*>(command.data_type.get());
+                    if (alter_enum_type && alter_enum_type->isAdd())
+                    {
+                        if (const auto * base_enum8 = typeid_cast<const DataTypeEnum<Int8> *>(column_enum_type))
+                        {
+                            const auto * add_enum8 = typeid_cast<const DataTypeEnum<Int8> *>(command.data_type.get());
+                            if (!add_enum8)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add Enum16 values to Enum8 column");
+                            command.data_type = mergeEnumTypes(*base_enum8, *add_enum8);
+                        }
+                        else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum<Int16> *>(column_enum_type))
+                        {
+                            const auto * add_enum16 = typeid_cast<const DataTypeEnum<Int16> *>(command.data_type.get());
+                            if (!add_enum16)
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add Enum8 values to Enum16 column");
+                            command.data_type = mergeEnumTypes(*base_enum16, *add_enum16);
+                        }
+                    }
+                }
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
