@@ -1,5 +1,0 @@
-openSSL:
-  client:
-    certificateFile: wrong-cert.pem
-    privateKeyFile: wrong-key.pem
-    caConfig: ca-cert.pem
