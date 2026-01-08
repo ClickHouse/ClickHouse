@@ -1,0 +1,7 @@
+name: write_heavy
+clients: 64
+ops:
+  - { kind: create, percent: 50, path_prefix: /e2e/write, value_bytes: 512 }
+  - { kind: set,    percent: 45, path_prefix: /e2e/write, value_bytes: 512 }
+  - { kind: get,    percent: 5,  path_prefix: /e2e/write }
+duration_seconds: 0

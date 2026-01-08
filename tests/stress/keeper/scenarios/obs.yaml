@@ -1,0 +1,28 @@
+version: 1
+defaults:
+  duration: 120
+  topology: 3
+scenarios:
+  - id: OBS-01
+    name: 4LW truth vs reality
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    gates:
+      - { type: single_leader }
+
+  - id: OBS-02
+    name: Prom scrape stability
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    gates:
+      - { type: single_leader }
+
+  - id: OBS-03
+    name: /ready lifecycle
+    topology: 3
+    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    faults:
+      - { kind: rcvr, on: leader }
+      - { kind: expect_ready, on: leader, ok: false }
+    gates:
+      - { type: single_leader }

@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+# Instance directories (kept on failure for debugging)
+/tests/_instances-*/
+# Generated configs for local runs
+/tests/configs/
+# Local virtualenvs
+.venv/
