@@ -32,9 +32,9 @@ struct FactorialImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The maximum value for the input argument of function factorial is 20");
 
             if constexpr (is_unsigned_v<A>)
-                return factorials[a];
+                return factorials[static_cast<size_t>(a)];
             else if constexpr (is_signed_v<A>)
-                return a >= 0 ? factorials[a] : 1;
+                return a >= 0 ? factorials[static_cast<size_t>(a)] : 1;
         }
     }
 

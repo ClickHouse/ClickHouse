@@ -174,7 +174,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTPtr settings_temporary_storage = nullptr;
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)

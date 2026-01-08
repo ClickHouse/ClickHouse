@@ -64,11 +64,28 @@ def run_fuzz_job(check_name: str):
     info = Info()
     is_sanitized = "san" in info.job_name
 
-    with open(workspace_path / "ci-changed-files.txt", "w") as f:
-        f.write("\n".join(info.get_changed_files()))
+    changed_files_path = workspace_path / "ci-changed-files.txt"
+    with open(changed_files_path, "w") as f:
+        changed_files = info.get_changed_files()
+        if changed_files is None:
+            if info.is_local_run:
+                logging.warning(
+                    "No changed files available for local run - fuzzing will not be guided by changed test cases"
+                )
+            changed_files = []
+        else:
+            logging.info("Found %d changed files to guide fuzzing", len(changed_files))
+        f.write("\n".join(changed_files))
 
     Shell.check(command=run_command, verbose=True)
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_dir}", shell=True)
+    
+    # Fix file ownership after running docker as root
+    logging.info("Fixing file ownership after running docker as root")
+    uid = os.getuid()
+    gid = os.getgid()
+    chown_cmd = f"docker run --rm --user root --volume {cwd}:{cwd} --workdir={cwd} {docker_image} sh -c 'find {temp_dir} -user root -exec chown {uid}:{gid} {{}} +'"
+    logging.info("Run ownership fix command: %s", chown_cmd)
+    Shell.check(chown_cmd, verbose=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"

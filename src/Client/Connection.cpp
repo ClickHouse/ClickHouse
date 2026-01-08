@@ -104,6 +104,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
+    const String & tls_sni_override_,
     const String & bind_host_
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
@@ -125,6 +126,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
+    , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
     , log_wrapper(*this)
 {
@@ -169,7 +171,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
+                    ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
@@ -192,7 +195,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 {
                     Poco::Net::SocketAddress socket_address(bind_host, 0);
 
-                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
+                    static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
                 }
             }
 
@@ -1618,6 +1621,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security,
+        parameters.tls_sni_override,
         parameters.bind_host
 #if USE_JWT_CPP && USE_SSL
         , parameters.jwt_provider

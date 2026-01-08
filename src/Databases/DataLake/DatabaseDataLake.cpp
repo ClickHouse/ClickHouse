@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
@@ -9,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
+
 #if USE_AVRO && USE_PARQUET
 
 #include <Access/Common/HTTPAuthenticationScheme.h>
@@ -18,6 +21,7 @@
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
+#include <Databases/DataLake/PaimonRestCatalog.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -56,6 +60,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsString dlf_access_key_id;
+    extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
 }
 
 namespace Setting
@@ -64,6 +70,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_unity_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
+    extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -200,6 +207,34 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             catalog_impl = nullptr;
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::PAIMON_REST:
+        {
+            if (!settings[DatabaseDataLakeSetting::catalog_credential].value.empty())
+            {
+                catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::catalog_credential].value),
+                settings[DatabaseDataLakeSetting::region].value,
+                Context::getGlobalContextInstance());
+            }
+            else if (!settings[DatabaseDataLakeSetting::dlf_access_key_id].value.empty()
+                && !settings[DatabaseDataLakeSetting::dlf_access_key_secret].value.empty()
+                && !settings[DatabaseDataLakeSetting::region].value.empty())
+            {
+                catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value),
+                settings[DatabaseDataLakeSetting::region].value,
+                Context::getGlobalContextInstance());
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paimon catalog requires either catalog_credential or (dlf_access_key_id, dlf_access_key_secret and region)");
+            }
+            break;
+        }
     }
     return catalog_impl;
 }
@@ -334,6 +369,44 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     type);
             }
         }
+        case DatabaseDataLakeCatalogType::PAIMON_REST:
+        {
+            switch (type)
+            {
+#if USE_AWS_S3
+                case DB::DatabaseDataLakeStorageType::S3:
+                {
+                    return std::make_shared<StorageS3PaimonConfiguration>(storage_settings);
+                }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                case DB::DatabaseDataLakeStorageType::Azure:
+                {
+                    return std::make_shared<StorageAzurePaimonConfiguration>(storage_settings);
+                }
+#endif
+#if USE_HDFS
+                case DB::DatabaseDataLakeStorageType::HDFS:
+                {
+                    return std::make_shared<StorageHDFSPaimonConfiguration>(storage_settings);
+                }
+#endif
+                case DB::DatabaseDataLakeStorageType::Local:
+                {
+                    return std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+                }
+                case DB::DatabaseDataLakeStorageType::Other:
+                {
+                    return std::make_shared<StorageLocalPaimonConfiguration>(storage_settings);
+                }
+#if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Server does not contain support for storage type {} for Iceberg Rest catalog",
+                                    type);
+#endif
+            }
+        }
         case DatabaseDataLakeCatalogType::NONE:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
@@ -409,6 +482,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// so we have a separate setting to know whether we should even try to fetch them.
     if (args.size() == 1)
     {
+        std::array<DatabaseDataLakeCatalogType, 2> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
         if (table_metadata.hasStorageCredentials())
         {
             LOG_DEBUG(log, "Getting credentials");
@@ -423,7 +497,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 LOG_DEBUG(log, "Has no credentials");
             }
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && catalog->getCatalogType() != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end())
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
@@ -893,6 +967,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 }
 
                 engine_func->name = "Iceberg";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::PAIMON_REST:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_paimon_rest_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with Paimon Rest catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
+                }
+
+                engine_func->name = "Paimon";
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:

@@ -40,11 +40,11 @@ try:
     import pymongo
     import pymysql
     import nats
+    from filelock import FileLock, Timeout
     from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
-    from filelock import FileLock, Timeout
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -4279,16 +4279,16 @@ class ClickHouseInstance:
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         if mem_limit is not None:
-            self.mem_limit = f"mem_limit : {mem_limit}"
+            self.mem_limit = f"mem_limit: {mem_limit}"
         else:
-            self.mem_limit = "mem_limit : 10g"
+            self.mem_limit = "mem_limit: 12g"
 
         if cpu_limit is None:
-            self.cpu_limit = "cpus : 5"
+            self.cpu_limit = "cpus: 5"
         elif cpu_limit == False:
             self.cpu_limit = ""
         else:
-            self.cpu_limit = f"cpus : {cpu_limit}"
+            self.cpu_limit = f"cpus: {cpu_limit}"
 
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
@@ -4783,7 +4783,7 @@ class ClickHouseInstance:
             )
             if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
-                return
+                return False
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
@@ -4791,42 +4791,38 @@ class ClickHouseInstance:
             )
 
             start_time = time.time()
-            stopped = False
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
-                    stopped = True
-                    break
+                    return True
                 else:
                     time.sleep(1)
 
-            if not stopped:
-                # Some sanitizer report in progress?
-                while self.get_process_pid("llvm-symbolizer") is not None:
-                    time.sleep(1)
+            # Some sanitizer report in progress?
+            while self.get_process_pid("llvm-symbolizer") is not None:
+                time.sleep(1)
 
-                pid = self.get_process_pid("clickhouse")
-                if pid is not None:
-                    logging.warning(
-                        f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
-                    )
-                    self.exec_in_container(
-                        [
-                            "bash",
-                            "-c",
-                            f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                        ],
-                        user="root",
-                    )
-                    self.stop_clickhouse(kill=True)
-                else:
-                    ps_all = self.exec_in_container(
-                        ["bash", "-c", "ps aux"], nothrow=True, user="root"
-                    )
-                    logging.warning(
-                        f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
-                    )
-                    return
+            pid = self.get_process_pid("clickhouse")
+            if pid is not None:
+                logging.warning(
+                    f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
+                )
+                self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                    ],
+                    user="root",
+                )
+                self.stop_clickhouse(kill=True)
+            else:
+                ps_all = self.exec_in_container(
+                    ["bash", "-c", "ps aux"], nothrow=True, user="root"
+                )
+                logging.warning(
+                    f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
+                )
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 

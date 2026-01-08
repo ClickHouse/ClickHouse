@@ -56,28 +56,54 @@ struct ModuloByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
         /// Modulo with too small divisor.
-        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
+        if (b == 1) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;
             return;
         }
+        else
+        {
+            if constexpr (std::is_signed_v<B>)
+            {
+                if (b == -1) [[unlikely]]
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        dst[i] = 0;
+                    return;
+                }
+            }
+        }
 
         /// Modulo with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        if (b > std::numeric_limits<A>::max()) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
         }
+        else
+        {
+            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
+            {
+                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        dst[i] = static_cast<ResultType>(src[i]);
+                    return;
+                }
+            }
+        }
 
-        if (unlikely(static_cast<A>(b) == 0))
+        if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         /// Division by min negative value.
-        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+        if constexpr (std::is_signed_v<B>)
+        {
+            if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
+                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+        }
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
