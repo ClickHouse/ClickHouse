@@ -170,69 +170,6 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
             sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
 
 
-def _push_ci_check_result(check_name, check_status, check_duration, check_start_time):
-    try:
-        from tests.ci.clickhouse_helper import (
-            ClickHouseHelper,
-            prepare_tests_results_for_clickhouse,
-        )  # type: ignore
-        from tests.ci.pr_info import PRInfo  # type: ignore
-    except Exception:
-        return
-    try:
-        try:
-            url = (
-                os.environ.get("CI_DB_URL")
-                or os.environ.get("CLICKHOUSE_TEST_STAT_URL")
-                or None
-            )
-            user = (
-                os.environ.get("CI_DB_USER")
-                or os.environ.get("CLICKHOUSE_TEST_STAT_LOGIN")
-                or None
-            )
-            password = (
-                os.environ.get("CI_DB_PASSWORD")
-                or os.environ.get("CLICKHOUSE_TEST_STAT_PASSWORD")
-                or None
-            )
-            if url and user and password:
-                helper = ClickHouseHelper(
-                    url=url,
-                    auth={
-                        "X-ClickHouse-User": user,
-                        "X-ClickHouse-Key": password,
-                    },
-                )
-            else:
-                helper = ClickHouseHelper()
-        except Exception:
-            helper = ClickHouseHelper()
-        pr_info = PRInfo()
-        events = prepare_tests_results_for_clickhouse(
-            pr_info,
-            [],
-            check_status,
-            float(check_duration),
-            str(check_start_time),
-            "",
-            str(check_name),
-        )
-        try:
-            print("[keeper][push-checks] begin")
-            for e in events:
-                try:
-                    print(json.dumps(e, ensure_ascii=False))
-                except Exception:
-                    pass
-            print("[keeper][push-checks] end")
-        except Exception:
-            pass
-        helper.insert_events_into("default", "checks", events, safe=True)
-    except Exception:
-        return
-
-
 def _print_local_metrics(nodes, run_id, scenario_id, topo, run_meta, ctx, bench_summary):
     try:
         kp = os.environ.get("KEEPER_PRINT_LOCAL_METRICS", "")
@@ -673,15 +610,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         _snapshot_and_sink(
             nodes, "post", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
         )
-        try:
-            _push_ci_check_result(
-                f"keeper_stress:{scenario.get('id','')}",
-                "success",
-                time.time() - start_ts,
-                check_start_time,
-            )
-        except Exception:
-            pass
+        # per-test checks insertion is handled by praktika post-run
     except Exception:
         # Emit minimal reproducible scenario to a file for debugging
         try:
@@ -705,15 +634,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             )
         except Exception:
             pass
-        try:
-            _push_ci_check_result(
-                f"keeper_stress:{scenario.get('id','')}",
-                "failure",
-                time.time() - start_ts,
-                check_start_time,
-            )
-        except Exception:
-            pass
+        # per-test checks insertion is handled by praktika post-run
 
         try:
             setattr(request.node, "keeper_failed", True)

@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import traceback
-import requests
+ 
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
 try:
@@ -24,37 +24,9 @@ except Exception:
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 from praktika.settings import Settings
-from praktika.cidb import CIDB
 
 
-def _resolve_cidb():
-    url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or os.environ.get("CI_DB_URL") or ""
-    user = os.environ.get("CI_DB_USER", "")
-    key = os.environ.get("CI_DB_PASSWORD", "")
-    try:
-        if (not url) or (not user) or (not key):
-            try:
-                from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-                h = ClickHouseHelper()
-            except Exception:
-                h = None
-            if not url:
-                url = (getattr(h, "url", "") if h else "") or (Settings.SECRET_CI_DB_URL or "")
-            if (not user) or (not key):
-                auth = getattr(h, "auth", None) if h else None
-                if auth:
-                    user = user or auth.get("X-ClickHouse-User", "")
-                    key = key or auth.get("X-ClickHouse-Key", "")
-                if not user or not key:
-                    user = user or (Settings.SECRET_CI_DB_USER or "")
-                    key = key or (Settings.SECRET_CI_DB_PASSWORD or "")
-    except Exception:
-        if not url:
-            url = Settings.SECRET_CI_DB_URL or ""
-        if not user or not key:
-            user = user or (Settings.SECRET_CI_DB_USER or "")
-            key = key or (Settings.SECRET_CI_DB_PASSWORD or "")
-    return url, {"X-ClickHouse-User": user, "X-ClickHouse-Key": key}
+ 
 
 
 def main():
@@ -136,33 +108,7 @@ def main():
     stop_watch = Utils.Stopwatch()
     results = []
     files_to_attach = []
-    # Host-side CIDB env and schema preflight (non-blocking)
-    try:
-        cidb_url, auth = _resolve_cidb()
-        ok = True
-        try:
-            r = requests.get(cidb_url, params={"query": "SELECT 1 FORMAT TabSeparated"}, headers=auth, timeout=20)
-            ok = ok and r.ok and (r.text or "").strip().splitlines()[0] == "1"
-        except Exception:
-            ok = False
-        dbn = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
-        if ok:
-            try:
-                q = f"EXISTS TABLE {dbn}.keeper_metrics_ts FORMAT TabSeparated"
-                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=20)
-                ok = ok and r.ok and (r.text or "").strip().splitlines()[0] == "1"
-            except Exception:
-                ok = False
-        if not ok:
-            msg = "CIDB preflight failed: connectivity or schema missing (keeper_metrics_ts)"
-            results.append(
-                Result.from_commands_run(
-                    name=f"CIDB Preflight: {msg} (non-blocking)",
-                    command=["true"],
-                )
-            )
-    except Exception:
-        pass
+    # CI-agnostic: no CIDB preflight here; praktika handles it post-run
 
     # Ensure docker-in-docker is up for nested compose workloads
     os.makedirs("./ci/tmp", exist_ok=True)
@@ -364,6 +310,24 @@ def main():
     env.setdefault("KEEPER_SCENARIO_FILE", "all")
     # Sidecar file for metrics rows emitted by tests; host will ingest post-run
     env["KEEPER_METRICS_FILE"] = f"{temp_dir}/keeper_metrics.jsonl"
+    env.setdefault("KEEPER_METRICS_SPLIT_PER_TEST", "1")
+    sidecar = env["KEEPER_METRICS_FILE"]
+    try:
+        Path(os.path.dirname(sidecar)).mkdir(parents=True, exist_ok=True)
+        with open(sidecar, "a", encoding="utf-8") as _f:
+            _f.write("")
+        results.append(
+            Result.from_commands_run(
+                name="Keeper metrics sidecar preflight", command=["true"]
+            )
+        )
+    except Exception as _e:
+        results.append(
+            Result.from_commands_run(
+                name=f"Keeper metrics sidecar preflight failed: {str(_e)[:120]}",
+                command=["true"],
+            )
+        )
     # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
     repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
     cur_pp = env.get("PYTHONPATH", "")
@@ -499,7 +463,7 @@ def main():
                 pass
     except Exception:
         pass
-    # Host-side metrics push: stream sidecar JSONL into CIDB with run_id dedupe
+    # Metrics ingestion is handled by praktika post-run; attach sidecar preview only
     try:
         sidecar_path = env.get("KEEPER_METRICS_FILE", f"{temp_dir}/keeper_metrics.jsonl")
         extracted_rows = 0
@@ -533,59 +497,6 @@ def main():
                 )
         except Exception:
             pass
-        if extracted_rows > 0:
-            host_url, host_auth = _resolve_cidb()
-            host_user = host_auth.get("X-ClickHouse-User", "")
-            host_key = host_auth.get("X-ClickHouse-Key", "")
-            metrics_db_local = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
-            pushed = 0
-            skipped = 0
-            errors = 0
-            debug_lines = [
-                f"url_present={(1 if bool(host_url) else 0)}",
-                f"db={metrics_db_local}",
-                f"sidecar={sidecar_path}",
-            ]
-            if not host_url or not host_user or not host_key:
-                results.append(
-                    Result.from_commands_run(
-                        name=(
-                            "Keeper Metrics Host Push: skipped missing_config "
-                            f"url={'yes' if host_url else 'no'} user={'yes' if host_user else 'no'} key={'yes' if host_key else 'no'}"
-                        ),
-                        command=["true"],
-                    )
-                )
-            else:
-                try:
-                    cidb = CIDB(host_url, host_user, host_key)
-                    inserted, skipped_flag = cidb.insert_keeper_metrics_from_file(
-                        sidecar_path, db=metrics_db_local
-                    )
-                    pushed = inserted
-                    skipped = 1 if skipped_flag else 0
-                except Exception as e:
-                    errors = extracted_rows
-                    debug_lines.append(f"fatal='{str(e)[:300]}'")
-                try:
-                    dbg_path = f"{temp_dir}/keeper_metrics_push_debug.txt"
-                    with open(dbg_path, "w", encoding="utf-8") as df:
-                        df.write("\n".join(debug_lines) + "\n")
-                    files_to_attach.append(dbg_path)
-                except Exception:
-                    pass
-                try:
-                    results.append(
-                        Result.from_commands_run(
-                            name=(
-                                "Keeper Metrics Host Push: "
-                                f"extracted={extracted_rows} pushed={pushed} skipped_existing={skipped} errors={errors}"
-                            ),
-                            command=["true"],
-                        )
-                    )
-                except Exception:
-                    pass
     except Exception:
         pass
     try:
@@ -624,186 +535,7 @@ def main():
         )
     except Exception:
         pass
-    # Rely on praktika post-run insertion to CIDB for per-test checks (same as integration job)
-    try:
-        try:
-            files_to_attach
-        except NameError:
-            files_to_attach = []
-        cidb_txt = f"{temp_dir}/keeper_cidb_verify.txt"
-        sha = env.get("COMMIT_SHA") or env.get("GITHUB_SHA") or "local"
-        backends_counts = {}
-        bench_rows = 0
-        checks_rows = 0
-        # Resolve CIDB endpoint from host env; we stripped these from pytest env earlier
-        try:
-            cidb_url, auth = _resolve_cidb()
-        except Exception:
-            cidb_url = ""
-            auth = None
-        have_cidb = bool(cidb_url and auth and auth.get("X-ClickHouse-User") and auth.get("X-ClickHouse-Key"))
-        metrics_db = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
-        if have_cidb:
-            try:
-                if sha and sha != "local":
-                    filt_metrics = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
-                else:
-                    # Fallback: recent window without sha filter (covers 'local' runs)
-                    filt_metrics = "ts > now() - INTERVAL 2 DAY"
-                q = (
-                    f"SELECT backend, count() FROM {metrics_db}.keeper_metrics_ts "
-                    f"WHERE {filt_metrics} "
-                    "GROUP BY backend ORDER BY backend FORMAT TabSeparated"
-                )
-                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
-                txt = (r.text or "").strip()
-                for line in txt.splitlines():
-                    parts = line.split("\t")
-                    if len(parts) == 2:
-                        backends_counts[parts[0]] = int(float(parts[1]))
-            except Exception:
-                pass
-            try:
-                if sha and sha != "local":
-                    filt_bench = f"commit_sha = '{sha}' AND source = 'bench' AND ts > now() - INTERVAL 2 DAY"
-                else:
-                    filt_bench = "source = 'bench' AND ts > now() - INTERVAL 2 DAY"
-                q = (
-                    f"SELECT count() FROM {metrics_db}.keeper_metrics_ts "
-                    f"WHERE {filt_bench} FORMAT TabSeparated"
-                )
-                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
-                t2 = (r.text or "").strip()
-                bench_rows = int(float(t2.splitlines()[0])) if t2 else 0
-            except Exception:
-                pass
-            try:
-                # Use case-insensitive matching on check_name to cover 'Keeper Stress' and 'Keeper Stress (PR)'
-                name_filter = (
-                    "(lowerUTF8(check_name) LIKE 'keeper stress:%' OR lowerUTF8(check_name) LIKE 'keeper stress%' OR "
-                    "lowerUTF8(check_name) LIKE 'keeper_stress:%' OR lowerUTF8(check_name) LIKE 'keeper_stress%')"
-                )
-                table_fq = f"{Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'}"
-                if sha and sha != "local":
-                    q = (
-                        f"SELECT count() FROM {table_fq} "
-                        f"WHERE {name_filter} AND commit_sha = '{sha}' "
-                        "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
-                    )
-                else:
-                    q = (
-                        f"SELECT count() FROM {table_fq} "
-                        f"WHERE {name_filter} "
-                        "AND check_start_time > now() - INTERVAL 2 DAY FORMAT TabSeparated"
-                    )
-                r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
-                t3 = (r.text or "").strip()
-                checks_rows = int(float(t3.splitlines()[0])) if t3 else 0
-            except Exception:
-                pass
-            # Best-effort: capture small samples to aid triage when counts are zero
-            try:
-                cidb_samples = f"{temp_dir}/keeper_cidb_sample.txt"
-                lines = []
-                # Metrics sample (recent rows)
-                try:
-                    if sha and sha != "local":
-                        filt = f"commit_sha = '{sha}' AND ts > now() - INTERVAL 2 DAY"
-                    else:
-                        filt = "ts > now() - INTERVAL 2 DAY"
-                    q = (
-                        "SELECT ts, run_id, backend, scenario, node, stage, source, name, value "
-                        f"FROM {metrics_db}.keeper_metrics_ts "
-                        f"WHERE {filt} ORDER BY ts DESC LIMIT 30 FORMAT TabSeparated"
-                    )
-                    r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
-                    mtxt = (r.text or "").strip()
-                except Exception:
-                    mtxt = ""
-                lines.append("[metrics_sample]")
-                if mtxt:
-                    for l in mtxt.splitlines():
-                        lines.append(l)
-                else:
-                    lines.append("<empty>")
-                # Checks sample (recent rows)
-                try:
-                    table_fq = f"{Settings.CI_DB_DB_NAME or 'default'}.{Settings.CI_DB_TABLE_NAME or 'checks'}"
-                    if sha and sha != "local":
-                        q = (
-                            "SELECT check_start_time, check_name, check_status, test_name "
-                            f"FROM {table_fq} "
-                            f"WHERE {name_filter} AND commit_sha = '{sha}' "
-                            "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
-                        )
-                    else:
-                        q = (
-                            "SELECT check_start_time, check_name, check_status, test_name "
-                            f"FROM {table_fq} "
-                            f"WHERE {name_filter} "
-                            "AND check_start_time > now() - INTERVAL 2 DAY ORDER BY check_start_time DESC LIMIT 20 FORMAT TabSeparated"
-                        )
-                    r = requests.get(cidb_url, params={"query": q}, headers=auth, timeout=30)
-                    ctxt = (r.text or "").strip()
-                except Exception:
-                    ctxt = ""
-                lines.append("")
-                lines.append("[checks_sample]")
-                if ctxt:
-                    for l in ctxt.splitlines():
-                        lines.append(l)
-                else:
-                    lines.append("<empty>")
-                # Write and attach
-                try:
-                    with open(cidb_samples, "w", encoding="utf-8") as sf:
-                        sf.write("\n".join(lines) + "\n")
-                    files_to_attach.append(cidb_samples)
-                    # Also print a short preview to job log for quick triage
-                    try:
-                        results.append(
-                            Result.from_commands_run(
-                                name="CIDB Sample Preview",
-                                command=(
-                                    "bash -lc \"echo '==== CIDB recent metrics/checks sample ===='; "
-                                    f"sed -n '1,200p' '{cidb_samples}'\""
-                                ),
-                            )
-                        )
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        present = ",".join(sorted(k for k in backends_counts.keys())) if backends_counts else ""
-        with open(cidb_txt, "w", encoding="utf-8") as f:
-            f.write(f"commit_sha={sha}\n")
-            f.write(f"backends_counts={backends_counts}\n")
-            f.write(f"bench_rows={bench_rows}\n")
-            f.write(f"checks_rows={checks_rows}\n")
-        results.append(
-            Result.from_commands_run(
-                name=f"CIDB Verify: backends [{present}] bench_rows={bench_rows} checks_rows={checks_rows}",
-                command=["true"],
-            )
-        )
-        try:
-            files_to_attach.append(cidb_txt)
-        except Exception:
-            pass
-        # Do not fail or gate on CIDB availability; align with other tests (best-effort reporting only)
-        try:
-            results.append(
-                Result.from_commands_run(
-                    name=f"CIDB Note: sha={sha} have_cidb={(1 if have_cidb else 0)} bench_rows={bench_rows} checks_rows={checks_rows}",
-                    command=["true"],
-                )
-            )
-        except Exception:
-            pass
-    except Exception:
-        pass
+    # CI-agnostic: no direct CIDB verification here; praktika handles reporting
     # Collect debug artifacts on failure
     try:
         files_to_attach
