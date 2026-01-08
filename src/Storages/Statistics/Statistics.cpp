@@ -29,9 +29,10 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_STATISTICS;
+    extern const int UNKNOWN_FORMAT_VERSION;
     extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 enum StatisticsFileVersion : UInt16
@@ -60,8 +61,8 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
-ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_)
-    : stats_desc(stats_desc_), column_name(column_name_), data_type(data_type_)
+ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, DataTypePtr data_type_)
+    : stats_desc(stats_desc_), data_type(data_type_)
 {
 }
 
@@ -196,6 +197,11 @@ Float64 ColumnStatistics::estimateRange(const Range & range) const
     return right_count - left_count;
 }
 
+UInt64 ColumnStatistics::rowCount() const
+{
+    return rows;
+}
+
 UInt64 ColumnStatistics::estimateCardinality() const
 {
     if (stats.contains(StatisticsType::Uniq))
@@ -227,9 +233,7 @@ Estimate ColumnStatistics::getEstimate() const
     return info;
 }
 
-/// -------------------------------------
-
-void ColumnStatistics::serialize(WriteBuffer & buf)
+void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
     writeIntBinary(V1, buf);
 
@@ -238,10 +242,10 @@ void ColumnStatistics::serialize(WriteBuffer & buf)
         stat_types_mask |= 1LL << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
 
-    /// as the column row count is always useful, save it in any case
+    /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// write the actual statistics object
+    /// Write the actual statistics object
     for (const auto & [type, stat_ptr] : stats)
         stat_ptr->serialize(buf);
 }
@@ -256,7 +260,6 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
-
     readIntBinary(rows, buf);
 
     for (UInt8 i = 0; i < static_cast<UInt8>(StatisticsType::Max); i++)
@@ -289,21 +292,6 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     }
 }
 
-String ColumnStatistics::getStatisticName() const
-{
-    return STATS_FILE_PREFIX + column_name;
-}
-
-const String & ColumnStatistics::getColumnName() const
-{
-    return column_name;
-}
-
-UInt64 ColumnStatistics::rowCount() const
-{
-    return rows;
-}
-
 String ColumnStatistics::getNameForLogs() const
 {
     String ret;
@@ -314,6 +302,114 @@ String ColumnStatistics::getNameForLogs() const
     }
     ret += "rows: " + std::to_string(rows);
     return ret;
+}
+
+ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
+{
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            emplace(column.name, factory.get(column));
+    }
+}
+
+ColumnsStatistics ColumnsStatistics::cloneEmpty() const
+{
+    ColumnsStatistics result;
+    for (const auto & [column_name, stat] : *this)
+    {
+        auto new_stat = MergeTreeStatisticsFactory::instance().get(stat->getDescription());
+        result.emplace(column_name, std::move(new_stat));
+    }
+    return result;
+}
+
+/// TODO: change format to packed.
+void ColumnsStatistics::serialize(WriteBuffer & buf) const
+{
+    static constexpr UInt8 version = 0;
+
+    writeIntBinary(version, buf);
+    writeIntBinary(size(), buf);
+
+    for (const auto & [column_name, stat] : *this)
+    {
+        writeStringBinary(column_name, buf);
+        stat->serialize(buf);
+    }
+}
+
+/// TODO: change format to packed.
+void ColumnsStatistics::deserialize(ReadBuffer & buf)
+{
+    UInt8 version;
+    readIntBinary(version, buf);
+
+    if (version != 0)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown file format version: {}", UInt64(version));
+
+    size_t size;
+    readIntBinary(size, buf);
+    NameSet loaded_stats;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        String column_name;
+        readStringBinary(column_name, buf);
+
+        auto it = find(column_name);
+
+        if (it == end())
+            continue;
+
+        it->second->deserialize(buf);
+        loaded_stats.insert(column_name);
+    }
+
+    for (auto it = begin(); it != end();)
+    {
+        if (loaded_stats.contains(it->first))
+            ++it;
+        else
+            erase(it++);
+    }
+}
+
+void ColumnsStatistics::build(const Block & block)
+{
+    for (const auto & [column_name, stat] : *this)
+        stat->build(block.getByName(column_name).column);
+}
+
+void ColumnsStatistics::buildIfExists(const Block & block)
+{
+    for (const auto & [column_name, stat] : *this)
+    {
+        if (block.has(column_name))
+            stat->build(block.getByName(column_name).column);
+    }
+}
+
+void ColumnsStatistics::merge(const ColumnsStatistics & other)
+{
+    for (const auto & [column_name, stat] : other)
+    {
+        auto it = find(column_name);
+        if (it == end())
+            emplace(column_name, stat);
+        else
+            it->second->merge(stat);
+    }
+}
+
+Estimates ColumnsStatistics::getEstimates() const
+{
+    Estimates estimates;
+    for (const auto & [column_name, stat] : *this)
+        estimates.emplace(column_name, stat->getEstimate());
+    return estimates;
 }
 
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)
@@ -384,25 +480,24 @@ ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatis
 
 ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnDescription & column_desc) const
 {
-    ColumnStatisticsPtr column_stat = std::make_shared<ColumnStatistics>(column_desc.statistics, column_desc.name, column_desc.type);
-    for (const auto & [type, desc] : column_desc.statistics.types_to_desc)
+    return get(column_desc.statistics);
+}
+
+ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescription & stats_desc) const
+{
+    auto column_stat = std::make_shared<ColumnStatistics>(stats_desc, stats_desc.data_type);
+
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
     {
         auto it = creators.find(type);
         if (it == creators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
-        auto stat_ptr = (it->second)(desc, column_desc.type);
+
+        auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
     }
-    return column_stat;
-}
 
-ColumnsStatistics MergeTreeStatisticsFactory::getMany(const ColumnsDescription & columns) const
-{
-    ColumnsStatistics result;
-    for (const auto & col : columns)
-        if (!col.statistics.empty())
-            result.push_back(get(col));
-    return result;
+    return column_stat;
 }
 
 StatisticsPtr MergeTreeStatisticsFactory::getSingleStats(const SingleStatisticsDescription & desc, DataTypePtr data_type) const

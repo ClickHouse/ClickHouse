@@ -4,6 +4,11 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/logger_useful.h>
 
+namespace ProfileEvents
+{
+    extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
+}
+
 namespace DB
 {
 
@@ -13,6 +18,17 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+}
+
+void PartLevelStatistics::update(const Block & block, const StorageMetadataPtr & metadata_snapshot)
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+
+    if (!statistics.empty())
+        statistics.buildIfExists(block);
+
+    if (minmax_idx)
+        minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(

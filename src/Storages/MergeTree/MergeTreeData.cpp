@@ -847,8 +847,8 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         {
             auto stats = part.data_part->loadStatistics();
             estimator_builder.markDataPart(part.data_part);
-            for (const auto & stat : stats)
-                estimator_builder.addStatistics(stat);
+            for (const auto & [column_name, stat] : stats)
+                estimator_builder.addStatistics(column_name, stat);
         }
         catch (...)
         {
@@ -2620,8 +2620,8 @@ try
         {
             auto stats = data_part->loadStatistics();
             estimator_builder.markDataPart(data_part);
-            for (const auto & stat : stats)
-                estimator_builder.addStatistics(stat);
+            for (const auto & [column_name, stat] : stats)
+                estimator_builder.addStatistics(column_name, stat);
         }
         catch (...)
         {
@@ -10299,7 +10299,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         metadata_snapshot,
         columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        ColumnsStatistics{},
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::PrehistoricTID,
@@ -10309,7 +10308,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     out.write(block);
     /// Here is no projections as no data inside
-    out.finalizePart(new_data_part, sync_on_insert);
+    out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
 
     new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));

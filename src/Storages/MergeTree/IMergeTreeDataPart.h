@@ -169,6 +169,7 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     Estimates getEstimates() const;
+    void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.

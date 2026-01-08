@@ -19,7 +19,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & indices_to_recalc,
-    const ColumnsStatistics & stats_to_recalc,
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
@@ -58,7 +57,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
-        stats_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,
         writer_settings,
@@ -80,10 +78,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     new_serialization_infos.add(block);
 }
 
-MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::fillChecksums(
-    MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums)
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, GatheredData & all_gathered_data)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
@@ -91,13 +86,15 @@ MergedColumnOnlyOutputStream::fillChecksums(
     writer->fillChecksums(checksums, checksums_to_remove);
 
     for (const auto & filename : checksums_to_remove)
-        all_checksums.files.erase(filename);
+        all_gathered_data.checksums.files.erase(filename);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+    {
         checksums.addFile(
             projection_name + ".proj",
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
+    }
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
@@ -114,7 +111,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
     for (const String & removed_file : removed_files)
     {
         new_part->getDataPartStorage().removeFileIfExists(removed_file);
-        all_checksums.files.erase(removed_file);
+        all_gathered_data.checksums.files.erase(removed_file);
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());

@@ -96,9 +96,9 @@ TEST(Statistics, Estimator)
     stats_c->build(std::move(c));
 
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
-    estimator_builder.addStatistics(stats_a);
-    estimator_builder.addStatistics(stats_b);
-    estimator_builder.addStatistics(stats_c);
+    estimator_builder.addStatistics("a", stats_a);
+    estimator_builder.addStatistics("b", stats_b);
+    estimator_builder.addStatistics("c", stats_c);
     estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();

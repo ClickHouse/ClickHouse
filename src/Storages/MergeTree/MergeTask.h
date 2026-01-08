@@ -5,6 +5,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -218,8 +219,9 @@ private:
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
-        MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsSubstreams gathered_columns_substreams{};
+
+        MergedBlockOutputStream::GatheredData gathered_data{};
+        std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -515,7 +517,7 @@ private:
         StageRuntimeContextPtr getContextForNextStage() override;
         ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
-        bool mergeMinMaxIndexAndPrepareProjections() const;
+        bool mergeStatisticsAndPrepareProjections() const;
         bool executeProjections() const;
         bool finalizeProjectionsAndWholeMerge() const;
 
@@ -524,7 +526,7 @@ private:
 
         const MergeProjectionsStageSubtasks subtasks
         {
-            &MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections,
+            &MergeProjectionsStage::mergeStatisticsAndPrepareProjections,
             &MergeProjectionsStage::executeProjections,
             &MergeProjectionsStage::finalizeProjectionsAndWholeMerge
         };

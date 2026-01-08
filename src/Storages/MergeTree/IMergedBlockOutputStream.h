@@ -13,6 +13,14 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
+struct PartLevelStatistics
+{
+    ColumnsStatistics statistics;
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+
+    void update(const Block & block, const StorageMetadataPtr & metadata_snapshot);
+};
+
 class IMergedBlockOutputStream
 {
 public:
@@ -26,6 +34,13 @@ public:
     virtual ~IMergedBlockOutputStream() = default;
 
     using WrittenOffsetColumns = std::set<std::string>;
+
+    struct GatheredData
+    {
+        MergeTreeData::DataPart::Checksums checksums;
+        ColumnsSubstreams columns_substreams;
+        PartLevelStatistics part_statistics;
+    };
 
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;

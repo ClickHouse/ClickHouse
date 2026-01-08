@@ -14,6 +14,7 @@ constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
 class Field;
+class Block;
 
 struct StatisticsUtils
 {
@@ -58,7 +59,6 @@ protected:
 
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnsStatistics = std::vector<ColumnStatisticsPtr>;
 
 struct Estimate
 {
@@ -75,35 +75,57 @@ using Estimates = std::unordered_map<String, Estimate>;
 class ColumnStatistics
 {
 public:
-    explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, const String & column_name_, DataTypePtr data_type_);
+    using StatsMap = std::map<StatisticsType, StatisticsPtr>;
+    ColumnStatistics(const ColumnStatisticsDescription & stats_desc_, DataTypePtr data_type_);
 
-    void serialize(WriteBuffer & buf);
+    void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
-
-    String getStatisticName() const;
-    const String & getColumnName() const;
-
-    UInt64 rowCount() const;
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
+
+    UInt64 rowCount() const;
+    UInt64 estimateCardinality() const;
+    UInt64 estimateDefaults() const;
 
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
     Float64 estimateRange(const Range & range) const;
-    UInt64 estimateCardinality() const;
 
+    const StatsMap & getStats() const { return stats; }
+    const ColumnStatisticsDescription & getDescription() const { return stats_desc; }
     Estimate getEstimate() const;
     String getNameForLogs() const;
 
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
-    String column_name;
+    StatsMap stats;
     DataTypePtr data_type;
-    std::map<StatisticsType, StatisticsPtr> stats;
     UInt64 rows = 0; /// the number of rows in the column
+};
+
+class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
+{
+public:
+    static constexpr std::string_view FILENAME = "statistics.packed";
+
+    ColumnsStatistics() = default;
+    using Base = std::map<String, ColumnStatisticsPtr>;
+    using Base::Base;
+
+    explicit ColumnsStatistics(const ColumnsDescription & columns);
+    ColumnsStatistics cloneEmpty() const;
+
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
+    void build(const Block & block);
+    void buildIfExists(const Block & block);
+    void merge(const ColumnsStatistics & other);
+    Estimates getEstimates() const;
+
+    static String getStatisticName(const String & column_name) { return STATS_FILE_PREFIX + column_name; }
 };
 
 struct ColumnDescription;
@@ -121,7 +143,7 @@ public:
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
-    ColumnsStatistics getMany(const ColumnsDescription & columns) const;
+    ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
 
     StatisticsPtr getSingleStats(const SingleStatisticsDescription & stats_desc, DataTypePtr data_type) const;
 

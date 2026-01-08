@@ -319,12 +319,13 @@ void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data
     estimator->total_rows += data_part->rows_count;
 }
 
-void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr column_stats)
+void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
     if (column_stats != nullptr)
     {
         has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_stats->getColumnName()];
+        auto & column_estimator = estimator->column_estimators[column_name];
+
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
         else
@@ -334,9 +335,7 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr col
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    if (!has_data)
-        return nullptr;
-    return estimator;
+    return has_data ? estimator : nullptr;
 }
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
