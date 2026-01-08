@@ -974,6 +974,8 @@ struct ContextSharedPart : boost::noncopyable
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
             zookeeper.reset();
         }
 
