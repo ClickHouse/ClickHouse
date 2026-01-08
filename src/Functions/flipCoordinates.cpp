@@ -108,7 +108,8 @@ private:
         MutableColumns result_variants;
         result_variants.reserve(variants.size());
 
-        for (ColumnVariant::Discriminator i = 0; i < variants.size(); ++i)
+        chassert(variants.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
+        for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variants.size()); ++i)
         {
             const auto & variant_column = variants[i];
             auto global_discr = column_variant->globalDiscriminatorByLocal(i);

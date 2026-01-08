@@ -103,7 +103,7 @@ namespace
 
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
             {
-                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), static_cast<UInt32>(decimal_type->getScale()));
+                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
                 return result;
             }
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))

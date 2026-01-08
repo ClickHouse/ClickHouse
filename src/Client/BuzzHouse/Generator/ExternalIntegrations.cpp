@@ -1459,7 +1459,7 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     Poco::URI uri;
     uri.setScheme("http");
     uri.setHost(sc.server_hostname);
-    uri.setPort(static_cast<unsigned short>(sc.port));
+    uri.setPort(static_cast<uint16_t>(sc.port));
     uri.setPath(path);
 
     /// Build PUT request

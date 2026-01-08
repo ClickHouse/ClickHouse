@@ -39,7 +39,7 @@ Poco::URI LibraryBridgeHelper::createBaseURI() const
 {
     Poco::URI uri;
     uri.setHost(bridge_host);
-    uri.setPort(static_cast<unsigned short>(bridge_port));
+    uri.setPort(static_cast<uint16_t>(bridge_port));
     uri.setScheme("http");
     return uri;
 }

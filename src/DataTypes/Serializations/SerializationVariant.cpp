@@ -102,7 +102,8 @@ void SerializationVariant::enumerateStreams(
     settings.path.push_back(Substream::VariantElements);
     settings.path.back().data = data;
 
-    for (ColumnVariant::Discriminator i = 0; i < variant_serializations.size(); ++i)
+    chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
+    for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
         DataTypePtr type = type_variant ? type_variant->getVariant(i) : nullptr;
         settings.path.back().creator = std::make_shared<SerializationVariantElement::VariantSubcolumnCreator>(
@@ -132,7 +133,8 @@ void SerializationVariant::enumerateStreams(
                              .withType(type_variant ? std::make_shared<DataTypeUInt8>() : nullptr)
                              .withColumn(column_variant ? ColumnUInt8::create() : nullptr);
 
-    for (ColumnVariant::Discriminator i = 0; i < variant_serializations.size(); ++i)
+    chassert(variant_serializations.size() <= std::numeric_limits<ColumnVariant::Discriminator>::max());
+    for (ColumnVariant::Discriminator i = 0; i < static_cast<ColumnVariant::Discriminator>(variant_serializations.size()); ++i)
     {
         if (!variant_types[i]->canBeInsideNullable())
             continue;

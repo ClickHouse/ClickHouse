@@ -664,7 +664,7 @@ private:
             HalfType r12_x = a1 * b0;
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = r01;
+            res.items[little(0)] = static_cast<base_type>(r01);
             res.items[little(3)] = r23 >> 64;
 
             if constexpr (sizeof(T) > 8)
@@ -679,7 +679,7 @@ private:
             if (r12 < r12_x)
                 ++res.items[little(3)];
 
-            res.items[little(1)] = r12;
+            res.items[little(1)] = static_cast<base_type>(r12);
             res.items[little(2)] = r12 >> 64;
             return res;
         }

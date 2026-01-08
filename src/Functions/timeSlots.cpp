@@ -383,7 +383,7 @@ public:
                     res->getOffsets(),
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
-                    static_cast<UInt16>(time_slot_scale),
+                    time_slot_scale,
                     input_rows_count);
                 return res;
             }
