@@ -129,7 +129,7 @@ def test_dependent_tables(started_cluster):
     query(
         "create table a.t (n default joinGet('system.join', 'm', 1::int),"
         "m default dictGet('test.d', 'm', toUInt64(3)),"
-        "k default joinGet(join, 'm', 1::int)) engine=MergeTree order by n"
+        "k default joinGet(join, 'k', 1::int)) engine=MergeTree order by n"
     )
 
     dependent_tables_assert()

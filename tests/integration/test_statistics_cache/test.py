@@ -121,8 +121,7 @@ def _create_join(node, prefix, interval):
 def _create_rep(interval):
     table = "rep_sc"
     for n in (r1, r2):
-        _query_retry(n, f"DROP DATABASE IF EXISTS {TEST_DB}")
-        _query_retry(n, f"CREATE DATABASE {TEST_DB}")
+        _query_retry(n, f"CREATE DATABASE IF NOT EXISTS {TEST_DB}")
         _query_retry(n, f"DROP TABLE IF EXISTS {table} SYNC")
 
     _query_retry(r1, f"""
