@@ -45,3 +45,33 @@ equals with variant on right side
 42	1
 42	\N
 ᴺᵁᴸᴸ	\N
+Variant + Nullable
+43
+44.41999816894531
+\N
+\N
+\N
+\N
+Variant(Float64, UInt64)
+Two Variants with all NULLs
+\N
+\N
+Variant(Decimal(18, 3), Float64, UInt64)
+Two Variants with single variant type, no NULLs
+30
+40
+Variant(Decimal(18, 3), Float64, UInt64)
+Two Variants with single variant type, with NULLs
+\N
+\N
+35
+\N
+Variant(Decimal(18, 3), Float64, UInt64)
+Two Variants with multiple variant types
+30
+8.8
+\N
+\N
+52.2
+\N
+Variant(Decimal(18, 3), Float64, UInt64)

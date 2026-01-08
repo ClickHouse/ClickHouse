@@ -456,7 +456,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Variant result: check if we can use optimized direct construction
     /// or need to use general approach with casting.
     const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
-    const auto & result_variants = result_variant_type.getVariants();
 
     /// Check if we can use optimized direct construction:
     /// 1. All result types must be different (no duplicates)
@@ -471,8 +470,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
         const auto & variant_result_type = variants_result_types[i];
 
-        /// Check if this result type is a Variant
-        if (isVariant(variant_result_type))
+        /// Check if this result type is a Variant, Nullable, or LowCardinality(Nullable)
+        /// Nullable results need casting to handle NULL values properly in the Variant
+        /// This is done automatically during casts
+        if (isVariant(variant_result_type) || variant_result_type->isNullable() || variant_result_type->isLowCardinalityNullable())
         {
             can_use_direct_construction = false;
             break;
@@ -503,32 +504,15 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
             const auto & variant_result_type = variants_result_types[i];
 
-            /// Find discriminator by name first (for custom types), then by equals()
-            for (size_t j = 0; j < result_variants.size(); ++j)
-            {
-                if (result_variants[j]->getName() == variant_result_type->getName())
-                {
-                    result_discriminators[i] = j;
-                    break;
-                }
-            }
-            if (!result_discriminators[i])
-            {
-                for (size_t j = 0; j < result_variants.size(); ++j)
-                {
-                    if (result_variants[j]->equals(*variant_result_type))
-                    {
-                        result_discriminators[i] = j;
-                        break;
-                    }
-                }
-            }
+            /// Find discriminator for this result type in the result Variant
+            /// Remove Nullable wrapper since flattened types don't have it
+            result_discriminators[i] = result_variant_type.tryGetVariantDiscriminator(removeNullable(variant_result_type)->getName());
 
             if (!result_discriminators[i])
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot find variant type {} in result Variant type {} during execution of {}",
-                    variant_result_type->getName(),
+                    removeNullable(variant_result_type)->getName(),
                     result_type->getName(),
                     getName());
         }
@@ -633,8 +617,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     {
         if (isVariant(arguments[i]))
         {
-                first_variant_index = i;
-                break;
+            first_variant_index = i;
+            break;
         }
     }
 
@@ -667,8 +651,6 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
             alt_columns_with_type.push_back({nullptr, arg, ""});
 
         /// Get the return type for this alternative.
-        /// If there are other Variant arguments, use build() to handle them recursively.
-        /// Otherwise use getReturnType() for stricter type checking.
         /// Wrap in try-catch to handle incompatible type combinations gracefully.
         DataTypePtr alt_return_type;
         try
@@ -713,11 +695,14 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     }
 
     if (all_same)
+    {
         return_type = makeNullableSafe(common_type);
+    }
     else
     {
         /// If we have Variant types in result_types, we need to flatten them
-        /// because Variant inside Variant is not supported
+        /// because Variant inside Variant is not supported.
+        /// We also need to remove Nullability from types because Nullable types are not allowed inside Variant.
         DataTypes flattened_types;
         for (const auto & type : result_types)
         {
@@ -728,7 +713,7 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
                 flattened_types.insert(flattened_types.end(), inner_variants.begin(), inner_variants.end());
             }
             else
-                flattened_types.push_back(type);
+                flattened_types.push_back(removeNullable(type));
         }
         return_type = std::make_shared<DataTypeVariant>(flattened_types);
     }

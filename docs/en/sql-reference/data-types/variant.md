@@ -490,7 +490,7 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 ## Functions with Variant arguments {#functions-with-variant-arguments}
 
 Most functions in ClickHouse automatically support `Variant` type arguments through a **default implementation for Variant**. 
-When a function that doesn't explicitly handle Variant types receives a Variant column, ClickHouse:
+Starting from version `26.1` onwards, when a function that doesn't explicitly handle Variant types receives a Variant column, ClickHouse:
 
 1. Extracts each variant type from the Variant column
 2. Executes the function separately for each variant type
@@ -503,18 +503,16 @@ This allows you to use regular functions with Variant columns without special ha
 ```sql
 CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
 INSERT INTO test VALUES (42), ('hello'), (NULL);
-SELECT toString(v) FROM test;
+SELECT * FROM test WHERE v = 42;
 ```
 
 ```text
-┌─toString(v)─┐
-│ 42          │
-│ hello       │
-│ ᴺᵁᴸᴸ        │
-└─────────────┘
+┌─v────┐
+│ 42   │
+└──────┘
 ```
 
-The function `toString` is automatically called on `UInt32` and `String` variants separately, and results are combined into `Nullable(String)`.
+The comparison operator is automatically applied to each variant type separately, allowing filtering on Variant columns.
 
 **Result type behavior:**
 
@@ -522,21 +520,43 @@ The result type depends on what the function returns for each variant:
 
 - **Same result type for all variants**: `Nullable(T)`
   ```sql
-  SELECT toString(v) FROM test; -- All variants return String → Nullable(String)
+  SELECT toUInt32OrNull(v) FROM test;
+  ```
+
+  ```text
+  ┌─toUInt32OrNull(v)─┐
+  │                42 │
+  │              ᴺᵁᴸᴸ │
+  │              ᴺᵁᴸᴸ │
+  └───────────────────┘
   ```
 
 - **Different result types**: `Variant(T1, T2, ...)`
   ```sql
-  SELECT toUInt32OrNull(v) FROM test; -- May return Variant of different types
+  CREATE TABLE test2 (v Variant(UInt32, UInt64)) ENGINE = Memory;
+  INSERT INTO test2 VALUES (42::UInt32), (1000000000000::UInt64);
+  SELECT v + 1 FROM test2;
+  ```
+
+  ```text
+  ┌─plus(v, 1)───────┐
+  │               43 │
+  │ 1000000000001    │
+  └──────────────────┘
   ```
 
 - **Type incompatibility**: `NULL` for incompatible variants
   ```sql
-  CREATE TABLE test2 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
-  INSERT INTO test2 VALUES ([1,2,3]), (42);
-  SELECT v + 10 FROM test2;
-  -- Array(UInt32) cannot be added to number → NULL
-  -- UInt32 can be added → 52
+  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+  INSERT INTO test3 VALUES ([1,2,3]), (42);
+  SELECT v + 10 FROM test3;
+  ```
+
+  ```text
+  ┌─plus(v, 10)─┐
+  │        ᴺᵁᴸᴸ │
+  │          52 │
+  └─────────────┘
   ```
 
 :::note
