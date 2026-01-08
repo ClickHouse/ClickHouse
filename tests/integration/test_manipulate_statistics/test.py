@@ -146,7 +146,7 @@ def test_replicated_table_ddl(started_cluster):
     node1.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
-        ENgine = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a;
+        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a;
     """
     )
     node2.query(
