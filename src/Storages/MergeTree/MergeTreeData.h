@@ -1404,15 +1404,39 @@ private:
     {
         std::shared_ptr<const ColumnsDescription> original;
         std::shared_ptr<const ColumnsDescription> with_collected_nested;
+        /// Column name to position mapping, derived from columns list
+        std::shared_ptr<const std::unordered_map<std::string, size_t>> column_name_to_position;
     };
     mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
     mutable std::mutex columns_descriptions_cache_mutex;
     mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
 
+    struct SharedNamesAndTypesListHash
+    {
+        size_t operator()(const std::shared_ptr<const NamesAndTypesList> & ptr) const noexcept
+        {
+            return NamesAndTypesListHash{}(*ptr);
+        }
+    };
+
+    struct SharedNamesAndTypesListEqual
+    {
+        bool operator()(const std::shared_ptr<const NamesAndTypesList> & a, const std::shared_ptr<const NamesAndTypesList> & b) const
+        {
+            return *a == *b;
+        }
+    };
+
+    mutable std::mutex parts_metadata_cache_mutex;
+    mutable std::unordered_set<std::shared_ptr<const NamesAndTypesList>, SharedNamesAndTypesListHash, SharedNamesAndTypesListEqual> columns_list_cache TSA_GUARDED_BY(parts_metadata_cache_mutex);
+
 public:
     ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
     void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
+
+    std::shared_ptr<const NamesAndTypesList> registerNamesAndTypesListInSharedCache(NamesAndTypesList && columns) const;
+    void decrefNamesAndTypesListInSharedCache(const std::shared_ptr<const NamesAndTypesList> & columns) const;
 
 protected:
     /// Engine-specific methods

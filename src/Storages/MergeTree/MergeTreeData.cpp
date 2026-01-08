@@ -34,7 +34,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -10451,10 +10453,18 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
     if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
         return it->second;
 
+    /// Build column_name_to_position map
+    auto column_name_to_position = std::make_shared<std::unordered_map<std::string, size_t>>();
+    column_name_to_position->reserve(columns.size());
+    size_t pos = 0;
+    for (const auto & column : columns)
+        column_name_to_position->emplace(column.name, pos++);
+
     ColumnsDescriptionCache cache
     {
         .original = std::make_shared<ColumnsDescription>(columns),
         .with_collected_nested = std::make_shared<ColumnsDescription>(Nested::collect(columns)),
+        .column_name_to_position = std::move(column_name_to_position),
     };
     if (*cache.with_collected_nested == *cache.original)
         cache.with_collected_nested = cache.original;
@@ -10480,6 +10490,29 @@ void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList &
         {
             columns_descriptions_cache.erase(it);
             columns_descriptions_metric_handle.sub(1);
+        }
+    }
+}
+
+std::shared_ptr<const NamesAndTypesList> MergeTreeData::registerNamesAndTypesListInSharedCache(NamesAndTypesList && columns) const
+{
+    std::lock_guard lock(parts_metadata_cache_mutex);
+    auto [it, _] = columns_list_cache.emplace(std::make_shared<const NamesAndTypesList>(std::move(columns)));
+    return *it;
+}
+
+void MergeTreeData::decrefNamesAndTypesListInSharedCache(const std::shared_ptr<const NamesAndTypesList> & columns) const
+{
+    std::lock_guard lock(parts_metadata_cache_mutex);
+
+    if (auto it = columns_list_cache.find(columns); it != columns_list_cache.end())
+    {
+        /// Note that we use a reference to the shared_ptr as an argument.
+        /// 1 in the container + 1 in the iterator + 1 original in the IMergeTreeDataPart
+        if (it->use_count() == 3)
+        {
+            /// The destruction of an object won't happen here, but in the destructor of the IMergeTreeDataPart.
+            columns_list_cache.erase(it);
         }
     }
 }
