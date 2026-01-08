@@ -936,7 +936,7 @@ bool StatementGenerator::tableOrFunctionRef(
         /// Use URL table function
         String url;
         String buf;
-        bool first = true;
+
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const OutFormat outf = (!this->allow_not_deterministic || rg.nextBool())
             ? rg.pickRandomly(rg.pickRandomly(outFormats))
@@ -954,22 +954,35 @@ bool StatementGenerator::tableOrFunctionRef(
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
         }
-        url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool()) + "+(";
-        for (const auto & entry : this->entries)
+        url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "/?query=INSERT+INTO+" + t.getFullName(rg.nextBool());
+        if (!this->entries.empty())
         {
-            url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
-            buf += fmt::format(
-                "{}{} {}{}{}",
-                first ? "" : ", ",
-                entry.getBottomName(),
-                entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(false, false),
-                entry.path.size() > 1 ? ")" : "");
-            first = false;
+            bool first = true;
+
+            url += "+(";
+            for (const auto & entry : this->entries)
+            {
+                url += fmt::format("{}{}", first ? "" : ",", entry.columnPathRef());
+                buf += fmt::format(
+                    "{}{} {}{}{}",
+                    first ? "" : ", ",
+                    entry.getBottomName(),
+                    entry.path.size() > 1 ? "Array(" : "",
+                    entry.getBottomType()->typeName(false, false),
+                    entry.path.size() > 1 ? ")" : "");
+                first = false;
+            }
+            url += ")";
         }
-        url += ")+FORMAT+" + InFormat_Name(iinf).substr(3);
+        if (rg.nextMediumNumber() < 91)
+        {
+            url += "+FORMAT+" + InFormat_Name(iinf).substr(3);
+        }
         ufunc->set_uurl(std::move(url));
-        ufunc->set_outformat(outf);
+        if (rg.nextMediumNumber() < 91)
+        {
+            ufunc->set_outformat(outf);
+        }
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
     }
     else if (simple_est && (nopt2 < engine_func + url_func + simple_est + 1))
@@ -1088,7 +1101,6 @@ void StatementGenerator::generateInsertToTable(
     const bool is_url = tableOrFunctionRef(rg, t, !rows.has_value(), ins->mutable_tof());
     const uint64_t nrows = rows.has_value() ? rows.value() : rows_dist(rg.generator);
 
-    chassert(!this->entries.empty());
     if (!is_url)
     {
         for (const auto & entry : this->entries)
@@ -1096,7 +1108,7 @@ void StatementGenerator::generateInsertToTable(
             columnPathRef(entry, ins->add_cols());
         }
     }
-    if (rg.nextLargeNumber() < 6)
+    if (!this->entries.empty() && rg.nextLargeNumber() < 6)
     {
         /// Shuffle again for chaos
         std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
@@ -1280,7 +1292,13 @@ void StatementGenerator::generateInsertToTable(
                 this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
             }
             generateSelect(
-                rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), std::nullopt, sel);
+                rg,
+                true,
+                false,
+                std::max<uint32_t>(1, static_cast<uint32_t>(this->entries.size())),
+                std::numeric_limits<uint32_t>::max(),
+                std::nullopt,
+                sel);
             this->levels.clear();
         }
         else
@@ -5213,11 +5231,15 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     if (is_nested && !success)
                     {
                         const uint32_t top_col = getIdentifierFromString(ati.add_column().new_col().col().col().column());
-                        NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
 
-                        ntp->subtypes.pop_back();
+                        if (t.cols.contains(top_col))
+                        {
+                            NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
+
+                            ntp->subtypes.pop_back();
+                        }
                     }
-                    else if (!is_nested)
+                    else if (!is_nested && t.staged_cols.contains(cname))
                     {
                         if (success)
                         {
@@ -5269,11 +5291,14 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
                     if (path.sub_cols_size() == 0)
                     {
-                        const uint32_t new_cname = getIdentifierFromString(ati.rename_column().new_name().col().column());
+                        if (t.cols.contains(old_cname))
+                        {
+                            const uint32_t new_cname = getIdentifierFromString(ati.rename_column().new_name().col().column());
 
-                        t.cols[new_cname] = std::move(t.cols[old_cname]);
-                        t.cols[new_cname].cname = new_cname;
-                        t.cols.erase(old_cname);
+                            t.cols[new_cname] = std::move(t.cols[old_cname]);
+                            t.cols[new_cname].cname = new_cname;
+                            t.cols.erase(old_cname);
+                        }
                     }
                     else
                     {
@@ -5309,7 +5334,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     {
                         const uint32_t top_col = getIdentifierFromString(ati.modify_column().new_col().col().col().column());
 
-                        if (success)
+                        if (success && t.staged_cols.contains(cname))
                         {
                             NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
 
@@ -5327,13 +5352,10 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                             }
                         }
                     }
-                    else
+                    else if (success && t.staged_cols.contains(cname))
                     {
-                        if (success)
-                        {
-                            t.cols.erase(cname);
-                            t.cols[cname] = std::move(t.staged_cols[cname]);
-                        }
+                        t.cols.erase(cname);
+                        t.cols[cname] = std::move(t.staged_cols[cname]);
                     }
                     t.staged_cols.erase(cname);
                 }
@@ -5353,7 +5375,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 {
                     const uint32_t iname = getIdentifierFromString(ati.add_index().new_idx().idx().index());
 
-                    if (success)
+                    if (success && t.staged_idxs.contains(iname))
                     {
                         t.idxs[iname] = std::move(t.staged_idxs[iname]);
                     }

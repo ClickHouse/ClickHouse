@@ -1098,9 +1098,16 @@ bool StatementGenerator::joinedTableOrFunction(
             first = false;
         }
         this->remote_entries.clear();
-        url += "+FROM+" + tt.getFullName(rg.nextBool()) + "+FORMAT+" + InFormat_Name(iinf).substr(3);
+        url += "+FROM+" + tt.getFullName(rg.nextBool());
+        if (rg.nextMediumNumber() < 91)
+        {
+            url += "+FORMAT+" + InFormat_Name(iinf).substr(3);
+        }
         ufunc->set_uurl(std::move(url));
-        ufunc->set_outformat(outf);
+        if (rg.nextMediumNumber() < 91)
+        {
+            ufunc->set_outformat(outf);
+        }
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
         addTableRelation(rg, rg.nextMediumNumber() < 4, rel_name, tt);
     }

@@ -1,5 +1,6 @@
--- Tags: no-debug, long
+-- Tags: no-debug, long, no-distributed-cache
 -- - no-debug - debug build uses S3 and this in combination works very slow
+-- - no-distributed-cache - distributed cache does not support adaptive buffers
 
 -- Note, all tests avoids vertical merges (enable_vertical_merge_algorithm=0), since they write column by column and do not have excessive memory usage.
 

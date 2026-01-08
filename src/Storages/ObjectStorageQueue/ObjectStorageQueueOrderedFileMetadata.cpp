@@ -26,6 +26,8 @@ namespace
 {
     ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
     {
+        if (!buckets_num)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
         return sipHash64(path) % buckets_num;
     }
 

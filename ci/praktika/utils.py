@@ -679,7 +679,24 @@ class Utils:
         return res
 
     @classmethod
-    def compress_zst(cls, path):
+    def compress_zst(cls, path, dest_path=None):
+        """
+        Compresses a file or directory using zstd.
+
+        Args:
+            path: Path to the file or directory to compress.
+            dest_path: Optional destination for the compressed archive.
+                      - If None: archive is created in the same directory as the source.
+                      - If a directory: archive is created in that directory with default name.
+                      - If a file path: used as the exact output path for the archive.
+                      Note: For directories, the archive will be .tar.zst; for files, .zst
+
+        Returns:
+            str: Path to the created compressed archive.
+
+        Raises:
+            RuntimeError: If zstd is not installed.
+        """
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -690,16 +707,40 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.zst"
+                archive_name = f"{name}.tar.zst"
+
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{parent}/{archive_name}"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / archive_name)
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
+                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.zst"
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{path}.zst"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / f"{path_obj.name}.zst")
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
+                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -724,7 +765,24 @@ class Utils:
         return archive_name
 
     @classmethod
-    def compress_gz(cls, path):
+    def compress_gz(cls, path, dest_path=None):
+        """
+        Compresses a file or directory using gzip.
+
+        Args:
+            path: Path to the file or directory to compress.
+            dest_path: Optional destination for the compressed archive.
+                      - If None: archive is created in the same directory as the source.
+                      - If a directory: archive is created in that directory with default name.
+                      - If a file path: used as the exact output path for the archive.
+                      Note: For directories, the archive will be .tar.gz; for files, .gz
+
+        Returns:
+            str: Path to the created compressed archive.
+
+        Raises:
+            RuntimeError: If gzip is not installed or if the path doesn't exist.
+        """
         path = str(path).rstrip("/")
         path_obj = Path(path)
         is_dir = path_obj.is_dir()
@@ -735,15 +793,38 @@ class Utils:
                 # Compress just the directory's content, not full path
                 parent = str(path_obj.parent.resolve())
                 name = path_obj.name
-                path_out = f"{parent}/{name}.tar.gz"
                 archive_name = f"{name}.tar.gz"
+
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{parent}/{archive_name}"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory (symlinks are followed)
+                        path_out = str(dest_path_obj / archive_name)
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
-                    f"cd {quote(parent)} && rm -f {quote(archive_name)} && tar -cf - {quote(name)} | gzip > {quote(archive_name)}",
+                    f"cd {quote(parent)} && tar -cf - {quote(name)} | gzip > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
             elif path_obj.is_file():
-                path_out = f"{path}.gz"
+                # Determine output path based on dest_path
+                if dest_path is None:
+                    path_out = f"{path}.gz"
+                else:
+                    dest_path_obj = Path(dest_path)
+                    if dest_path_obj.is_dir():
+                        # dest_path is a directory
+                        path_out = str(dest_path_obj / f"{path_obj.name}.gz")
+                    else:
+                        # dest_path is a file path
+                        path_out = str(dest_path)
+
                 Shell.check(
                     f"rm -f {quote(path_out)} && gzip -c {quote(path)} > {quote(path_out)}",
                     verbose=True,
