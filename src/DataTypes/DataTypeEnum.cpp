@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename FieldType> struct EnumName;
@@ -194,12 +195,12 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
     return false;
 }
 
-template <typename Type>
-void DataTypeEnum<Type>::add(IDataType & rhs) const
-{
-    auto & rhs_enum = typeid_cast<DataTypeEnum<Type> &>(rhs);
-    this->addAll(rhs_enum);
-}
+// template <typename Type>
+// void DataTypeEnum<Type>::add(IDataType & rhs) const
+// {
+//     auto & rhs_enum = typeid_cast<DataTypeEnum<Type> &>(rhs);
+//     this->addAll(rhs_enum);
+// }
 
 template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
@@ -350,6 +351,7 @@ static DataTypePtr addToEnum(const ASTPtr & arguments)
     if (!arguments || arguments->children.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "addToEnum cannot be empty");
 
+    /// Don't auto assign numbers, too cumbersome
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
@@ -361,8 +363,8 @@ static DataTypePtr addToEnum(const ASTPtr & arguments)
         if (!value_literal
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                                    "Elements of Enum data type must be of form: "
-                                    "'name' = number or 'name', where name is string literal and number is an integer");
+                                    "Elements of addToEnum data type must be of form: "
+                                    "'name' = number where name is string literal and number is an integer");
 
         Int64 value = value_literal->value.safeGet<Int64>();
 
@@ -375,6 +377,53 @@ static DataTypePtr addToEnum(const ASTPtr & arguments)
 
     return dtptr;
 }
+
+template <typename TypeBase, typename TypeAdd>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add)
+{
+    using Values = typename DataTypeEnum<TypeBase>::Values;
+
+    Values merged = base.getValues();
+    std::unordered_map<String, TypeBase> name_to_value;
+    std::unordered_map<TypeBase, String> value_to_name;
+
+    name_to_value.reserve(merged.size());
+    value_to_name.reserve(merged.size());
+
+    for (const auto & value : merged)
+    {
+        name_to_value.emplace(value.first, value.second);
+        value_to_name.emplace(value.second, value.first);
+    }
+
+    for (const auto & value : add.getValues())
+    {
+        auto name_it = name_to_value.find(value.first);
+        auto value_it = value_to_name.find(value.second);
+
+        if (name_it != name_to_value.end() && name_it->second != value.second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enum element '{}' has old value {}, but new value is {}",
+                value.first, name_it->second, value.second);
+
+        if (value_it != value_to_name.end() && value_it->second != value.first)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enum value {} already used by '{}', cannot use it for '{}'",
+                value.second, value_it->second, value.first);
+
+        if (name_it == name_to_value.end() && value_it == value_to_name.end())
+        {
+            merged.push_back(value);
+            name_to_value.emplace(value.first, value.second);
+            value_to_name.emplace(value.second, value.first);
+        }
+    }
+
+    return std::make_shared<DataTypeEnum<TypeBase>>(merged);
+}
+
+template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int8> & base, const DataTypeEnum<Int8> & add);
+template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int16> & base, const DataTypeEnum<Int16> & add);
+template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int8> & base, const DataTypeEnum<Int16> & add);
+template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int16> & base, const DataTypeEnum<Int8> & add);
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {

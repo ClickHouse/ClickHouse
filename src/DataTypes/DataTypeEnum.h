@@ -26,7 +26,7 @@ public:
 
     virtual bool contains(const IDataType & rhs) const = 0;
     virtual bool isAdd() const = 0;
-    virtual void add(IDataType & rhs) const = 0;
+    // virtual void add(IDataType & rhs) const = 0;
 };
 
 
@@ -74,7 +74,7 @@ public:
     /// Enum('a' = 1, 'b' = 2) -> Enum('c' = 1, 'b' = 2, 'd' = 3) OK
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
     bool contains(const IDataType & rhs) const override;
-    void add(IDataType & rhs) const override;
+    // void add(IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -82,9 +82,10 @@ public:
 
     void setAdd()  { is_add = true; }
     bool isAdd() const override  { return is_add;  }
-
 };
 
+template <typename TypeBase, typename TypeAdd>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add);
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;
