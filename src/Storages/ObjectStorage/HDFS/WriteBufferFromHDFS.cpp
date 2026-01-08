@@ -106,18 +106,23 @@ void WriteBufferFromHDFS::nextImpl()
     if (!offset())
         return;
 
+    Stopwatch stopwatch;
+
     size_t bytes_written = 0;
 
     while (bytes_written != offset())
         bytes_written += impl->write(working_buffer.begin() + bytes_written, offset() - bytes_written);
 
     total_bytes_written += bytes_written;
+    total_time_microseconds += stopwatch.elapsedMicroseconds();
 }
 
 
 void WriteBufferFromHDFS::sync()
 {
+    Stopwatch stopwatch;
     impl->sync();
+    total_time_microseconds += stopwatch.elapsedMicroseconds();
 }
 
 void WriteBufferFromHDFS::finalizeImpl()
@@ -130,7 +135,7 @@ void WriteBufferFromHDFS::finalizeImpl()
             /* remote_path */ filename,
             /* local_path */ {},
             /* data_size */ total_bytes_written,
-            /* elapsed_microseconds */ 0,
+            /* elapsed_microseconds */ total_time_microseconds,
             /* error_code */ 0,
             /* error_message */ {});
     }

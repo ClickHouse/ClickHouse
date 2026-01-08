@@ -49,6 +49,7 @@ private:
     const std::string filename;
     BlobStorageLogWriterPtr blob_log;
     size_t total_bytes_written = 0;
+    UInt64 total_time_microseconds = 0;
 };
 
 }
