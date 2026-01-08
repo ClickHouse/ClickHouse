@@ -45,6 +45,7 @@ def _files_in_dist_mon(node, root, table):
 
 
 def test_insert(start_cluster):
+    node.query("DROP TABLE IF EXISTS test.foo")
     node.query("CREATE TABLE test.foo (key Int) Engine=Memory()")
     node.query(
         """

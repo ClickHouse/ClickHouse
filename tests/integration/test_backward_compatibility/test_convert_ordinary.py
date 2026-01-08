@@ -86,6 +86,8 @@ def check_convert_system_db_to_atomic():
         and "1\n" == node.count_in_log("Can't receive Netlink response")
     )
 
+    node.query("DROP DATABASE default2")
+
 
 def create_some_tables(db):
     node.query("CREATE TABLE {}.t1 (n int) ENGINE=Memory".format(db))
@@ -139,6 +141,12 @@ def create_some_tables(db):
 
 
 def check_convert_all_dbs_to_atomic():
+    node.query("DROP DATABASE IF EXISTS ordinary")
+    node.query("DROP DATABASE IF EXISTS other")
+    node.query("DROP DATABASE IF EXISTS `.o r d i n a r y.`")
+    node.query("DROP DATABASE IF EXISTS atomic")
+    node.query("DROP DATABASE IF EXISTS mem")
+
     node.query(
         "CREATE DATABASE ordinary ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
@@ -252,6 +260,12 @@ def check_convert_all_dbs_to_atomic():
         assert "2\t{}\n".format(2 * len(db) * 2) == node.query(
             "SELECT count(), sum(n) FROM {}.detached".format(db)
         )
+
+    node.query("DROP DATABASE ordinary")
+    node.query("DROP DATABASE other")
+    node.query("DROP DATABASE `.o r d i n a r y.`")
+    node.query("DROP DATABASE atomic")
+    node.query("DROP DATABASE mem")
 
 
 def test_convert_ordinary_to_atomic(start_cluster):
