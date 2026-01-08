@@ -719,7 +719,7 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
-}11
+}
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
 {
