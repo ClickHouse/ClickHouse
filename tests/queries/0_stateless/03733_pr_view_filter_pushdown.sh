@@ -61,3 +61,9 @@ SET ${PARALLEL_REPLICAS_SETTINGS};
 select trimLeft(explain) from
   (explain description=0, actions=1 select * from v1_03733 where c = 0 settings parallel_replicas_local_plan=1)
 where explain ilike '%Prewhere%' limit 1;"
+
+# check filter pushdown can be disabled by setting
+$CLICKHOUSE_CLIENT_TRACE --query "
+SET ${PARALLEL_REPLICAS_SETTINGS};
+SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0, parallel_replicas_ast_based_filter_pushdown_for_views=0;
+" |& grep 'executeQuery' | grep 'HAVING' | wc -l;
