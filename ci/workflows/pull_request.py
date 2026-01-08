@@ -149,6 +149,7 @@ workflow = Workflow.Config(
             digest_config=JobConfigs.keeper_stress_job.digest_config,
             timeout=3600 * 8,
             requires=[ArtifactNames.CH_AMD_BINARY],
+            result_name_for_cidb="Keeper Stress",
         ),
         # --- /TEMP ---
     ],
