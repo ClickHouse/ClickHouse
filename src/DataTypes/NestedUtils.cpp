@@ -1,10 +1,10 @@
 #include <cstring>
 #include <memory>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/StringUtils.h>
 #include <Columns/IColumn.h>
+#include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -19,6 +19,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -27,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Nested
@@ -61,6 +63,41 @@ std::pair<std::string_view, std::string_view> splitName(std::string_view name, b
     return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
+std::vector<std::pair<std::string_view, std::string_view>> getAllColumnAndSubcolumnPairs(std::string_view name)
+{
+    std::vector<std::pair<std::string_view, std::string_view>> pairs;
+    auto idx = name.find_first_of('.');
+    while (idx != std::string::npos)
+    {
+        std::string_view column_name = name.substr(0, idx);
+        std::string_view subcolumn_name = name.substr(idx + 1);
+        if (!column_name.empty() && !subcolumn_name.empty())
+            pairs.emplace_back(column_name, subcolumn_name);
+        idx = name.find_first_of('.', idx + 1);
+    }
+
+    return pairs;
+}
+
+std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::string_view name, const NameSet & storage_columns)
+{
+    for (auto [storage_column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        if (storage_columns.contains(String(storage_column_name)))
+            return {storage_column_name, subcolumn_name};
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Column or subcolumn '{}' is not found, there are only columns: {}",
+        name,
+        boost::join(storage_columns, ", "));
+}
+
+std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns)
+{
+    return getColumnAndSubcolumnPair(name, storage_columns).first;
+}
 
 std::string extractTableName(const std::string & nested_name)
 {
