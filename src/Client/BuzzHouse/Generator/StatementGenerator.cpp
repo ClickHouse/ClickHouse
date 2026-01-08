@@ -4401,7 +4401,6 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
 
 void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br)
 {
-    SettingValues * vals = nullptr;
     const bool isBackup = backups.empty() || rg.nextBool();
 
     if (isBackup)
@@ -4414,14 +4413,13 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     }
     if (rg.nextSmallNumber() < 4)
     {
-        vals = vals ? vals : br->mutable_setting_values();
-        generateSettingValues(rg, isBackup ? backupSettings : restoreSettings, vals);
+        generateSettingValues(rg, isBackup ? backupSettings : restoreSettings, br->mutable_setting_values());
     }
     if (isBackup && !backups.empty() && rg.nextBool())
     {
         /// Do an incremental backup
         String info;
-        vals = vals ? vals : br->mutable_setting_values();
+        SettingValues * vals = br->mutable_setting_values();
         SetValue * sv = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
         const CatalogBackup & backup = rg.pickValueRandomlyFromMap(backups);
 
@@ -4436,8 +4434,7 @@ void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, Backu
     }
     if (rg.nextSmallNumber() < 4)
     {
-        vals = vals ? vals : br->mutable_setting_values();
-        generateSettingValues(rg, formatSettings, vals);
+        generateSettingValues(rg, formatSettings, br->mutable_setting_values());
     }
 }
 
