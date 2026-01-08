@@ -112,6 +112,11 @@ class _Settings:
     # Choose values wisely to effectively differentiate between different failure types.
     TEST_FAILURE_PATTERNS: Optional[List[str]] = None
 
+    ######################################
+    #        Notification Settings       #
+    ######################################
+    EVENTS_S3_PATH: str = ""
+
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
@@ -158,6 +163,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
+    "EVENTS_S3_PATH",
 ]
 
 

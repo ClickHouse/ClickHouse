@@ -102,6 +102,10 @@ class Info:
         return self.env.USER_LOGIN
 
     @property
+    def commit_authors(self):
+        return self.env.COMMIT_AUTHORS or []
+
+    @property
     def run_url(self):
         return self.env.RUN_URL
 
