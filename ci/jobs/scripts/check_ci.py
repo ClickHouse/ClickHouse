@@ -137,7 +137,7 @@ Test name: {test_name}
 Failure reason: {failure_reason}
 CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
 
-Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(test_name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
+Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```
@@ -712,22 +712,23 @@ def main():
             else:
                 unknown_failures.append((job_name, failure_result))
 
-    print("\nCI failures:")
-    if known_failures:
-        print("\n--- Known problems ---")
-        for job_name, failure in known_failures:
-            print(f"[{failure.status}] {failure.name} in {job_name}")
+    if known_failures or unknown_failures or not_finished_jobs:
+        print("\nCI failures:")
+        if known_failures:
+            print("\n--- Known problems ---")
+            for job_name, failure in known_failures:
+                print(f"[{failure.status}] {failure.name} in {job_name}")
 
-    if unknown_failures:
-        print("\n--- Unknown problems ---")
-        for job_name, failure in unknown_failures:
-            print(f"[{failure.status}] {failure.name} in {job_name}")
-            failure.set_comment("IGNORED")
+        if unknown_failures:
+            print("\n--- Unknown problems ---")
+            for job_name, failure in unknown_failures:
+                print(f"[{failure.status}] {failure.name} in {job_name}")
+                failure.set_comment("IGNORED")
 
-    if not_finished_jobs:
-        print("\n--- Not finished jobs ---")
-        for _, failure in not_finished_jobs:
-            print(f"[{failure.status}] {failure.name}")
+        if not_finished_jobs:
+            print("\n--- Not finished jobs ---")
+            for _, failure in not_finished_jobs:
+                print(f"[{failure.status}] {failure.name}")
 
     if is_master_commit:
         sys.exit(0)
