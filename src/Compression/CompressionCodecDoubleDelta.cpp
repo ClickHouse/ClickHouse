@@ -553,7 +553,7 @@ UInt32 CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32
     default:
         /// This should be unreachable due to the check above
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot decompress with codec 'double-delta'. File has incorrect width ({})", source_size);
+            ErrorCodes::LOGICAL_ERROR, "Cannot decompress with codec 'double-delta'. File has incorrect width ({})", bytes_size);
     }
 }
 

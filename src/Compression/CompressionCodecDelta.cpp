@@ -91,7 +91,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 template <typename T>
 UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
-    const char * const input_dest = dest;
+    const char * const original_dest = dest;
     const char * const output_end = dest + output_size;
 
     if (source_size % sizeof(T) != 0)
@@ -110,7 +110,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         dest += sizeof(T);
     }
 
-    return dest - input_dest;
+    return dest - original_dest;
 }
 
 }
