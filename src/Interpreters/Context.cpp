@@ -2785,7 +2785,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 
     ASTCreateQuery create;
-    create.select = query->as<ASTSelectWithUnionQuery>();
+    create.set(create.select, query);
 
     auto sql_security = std::make_shared<ASTSQLSecurity>();
     sql_security->type = original_view_metadata->sql_security_type;
