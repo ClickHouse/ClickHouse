@@ -115,17 +115,34 @@ namespace
 {
 constexpr UInt8 ALP_CODEC_VERSION = 1;
 
+/**
+ * ALP codec header size in bytes: meta (1) + float width (1) + block float count (2)
+ */
 constexpr UInt32 ALP_CODEC_HEADER_SIZE = 2 * sizeof(UInt8) + sizeof(UInt16);
 
+/**
+ * ALP block header size in bytes: exponent (1) + fraction (1) + exception count (2) + bit-width (1) + FOR base (8)
+ */
 constexpr UInt32 ALP_BLOCK_HEADER_SIZE = 3 * sizeof(UInt8) + sizeof(UInt16) + sizeof(Int64);
+
 constexpr UInt32 ALP_UNENCODED_BLOCK_HEADER_SIZE = sizeof(UInt8);
 constexpr UInt8 ALP_UNENCODED_BLOCK_EXPONENT = 255;
 
-constexpr UInt32 ALP_BLOCK_MAX_FLOAT_COUNT = 1024;
+/**
+ * Maximum number of floats per ALP block. Reference FastLanes implementation uses 1024 values only.
+ * \note Exactly the same size is used for FastLanes FFOR. Changing this value affects compatibility with FastLanes.
+ */
+constexpr UInt32 ALP_BLOCK_MAX_FLOAT_COUNT = Compression::FFOR::DEFAULT_VALUES;
 
 constexpr UInt32 ALP_PARAMS_ESTIMATION_SAMPLES = 8;
 constexpr UInt32 ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS = 32;
 constexpr UInt32 ALP_PARAMS_ESTIMATION_CANDIDATES = 5;
+
+/**
+ * Alignment for internal ALP buffers. Used to align buffers for FFOR encoding/decoding.
+ * \note FastLanes FFOR requires 64-byte alignment for optimal performance.
+ */
+constexpr UInt8 ALP_BUFFER_ALIGNMENT = 64;
 
 template <typename T>
 concept FLOAT = std::is_same_v<T, Float32> || std::is_same_v<T, Float64>;
@@ -147,7 +164,7 @@ struct ALPFloatTraits<Float64>
 {
     /**
      * Float64 scaling is limited to 10^17 and inputs are clamped to ±922337203685477478.
-     * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to int64”.
+     * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to int64.
      * Around ~1e18 Float64 becomes too sparse, so after decimal scaling most values no longer map stably to an integer and the result differ between x86 and ARM.
      * The reference implementation use ~10x wider bounds, which led to cross-arch divergence encoded output.
      * These conservative limits keep encoding bit-identical across platforms.
@@ -182,6 +199,7 @@ struct ALPFloatUtils
 {
     static Int64 encodeValue(T value, UInt8 exponent, UInt8 fraction)
     {
+        // Scale float to integer, it is important to keep two multiplication steps to comply with the ALP paper and reference implementation
         T value_enc = value * ALPFloatTraits<T>::EXPONENTS[exponent] * ALPFloatTraits<T>::FRACTIONS[fraction];
 
         const bool invalid = std::isinf(value_enc) ||
@@ -200,6 +218,7 @@ struct ALPFloatUtils
     static T decodeValue(Int64 value, UInt8 exponent, UInt8 fraction)
     {
         T value_float = static_cast<T>(value);
+        // Scale back to float, it is important to keep two multiplication steps to comply with the ALP paper and reference implementation
         T value_dec = value_float * ALPFloatTraits<T>::EXPONENTS[fraction] * ALPFloatTraits<T>::FRACTIONS[exponent];
         return value_dec;
     }
@@ -252,10 +271,10 @@ private:
     {
         EncodingParams params;
 
-        alignas(64) Int64 encoded_floats[ALP_BLOCK_MAX_FLOAT_COUNT];
+        alignas(ALP_BUFFER_ALIGNMENT) Int64 encoded_floats[ALP_BLOCK_MAX_FLOAT_COUNT];
         UInt32 encoded_float_count;
 
-        alignas(64) UInt64 bitpacked[ALP_BLOCK_MAX_FLOAT_COUNT];
+        alignas(ALP_BUFFER_ALIGNMENT) UInt64 bitpacked[ALP_BLOCK_MAX_FLOAT_COUNT];
         UInt32 bitpacked_bytes;
 
         UInt8 bits;
@@ -558,8 +577,8 @@ public:
 private:
     struct BlockState
     {
-        alignas(64) Int64 encoded[ALP_BLOCK_MAX_FLOAT_COUNT];
-        alignas(64) UInt64 bitpacked[ALP_BLOCK_MAX_FLOAT_COUNT];
+        alignas(ALP_BUFFER_ALIGNMENT) Int64 encoded[ALP_BLOCK_MAX_FLOAT_COUNT];
+        alignas(ALP_BUFFER_ALIGNMENT) UInt64 bitpacked[ALP_BLOCK_MAX_FLOAT_COUNT];
     };
 
     BlockState block;

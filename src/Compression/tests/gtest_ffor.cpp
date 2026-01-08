@@ -9,10 +9,10 @@ using namespace DB;
 namespace
 {
 template <typename T, UInt16 values>
-void runFFORPackUnpackTest(UInt16 bits)
+void runFFORPackUnpackTest(UInt8 bits)
 {
     if (bits > sizeof(T) * 8)
-        GTEST_SKIP() << "Skipping invalid bit width for " << typeid(T).name() << ": " << bits;
+        GTEST_SKIP() << "Skipping invalid bit width for " << typeid(T).name() << ": " << static_cast<UInt32>(bits);
 
     alignas(64) T in[values];
     alignas(64) T coded[values];
@@ -41,10 +41,10 @@ void runFFORPackUnpackTest(UInt16 bits)
 
     // Verify
     for (UInt16 i = 0; i < values; ++i)
-        ASSERT_EQ(decoded[i], in[i]) << "bits=" << bits << " index=" << i;
+        ASSERT_EQ(decoded[i], in[i]) << "bits=" << static_cast<UInt32>(bits) << " index=" << i;
 }
 
-class FFORTest : public ::testing::TestWithParam<UInt16> { };
+class FFORTest : public ::testing::TestWithParam<UInt8> { };
 
 TEST_P(FFORTest, UInt16PackUnpack1024Values)
 {
@@ -76,6 +76,6 @@ TEST_P(FFORTest, UInt64PackUnpack2048Values)
     runFFORPackUnpackTest<UInt64, 2048>(GetParam());
 }
 
-INSTANTIATE_TEST_SUITE_P(FFORTest, FFORTest, ::testing::Range<UInt16>(0, 65));
+INSTANTIATE_TEST_SUITE_P(FFORTest, FFORTest, ::testing::Range<UInt8>(0, 65));
 
 }
