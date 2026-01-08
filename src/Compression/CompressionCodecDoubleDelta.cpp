@@ -527,7 +527,7 @@ UInt32 CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32
 
     UInt8 bytes_size = source[0];
 
-    if (bytes_size == 0)
+    if (bytes_size != 1 && bytes_size != 2 && bytes_size != 4 && bytes_size != 8)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
@@ -549,7 +549,9 @@ UInt32 CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32
     case 8:
         return bytes_to_skip + decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     default:
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with codec 'double-delta'. File has incorrect width ({})", source_size);
+        /// This should be unreachable due to the check above
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot decompress with codec 'double-delta'. File has incorrect width ({})", source_size);
     }
 }
 
