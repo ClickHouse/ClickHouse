@@ -38,11 +38,12 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const String & version_column,
     size_t max_block_size_rows,
     size_t max_block_size_bytes,
+    std::optional<size_t> max_dynamic_subcolumns_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
     bool cleanup_,
     bool enable_vertical_final_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes))
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs, std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_))
     , cleanup(cleanup_), enable_vertical_final(enable_vertical_final_)
 {
     if (!is_deleted_column.empty())

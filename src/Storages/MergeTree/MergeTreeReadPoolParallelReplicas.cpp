@@ -156,13 +156,35 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (no_more_tasks_available)
         return nullptr;
 
+    /// The following unfortunate scenario is possible:
+    /// 1. Thread T1 found no `buffered_ranges` left to read and initiated a read request to the coordinator.
+    /// 2. Thread T2 called `getTask` too and now waits for the mutex.
+    /// 3. The coordinator handled the request from T1 and sent a response.
+    ///    In this response it indicated that there are no more tasks left to read (`finish = true`).
+    /// 4. While receiving the response we got an exception (e.g. network timeout).
+    /// 5. Exception is propagated from `sendReadRequest` up the stack, but once T1 leaves `getTask`, T2 is able to grab the mutex.
+    ///    T2 also finds no `buffered_ranges` and repeat the request to the coordinator.
+    ///    Coordinator throws logical error: "Got request from replica N after ranges assignment has been completed for the replica."
+    ///    To prevent this we set `failed_to_get_task` flag once we catch an exception from `sendReadRequest`.
+    if (failed_to_get_task)
+        return nullptr;
+
     if (buffered_ranges.empty())
     {
-        std::optional<ParallelReadResponse> response = extension.sendReadRequest(
-            coordination_mode,
-            min_marks_per_task * pool_settings.threads,
-            /// For Default coordination mode we don't need to pass part names.
-            RangesInDataPartsDescription{});
+        std::optional<ParallelReadResponse> response;
+        try
+        {
+            response = extension.sendReadRequest(
+                coordination_mode,
+                min_marks_per_task * pool_settings.threads,
+                /// For Default coordination mode we don't need to pass part names.
+                RangesInDataPartsDescription{});
+        }
+        catch (...)
+        {
+            failed_to_get_task = true;
+            throw;
+        }
 
         if (response)
         {

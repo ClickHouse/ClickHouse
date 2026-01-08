@@ -30,7 +30,7 @@ struct HasAllTokensTraits
 }
 
 /// Map needle into a position (for bitmap operations).
-using Tokens = absl::flat_hash_map<String, UInt64>;
+using TokensWithPosition = absl::flat_hash_map<String, UInt64>;
 
 template <class HasTokensTraits>
 class FunctionHasAnyAllTokens : public IFunction
@@ -53,10 +53,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
-    const bool allow_experimental_full_text_index;
+    const bool enable_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
-    std::optional<Tokens> search_tokens;
-
-    inline static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
+    std::optional<TokensWithPosition> search_tokens;
 };
 }

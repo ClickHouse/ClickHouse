@@ -146,7 +146,7 @@ Returns the parent (coarser) [H3](#h3-index) index containing the given H3 index
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToParent>(documentation);
 }
 

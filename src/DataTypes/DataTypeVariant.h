@@ -46,7 +46,6 @@ public:
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
-    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 
     void updateHashImpl(SipHash & hash) const override;

@@ -50,8 +50,6 @@ public:
 
     void shutdown() override {}
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
     void createTable(
@@ -66,6 +64,7 @@ public:
         bool /*sync*/) override;
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:

@@ -1,0 +1,37 @@
+Expression ((Project names + Projection))
+Header: 1 UInt8
+  JoinLogical
+  Header: __join_result_dummy UInt8
+    Filter
+    Header: __table1.c0 Int32
+      ReadFromMemoryStorage
+      Header: c0 Int32
+    BuildRuntimeFilter (Build runtime join filter on __table2.a (_runtime_filter_UNIQ_ID_0))
+    Header: __table2.a UInt8
+      Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+      Header: __table2.a UInt8
+        ReadFromStorage (SystemOne)
+        Header: dummy UInt8
+1
+Expression ((Project names + Projection))
+Header: 1 UInt8
+  JoinLogical
+  Header: __join_result_dummy UInt8
+    Filter
+    Header: __table1.c0 Int32
+            __table1.c1 Int32
+      ReadFromMemoryStorage
+      Header: c0 Int32
+              c1 Int32
+    BuildRuntimeFilter (Build runtime join filter on __table2.b (_runtime_filter_UNIQ_ID_1))
+    Header: __table2.a UInt8
+            __table2.b UInt8
+      BuildRuntimeFilter (Build runtime join filter on __table2.a (_runtime_filter_UNIQ_ID_0))
+      Header: __table2.a UInt8
+              __table2.b UInt8
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table2.a UInt8
+                __table2.b UInt8
+          ReadFromStorage (SystemOne)
+          Header: dummy UInt8
+1

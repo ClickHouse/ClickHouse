@@ -98,7 +98,7 @@ SELECT s, lowCardinalityKeys(s) FROM test;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionLowCardinalityKeys>(documentation);
 }

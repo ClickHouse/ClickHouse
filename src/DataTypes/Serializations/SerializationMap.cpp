@@ -86,6 +86,11 @@ void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr, co
     nested->deserializeBinary(extractNestedColumn(column), istr, settings);
 }
 
+void SerializationMap::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    nested->serializeForHashCalculation(extractNestedColumn(column), row_num, ostr);
+}
+
 
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(

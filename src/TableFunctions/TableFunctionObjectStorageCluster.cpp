@@ -56,6 +56,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* is_datalake_query*/ false,
             /* distributed_processing */ can_use_distributed_iterator,
             /* partition_by_ */Base::partition_by,
+            /* order_by_ */nullptr,
             /* is_table_function */true,
             /* lazy_init */ true);
     }

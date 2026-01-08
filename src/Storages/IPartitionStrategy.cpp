@@ -22,17 +22,13 @@ extern const int BAD_ARGUMENTS;
 
 namespace
 {
-    /// Creates Expression actions to create hive path part of format
+    /// Builds AST for hive partition path format
     ///  `partition_column_1=toString(partition_value_expr_1)/ ... /partition_column_N=toString(partition_value_expr_N)/`
     /// for given partition columns list and a partition by AST.
-    /// The actions will be computed over chunk to convert partition values to string values.
-    HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName buildExpressionHive(
+    ASTPtr buildHivePartitionAST(
         ASTPtr partition_by,
-        const NamesAndTypesList & partition_columns,
-        const Block & sample_block,
-        ContextPtr context)
+        const NamesAndTypesList & partition_columns)
     {
-        HiveStylePartitionStrategy::PartitionExpressionActionsAndColumnName actions_with_column_name;
         ASTs concat_args;
 
         if (const auto * tuple_function = partition_by->as<ASTFunction>();
@@ -74,12 +70,7 @@ namespace
             concat_args.push_back(std::make_shared<ASTLiteral>("/"));
         }
 
-        ASTPtr hive_expr = makeASTFunction("concat", std::move(concat_args));
-        auto hive_syntax_result = TreeRewriter(context).analyze(hive_expr, sample_block.getNamesAndTypesList());
-        actions_with_column_name.actions = ExpressionAnalyzer(hive_expr, hive_syntax_result, context).getActions(false);
-        actions_with_column_name.column_name = hive_expr->getColumnName();
-
-        return actions_with_column_name;
+        return makeASTFunction("concat", std::move(concat_args));
     }
 
     Block buildBlockWithoutPartitionColumns(
@@ -199,6 +190,26 @@ const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
     return partition_key_description;
 }
 
+IPartitionStrategy::PartitionExpressionActionsAndColumnName
+IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast)
+{
+    if (cached_result)
+        return *cached_result;
+
+    auto syntax_result = TreeRewriter(context).analyze(expression_ast, sample_block.getNamesAndTypesList());
+    auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false);
+
+    PartitionExpressionActionsAndColumnName result;
+    result.actions = std::make_shared<ExpressionActions>(
+        std::move(actions_dag), ExpressionActionsSettings(context), false);
+    result.column_name = expression_ast->getColumnName();
+
+    if (!result.actions->getActionsDAG().hasNonDeterministic())
+        cached_result = result;
+
+    return result;
+}
+
 std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
                                                                  const NamesAndTypesList & partition_columns,
@@ -248,20 +259,19 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
 WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_)
 {
-    ASTs arguments(1, partition_key_description_.definition_ast);
-    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
-    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
-    actions_with_column_name.actions = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
-    actions_with_column_name.column_name = partition_by_string->getColumnName();
 }
 
 ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
+    ASTs arguments(1, partition_key_description.definition_ast);
+    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
+    auto actions_with_column = getPartitionExpressionActions(partition_by_string);
+
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());
-    actions_with_column_name.actions->execute(block_with_partition_by_expr);
+    actions_with_column.actions->execute(block_with_partition_by_expr);
 
-    return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
+    return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
 }
 
 std::string WildcardPartitionStrategy::getPathForRead(
@@ -292,7 +302,7 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     {
         partition_columns_name_set.insert(partition_column.name);
     }
-    actions_with_column_name = buildExpressionHive(partition_key_description.definition_ast, partition_columns, sample_block, context);
+
     block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
 }
 
@@ -333,11 +343,14 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
+    auto hive_ast = buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns());
+    auto actions_with_column = getPartitionExpressionActions(hive_ast);
+
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());
-    actions_with_column_name.actions->execute(block_with_partition_by_expr);
+    actions_with_column.actions->execute(block_with_partition_by_expr);
 
-    return block_with_partition_by_expr.getByName(actions_with_column_name.column_name).column;
+    return block_with_partition_by_expr.getByName(actions_with_column.column_name).column;
 }
 
 ColumnRawPtrs HiveStylePartitionStrategy::getFormatChunkColumns(const Chunk & chunk)

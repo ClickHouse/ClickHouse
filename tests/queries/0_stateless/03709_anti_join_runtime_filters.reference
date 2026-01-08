@@ -1,0 +1,10 @@
+Type: LEFT
+Strictness: ANTI
+Filter column: __applyFilter(_exclusion__runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_exclusion__runtime_filter_UNIQ_ID_0))
+250
+250
+Type: RIGHT
+Strictness: ANTI
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))

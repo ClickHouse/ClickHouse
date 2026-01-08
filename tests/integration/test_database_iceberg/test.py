@@ -650,3 +650,22 @@ def test_cluster_select(started_cluster):
         assert len(cluster_secondary_queries) == 1
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
+    
+def test_not_specified_catalog_type(started_cluster):
+    node = started_cluster.instances["node1"]
+    settings = {
+        "warehouse": "demo",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
+    }
+
+    node.query(
+        f"""
+    DROP DATABASE IF EXISTS {CATALOG_NAME};
+    SET allow_database_iceberg=true;
+    SET write_full_path_in_iceberg_metadata=1;
+    CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+    SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
+    """
+    )
+    with pytest.raises(Exception):
+        node.query(f"SHOW TABLES FROM {CATALOG_NAME}")

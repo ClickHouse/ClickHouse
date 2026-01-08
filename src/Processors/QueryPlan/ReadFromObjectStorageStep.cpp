@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -61,6 +62,14 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    // It is important to build the inplace sets for the filter here, before reading data from object storage.
+    // If we delay building these sets until later in the pipeline, the filter can be applied after the data
+    // has already been read, potentially in parallel across many streams. This can significantly reduce the
+    // effectiveness of an Iceberg partition pruning, as unnecessary data may be read. Additionally, building ordered sets
+    // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
+    if (!filter_actions_dag)
+        return;
+    VirtualColumnUtils::buildOrderedSetsForDAG(*filter_actions_dag, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -137,7 +146,9 @@ void ReadFromObjectStorageStep::createIterator()
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
-        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
+        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr,
+        context->getFileProgressCallback(),
+        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
 static bool isPrefixInputOrder(InputOrderInfoPtr small_input_order, InputOrderInfoPtr big_input_order)
@@ -171,7 +182,7 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
 {
-    return isPrefixInputOrder(order_info_, getDataOrder());
+    return isPrefixInputOrder(order_info_, getDataOrder()) && configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

@@ -161,7 +161,7 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeo>(documentation);
 }
 

@@ -1,7 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: json type needs rapidjson library, geo types need s2 geometry
 
-SET allow_experimental_object_type = 1;
 SET enable_json_type = 1;
 SET allow_suspicious_low_cardinality_types=1;
 
@@ -41,7 +40,6 @@ SELECT concat('With ', materialize('2023-11-14 05:50:12.123' :: DateTime64(3, 'E
 SELECT concat('With ', materialize('hallo' :: Enum('hallo' = 1)));
 SELECT concat('With ', materialize(['foo', 'bar'] :: Array(String)));
 SELECT concat('With ', materialize('{"foo": "bar"}' :: JSON));
-SELECT concat('With ', materialize('{"foo": "bar"}' :: Object('json')));
 SELECT concat('With ', materialize((42, 'foo') :: Tuple(Int32, String)));
 SELECT concat('With ', materialize(map(42, 'foo') :: Map(Int32, String)));
 SELECT concat('With ', materialize('122.233.64.201' :: IPv4));

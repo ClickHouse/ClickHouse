@@ -133,11 +133,11 @@ void ScatterByPartitionTransform::generateOutputChunks()
     for (const auto & column_number : key_columns)
         hash.update(columns[column_number]->getWeakHash32());
 
-    const auto & hash_data = hash.getData();
+    const PaddedPODArray<UInt32> & hash_data = hash.getData();
     IColumn::Selector selector(num_rows);
 
     for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = hash_data[row] % output_size;  /// TODO: use libdivide to speedup modulus calculation?
+        selector[row] = (static_cast<UInt64>(hash_data[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
 
     for (const auto & column : columns)
     {

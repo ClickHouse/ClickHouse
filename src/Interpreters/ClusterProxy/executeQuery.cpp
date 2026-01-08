@@ -1,7 +1,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -72,6 +71,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_support_projection;
 }
 
 namespace DistributedSetting
@@ -491,6 +491,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
+
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
     {
@@ -512,6 +513,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
     }
+
     return context_mutable;
 }
 
@@ -820,12 +822,8 @@ void executeQueryWithParallelReplicasCustomKey(
         return;
     }
 
-    ColumnsDescriptionByShardNum columns_object;
-    if (hasDynamicSubcolumnsDeprecated(columns))
-        columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);
-
     ClusterProxy::SelectStreamFactory select_stream_factory
-        = ClusterProxy::SelectStreamFactory(header, columns_object, snapshot, processed_stage);
+        = ClusterProxy::SelectStreamFactory(header, snapshot, processed_stage);
 
     auto shard_filter_generator = getShardFilterGeneratorForCustomKey(*query_info.getCluster(), context, columns);
     if (shard_filter_generator && context->getSettingsRef()[Setting::serialize_query_plan])
@@ -1032,8 +1030,13 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     const auto & settings = context->getSettingsRef();
 
+<<<<<<< HEAD
     auto new_context = updateContextForParallelReplicas(logger, context);
     auto cluster = prepareClusterForParallelReplicas(logger, new_context);
+=======
+    auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
+    auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+>>>>>>> origin/master
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     std::optional<size_t> local_replica_index;
 

@@ -1,0 +1,169 @@
+=====================================================================
+Test : ClickHouse NULL-safe comparison
+(1) <=> (IS NOT DISTINCT FROM)
+(2) IS DISTINCT FROM
+=====================================================================
+Purpose:
+1. Validate behavior of <=> and IS DISTINCT FROM across a wide range of ClickHouse data types and SQL clauses.
+2. Cover numeric, floating, string, enum, date/time, complex types, and NULL / NaN edge cases.
+3. test null-safe comparison in SELECT clause, WHERE, ORDER BY, GROUP BY, HAVING, JOIN, CASE/IF, WINDOW, and subqueries.
+=====================================================================
+0. Main table with many types
+Insert rows containing:
+• normal values
+• NULLs
+• NaN
+• edge numeric boundaries
+1.1 Basic NULL-safe equality and distinctness
+Compare same column to itself
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1	0
+1.2 NaN behavior
+NaN <=> NaN = 0, NaN <=> number = 0
+NaN is distinct from NaN = 1, NaN is distinct from number = 1
+1	0	1	1	0
+\N	0	1	0	1
+nan	1	0	0	1
+-1	0	1	0	1
+1.3 String, FixedString, Enum
+1	0	0	1	1	0	0	1	1	0	0	1	1	0	0	1
+0	1	1	0	0	1	1	0	0	1	1	0	0	1	1	0
+0	1	0	1	0	1	0	1	0	1	0	1	0	1	0	1
+0	1	0	1	0	1	0	1	1	0	0	1	1	0	0	1
+1.4 Date and time
+1	0	0	0	1	1	1	0	0	0	1	1	1	0	0	0	1	1
+0	1	1	1	0	0	0	1	1	1	0	0	0	1	1	1	0	0
+0	1	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+0	1	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+1.5 Complex types: Array / Tuple / Map / Variant / Dynamic / JSON
+1	0	0	1	0	1	0	0	0	0	1	0	0	1	1	0	0	1	0	1	0	0	0	0	1	0	0	0	1	1	1	0	0	1	0	1	0	0	1	1	0	1	1	0	0	1	0	0	0	0	0	1	1	0	0	1	0	0	0	0
+0	1	0	1	1	0	0	0	0	0	0	1	1	0	0	1	0	1	1	0	0	0	0	0	0	1	1	1	0	0	0	1	0	1	0	1	1	1	0	0	0	1	0	1	0	1	1	1	0	0	0	1	0	1	0	1	1	1	0	0
+0	1	0	1	0	1	0	0	0	0	0	1	0	1	0	1	0	1	0	1	0	0	0	0	0	1	0	0	1	1	0	1	1	0	0	1	0	0	1	1	0	1	0	1	0	1	0	0	0	0	0	1	0	1	0	1	0	0	0	0
+0	1	0	1	1	0	0	0	0	0	0	1	0	1	0	1	0	1	0	1	0	0	0	0	0	1	1	1	0	0	0	1	0	1	1	0	0	0	1	1	0	1	0	1	1	0	0	0	0	0	0	1	0	1	0	1	0	0	0	0
+1.6 UUID / IPv4 / IPv6 comparisons
+NULL-safe comparisons with type-correct literals
+1	0	0	0	1	1	1	0	0	0	1	1	1	0	0	0	1	1
+1	0	1	1	0	0	0	1	1	1	0	0	0	1	1	1	0	0
+1	0	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+1	0	0	0	1	1	0	1	0	0	1	1	0	1	0	0	1	1
+1.7 Cross-type test cases
+0	1
+1	0
+0	1
+0	1
+0
+1
+0
+0
+1
+0
+1
+1
+0
+1
+0
+0
+1
+0
+1
+1
+0	0
+1	1
+0	0
+0	0
+1	1
+0	0
+1	1
+1	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	0
+0	0
+0	0
+0	0
+0	1
+0	1
+0	1
+0	1
+1.8 Some ILLEGAL_TYPE_OF_ARGUMENT case
+Array vs Map cross-type test cases
+Map vs Variant cross-type test cases
+1.9 WHERE Clause
+1	1	1	1	0
+2	1	\N	0	1
+3	\N	\N	1	0
+4	2	2	1	0
+1.10 ORDER BY Clause
+1	1	1	0
+3	\N	\N	0
+4	2	2	0
+2	1	\N	1
+1.11 GROUP BY Clause
+0	1	1	[2]
+1	0	3	[1,3,4]
+1.12 Aggregate Func
+2	2	4
+1.12 HAVING Clause
+2	2
+1.13 JOIN Clause
+1	1	1	1
+2	1	1	1
+3	2	\N	\N
+3	3	\N	\N
+4	4	2	2
+1	2	1	\N
+1	3	1	\N
+1	4	1	2
+2	2	1	\N
+2	3	1	\N
+2	4	1	2
+3	1	\N	1
+3	4	\N	2
+4	1	2	1
+4	2	2	\N
+4	3	2	\N
+1.14 CASE WHEN Clause
+1	1	1	null_safe_equal	same
+2	1	\N	null_safe_distinct	different
+3	\N	\N	null_safe_equal	same
+4	2	2	null_safe_equal	same
+1.15 IF function
+1	1	1	safe-equal	same
+2	1	\N	not_equal	distinct
+3	\N	\N	safe-equal	same
+4	2	2	safe-equal	same
+1.16 Window Func
+0	3	3	3
+0	3	3	3
+0	3	3	3
+1	1	1	1
+1.17 OR / AND
+0	1
+1.18 Tuple has null
+0
+1
+0
+1
+1
+0
+0
+1
+
+0
+1.19 Alias function testing
+1
+0
+0
+1
+0
+1
+1
+0

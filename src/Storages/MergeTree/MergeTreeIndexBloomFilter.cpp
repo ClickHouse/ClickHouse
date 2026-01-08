@@ -216,11 +216,12 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_IN});
 }
 
-bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const
+bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const
 {
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
 
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         switch (element.function)
@@ -282,6 +283,12 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 rpn_stack.emplace_back(false, true);
                 break;
             /// No `default:` to make the compiler warn if not all enum values are handled.
+        }
+
+        if (update_partial_result_disjuntion_fn)
+        {
+            update_partial_result_disjuntion_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
     }
 
@@ -879,7 +886,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }

@@ -50,8 +50,8 @@ private:
 
     CRC32CHasher hasher;
 
-    Pos pos;
-    Pos end;
+    Pos pos = nullptr;
+    Pos end = nullptr;
     UInt64 min_ngram_length = 3;
     UInt64 max_ngram_length = 100;
     std::optional<UInt64> min_cutoff_length;
@@ -117,9 +117,9 @@ private:
 
     private:
 
-        Pos data;
-        Pos end;
-        size_t n;
+        Pos data = nullptr;
+        Pos end = nullptr;
+        size_t n = 0;
         size_t right_iterator = 0;
         size_t left_iterator = 0;
         size_t num_increments = 0;

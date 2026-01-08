@@ -7,6 +7,10 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
+namespace DB
+{
+using ObjectAttributes = std::map<std::string, std::string>;
+}
 
 namespace DB::S3
 {
@@ -16,8 +20,8 @@ struct ObjectInfo
     size_t size = 0;
     time_t last_modification_time = 0;
     String etag;
-
-    std::map<String, String> metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
+    ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
+    ObjectAttributes metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
 };
 
 /// Ignore if object does not exist
@@ -26,14 +30,22 @@ ObjectInfo getObjectInfoIfExists(
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    bool with_metadata = false);
+    bool with_metadata = false,
+    bool with_tags = false);
 
 ObjectInfo getObjectInfo(
     const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    bool with_metadata = false);
+    bool with_metadata = false,
+    bool with_tags = false);
+
+ObjectAttributes getObjectTags(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id = {});
 
 size_t getObjectSize(
     const S3::Client & client,

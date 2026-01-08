@@ -16,7 +16,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 

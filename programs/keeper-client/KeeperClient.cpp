@@ -1,5 +1,4 @@
 #include <KeeperClient.h>
-#include <Commands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -50,90 +49,6 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     readStringUntilEOF(result, in);
     in.next();
     return result;
-}
-
-std::vector<String> KeeperClient::getCompletions(const String & prefix) const
-{
-    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (pos->type != TokenType::BareWord)
-        return registered_commands_and_four_letter_words;
-
-    ++pos;
-    if (pos->isEnd())
-        return registered_commands_and_four_letter_words;
-
-    ParserToken{TokenType::Whitespace}.ignore(pos);
-
-    std::vector<String> result;
-    String string_path;
-    Expected expected;
-    if (!parseKeeperPath(pos, expected, string_path))
-        string_path = cwd;
-
-    if (!pos->isEnd())
-        return result;
-
-    fs::path path = string_path;
-    String parent_path;
-    if (string_path.ends_with("/"))
-        parent_path = getAbsolutePath(string_path);
-    else
-        parent_path = getAbsolutePath(path.parent_path());
-
-    try
-    {
-        for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(child);
-    }
-    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
-
-    std::sort(result.begin(), result.end());
-
-    return result;
-}
-
-void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
-{
-    if (!ask_confirmation)
-    {
-        callback();
-        return;
-    }
-
-    std::cout << prompt << " Continue?\n";
-    waiting_confirmation = true;
-    confirmation_callback = callback;
-}
-
-fs::path KeeperClient::getAbsolutePath(const String & relative) const
-{
-    String result;
-    if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
-
-    if (result.ends_with('/') && result.size() > 1)
-        result.pop_back();
-
-    return result;
-}
-
-void KeeperClient::loadCommands(std::vector<Command> && new_commands)
-{
-    for (const auto & command : new_commands)
-    {
-        String name = command->getName();
-        commands.insert({name, command});
-        registered_commands_and_four_letter_words.push_back(std::move(name));
-    }
-
-    for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
-
-    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
@@ -240,33 +155,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 
-    loadCommands({
-        std::make_shared<LSCommand>(),
-        std::make_shared<CDCommand>(),
-        std::make_shared<SetCommand>(),
-        std::make_shared<CreateCommand>(),
-        std::make_shared<TouchCommand>(),
-        std::make_shared<GetCommand>(),
-        std::make_shared<ExistsCommand>(),
-        std::make_shared<GetStatCommand>(),
-        std::make_shared<FindSuperNodes>(),
-        std::make_shared<DeleteStaleBackups>(),
-        std::make_shared<FindBigFamily>(),
-        std::make_shared<RMCommand>(),
-        std::make_shared<RMRCommand>(),
-        std::make_shared<ReconfigCommand>(),
-        std::make_shared<SyncCommand>(),
-        std::make_shared<HelpCommand>(),
-        std::make_shared<FourLetterWordCommand>(),
-        std::make_shared<GetDirectChildrenNumberCommand>(),
-        std::make_shared<GetAllChildrenNumberCommand>(),
-        std::make_shared<CPCommand>(),
-        std::make_shared<CPRCommand>(),
-        std::make_shared<MVCommand>(),
-        std::make_shared<MVRCommand>(),
-        std::make_shared<GetAclCommand>(),
-    });
-
     String home_path;
     const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
     if (home_path_cstr)
@@ -302,6 +190,48 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
+}
+
+std::vector<String> KeeperClient::getCompletions(const String & prefix) const
+{
+    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (pos->type != TokenType::BareWord)
+        return registered_commands_and_four_letter_words;
+
+    ++pos;
+    if (pos->isEnd())
+        return registered_commands_and_four_letter_words;
+
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
+    std::vector<String> result;
+    String string_path;
+    Expected expected;
+    if (!parseKeeperPath(pos, expected, string_path))
+        string_path = cwd;
+
+    if (!pos->isEnd())
+        return result;
+
+    fs::path path = string_path;
+    String parent_path;
+    if (string_path.ends_with("/"))
+        parent_path = getAbsolutePath(string_path);
+    else
+        parent_path = getAbsolutePath(path.parent_path());
+
+    try
+    {
+        for (const auto & child : zookeeper->getChildren(parent_path))
+            result.push_back(child);
+    }
+    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
+
+    std::sort(result.begin(), result.end());
+
+    return result;
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
@@ -422,7 +352,7 @@ void KeeperClient::runInteractiveReplxx()
             break;
     }
 
-    std::cout << std::endl;
+    cout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
@@ -432,8 +362,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input, /*is_interactive=*/true))
             break;
 
-        std::cout << "\a\a\a\a" << std::endl;
-        std::cerr << std::flush;
+        cout << "\a\a\a\a" << std::endl;
+        cerr << std::flush;
     }
 }
 

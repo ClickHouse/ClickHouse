@@ -1,9 +1,6 @@
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <mutex>
-#include <future>
 #include <condition_variable>
 #include <variant>
 #include <utility>
@@ -33,6 +30,7 @@ struct TaskProfileEvents
     ProfileEvents::Event wait_ms = ProfileEvents::end();
 };
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
+enum class ThreadName : uint8_t;
 
 /**
  * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
@@ -296,7 +294,7 @@ class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
     MergeTreeBackgroundExecutor(
-        String name_,
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -308,7 +306,7 @@ public:
         std::string_view policy = {});
 
     MergeTreeBackgroundExecutor(
-        String name_,
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -341,7 +339,7 @@ public:
     }
 
 private:
-    String name;
+    ThreadName name;
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;

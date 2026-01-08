@@ -6,6 +6,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -32,6 +33,8 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
+    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
+
 private:
     Chunk read() override;
 
@@ -49,6 +52,7 @@ private:
     size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
+    std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 };
 
 class NativeParquetSchemaReader : public ISchemaReader

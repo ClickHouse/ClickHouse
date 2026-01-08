@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS default_codec_synthetic;
 CREATE TABLE delta_codec_synthetic
 (
     id UInt64 Codec(Delta, ZSTD(3))
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, serialization_info_version = 'default', auto_statistics_types = '';
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, serialization_info_version = 'basic', auto_statistics_types = '';
 
 CREATE TABLE default_codec_synthetic
 (

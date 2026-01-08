@@ -103,7 +103,6 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerDataTypeObjectDeprecated(DataTypeFactory & factory);
 void registerDataTypeVariant(DataTypeFactory & factory);
 void registerDataTypeDynamic(DataTypeFactory & factory);
 void registerDataTypeJSON(DataTypeFactory & factory);
