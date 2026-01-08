@@ -898,6 +898,7 @@ class TeePopen:
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
+        print(f"Set timeout [{self.timeout}] for [{self.process.pid}]")
         time.sleep(self.timeout)
         print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
