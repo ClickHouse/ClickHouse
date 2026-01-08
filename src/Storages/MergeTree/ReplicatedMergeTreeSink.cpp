@@ -597,7 +597,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected deduplicated part relative path '{}' or part directory '{}'. "
+                    "Unexpected deduplicated part with relative path '{}' and part directory '{}'. "
                     "Expected relative path to end with 'detached/attaching_{}/' or part directory to start with 'tmp_restore_{}'.",
                     relative_path, part_dir, part->name, part->name);
             }
