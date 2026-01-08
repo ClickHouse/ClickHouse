@@ -129,6 +129,7 @@ public:
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
+        /// The locality can be auto-reinitialized by reloading cluster config if DNSCacheUpdater is enabled
         bool is_local = false;
         bool user_specified = false;
 

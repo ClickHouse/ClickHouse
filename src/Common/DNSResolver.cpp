@@ -178,8 +178,9 @@ struct DNSResolver::Impl
     std::mutex drop_mutex;
     std::mutex update_mutex;
 
-    /// Cached server host name
+    /// Cached server host name and its IPs
     std::optional<String> host_name;
+    std::optional<DNSResolver::IPAddresses> host_addresses;
 
     /// Store hosts, which was asked to resolve from last update of DNS cache.
     HostWithConsecutiveFailures new_hosts;
@@ -191,6 +192,19 @@ struct DNSResolver::Impl
 
     /// If disabled, will not make cache lookups, will resolve addresses manually on each call
     std::atomic<bool> disable_cache{false};
+
+    Impl()
+    {
+        try
+        {
+            host_name.emplace(Poco::Net::DNS::hostName());
+            host_addresses.emplace(hostByName(*host_name));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("DNSResolver", __PRETTY_FUNCTION__);
+        }
+    }
 };
 
 struct DNSResolver::AddressFilter
@@ -385,18 +399,44 @@ String DNSResolver::getHostName()
     return *impl->host_name;
 }
 
+bool DNSResolver::updateHostNameAndAddresses()
+{
+    bool updated = false;
+    try
+    {
+        String updated_host_name = Poco::Net::DNS::hostName();
+        DNSResolver::IPAddresses updated_host_addresses = hostByName(updated_host_name);
+
+        std::lock_guard lock(impl->drop_mutex);
+        if (!impl->host_name.has_value() || updated_host_name != *impl->host_name)
+        {
+            impl->host_name.emplace(updated_host_name);
+        }
+        if (!impl->host_addresses.has_value() || updated_host_addresses != *impl->host_addresses)
+        {
+            impl->host_addresses.emplace(updated_host_addresses);
+            updated = true;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
+
+    return updated;
+}
+
 static String cacheElemToString(String str) { return str; }
 static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr.toString(); }
 
 template <typename UpdateF, typename ElemsT>
-bool DNSResolver::updateCacheImpl(
+void DNSResolver::updateCacheImpl(
     UpdateF && update_func, // NOLINT(cppcoreguidelines-missing-std-forward)
     ElemsT && elems, // NOLINT(cppcoreguidelines-missing-std-forward)
     UInt32 max_consecutive_failures,
     FormatStringHelper<String> notfound_log_msg,
     FormatStringHelper<String> dropped_log_msg)
 {
-    bool updated = false;
     String lost_elems;
     using iterators = typename std::remove_reference_t<decltype(elems)>::iterator;
     std::vector<iterators> elements_to_drop;
@@ -404,7 +444,7 @@ bool DNSResolver::updateCacheImpl(
     {
         try
         {
-            updated |= (this->*update_func)(it->first);
+            (this->*update_func)(it->first);
             it->second = 0;
         }
         catch (const DB::Exception & e)
@@ -434,7 +474,6 @@ bool DNSResolver::updateCacheImpl(
         LOG_INFO(log, notfound_log_msg.format(std::move(lost_elems)));
     if (elements_to_drop.size())
     {
-        updated = true;
         String deleted_elements;
         for (auto it : elements_to_drop)
         {
@@ -445,17 +484,13 @@ bool DNSResolver::updateCacheImpl(
         }
         LOG_INFO(log, dropped_log_msg.format(std::move(deleted_elements)));
     }
-
-    return updated;
 }
 
-bool DNSResolver::updateCache(UInt32 max_consecutive_failures)
+void DNSResolver::updateCache(UInt32 max_consecutive_failures)
 {
     LOG_DEBUG(log, "Updating DNS cache");
 
     {
-        String updated_host_name = Poco::Net::DNS::hostName();
-
         std::lock_guard lock(impl->drop_mutex);
 
         for (const auto & host : impl->new_hosts)
@@ -465,15 +500,13 @@ bool DNSResolver::updateCache(UInt32 max_consecutive_failures)
         for (const auto & address : impl->new_addresses)
             impl->known_addresses.insert(address);
         impl->new_addresses.clear();
-
-        impl->host_name.emplace(updated_host_name);
     }
 
     /// FIXME Updating may take a long time because we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
     /// DROP DNS CACHE will wait on update_mutex (possibly while holding drop_mutex)
     std::lock_guard lock(impl->update_mutex);
 
-    bool hosts_updated = updateCacheImpl(
+    updateCacheImpl(
         &DNSResolver::updateHost, impl->known_hosts, max_consecutive_failures, "Cached hosts not found: {}", "Cached hosts dropped: {}");
     updateCacheImpl(
         &DNSResolver::updateAddress,
@@ -483,7 +516,6 @@ bool DNSResolver::updateCache(UInt32 max_consecutive_failures)
         "Cached addresses dropped: {}");
 
     LOG_DEBUG(log, "Updated DNS cache");
-    return hosts_updated;
 }
 
 bool DNSResolver::updateHost(const String & host)
