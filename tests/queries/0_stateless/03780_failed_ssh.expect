@@ -1,0 +1,33 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal 1
+#exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 5
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+file delete -force id_rsa_03780_failed_ssh
+spawn ssh-keygen -t rsa -b 4096 -f id_rsa_03780_failed_ssh -N "" -q
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; ../../../build/programs/clickhouse-client \$CLICKHOUSE_CLIENT_EXPECT_OPT --ssh-key-file id_rsa_03780_failed_ssh --user admin"
+expect "Enter your SSH private key passphrase (leave empty for no passphrase): "
+send "\r"
+expect "Connecting to * as user admin."
+expect "Code: 516. *"
+expect eof
