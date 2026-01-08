@@ -133,12 +133,6 @@ DOCKERS = [
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/performance-comparison",
-        path="./ci/docker/performance-comparison",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
-    ),
-    Docker.Config(
         name="clickhouse/keeper-jepsen-test",
         path="./ci/docker/keeper-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
