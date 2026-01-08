@@ -206,9 +206,16 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
     response.max_log_ptr = 0;
 
     response.replica_name = replica_name;
-    response.replica_path = replica_path;
     response.shard_name = shard_name;
     response.zookeeper_path = zookeeper_path;
+
+    /// Make a local copy of replica_path under mutex protection to avoid data race
+    String replica_path_copy;
+    {
+        std::lock_guard lock(mutex);
+        replica_path_copy = replica_path;
+    }
+    response.replica_path = replica_path_copy;
 
     response.total_replicas = 0;
 
@@ -220,7 +227,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
         std::vector<std::string> paths;
 
         paths.push_back(zookeeper_path + "/max_log_ptr");
-        paths.push_back(fs::path(replica_path) / "log_ptr");
+        paths.push_back(fs::path(replica_path_copy) / "log_ptr");
 
         auto get_result = zookeeper->tryGet(paths);
         chassert(get_result.size() == paths.size());
@@ -548,7 +555,10 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             createDatabaseNodesInZooKeeper(current_zookeeper);
         }
 
-        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
+        {
+            std::lock_guard lock(mutex);
+            replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
+        }
         bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
 
         String replica_host_id;
