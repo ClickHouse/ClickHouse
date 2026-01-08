@@ -10,6 +10,7 @@
 #include <Common/Arena.h>
 
 #include <Common/scope_guard_safe.h>
+#include "Columns/IColumn.h"
 
 
 namespace DB
@@ -54,10 +55,11 @@ private:
 
 DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
-            getName(), arguments.size());
+    FunctionArgumentDescriptors mandatory_args{
+        {"aggregate_function_name", &isString, &isColumnConst, "const String"},
+        {"argument", nullptr, nullptr, "Any"}
+    };
+    validateFunctionArguments(*this, arguments, mandatory_args);
 
     const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)

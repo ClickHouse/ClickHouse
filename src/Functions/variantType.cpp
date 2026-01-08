@@ -39,19 +39,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.empty());
+        FunctionArgumentDescriptors mandatory_args{
+            {"variant", isVariant, nullptr, "Variant"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(arguments[0].type.get());
-
-        if (!variant_type)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Variant, got {} instead",
-                getName(), arguments[0].type->getName());
 
         const auto & variants = variant_type->getVariants();
         std::vector<std::pair<String, Int8>> enum_values;

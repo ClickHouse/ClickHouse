@@ -522,6 +522,7 @@ bool isDateTime(TYPE data_type); \
 bool isDateTime64(TYPE data_type); \
 bool isDateTimeOrDateTime64(TYPE data_type); \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type); \
+bool isDecimal64(TYPE data_type); \
 bool isTime(TYPE data_type); \
 bool isTime64(TYPE data_type); \
 bool isTimeOrTime64(TYPE data_type); \

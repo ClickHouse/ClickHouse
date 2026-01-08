@@ -161,6 +161,10 @@ void validateFunctionArguments(const String & function_name, const ColumnsWithTy
                                const FunctionArgumentDescriptors & mandatory_args,
                                const FunctionArgumentDescriptors & optional_args = {});
 
+void validateFunctionArgumentsWithVariadics(const IFunction & func, const ColumnsWithTypeAndName & arguments,
+                                            const FunctionArgumentDescriptors & mandatory_args,
+                                            const FunctionArgumentDescriptor & variadic_args);
+
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
