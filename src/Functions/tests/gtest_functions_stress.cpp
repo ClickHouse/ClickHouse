@@ -18,6 +18,7 @@
 #include <Common/ThreadStatus.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/Context.h>
@@ -406,7 +407,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "structureToCapnProtoSchema",
     "generateRandomStructure",
 
-    // Needs query context.
+    /// Needs query context.
     "__applyFilter",
 };
 
@@ -461,6 +462,36 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_error_
     /// Different overflow checks for const vs non-const.
     /// Some overflow checks while resolving overload if args are const.
     "minus",
+
+    /// E.g. this succeeds materialize but throws DECIMAL_OVERFLOW without it:
+    ///   SELECT subtractWeeks(materialize(CAST('1970-01-16 06:39:51' AS DateTime)), CAST(-3.4390291839770234e307 AS Float64))
+    "subtractNanoseconds",
+    "subtractMicroseconds",
+    "subtractMilliseconds",
+    "subtractSeconds",
+    "subtractMinutes",
+    "subtractHours",
+    "subtractDays",
+    "subtractWeeks",
+    "subtractMonths",
+    "subtractQuarters",
+    "subtractYears",
+    "addNanoseconds",
+    "addMicroseconds",
+    "addMilliseconds",
+    "addSeconds",
+    "addMinutes",
+    "addHours",
+    "addDays",
+    "addWeeks",
+    "addMonths",
+    "addQuarters",
+    "addYears",
+
+    /// E.g. this fails iff you remove the second materialize:
+    ///   SELECT substringUTF8(materialize(CAST('0007c454-b371-d83b-0000-000000000000' AS String)), materialize(CAST(7.201535e-38 AS Float32)))
+    "substringUTF8",
+    "substring",
 };
 
 /// Normally, we expect a deterministic function to return the same result on the same arguments
@@ -472,7 +503,7 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_semant
 };
 
 static constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
-static constexpr size_t ROWS_PER_BATCH = 128;
+static constexpr size_t ROWS_PER_BATCH = 32;
 
 
 size_t generateRandomNumberOfArgs()
@@ -638,9 +669,10 @@ struct Operation
     std::chrono::steady_clock::time_point iteration_start_time;
     Step step = Step::None;
     size_t function_idx = UINT64_MAX;
-    /// Function, argument types and const-ness. Values of const args. Random columns for non-const args.
+    /// Function, argument types and constness. Values of const args. Random columns for non-const args.
     ColumnsWithTypeAndName args;
     size_t row_idx = 0; // if ExecutingFunctionOnOneRow or ReExecutingFunctionOnOneRow
+    std::vector<size_t> args_became_const; // for ReExecutingFunctionOnOneRow
 
 
     /// Returns a string that fits in the sentence "... while {}", e.g. "executing function: SELECT f(42)".
@@ -678,7 +710,7 @@ struct Operation
                     mode = Mode::OnlyConstants;
                     break;
                 case Step::ExecutingFunctionInBulk:
-                    writeString("executing function on multiple rows", buf);
+                    writeString("executing", buf);
                     mode = Mode::AllRows;
                     break;
                 case Step::ExecutingFunctionOnOneRow:
@@ -686,7 +718,23 @@ struct Operation
                     mode = Mode::OneRow;
                     break;
                 case Step::ReExecutingFunctionOnOneRow:
-                    writeString("re-resolving and re-executing", buf);
+                    if (args_became_const.empty())
+                    {
+                        writeString("re-resolving and re-executing", buf);
+                    }
+                    else
+                    {
+                        writeString("re-executing after making arguments {", buf);
+                        bool first = true;
+                        for (size_t idx : args_became_const)
+                        {
+                            if (!first)
+                                writeString(", ", buf);
+                            first = false;
+                            writeIntText(idx + 1, buf);
+                        }
+                        writeString("} const", buf);
+                    }
                     mode = Mode::OneRow;
                     break;
             }
@@ -821,7 +869,7 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
         if (stats.get(S_EXEC_LATE_TYPECHECK_ERRORS) != 0)
             function_lists["type checking during execution"].push_back(name);
         if (stats.get(S_NONDEFAULT_NULL) != 0)
-            function_lists["produces nondefault values behind NULLs"].push_back(name);
+            function_lists["nondefault values behind NULLs"].push_back(name);
 
         by_time_max.emplace_back(stats.get(S_TIME_MAX_NS), name);
         by_time_total.emplace_back(stats.get(S_TIME_TOTAL_NS), name);
@@ -902,6 +950,7 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
     for (const auto & arg : args)
     {
         bool has_string = false;
+        /// The string and enum may be inside a tuple, nullable, low-cardinality, maybe other things.
         arg.type->forEachChild([&](const IDataType & type)
             {
                 has_string |= isStringOrFixedString(type);
@@ -915,11 +964,22 @@ bool isStringEnumComparisonQuirk(const String & function_name, const ColumnsWith
 /// This fails:
 ///   select modulo(if(number=0,null,0), CAST(number AS IPv4)) from numbers(2)
 /// But if you do it for one row at a time (numbers(1) and numbers(1, 1)), it succeeds.
+/// Same with IPv6:
+///   select modulo(if(number=0,null,0), CAST('::'||toString(number) AS IPv6)) from numbers(2)
 bool isNullableDivisionQuirk(const String & function_name, const ColumnsWithTypeAndName & args, int error_code)
 {
-    if (error_code != ErrorCodes::ILLEGAL_DIVISION || (function_name != "intDiv" && function_name != "modulo"))
+    static const std::unordered_set<String> names = {"intDiv", "modulo", "moduloLegacy", "gcd", "lcm"};
+    if (error_code != ErrorCodes::ILLEGAL_DIVISION || !names.contains(function_name) || args.size() != 2)
         return false;
-    return args.size() == 2 && isIPv4(args[1].type);
+    bool found_ip = false;
+    for (const auto & arg : args)
+    {
+        arg.type->forEachChild([&](const IDataType & type)
+            {
+                found_ip |= isIPv4(type) || isIPv6(type);
+            });
+    }
+    return found_ip;
 }
 
 }
@@ -940,7 +1000,7 @@ struct FunctionsStressTestThread
     std::vector<FunctionStats> function_stats; // parallel to testable_functions
 
     /// Stash of random types + columns to use. Just for speed, to avoid generating new ones every time.
-    /// (I didn't check whether generating new ones every time would actually be slow, but this adds very little code, so meh.)
+    /// (I didn't check whether generating new ones every time would actually be slow.)
     std::map<ArgConstraints, std::vector<ColumnWithTypeAndName>> random_values;
 
     /// Some outputs of previously executed functions, to be used as inputs later.
@@ -998,7 +1058,7 @@ struct FunctionsStressTestThread
 
             auto handle_unexpected_exception = [&]
             {
-                String msg = fmt::format("Unexpected exception while {}", operation.describe());
+                String msg = fmt::format("Error while {}", operation.describe());
                 tryLogCurrentException(logger, msg);
                 stats.add(S_CRITICAL_ERRORS, 1);
             };
@@ -1040,6 +1100,18 @@ struct FunctionsStressTestThread
             auto end_time = std::chrono::steady_clock::now();
             Int64 ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - operation.iteration_start_time).count();
             stats.add(S_TIME_TOTAL_NS, ns);
+
+            Int64 log_threshold_ns = 10'000'000'000L;
+            if (ns >= log_threshold_ns && stats.get(S_TIME_MAX_NS) < log_threshold_ns)
+            {
+                {
+                    std::unique_lock lock(mutex);
+                    /// Print all rows.
+                    if (operation.step > Operation::Step::ExecutingFunctionInBulk)
+                        operation.step = Operation::Step::ExecutingFunctionInBulk;
+                }
+                LOG_INFO(logger, "testing function took {:.3}s: {}", ns / 1e9, operation.describe());
+            }
             stats.max(S_TIME_MAX_NS, ns);
 
             Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory;
@@ -1373,7 +1445,7 @@ struct FunctionsStressTestThread
                 if (result->isConst() != row_result->isConst())
                 {
                     if (!functions_with_const_dependent_semantics.contains(function_info.name))
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "function result had different const-ness when run on many rows vs one row (with same constness of inputs)");
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "function result had different constness when run on many rows vs one row (with same constness of inputs)");
 
                     ColumnPtr left_column = result;
                     size_t left_idx = row_idx;
@@ -1391,7 +1463,7 @@ struct FunctionsStressTestThread
 
                 if (compare_result != 0)
                 {
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "function returned different result on the same input row when executed on one row vs multiple rows: {} vs {}; multi-row query: {}", valueToString(result_type, row_result, 0), valueToString(result_type, result, row_idx), operation.describe(true));
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "function returned different result on the same input row when executed on one row ({}) vs multiple rows: {} vs {}; multi-row query: {}", row_idx, valueToString(result_type, row_result, 0), valueToString(result_type, result, row_idx), operation.describe(true));
                 }
             }
 
@@ -1404,25 +1476,34 @@ struct FunctionsStressTestThread
                 {
                     std::unique_lock lock(mutex);
                     operation.step = Operation::Step::ReExecutingFunctionOnOneRow;
+                    operation.args_became_const.clear();
                 }
 
                 bool can_change_constness = !functions_with_const_dependent_semantics.contains(function_info.name);
-                bool changed_constness = false;
+                std::vector<size_t> args_became_const;
 
                 ColumnsWithTypeAndName new_args = row_args;
                 ColumnsWithTypeAndName new_args_without_non_const_columns;
-                for (auto & arg : new_args)
+                for (size_t idx = 0; idx < new_args.size(); ++idx)
                 {
+                    auto & arg = new_args[idx];
+
                     if (can_change_constness && !arg.column->isConst() && thread_local_rng() % 2 == 0)
                     {
                         arg.column = ColumnConst::create(arg.column, 1);
-                        changed_constness = true;
+                        args_became_const.push_back(idx);
                     }
 
                     auto arg_without_non_const_column = arg;
                     if (!arg.column->isConst())
                         arg_without_non_const_column.column.reset();
                     new_args_without_non_const_columns.push_back(std::move(arg_without_non_const_column));
+                }
+
+                if (!args_became_const.empty())
+                {
+                    std::unique_lock lock(mutex);
+                    operation.args_became_const = args_became_const;
                 }
 
                 /// Changing arg constness may change result type to LowCardinality, e.g. if one arg
@@ -1449,8 +1530,7 @@ struct FunctionsStressTestThread
 
                     if (is_deterministic && !unwrap_type(new_result_type)->equals(*unwrap_type(result_type)))
                         throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "result type changed {}: {} to {}",
-                            changed_constness ? "after making more arguments const" : "when re-resolving overload",
+                            "result type changed: {} to {}",
                             result_type->getName(), new_result_type->getName());
 
                     new_executable_function = new_resolved_function->prepare(new_args_without_non_const_columns);
@@ -1473,7 +1553,7 @@ struct FunctionsStressTestThread
                         new_executable_function->useDefaultImplementationForNulls() &&
                         late_typecheck_errors.contains(e.code()))
                         ok = true;
-                    if (changed_constness &&
+                    if (!args_became_const.empty() &&
                         functions_with_const_dependent_error_checks.contains(function_info.name))
                         ok = true;
                     if (!ok)
@@ -1482,11 +1562,10 @@ struct FunctionsStressTestThread
 
                 if (new_result && is_deterministic && unwrap_column(new_result)->compareAt(0, 0, *unwrap_column(row_result), /*nan_direction_hint=*/ 1) != 0)
                 {
-                    bool ignore = changed_constness && isStringEnumComparisonQuirk(function_info.name, new_args);
+                    bool ignore = !args_became_const.empty() && isStringEnumComparisonQuirk(function_info.name, new_args);
                     if (!ignore)
                         throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "function returned different result on the same input{}: {} vs {}",
-                            changed_constness ? " after making more arguments const" : "",
+                            "function returned different result on the same input: {} vs {}",
                             valueToString(unwrap_type(result_type), unwrap_column(row_result), 0),
                             valueToString(unwrap_type(result_type), unwrap_column(new_result), 0));
                 }
@@ -1513,14 +1592,21 @@ struct FunctionsStressTestThread
         {
             {
                 std::unique_lock lock(mutex);
-                operation.step = Operation::Step::ExecutingFunctionOnOneRow;
-                operation.row_idx = any_failed_row.value_or(0);
+                if (bulk_exception)
+                {
+                    operation.step = Operation::Step::ExecutingFunctionInBulk;
+                }
+                else
+                {
+                    operation.step = Operation::Step::ExecutingFunctionOnOneRow;
+                    operation.row_idx = any_failed_row.value_or(0);
+                }
             }
             if (bulk_exception)
             {
                 if (!bulk_error_code.has_value() || !isNullableDivisionQuirk(function_info.name, operation.args, bulk_error_code.value()))
                 {
-                    LOG_ERROR(logger, "function failed when executed on multiple rows (see stack trace below), but succeeded when executed on each of those rows separately");
+                    LOG_ERROR(logger, "function failed when executed on multiple rows (see below), but succeeded when executed on each of those rows separately");
                     std::rethrow_exception(bulk_exception);
                 }
             }
@@ -1586,7 +1672,7 @@ TEST(FunctionsStress, DISABLED_stress)
     if (num_threads <= 0)
         num_threads = 1;
     std::vector<FunctionsStressTestThread> threads(static_cast<size_t>(num_threads));
-    const std::chrono::seconds stop_timeout(5);
+    const std::chrono::seconds stop_timeout(30);
 
     auto request_shutdown = [&]
         {

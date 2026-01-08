@@ -295,6 +295,7 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
 
                 break;
             }
+            default: chassert(false);
         }
     }
 
@@ -327,10 +328,9 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
                     out[initial_size + idx] = char(rng() & 0xff);
                 }
                 break;
+            default: chassert(false);
         }
     }
-
-    return;
 }
 
 
