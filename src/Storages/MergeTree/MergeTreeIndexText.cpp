@@ -151,7 +151,7 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
 {
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
-        chassert(header & Flags::HasCodec);
+        chassert(header & Flags::IsCompressed);
         auto postings = std::make_shared<PostingList>();
         posting_list_codec->decode(istr, *postings);
         return postings;
@@ -692,7 +692,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
 
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
-        info.header |= HasCodec;
+        info.header |= IsCompressed;
     }
     else if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
@@ -716,7 +716,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
         PostingsSerialization::serialize(postings, info.header, postings_stream.plain_hashing);
     }
-    else if (info.header & HasCodec)
+    else if (info.header & IsCompressed)
     {
         posting_list_codec->encode(postings, params.posting_list_block_size, info, postings_stream.plain_hashing);
     }

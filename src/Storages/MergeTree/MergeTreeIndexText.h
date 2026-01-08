@@ -149,7 +149,7 @@ struct PostingsSerialization
         /// If unset, the number of blocks is stored as an additional VarUInt.
         SingleBlock = 1ULL << 2,
         /// If set, the posting list is encoded using posting_list_codec.
-        HasCodec = 1ULL << 3,
+        IsCompressed = 1ULL << 3,
     };
 
     static void serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr);
