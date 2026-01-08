@@ -177,8 +177,20 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid groupConcat state: num_rows ({}) is too large and would overflow the offsets array.", cur_data.num_rows);
 
         cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
-        for (auto & offset : cur_data.offsets)
-            readVarUInt(offset, buf);
+
+        for (size_t i = 0; i < cur_data.offsets.size(); ++i)
+        {
+            readVarUInt(cur_data.offsets[i], buf);
+
+            if (cur_data.offsets[i] > cur_data.data_size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", cur_data.offsets[i], cur_data.data_size);
+
+            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[i - 1])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[i - 1]);
+        }
+
+        if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: last offset {} is not equal to data size {}", cur_data.offsets.back(), cur_data.data_size);
     }
 }
 
