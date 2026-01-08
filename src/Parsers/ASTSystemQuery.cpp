@@ -559,6 +559,24 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         case Type::KILL:
         case Type::SHUTDOWN:
+        case Type::CLEAR_DNS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_QUERY_CACHE:
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
