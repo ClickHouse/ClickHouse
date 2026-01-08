@@ -3,8 +3,6 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
