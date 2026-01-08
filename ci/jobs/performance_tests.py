@@ -719,8 +719,6 @@ def main():
 
         def too_many_slow(msg):
             match = re.search(r"(|.* )(\d+) slower.*", msg)
-            # This threshold should be synchronized with the value in
-            # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
             threshold = 5
             return int(match.group(2).strip()) > threshold if match else False
 
