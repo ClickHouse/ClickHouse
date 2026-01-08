@@ -12,6 +12,28 @@
 
 #include <algorithm>
 
+// namespace boost::sp_adl_block
+// {
+//     void intrusive_ptr_add_ref(const boost::intrusive_ref_counter<DB::IAST>* p)
+//     {
+//         boost::sp_adl_block::intrusive_ptr_add_ref<DB::IAST, thread_safe_counter>(p);
+//     }
+//     void intrusive_ptr_release(const boost::intrusive_ref_counter<DB::IAST>* p)
+//     {
+//         boost::sp_adl_block::intrusive_ptr_release<DB::IAST, thread_safe_counter>(p);
+//     }
+// }
+
+void intrusive_ptr_add_ref(const DB::IAST* p)
+{
+    boost::intrusive_ptr_add_ref<DB::IAST, boost::thread_safe_counter>(p);
+}
+
+void intrusive_ptr_release(const DB::IAST * p)
+{
+    boost::intrusive_ptr_release<DB::IAST, boost::thread_safe_counter>(p);
+}
+
 namespace DB
 {
 
@@ -22,7 +44,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
 }
-
 
 IAST::~IAST()
 {

@@ -2,6 +2,7 @@
 
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <Parsers/IAST_fwd.h>
 
 
 #include <functional>
@@ -11,9 +12,6 @@
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;

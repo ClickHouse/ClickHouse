@@ -10,7 +10,6 @@
 
 #include <set>
 
-
 class SipHash;
 
 
@@ -29,7 +28,7 @@ using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>
+class IAST : public TypePromotion<IAST>, public boost::intrusive_ref_counter<IAST>
 {
 public:
     ASTs children;
