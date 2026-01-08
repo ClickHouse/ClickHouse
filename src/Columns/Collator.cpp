@@ -35,7 +35,7 @@ AvailableCollationLocales::AvailableCollationLocales()
     size_t available_locales_count = ucol_countAvailable();
     for (size_t i = 0; i < available_locales_count; ++i)
     {
-        std::string locale_name = ucol_getAvailable(i);
+        std::string locale_name = ucol_getAvailable(i); /// NOLINT(clang-diagnostic-shorten-64-to-32)
         UChar lang_buffer[MAX_LANG_LENGTH];
         char normal_buf[MAX_LANG_LENGTH];
         UErrorCode status = U_ZERO_ERROR;
@@ -49,7 +49,7 @@ AvailableCollationLocales::AvailableCollationLocales()
         {
             /// Convert language name from UChar array to normal char array.
             /// We use English language for name, so all UChar's length is equal to sizeof(char)
-            u_UCharsToChars(lang_buffer, normal_buf, lang_length);
+            u_UCharsToChars(lang_buffer, normal_buf, lang_length); /// NOLINT(clang-diagnostic-shorten-64-to-32)
             lang.emplace(std::string(normal_buf, lang_length));
         }
 
@@ -131,8 +131,8 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
 #if USE_ICU
     UCharIterator iter1;
     UCharIterator iter2;
-    uiter_setUTF8(&iter1, str1, length1);
-    uiter_setUTF8(&iter2, str2, length2);
+    uiter_setUTF8(&iter1, str1, length1); /// NOLINT(clang-diagnostic-shorten-64-to-32)
+    uiter_setUTF8(&iter2, str2, length2); /// NOLINT(clang-diagnostic-shorten-64-to-32)
 
     UErrorCode status = U_ZERO_ERROR;
     UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);

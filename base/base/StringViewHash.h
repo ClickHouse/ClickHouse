@@ -297,13 +297,13 @@ struct CRC32Hash
         do
         {
             UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
-            res = static_cast<unsigned>(CRC_INT(res, word));
+            res = static_cast<unsigned>(CRC_INT(res, word)); /// NOLINT(clang-diagnostic-shorten-64-to-32)
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = static_cast<unsigned>(CRC_INT(res, word));
+        res = static_cast<unsigned>(CRC_INT(res, word)); /// NOLINT(clang-diagnostic-shorten-64-to-32)
 
         // abseil-cpp and std require hash functions to return 64-bit values,
         // though we intentionally use crc32 for the sake of speed.

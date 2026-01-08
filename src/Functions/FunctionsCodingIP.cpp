@@ -828,7 +828,7 @@ private:
         for (size_t i = 0; i < 16; ++i)
         {
             dst_lower[i] = src[i] & mask[i];
-            dst_upper[i] = dst_lower[i] | ~mask[i];
+            dst_upper[i] = static_cast<char>(dst_lower[i] | ~mask[i]);
         }
     }
 
