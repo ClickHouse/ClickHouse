@@ -438,7 +438,12 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        if failed_suits:
+        if failed_suits or is_flaky_check:
+            if not failed_suits:
+                # For flaky check, collect logs from the test suite being checked
+                failed_tests_files = [
+                    str(p) for p in Path("./tests/integration/").glob("test_*/_instances*/")
+                ]
             attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
             )
