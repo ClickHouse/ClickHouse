@@ -4,6 +4,11 @@ from praktika.utils import Utils
 from ci.defs.defs import LLVM_ARTIFACTS_LIST, LLVM_FT_NUM_BATCHES, LLVM_IT_NUM_BATCHES, ArtifactConfigs, ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
+# Keeper stress spins nested Docker inside the integration-tests-runner container.
+# Using nearly all host RAM for the outer container can starve the host runner
+# and lead to "runner lost communication". Reserve a larger margin on the host
+# by capping Keeper to ~70% of physical memory.
+KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -866,7 +871,7 @@ class JobConfigs:
             "python3 ./ci/jobs/keeper_stress_job.py"
         ),
         run_in_docker=(
-            f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+"
+            f"clickhouse/integration-tests-runner+root+--memory={KEEPER_DIND_MEM}+--privileged+--dns-search='.'+"
             f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker"
         ),
         digest_config=Job.CacheDigestConfig(

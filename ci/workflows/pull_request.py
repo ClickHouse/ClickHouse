@@ -35,6 +35,8 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 
 # Ensure Keeper stress (PR) becomes a hard gate for other tests
 KEEPER_STRESS_PR_NAME = "Keeper Stress (PR)"
+# Use Keeper as an additional blocker so dependent jobs will start only after Keeper finishes
+BLOCKERS_AFTER_KEEPER = FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES + [KEEPER_STRESS_PR_NAME]
 
 workflow = Workflow.Config(
     name="PR",
@@ -64,16 +66,16 @@ workflow = Workflow.Config(
         ),
         JobConfigs.stateless_tests_targeted_pr_jobs[0]
         .set_allow_merge_on_failure()
-        .set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES),
+        .set_dependency(BLOCKERS_AFTER_KEEPER),
         JobConfigs.integration_test_targeted_pr_jobs[0]
         .set_allow_merge_on_failure()
-        .set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES),
+        .set_dependency(BLOCKERS_AFTER_KEEPER),
         *[
-            j.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            j.set_dependency(BLOCKERS_AFTER_KEEPER)
             for j in JobConfigs.stateless_tests_flaky_pr_jobs
         ],
         *[
-            j.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            j.set_dependency(BLOCKERS_AFTER_KEEPER)
             for j in JobConfigs.integration_test_asan_flaky_pr_jobs
         ],
         JobConfigs.bugfix_validation_ft_pr_job.set_dependency(
@@ -83,19 +85,21 @@ workflow = Workflow.Config(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         *[
+            # All functional tests should wait for Keeper; the "blocking" ones
+            # do not depend on each other but still depend on Keeper.
             j.set_dependency(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                BLOCKERS_AFTER_KEEPER
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                else []
+                else [KEEPER_STRESS_PR_NAME]
             )
             for j in JobConfigs.functional_tests_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(BLOCKERS_AFTER_KEEPER)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
         *[

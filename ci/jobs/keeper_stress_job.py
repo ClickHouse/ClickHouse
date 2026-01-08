@@ -271,7 +271,11 @@ def main():
     except Exception:
         heuristic_workers = "12"
     _xd_env = (os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or "").lower()
-    xdist_workers = heuristic_workers if (_xd_env in ("", "auto")) else _xd_env
+    if _xd_env in ("", "auto"):
+        # Lower default concurrency on PRs to reduce resource pressure on self-hosted runners
+        xdist_workers = "6" if is_pr else heuristic_workers
+    else:
+        xdist_workers = _xd_env
     extra.append(f"-n {xdist_workers}")
     try:
         is_parallel = xdist_workers not in ("1", "no", "0")
@@ -429,6 +433,22 @@ def main():
         )
     except Exception:
         pass
+    # Emit periodic keepalive to avoid runner inactivity disconnects during long, quiet phases
+    keepalive_proc = None
+    try:
+        hb = int(os.environ.get("CI_HEARTBEAT_SEC", "60") or "60")
+        hb = 60 if hb < 10 else hb
+        keepalive_cmd = (
+            "bash -lc 'while true; do echo "
+            + "[keeper-keepalive] $(date -u +%Y-%m-%dT%H:%M:%SZ)" 
+            + "; sleep "
+            + str(hb)
+            + "; done'"
+        )
+        keepalive_proc = subprocess.Popen(keepalive_cmd, shell=True)
+    except Exception:
+        keepalive_proc = None
+
     # Single pytest invocation; tests parameterize across backends via KEEPER_MATRIX_BACKENDS
     results.append(
         Result.from_pytest_run(
@@ -441,6 +461,17 @@ def main():
             timeout_seconds=pytest_proc_timeout,
         )
     )
+
+    # Stop keepalive once pytest completes
+    try:
+        if keepalive_proc and keepalive_proc.poll() is None:
+            keepalive_proc.terminate()
+            try:
+                keepalive_proc.wait(timeout=5)
+            except Exception:
+                keepalive_proc.kill()
+    except Exception:
+        pass
     pytest_result_ok = results[-1].is_ok()
     # Best-effort: ensure keeper artifacts are world-readable for attachment/triage
     try:
