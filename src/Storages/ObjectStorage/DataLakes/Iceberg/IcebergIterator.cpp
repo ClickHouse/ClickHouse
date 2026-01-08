@@ -335,13 +335,31 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
-        for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
+        auto position_delete_span = defineDeletesSpan(manifest_file_entry, position_deletes_files, false);
+        for (const auto & position_delete : position_delete_span)
         {
             object_info->addPositionDeleteObject(position_delete);
         }
-        for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files, true))
+        if (position_delete_span.size())
+        {
+            LOG_INFO(
+                &Poco::Logger::get("IcebergIterator"),
+                "Got {} position delete elements for file {}",
+                position_delete_span.size(),
+                object_info->relative_path_with_metadata.relative_path);
+        }
+        auto equality_delete_span = defineDeletesSpan(manifest_file_entry, equality_deletes_files, true);
+        for (const auto & equality_delete : equality_delete_span)
         {
             object_info->addEqualityDeleteObject(equality_delete);
+        }
+        if (equality_delete_span.size())
+        {
+            LOG_INFO(
+                &Poco::Logger::get("IcebergIterator"),
+                "Got {} equality delete elements for file {}",
+                equality_delete_span.size(),
+                object_info->relative_path_with_metadata.relative_path);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
