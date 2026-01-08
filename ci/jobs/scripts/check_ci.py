@@ -137,7 +137,7 @@ Test name: {test_name}
 Failure reason: {failure_reason}
 CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
 
-Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(test_name, job_name, [failure_reason], test_output=result.info)})
+Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(test_name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```

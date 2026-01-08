@@ -590,6 +590,10 @@ class Runner:
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
+                                    pr_base_branches=[
+                                        env.BASE_BRANCH,
+                                        Settings.MAIN_BRANCH,
+                                    ],
                                 ),
                             )
                     result.dump()

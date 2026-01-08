@@ -2,7 +2,7 @@ import copy
 import dataclasses
 import json
 import urllib
-from typing import Optional
+from typing import List, Optional
 
 from ._environment import _Environment
 from .info import Info
@@ -62,6 +62,7 @@ class CIDB:
         test_output="",
         url="",
         user="",
+        pr_base_branches: Optional[List[str]] = None,
     ) -> str:
         """
         Build a link to query CI DB statistics for a specific test case.
@@ -76,6 +77,7 @@ class CIDB:
             test_output: The current test failure output to match against patterns
             url: Optional base URL (defaults to self.url)
             user: Optional username for ClickHouse Play authentication
+            pr_base_branches: Optional list of base branches to include PR runs. If provided, includes PRs targeting any of these branches. If omitted, only main branch runs are included.
 
         Pattern Matching Logic:
             - Scans test_output for first matching pattern from failure_patterns list
@@ -108,7 +110,22 @@ class CIDB:
             # Add commented placeholder for manual editing
             failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
 
-        base_git_branch = Info().base_branch or "master"
+        # Build PR filter based on pr_base_branches parameter
+        if pr_base_branches:
+            pr_base_branches = list(set(pr_base_branches))
+            # Sanitize branch names and build IN clause
+            sanitized_branches = [
+                branch.replace("'", "''") for branch in pr_base_branches
+            ]
+            branches_list = ", ".join(f"'{branch}'" for branch in sanitized_branches)
+            # Include both main branch runs and PRs targeting any of the specified base branches
+            pr_filter = (
+                f"    AND (pull_request_number = 0 OR base_ref IN ({branches_list}))"
+            )
+        else:
+            # Only include main branch runs
+            pr_filter = "    AND pull_request_number = 0"
+
         query = f"""\
 WITH
     90 AS interval_days
@@ -122,7 +139,7 @@ WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
     -- AND check_name = '{jn}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND (pull_request_number = 0 OR base_ref = '{base_git_branch}')
+{pr_filter}
 {failure_filter}
 GROUP BY day
 ORDER BY day DESC
