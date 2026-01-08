@@ -20,7 +20,8 @@ def finalize_pytest_result(result: Result) -> Result:
     attached_files = [
         Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
     ]
-
+    result.set_files(attached_files)
+    return result
 
     test_results = []
     failed_tests_files = []
