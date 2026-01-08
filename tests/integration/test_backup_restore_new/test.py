@@ -1139,8 +1139,17 @@ def test_skip_rmv_backup():
     instance.query(
         f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
     )
+
+    assert not os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+
     instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
     instance.query("SYSTEM REFRESH VIEW restored.view")
+    instance.query("SYSTEM WAIT VIEW restored.view")
 
     assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
 
