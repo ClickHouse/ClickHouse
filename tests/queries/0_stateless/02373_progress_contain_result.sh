@@ -6,4 +6,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo 'SELECT 1 FROM numbers(100)' |
   ${CLICKHOUSE_CURL_COMMAND} -vsS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&send_progress_in_http_headers=0" --data-binary @- 2>&1 |
-  grep 'X-ClickHouse-Summary' | sed 's/,\"elapsed_ns[^}]*//'
+  grep 'X-ClickHouse-Summary' | sed -E 's/,\"elapsed_ns[^}]*//;s/,\"cpu_time_us[^}]*//'

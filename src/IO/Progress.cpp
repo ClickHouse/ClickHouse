@@ -112,6 +112,7 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
     write("\"result_rows\"", result_rows);
     write("\"result_bytes\"", result_bytes);
     write("\"elapsed_ns\"", elapsed_ns);
+    write("\"cpu_time_us\"", cpu_time_us);
     write("\"memory_usage\"", memory_usage);
     writeCString("}", out);
 }
@@ -131,6 +132,8 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     result_bytes += rhs.result_bytes;
 
     elapsed_ns += rhs.elapsed_ns;
+
+    cpu_time_us += rhs.cpu_time_us;
 
     memory_usage += rhs.memory_usage;
 
@@ -153,6 +156,8 @@ void Progress::reset()
 
     elapsed_ns = 0;
 
+    cpu_time_us = 0;
+
     memory_usage = 0;
 }
 
@@ -173,6 +178,8 @@ ProgressValues Progress::getValues() const
     res.result_bytes = result_bytes.load(std::memory_order_relaxed);
 
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
+
+    res.cpu_time_us = cpu_time_us.load(std::memory_order_relaxed);
 
     res.memory_usage = memory_usage.load(std::memory_order_relaxed);
 
@@ -197,6 +204,8 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
 
+    res.cpu_time_us = cpu_time_us.fetch_and(0);
+
     res.memory_usage = memory_usage.fetch_and(0);
 
     return res;
@@ -220,6 +229,8 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
 
+    res.cpu_time_us = cpu_time_us.fetch_and(0);
+
     res.memory_usage = memory_usage.fetch_and(0);
 
     return res;
@@ -240,6 +251,8 @@ Progress & Progress::operator=(Progress && other) noexcept
     result_bytes = other.result_bytes.load(std::memory_order_relaxed);
 
     elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
+
+    cpu_time_us = other.cpu_time_us.load(std::memory_order_relaxed);
 
     memory_usage = other.memory_usage.load(std::memory_order_relaxed);
 

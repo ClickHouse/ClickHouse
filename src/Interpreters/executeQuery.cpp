@@ -569,6 +569,7 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
 static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pulling_pipeline, const ProgressCallback & progress_callback, QueryStatusPtr process_list_elem)
 {
     ResultProgress res(0, 0, 0);
+    UInt64 cpu_time_us = 0;
 
     if (pulling_pipeline)
     {
@@ -583,7 +584,17 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
 
     /// Report same memory_usage in X-ClickHouse-Summary as in query_log
     if (process_list_elem)
-        res.memory_usage = std::max<Int64>(process_list_elem->getInfo().peak_memory_usage, 0);
+    {
+        auto info = process_list_elem->getInfo(false, true, false);
+        res.memory_usage = std::max<Int64>(info.peak_memory_usage, 0);
+
+        if (info.profile_counters)
+        {
+            cpu_time_us = (*info.profile_counters)[ProfileEvents::UserTimeMicroseconds]
+                + (*info.profile_counters)[ProfileEvents::SystemTimeMicroseconds];
+        }
+        res.cpu_time_us = cpu_time_us;
+    }
 
     if (progress_callback)
     {
