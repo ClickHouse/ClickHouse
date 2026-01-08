@@ -752,6 +752,10 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
+    
+    if (TARGET ch_contrib::simdcomp)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
+    endif()
 
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
