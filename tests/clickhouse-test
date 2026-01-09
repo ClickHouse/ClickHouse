@@ -1601,6 +1601,7 @@ class TestCase:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
         if new_options != "":
+            new_options += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 self.base_client_options + new_options + " "
             )
@@ -1610,7 +1611,10 @@ class TestCase:
                 self.base_client_options + client_options + " "
             )
 
-        return client_options + new_options + " --allow_repeated_settings"
+        current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        return client_options + new_options
 
     def remove_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
