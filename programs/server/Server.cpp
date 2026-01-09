@@ -305,6 +305,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
@@ -1369,6 +1370,7 @@ try
 
     MemoryWorker memory_worker(
         server_settings[ServerSetting::memory_worker_period_ms],
+        server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
         server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup],
         global_context->getPageCache());

@@ -987,6 +987,8 @@ struct ContextSharedPart : boost::noncopyable
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
             zookeeper.reset();
         }
 
@@ -2621,7 +2623,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            const auto * expression = expression_list.begin();
+            auto expression = expression_list.begin();
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
