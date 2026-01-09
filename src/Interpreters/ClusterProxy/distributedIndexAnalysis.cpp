@@ -190,13 +190,10 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
     return res;
 }
 
-ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
+ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
-    if (!query_info.filter_actions_dag)
-        return nullptr;
-
     NameSet primary_key_columns_names_set(primary_key_column_names.begin(), primary_key_column_names.end());
-    ASTPtr predicate = tryBuildAdditionalFilterAST(*query_info.filter_actions_dag,
+    ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
         /*projection_names=*/ primary_key_columns_names_set,
         /*execution_name_to_projection_query_tree=*/ {},
         /*external_tables=*/ external_tables,
@@ -214,7 +211,7 @@ namespace DB
 
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
-    const SelectQueryInfo & query_info,
+    const ActionsDAG * filter_actions_dag,
     const Names & primary_key_column_names,
     const RangesInDataParts & parts_with_ranges,
     LocalIndexAnalysisCallback local_index_analysis_callback,
@@ -262,8 +259,14 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     ContextMutablePtr execution_context = Context::createCopy(context);
     auto external_tables = execution_context->getExternalTables();
-    auto filter_ast = getFilterAST(query_info, primary_key_column_names, execution_context, &external_tables);
-    auto filter_query = filter_ast ? std::make_optional<std::string>(filter_ast->formatWithSecretsOneLine()) : std::nullopt;
+
+    std::optional<std::string> filter_query = std::nullopt;
+    if (filter_actions_dag)
+    {
+        auto filter_ast = getFilterAST(*filter_actions_dag, primary_key_column_names, execution_context, &external_tables);
+        if (filter_ast)
+            filter_query = filter_ast->formatWithSecretsOneLine();
+    }
 
     ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
                     CurrentMetrics::DistributedIndexAnalysisThreadsActive,

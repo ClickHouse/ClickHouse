@@ -12,7 +12,7 @@ namespace DB
 
 struct RangesInDataParts;
 struct StorageID;
-struct SelectQueryInfo;
+class ActionsDAG;
 
 /// <part_name, ranges>
 using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
@@ -28,7 +28,7 @@ using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const 
 /// For local replica uses LocalIndexAnalysisCallback (can be called multiple times).
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
-    const SelectQueryInfo & query_info,
+    const ActionsDAG * filter_actions_dag,
     const Names & primary_key_column_names,
     const RangesInDataParts & parts_with_ranges,
     LocalIndexAnalysisCallback local_index_analysis_callback,
