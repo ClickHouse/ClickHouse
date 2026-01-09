@@ -36,6 +36,7 @@ def _f_session_churn(ctx, nodes, leader, step):
     launch_interval = 1.0 / max(0.1, rate)
     lock = threading.Lock()
     active = []
+    sem = threading.Semaphore(max(1, clients))
 
     def _one_iter():
         zk = None
@@ -65,22 +66,30 @@ def _f_session_churn(ctx, nodes, leader, step):
                     zk.close()
             except Exception:
                 pass
+            try:
+                sem.release()
+            except Exception:
+                pass
 
     def _launcher():
         next_at = time.time()
         while time.time() < stop_ts:
             now = time.time()
             if now >= next_at:
-                th = threading.Thread(target=_one_iter, daemon=True)
-                th.start()
-                with lock:
-                    active.append(th)
-                next_at = now + launch_interval
+                # Launch only if we can acquire a slot; otherwise back off briefly
+                if sem.acquire(blocking=False):
+                    th = threading.Thread(target=_one_iter, daemon=True)
+                    th.start()
+                    with lock:
+                        active.append(th)
+                    next_at = now + launch_interval
+                else:
+                    next_at = now + min(0.1, launch_interval)
             else:
                 time.sleep(min(0.05, next_at - now))
 
     launchers = []
-    launcher_threads = max(1, min(clients, int(clients)))
+    launcher_threads = 1
     for _ in range(launcher_threads):
         t = threading.Thread(target=_launcher, daemon=True)
         t.start()

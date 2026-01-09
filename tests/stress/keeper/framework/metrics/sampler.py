@@ -54,6 +54,7 @@ class MetricsSampler:
                             continue
                         self._metrics_ts_rows.append(
                             {
+                                "ts": int(time.time()),
                                 "run_id": self.run_id,
                                 "commit_sha": self.run_meta.get("commit_sha", "local"),
                                 "backend": self.run_meta.get("backend", "default"),
@@ -88,6 +89,7 @@ class MetricsSampler:
                 for nm, val in ("lines", d_lines), ("bytes", d_bytes):
                     self._metrics_ts_rows.append(
                         {
+                            "ts": int(time.time()),
                             "run_id": self.run_id,
                             "commit_sha": self.run_meta.get("commit_sha", "local"),
                             "backend": self.run_meta.get("backend", "default"),
@@ -119,6 +121,7 @@ class MetricsSampler:
                         continue
                     self._metrics_ts_rows.append(
                         {
+                            "ts": int(time.time()),
                             "run_id": self.run_id,
                             "commit_sha": self.run_meta.get("commit_sha", "local"),
                             "backend": self.run_meta.get("backend", "default"),
@@ -153,6 +156,7 @@ class MetricsSampler:
                     lj = r.get("labels_json", "{}")
                     self._metrics_ts_rows.append(
                         {
+                            "ts": int(time.time()),
                             "run_id": self.run_id,
                             "commit_sha": self.run_meta.get("commit_sha", "local"),
                             "backend": self.run_meta.get("backend", "default"),

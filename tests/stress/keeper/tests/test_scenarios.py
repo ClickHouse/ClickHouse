@@ -65,6 +65,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                     continue
                 metrics_ts_rows.append(
                     {
+                        "ts": int(time.time()),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -92,6 +93,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                 lj = r.get("labels_json", "{}")
                 metrics_ts_rows.append(
                     {
+                        "ts": int(time.time()),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -116,6 +118,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                     val = 0.0
                 metrics_ts_rows.append(
                     {
+                        "ts": int(time.time()),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -140,6 +143,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                     val = 0.0
                 metrics_ts_rows.append(
                     {
+                        "ts": int(time.time()),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -168,6 +172,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
             pass
         if sink_url:
             sink_clickhouse(sink_url, "keeper_metrics_ts", metrics_ts_rows)
+    return metrics_ts_rows
 
 
 def _print_local_metrics(nodes, run_id, scenario_id, topo, run_meta, ctx, bench_summary):
@@ -372,9 +377,9 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         single_leader(nodes)
         leader = [n for n in nodes if is_leader(n)][0]
         sink_url = "ci" if (has_ci_sink() or os.environ.get("KEEPER_METRICS_FILE")) else ""
-        _snapshot_and_sink(
+        pre_rows = _snapshot_and_sink(
             nodes, "pre", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
-        )
+        ) or []
         ctx["cluster"] = cluster
         try:
             ctx["faults_mode"] = request.config.getoption("--faults")
@@ -577,6 +582,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                         continue
                     rows.append(
                         {
+                            "ts": int(time.time()),
                             "run_id": run_id,
                             "commit_sha": run_meta_eff.get("commit_sha", "local"),
                             "backend": run_meta_eff.get("backend", "default"),
@@ -591,6 +597,23 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                         }
                     )
                 if rows:
+                    rows.append(
+                        {
+                            "ts": int(time.time()),
+                            "run_id": run_id,
+                            "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                            "backend": run_meta_eff.get("backend", "default"),
+                            "scenario": scenario.get("id", ""),
+                            "topology": topo,
+                            "node": "bench",
+                            "stage": "summary",
+                            "source": "bench",
+                            "name": "bench_ran",
+                            "value": 1.0,
+                            "labels_json": "{}",
+                        }
+                    )
+                    bench_ran_flag = True
                     try:
                         print("[keeper][push-metrics] begin")
                         for rr in rows:
@@ -607,9 +630,98 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             pass
         for gate in scenario.get("gates", []):
             _apply_gate(gate, nodes, leader, ctx, summary)
-        _snapshot_and_sink(
+        post_rows = _snapshot_and_sink(
             nodes, "post", scenario.get("id", ""), topo, run_meta_eff, sink_url, run_id
-        )
+        ) or []
+        try:
+            def _pick(rows, source, name):
+                res = {}
+                for r in rows:
+                    try:
+                        if r.get("source") == source and r.get("name") == name:
+                            res[(r.get("node") or "")] = float(r.get("value") or 0)
+                    except Exception:
+                        continue
+                return res
+            pre_zn = _pick(pre_rows, "mntr", "zk_znode_count")
+            pre_ep = _pick(pre_rows, "mntr", "zk_ephemerals_count")
+            pre_wc = _pick(pre_rows, "mntr", "zk_watch_count")
+            pre_db = _pick(pre_rows, "dirs", "bytes")
+            post_zn = _pick(post_rows, "mntr", "zk_znode_count")
+            post_ep = _pick(post_rows, "mntr", "zk_ephemerals_count")
+            post_wc = _pick(post_rows, "mntr", "zk_watch_count")
+            post_db = _pick(post_rows, "dirs", "bytes")
+            nodes_names = sorted({*pre_zn.keys(), *pre_ep.keys(), *pre_wc.keys(), *pre_db.keys(), *post_zn.keys(), *post_ep.keys(), *post_wc.keys(), *post_db.keys()})
+            derived = []
+            tot = {"znode": 0.0, "ephem": 0.0, "watch": 0.0, "dirs_bytes": 0.0}
+            for nn in nodes_names:
+                dz = (post_zn.get(nn, 0.0) - pre_zn.get(nn, 0.0))
+                de = (post_ep.get(nn, 0.0) - pre_ep.get(nn, 0.0))
+                dw = (post_wc.get(nn, 0.0) - pre_wc.get(nn, 0.0))
+                db = (post_db.get(nn, 0.0) - pre_db.get(nn, 0.0))
+                for key, val in (("delta_znode_count", dz), ("delta_ephemerals_count", de), ("delta_watch_count", dw), ("delta_dirs_bytes", db)):
+                    derived.append({
+                        "ts": int(time.time()),
+                        "run_id": run_id,
+                        "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                        "backend": run_meta_eff.get("backend", "default"),
+                        "scenario": scenario.get("id", ""),
+                        "topology": topo,
+                        "node": nn,
+                        "stage": "summary",
+                        "source": "derived",
+                        "name": key,
+                        "value": float(val),
+                        "labels_json": "{}",
+                    })
+                tot["znode"] += dz
+                tot["ephem"] += de
+                tot["watch"] += dw
+                tot["dirs_bytes"] += db
+            for key, val in (("total_delta_znode_count", tot["znode"]), ("total_delta_ephemerals_count", tot["ephem"]), ("total_delta_watch_count", tot["watch"]), ("total_delta_dirs_bytes", tot["dirs_bytes"])):
+                derived.append({
+                    "ts": int(time.time()),
+                    "run_id": run_id,
+                    "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                    "backend": run_meta_eff.get("backend", "default"),
+                    "scenario": scenario.get("id", ""),
+                    "topology": topo,
+                    "node": "all",
+                    "stage": "summary",
+                    "source": "derived",
+                    "name": key,
+                    "value": float(val),
+                    "labels_json": "{}",
+                })
+            if sink_url and derived:
+                sink_clickhouse(sink_url, "keeper_metrics_ts", derived)
+        except Exception:
+            pass
+        try:
+            bench_expected = (faults_mode != "random" and "workload" in scenario and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD"))) or parse_bool(os.environ.get("KEEPER_FORCE_BENCH"))
+            if bench_expected and not bench_ran_flag:
+                print(f"[keeper][bench-check] bench did not run for scenario={scenario.get('id','')} backend={backend}")
+        except Exception:
+            pass
+        if sink_url and not bench_ran_flag:
+            try:
+                row = {
+                    "ts": int(time.time()),
+                    "run_id": run_id,
+                    "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                    "backend": run_meta_eff.get("backend", "default"),
+                    "scenario": scenario.get("id", ""),
+                    "topology": topo,
+                    "node": "bench",
+                    "stage": "summary",
+                    "source": "bench",
+                    "name": "bench_ran",
+                    "value": 0.0,
+                    "labels_json": "{}",
+                }
+                sink_clickhouse(sink_url, "keeper_metrics_ts", [row])
+            except Exception:
+                pass
         # per-test checks insertion is handled by praktika post-run
     except Exception:
         # Emit minimal reproducible scenario to a file for debugging
