@@ -787,9 +787,6 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     else
         resize = std::make_shared<ResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
 
-    if (memory_dependent)
-        resize = std::make_shared<MemoryDependentResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
-
     addTransform(std::move(resize));
 }
 

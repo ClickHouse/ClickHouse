@@ -1,14 +1,6 @@
 #include <Processors/ResizeProcessor.h>
-#include <Interpreters/Squashing.h>
-#include <Common/CurrentThread.h>
-#include <Common/ProfileEvents.h>
 
 #include <Processors/Port.h>
-
-namespace ProfileEvents
-{
-    extern const Event InsertPipelineShrinking;
-}
 
 namespace DB
 {
@@ -174,14 +166,12 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     return get_status_if_no_inputs();
 }
 
-IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
-    /// 1) One-time init
     if (!initialized)
     {
         initialized = true;
 
-        /// Build input_ports / output_ports
         input_ports.reserve(inputs.size());
         for (auto & input : inputs)
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
@@ -191,17 +181,8 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
 
-    /// 2) Possibly do concurrency logic (virtual call)
-    if (can_be_shrinked)
-        concurrencyControlLogic();
-
-    /// 3) Check updated outputs
     for (const auto & output_number : updated_outputs)
     {
-        // If the derived class has "disabled" an output, skip
-        if (output_number < is_output_enabled.size() && !is_output_enabled[output_number])
-            continue;
-
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
         {
@@ -224,7 +205,6 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
         }
     }
 
-    /// 4) Trigger reading upstream if we have waiting outputs
     if (!is_reading_started && !waiting_outputs.empty())
     {
         for (auto & input : inputs)
@@ -232,7 +212,6 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
         is_reading_started = true;
     }
 
-    /// 5) If all outputs finished => we are done
     if (num_finished_outputs == outputs.size())
     {
         for (auto & input : inputs)
@@ -241,7 +220,6 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
         return Status::Finished;
     }
 
-    /// 6) Process updated inputs
     for (const auto & input_number : updated_inputs)
     {
         auto & input = input_ports[input_number];
@@ -265,19 +243,10 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
         }
     }
 
-    /// 7) Match waiting outputs with inputs_with_data
     while (!waiting_outputs.empty() && !inputs_with_data.empty())
     {
-        const auto out_idx = waiting_outputs.front();
+        auto & waiting_output = output_ports[waiting_outputs.front()];
         waiting_outputs.pop();
-
-        // If the output got disabled in the meantime or it finished, skip it
-        if (out_idx < is_output_enabled.size() && !is_output_enabled[out_idx])
-            continue;
-
-        auto & waiting_output = output_ports[out_idx];
-        if (waiting_output.port->isFinished())
-            continue;
 
         auto & input_with_data = input_ports[inputs_with_data.front()];
         inputs_with_data.pop();
@@ -293,7 +262,6 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
         }
     }
 
-    /// 8) If all inputs are finished => finish all outputs
     if (num_finished_inputs == inputs.size())
     {
         for (auto & output : outputs)
@@ -302,7 +270,6 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
         return Status::Finished;
     }
 
-    /// 9) If we still have outputs wanting data => NeedData
     if (!waiting_outputs.empty())
         return Status::NeedData;
 
@@ -473,62 +440,6 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         return Status::NeedData;
 
     return Status::PortFull;
-}
-
-// Helper method to count how many outputs are active
-size_t MemoryDependentResizeProcessor::countActiveOutputs() const
-{
-    size_t active = 0;
-    for (size_t i = 0; i < output_ports.size(); ++i)
-    {
-        if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
-            ++active;
-    }
-    return active;
-}
-
-IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
-{
-    // Real definition here, or if you just want to delegate:
-    return prepareWithQueues(updated_inputs, updated_outputs);
-}
-
-bool MemoryDependentResizeProcessor::checkMemory()
-{
-    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
-    {
-        while (auto * mem_tracker = memory_tracker_child->getParent())
-        {
-            Int64 used_memory = mem_tracker->get();
-            Int64 hard_limit = mem_tracker->getHardLimit();
-
-            if (used_memory >= hard_limit * 0.85)
-                return true;
-            memory_tracker_child = mem_tracker;
-        }
-    }
-    return false;
-}
-
-void MemoryDependentResizeProcessor::concurrencyControlLogic()
-{
-    if (checkMemory())
-    {
-        // Count how many are currently active
-        size_t current_active = countActiveOutputs();
-
-        size_t to_disable = current_active - 1;
-        for (size_t i = 0; i < output_ports.size() && to_disable > 0; ++i)
-        {
-            if (is_output_enabled[i] && !output_ports[i].port->isFinished())
-            {
-                is_output_enabled[i] = false;
-                to_disable--;
-            }
-        }
-        ::ProfileEvents::increment(ProfileEvents::InsertPipelineShrinking);
-        can_be_shrinked = false;
-    }
 }
 
 }
