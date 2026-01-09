@@ -1,10 +1,9 @@
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
+#include <Common/quoteString.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageMergeTree.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -49,15 +48,12 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
 
-    if (is_readonly_query)
-        return;
-
-    /// Do not allow transactions with replicated tables or MergeTree tables anyway (unless it's a readonly SELECT query)
+    /// Do not allow transactions with ReplicatedMergeTree anyway (unless it's a readonly SELECT query)
     /// because it may try to process transaction on MergeTreeData-level,
-    /// but then fail with a logical error or something on Storage{Replicated,Shared}MergeTree-level.
-    if (storage->supportsReplication() || dynamic_cast<StorageMergeTree *>(storage.get()) != nullptr)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} (table {}) does not support transactions",
-                        storage->getName(), storage->getStorageID().getNameForLogs());
+    /// but then fail with a logical error or something on StorageReplicatedMergeTree-level.
+    if (!is_readonly_query && storage->supportsReplication())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReplicatedMergeTree (table {}) does not support transactions",
+                        storage->getStorageID().getNameForLogs());
 }
 
 }

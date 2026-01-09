@@ -17,6 +17,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Client/IConnections.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -42,8 +43,6 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
-    extern const SettingsBool serialize_query_plan;
-    extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 
 namespace ErrorCodes
@@ -110,10 +109,12 @@ ASTPtr rewriteSelectQuery(
 
 
 SelectStreamFactory::SelectStreamFactory(
-    SharedHeader header_,
+    const Block & header_,
+    const ColumnsDescriptionByShardNum & objects_by_shard_,
     const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_)
     : header(header_),
+    objects_by_shard(objects_by_shard_),
     storage_snapshot(storage_snapshot_),
     processed_stage(processed_stage_)
 {
@@ -131,6 +132,10 @@ void SelectStreamFactory::createForShard(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
+    auto it = objects_by_shard.find(shard_info.shard_num);
+    if (it != objects_by_shard.end())
+        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
+
     createForShardImpl(
         shard_info,
         query_ast,
@@ -156,47 +161,32 @@ void SelectStreamFactory::createForShardImpl(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator) const
+    AdditionalShardFilterGenerator shard_filter_generator,
+    bool has_missing_objects)
 {
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
     auto emplace_remote_stream = [&](bool lazy = false)
     {
-        SharedHeader shard_header;
+        Block shard_header;
         PlannerContextPtr planner_context;
-        std::unique_ptr<QueryPlan> query_plan;
-
-        const auto & settings = context->getSettingsRef();
-
-        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
-        /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
-        {
-            query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
-
-            shard_header = query_plan->getCurrentHeader();
-        }
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
-        {
-            if (settings[Setting::allow_experimental_analyzer])
-                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
-            else
-                shard_header = header;
-        }
+            shard_header = header;
 
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .query_tree = query_tree,
             .planner_context = planner_context,
-            .query_plan = std::move(query_plan),
             .main_table = main_table,
             .header = shard_header,
+            .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
             .shard_filter_generator = std::move(shard_filter_generator),
@@ -318,10 +308,20 @@ void SelectStreamFactory::createForShard(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
+
+    auto it = objects_by_shard.find(shard_info.shard_num);
+    QueryTreeNodePtr modified_query = query_tree;
+
+    bool has_missing_objects = false;
+    if (it != objects_by_shard.end())
+        has_missing_objects = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
+
+    auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
+
     createForShardImpl(
         shard_info,
-        queryNodeToDistributedSelectQuery(query_tree),
-        query_tree,
+        query_ast,
+        modified_query,
         main_table,
         table_func_ptr,
         std::move(context),
@@ -329,7 +329,9 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
-        std::move(shard_filter_generator));
+        std::move(shard_filter_generator),
+        has_missing_objects);
+
 }
 
 

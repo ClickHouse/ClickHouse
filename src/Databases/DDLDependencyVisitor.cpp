@@ -1,21 +1,18 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
@@ -47,18 +44,10 @@ namespace
         }
 
         /// Acquire the result of visiting the create query.
-        TableNamesSet getDependencies()
+        TableNamesSet getDependencies() &&
         {
             dependencies.erase(table_name);
-            return dependencies;
-        }
-        std::optional<StorageID> getMvToDependency()
-        {
-            return mv_to_dependency;
-        }
-        std::optional<StorageID> getMvFromDependency()
-        {
-            return mv_from_dependency;
+            return std::move(dependencies);
         }
 
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
@@ -95,8 +84,6 @@ namespace
         ContextPtr global_context;
         TableNamesSet dependencies;
         bool can_throw;
-        std::optional<StorageID> mv_to_dependency;
-        std::optional<StorageID> mv_from_dependency;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
@@ -105,31 +92,15 @@ namespace
             {
                 for (const auto & target : create.targets->targets)
                 {
-                    if (target.kind == ViewTarget::Kind::To)
+                    const auto & table_id = target.table_id;
+                    if (!table_id.table_name.empty())
                     {
-                        const auto & table_id = target.table_id;
-                        if (!table_id.table_name.empty())
-                        {
-                            mv_to_dependency = table_id;
-                            if (mv_to_dependency->database_name.empty())
-                                mv_to_dependency->database_name = current_database;
-                            dependencies.emplace(mv_to_dependency->getQualifiedName());
-                        }
-                        else
-                        {
-                            mv_to_dependency = StorageID{table_name.database, table_name.table, create.uuid};
-                            mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
-                            mv_to_dependency->uuid = target.inner_uuid;
-                        }
+                        /// TO target_table (for materialized views)
+                        QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                        if (target_name.database.empty())
+                            target_name.database = current_database;
+                        dependencies.emplace(target_name);
                     }
-                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
-                    {
-                        mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
-                        mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
-                    }
-
-                    if (mv_to_dependency && mv_to_dependency->database_name.empty())
-                        mv_to_dependency->database_name = current_database;
                 }
             }
 
@@ -144,29 +115,8 @@ namespace
 
             /// Visit nested select query only for views, for other cases it's not
             /// an actual dependency as it will be executed only once to fill the table.
-            if (create.select)
-            {
-                if (create.isView())
-                {
-                    if (create.is_materialized_view)
-                    {
-                        auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
-
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
-                        if (!select_query.select_table_id.empty())
-                        {
-                            mv_from_dependency = select_query.select_table_id;
-
-                            /// Keepeing UUID is problematic
-                            mv_from_dependency->uuid = UUIDHelpers::Nil;
-                        }
-                    }
-                }
-                else
-                    skip_asts.insert(create.select);
-            }
-
+            if (create.select && !create.isView())
+                skip_asts.insert(create.select);
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -207,7 +157,6 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
-            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 
@@ -246,15 +195,6 @@ namespace
             /// Distributed(cluster_name, db_name, table_name, ...)
             if (table_engine.name == "Distributed")
                 visitDistributedTableEngine(table_engine);
-
-            /// Alias(table_name) or Alias(db_name, table_name)
-            if (table_engine.name == "Alias" && table_engine.arguments)
-            {
-                if (table_engine.arguments->children.size() == 1)
-                    addQualifiedNameFromArgument(table_engine, 0);
-                else
-                    addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
-            }
         }
 
         /// Distributed(cluster_name, database_name, table_name, ...)
@@ -387,32 +327,34 @@ namespace
 
             const auto & arg = args[arg_idx];
 
-            if (const auto * id = arg->as<ASTIdentifier>())
-                return id->name();
-
-            if (const auto * literal = arg->as<ASTLiteral>())
+            if (evaluate)
             {
-                if (literal->value.getType() == Field::Types::String)
+                try
+                {
+                    /// We're just searching for dependencies here, it's not safe to execute subqueries now.
+                    /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
+                    ContextMutablePtr global_context_copy = Context::createCopy(global_context);
+                    global_context_copy->setCurrentDatabase(current_database);
+                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
+                    const auto * literal = evaluated->as<ASTLiteral>();
+                    if (!literal || (literal->value.getType() != Field::Types::String))
+                        return {};
                     return literal->value.safeGet<String>();
-            }
-
-            if (!evaluate)
-                return {};
-
-            try
-            {
-                /// We're just searching for dependencies here, it's not safe to execute subqueries now.
-                /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
-                ContextMutablePtr global_context_copy = Context::createCopy(global_context);
-                global_context_copy->setCurrentDatabase(current_database);
-                auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
-                const auto * literal = evaluated->as<ASTLiteral>();
-                if (!literal || (literal->value.getType() != Field::Types::String))
+                }
+                catch (...)
+                {
                     return {};
-                return literal->value.safeGet<String>();
+                }
             }
-            catch (...)
+            else
             {
+                if (const auto * id = arg->as<ASTIdentifier>())
+                    return id->name();
+                if (const auto * literal = arg->as<ASTLiteral>())
+                {
+                    if (literal->value.getType() == Field::Types::String)
+                        return literal->value.safeGet<String>();
+                }
                 return {};
             }
         }
@@ -552,12 +494,12 @@ namespace
 }
 
 
-CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
+TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
 {
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
-    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
+    return std::move(data).getDependencies();
 }
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)

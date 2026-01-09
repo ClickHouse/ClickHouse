@@ -1,9 +1,9 @@
 #include "config.h"
 
-#include <Dictionaries/DictionarySourceFactory.h>
+#include "DictionarySourceFactory.h"
 #if USE_MONGODB
-#include <Dictionaries/MongoDBDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "MongoDBDictionarySource.h"
+#include "DictionaryStructure.h"
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
@@ -35,7 +35,7 @@ namespace ErrorCodes
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
-    auto create_dictionary_source = [](const String & /*name*/,
+    auto create_dictionary_source = [](
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
@@ -96,10 +96,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         configuration->checkHosts(context);
 
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
+        return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::move(sample_block));
     };
     #else
-    auto create_dictionary_source = [](const String & /*name*/,
+    auto create_dictionary_source = [](
         const DictionaryStructure & /* dict_struct */,
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* root_config_prefix */,
@@ -123,7 +123,7 @@ static const UInt64 max_block_size = 8192;
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<MongoDBConfiguration> configuration_,
-    SharedHeader sample_block_)
+    Block sample_block_)
     : dict_struct{dict_struct_}
     , configuration{configuration_}
     , sample_block{sample_block_}
@@ -137,14 +137,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-BlockIO MongoDBDictionarySource::loadAll()
+QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
-    return io;
+    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(), mongocxx::options::find(), sample_block, max_block_size));
 }
 
-BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -153,13 +151,11 @@ BlockIO MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
     for (const auto & id : ids)
         ids_array.append(static_cast<Int64>(id));
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array)))), mongocxx::options::find(), sample_block, max_block_size));
-    return io;
+    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array)))), mongocxx::options::find(), sample_block, max_block_size));
 }
 
 
-BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -185,16 +181,14 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std
             else if (type.isInt())
                 key.append(make_document(kvp(dict_key.name, key_columns[i]->getInt(row))));
             else if (type.isString())
-                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row))));
+                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row).toString())));
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type '{}' of key in MongoDB dictionary", dict_key.type->getName());
         }
         keys.append(make_document(kvp("$and", key)));
     }
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp("$or", keys)), mongocxx::options::find(), sample_block, max_block_size));
-    return io;
+    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp("$or", keys)), mongocxx::options::find(), sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const

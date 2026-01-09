@@ -1,5 +1,0 @@
-<clickhouse>
-    <macros>
-        <autocluster>test_auto_cluster</autocluster>
-    </macros>
-</clickhouse>

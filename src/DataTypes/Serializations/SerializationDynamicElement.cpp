@@ -26,7 +26,6 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant;
     ColumnPtr shared_variant;
-    size_t shared_variant_size = 0;
 
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -128,7 +127,6 @@ void SerializationDynamicElement::serializeBinaryBulkWithMultipleStreams(const I
 
 void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -154,7 +152,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            result_column, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
+            result_column, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
     }
     /// Otherwise, read the shared variant column and extract requested type from it.
@@ -162,16 +160,11 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::DynamicData);
         /// Initialize shared_variant column if needed.
-        if (result_column->empty() || !dynamic_element_state->shared_variant)
-        {
+        if (result_column->empty())
             dynamic_element_state->shared_variant = makeNullable(ColumnDynamic::getSharedVariantDataType()->createColumn());
-            dynamic_element_state->shared_variant_size = 0;
-        }
-
+        size_t prev_size = result_column->size();
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
-            dynamic_element_state->shared_variant, rows_offset, limit, settings, dynamic_element_state->variant_element_state, cache);
-        size_t prev_shared_variant_size = dynamic_element_state->shared_variant_size;
-        dynamic_element_state->shared_variant_size = dynamic_element_state->shared_variant->size();
+            dynamic_element_state->shared_variant, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
 
         /// If we need to read a subcolumn from variant column, create an empty variant column, fill it and extract subcolumn.
@@ -201,12 +194,12 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         const auto & shared_null_map = nullable_shared_variant.getNullMapData();
         const auto & shared_variant = assert_cast<const ColumnString &>(nullable_shared_variant.getNestedColumn());
         const FormatSettings format_settings;
-        for (size_t i = prev_shared_variant_size; i != shared_variant.size(); ++i)
+        for (size_t i = prev_size; i != shared_variant.size(); ++i)
         {
             if (!shared_null_map[i])
             {
                 auto value = shared_variant.getDataAt(i);
-                ReadBufferFromMemory buf(value);
+                ReadBufferFromMemory buf(value.data, value.size);
                 auto type = decodeDataType(buf);
                 if (type->getName() == dynamic_element_name)
                 {
