@@ -227,7 +227,7 @@ def check_convert_all_dbs_to_atomic():
     node.restart_clickhouse()
 
     assert (
-        ".o r d i n a r y.\natomic\ndefault\ndefault2\nordinary\nother\nsystem\n"
+        ".o r d i n a r y.\natomic\ndefault\nordinary\nother\nsystem\n"
         == node.query(
             "SELECT name FROM system.databases WHERE engine='Atomic' ORDER BY name"
         )
