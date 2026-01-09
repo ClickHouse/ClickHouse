@@ -79,8 +79,8 @@ using namespace Iceberg;
 
 namespace
 {
-std::span<const ManifestFileEntry>
-defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects, bool is_equality_delete)
+std::span<const ManifestFileEntry> defineDeletesSpan(
+    ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects, bool is_equality_delete, LoggerPtr logger)
 {
     ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -115,13 +115,17 @@ defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFile
         auto previous_it = end_it;
         --previous_it;
         LOG_DEBUG(
-            &Poco::Logger::get("IcebergIterator"),
+            logger,
             "Got {} {} delete elements for data file {}, first taken object info is {}, last taken object info is {}",
             static_cast<size_t>(end_it - beg_it),
             is_equality_delete ? "equality" : "position",
             data_object_.file_path,
             beg_it->dumpDeletesMatchingInfo(),
             end_it->dumpDeletesMatchingInfo());
+    }
+    else
+    {
+        LOG_DEBUG(logger, "No {} delete elements for data file {}", is_equality_delete ? "equality" : "position", data_object_.file_path);
     }
     return {beg_it, end_it};
 }
@@ -258,7 +262,8 @@ IcebergIterator::IcebergIterator(
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
-    : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
+    : logger(getLogger("IcebergIterator"))
+    , filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , table_state_snapshot(table_snapshot_)
     , persistent_components(persistent_components_)
@@ -348,12 +353,12 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
-        auto position_delete_span = defineDeletesSpan(manifest_file_entry, position_deletes_files, false);
+        auto position_delete_span = defineDeletesSpan(manifest_file_entry, position_deletes_files, false, logger);
         for (const auto & position_delete : position_delete_span)
         {
             object_info->addPositionDeleteObject(position_delete);
         }
-        auto equality_delete_span = defineDeletesSpan(manifest_file_entry, equality_deletes_files, true);
+        auto equality_delete_span = defineDeletesSpan(manifest_file_entry, equality_deletes_files, true, logger);
         for (const auto & equality_delete : equality_delete_span)
         {
             object_info->addEqualityDeleteObject(equality_delete);

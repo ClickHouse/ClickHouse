@@ -660,7 +660,7 @@ std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFile
         <=> std::tie(rhs.common_partition_specification, rhs.partition_key_value, rhs.added_sequence_number);
 }
 
-String getPartitionSpecificationString(const PartitionSpecification & partition_specification)
+String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
 {
     if (partition_specification.empty())
         return "[empty]";
