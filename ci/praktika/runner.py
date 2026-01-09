@@ -1,6 +1,5 @@
 import dataclasses
 import glob
-import inspect
 import json
 import os
 import re
@@ -306,6 +305,12 @@ class Runner:
                     raise RuntimeError("Unsupported CPU architecture")
 
             docker = docker or f"{docker_name}:{docker_tag}"
+            Shell.check(
+                f"docker pull {docker}",
+                strict=True,
+                verbose=True,
+            )
+
             current_dir = os.getcwd()
             for setting in settings:
                 if setting.startswith("--volume"):
