@@ -134,11 +134,11 @@ std::vector<ConnectionPoolPtr> prepareConnectionPools(const ContextPtr & context
     return pools_to_use;
 }
 
-IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::string & filter, ContextPtr context, const Tables & external_tables, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
+IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter, ContextPtr context, const Tables & external_tables, const std::vector<std::string_view> & parts, ConnectionPoolPtr pool)
 {
-    const auto analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$')",
+    std::string analyze_index_query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, '^({})$')",
         storage_id.uuid,
-        filter,
+        filter.value_or("true"),
         fmt::join(parts, "|"));
 
     IndexAnalysisPartsRanges res;
@@ -193,7 +193,7 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplica(const LoggerPtr & logger, c
 ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_key_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
     if (!query_info.filter_actions_dag)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return nullptr;
 
     NameSet primary_key_columns_names_set(primary_key_column_names.begin(), primary_key_column_names.end());
     ASTPtr predicate = tryBuildAdditionalFilterAST(*query_info.filter_actions_dag,
@@ -202,7 +202,7 @@ ASTPtr getFilterAST(const SelectQueryInfo & query_info, const Names & primary_ke
         /*external_tables=*/ external_tables,
         context);
     if (!predicate)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return nullptr;
 
     return predicate;
 }
@@ -262,7 +262,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     ContextMutablePtr execution_context = Context::createCopy(context);
     auto external_tables = execution_context->getExternalTables();
-    auto filter_query = getFilterAST(query_info, primary_key_column_names, execution_context, &external_tables)->formatWithSecretsOneLine();
+    auto filter_ast = getFilterAST(query_info, primary_key_column_names, execution_context, &external_tables);
+    auto filter_query = filter_ast ? std::make_optional<std::string>(filter_ast->formatWithSecretsOneLine()) : std::nullopt;
 
     ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
                     CurrentMetrics::DistributedIndexAnalysisThreadsActive,
