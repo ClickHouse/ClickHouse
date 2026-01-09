@@ -88,6 +88,7 @@ class IssueLabels:
     FLAKY_TEST = "flaky test"
     FUZZ = "fuzz"
     INFRASTRUCTURE = "infrastructure"
+    SANITIZER = "sanitizer"
 
 
 @dataclass
@@ -138,11 +139,11 @@ class Issue:
             return fields
 
         patterns = {
-            "test_name": r"Test name:\s*(.+?)(?:\n|$)",
-            "failure_reason": r"Failure reason:\s*(.+?)(?:\n|$)",
-            "ci_action": r"CI action:\s*(.+?)(?:\n|$)",
-            "test_pattern": r"Test pattern:\s*(.+?)(?:\n|$)",
-            "job_pattern": r"Job pattern:\s*(.+?)(?:\n|$)",
+            "test_name": r"Test name:\s*([^\n]*)",
+            "failure_reason": r"Failure reason:\s*([^\n]*)",
+            "ci_action": r"CI action:\s*([^\n]*)",
+            "test_pattern": r"Test pattern:\s*([^\n]*)",
+            "job_pattern": r"Job pattern:\s*([^\n]*)",
         }
 
         for field, pattern in patterns.items():
@@ -278,7 +279,7 @@ class Issue:
         print(
             f"Marking '{result.name}' as flaky (matched: {test_name}, issue: #{self.number})"
         )
-        result.set_clickable_label(label="issue", link=self.url)
+        result.set_clickable_label(label=Result.Label.ISSUE, link=self.url)
         return True
 
     def _check_infrastructure_match(

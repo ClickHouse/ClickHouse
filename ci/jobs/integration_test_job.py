@@ -17,8 +17,9 @@ MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
-MAX_CPUS_PER_WORKER = 4
-MAX_MEM_PER_WORKER = 7
+
+MAX_CPUS_PER_WORKER = 5
+MAX_MEM_PER_WORKER = 11
 
 
 def _start_docker_in_docker():
@@ -97,7 +98,12 @@ FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
-    batch_num: int, total_batches: int, args_test: List[str], workers: int
+    batch_num: int,
+    total_batches: int,
+    args_test: List[str],
+    workers: int,
+    job_options: str,
+    info: Info,
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -111,7 +117,7 @@ def get_parallel_sequential_tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+        test_files, total_batches, batch_num, workers, job_options, info
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -322,6 +328,8 @@ def main():
             total_batches,
             args.test or targeted_tests or changed_test_modules,
             workers,
+            args.options,
+            info,
         )
     )
 
