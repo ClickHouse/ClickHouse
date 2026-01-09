@@ -47,7 +47,7 @@ private:
     bool is_add = false;
 
 public:
-    explicit DataTypeEnum(const Values & values_);
+    explicit DataTypeEnum(const Values & values_, bool is_add_ = false);
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;

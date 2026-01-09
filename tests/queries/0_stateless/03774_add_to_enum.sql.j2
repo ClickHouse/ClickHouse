@@ -1,0 +1,31 @@
+{% for ENUM_TYPE in ['Enum', 'Enum8', 'Enum16'] -%}
+
+SELECT '======= {{ ENUM_TYPE }} ===============';
+DROP TABLE IF EXISTS enum;
+CREATE TABLE enum (x {{ ENUM_TYPE }}('One' = 1, 'Two', 'Three')) ENGINE = Memory;
+INSERT INTO enum VALUES (0);
+SELECT * FROM enum ORDER BY x;  -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
+ALTER TABLE enum MODIFY COLUMN x addToEnum('Zero' = 0);
+ALTER TABLE enum MODIFY COLUMN x addToEnum('Four' = 4);
+INSERT INTO enum VALUES (4);
+SELECT '======================';
+SELECT * FROM enum ORDER BY x;
+{% if ENUM_TYPE != 'Enum16' -%}
+ALTER TABLE enum MODIFY COLUMN x addToEnum16('Thousand' = 1000); -- { serverError BAD_ARGUMENTS }
+{% else %}
+ALTER TABLE enum MODIFY COLUMN x addToEnum16('Thousand' = 1000);
+{% endif %}
+ALTER TABLE enum MODIFY COLUMN x addToEnum8('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE enum MODIFY COLUMN x addToEnum8('Hundred' = 100);
+INSERT INTO enum VALUES (100);
+INSERT INTO enum VALUES ('Hundred');
+INSERT INTO enum VALUES ('Three');
+SELECT '======================';
+SELECT * FROM enum ORDER BY x;
+
+DROP TABLE enum;
+
+CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
+CREATE TABLE addtoenum16 (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
+
+{% endfor -%}
