@@ -40,7 +40,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <AggregateFunctions/WindowFunction.h>
 
@@ -150,39 +149,6 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
 }
 
 LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
-
-String rewriteAggregateFunctionNameForWindowIfNeeded(const String & aggregate_function_name)
-{
-    /// If a function is used with `OVER (...)`, prefer an explicitly registered `*Window` variant.
-    /// This allows different implementations for GROUP BY and window contexts.
-    /// For example, in `src/AggregateFunctions/AggregateFunctionCramersV.cpp`, the `CramersVWindowData`
-    /// variant is used for window functions and is optimized for frequent calls to `add` and `getResult`.
-    /// `CramersVWindowData` has on average expected O(logn) complexity for `add` and O(1) complexity for `getResult`,
-    /// while `CramersVData` has O(1) complexity for `add` and O(n) complexity for `getResult`.
-    /// This makes `CramersVData` optimal for GROUP BY, but suboptimal for window functions because
-    /// `getResult` is called on almost every row in the window frame. That's why the `CramersVWindow` variant is needed.
-    /// It has a slower `add` but a faster `getResult`, making it more suitable for window functions.
-    static constexpr std::string_view window_suffix = "Window";
-
-    String nested_name = aggregate_function_name;
-    String combinator_suffix;
-
-    while (auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name))
-    {
-        const String & combinator_name = combinator->getName();
-        nested_name.resize(nested_name.size() - combinator_name.size());
-        combinator_suffix.insert(0, combinator_name);
-    }
-
-    if (nested_name.ends_with(window_suffix))
-        return aggregate_function_name;
-
-    String window_variant_name = nested_name + String(window_suffix);
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(window_variant_name))
-        return window_variant_name + combinator_suffix;
-
-    return aggregate_function_name;
-}
 
 }
 
@@ -868,13 +834,13 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         }
 
         AggregateFunctionProperties properties;
-        String aggregate_function_name = rewriteAggregateFunctionNameForWindowIfNeeded(window_function.function_node->name);
         window_function.aggregate_function = AggregateFunctionFactory::instance().get(
-            aggregate_function_name,
+            window_function.function_node->name,
             window_function.function_node->nulls_action,
             window_function.argument_types,
             window_function.function_parameters,
-            properties);
+            properties,
+            AggregateFunctionUsage::Window);
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it

@@ -84,39 +84,6 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
-
-std::string rewriteAggregateFunctionNameForWindowIfNeeded(const std::string & aggregate_function_name)
-{
-    /// If a function is used with `OVER (...)`, prefer an explicitly registered `*Window` variant.
-    /// This allows different implementations for GROUP BY and window contexts.
-    /// For example, in `src/AggregateFunctions/AggregateFunctionCramersV.cpp`, the `CramersVWindowData`
-    /// variant is used for window functions and is optimized for frequent calls to `add` and `getResult`.
-    /// `CramersVWindowData` has on average expected O(logn) complexity for `add` and O(1) complexity for `getResult`,
-    /// while `CramersVData` has O(1) complexity for `add` and O(n) complexity for `getResult`.
-    /// This makes `CramersVData` optimal for GROUP BY, but suboptimal for window functions because
-    /// `getResult` is called on almost every row in the window frame. That's why the `CramersVWindow` variant is needed.
-    /// It has a slower `add` but a faster `getResult`, making it more suitable for window functions.
-    static constexpr std::string_view window_suffix = "Window";
-
-    std::string nested_name = aggregate_function_name;
-    std::string combinator_suffix;
-
-    while (auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name))
-    {
-        const std::string & combinator_name = combinator->getName();
-        nested_name.resize(nested_name.size() - combinator_name.size());
-        combinator_suffix.insert(0, combinator_name);
-    }
-
-    if (nested_name.ends_with(window_suffix))
-        return aggregate_function_name;
-
-    std::string window_variant_name = nested_name + std::string(window_suffix);
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(window_variant_name))
-        return window_variant_name + combinator_suffix;
-
-    return aggregate_function_name;
-}
 }
 
 /// Checks if node is a NULL constant
@@ -1179,12 +1146,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameForWindowIfNeeded(function_name);
-        aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(aggregate_function_name, action, scope.context);
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
-            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
+            = AggregateFunctionFactory::instance().get(
+                aggregate_function_name,
+                action,
+                argument_types,
+                parameters,
+                properties,
+                AggregateFunctionUsage::Window);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 

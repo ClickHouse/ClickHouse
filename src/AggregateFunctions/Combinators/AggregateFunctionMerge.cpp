@@ -66,18 +66,29 @@ public:
                 getName());
 
         if (!nested_function->haveSameStateRepresentation(*function->getFunction()))
+        {
+            if (function->getFunctionName() != nested_function->getName())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument for aggregate function with {} suffix because it corresponds to different aggregate "
+                    "function: {} instead of {}",
+                    argument->getName(),
+                    getName(),
+                    function->getFunctionName(),
+                    nested_function->getName());
+
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument for aggregate function with {} suffix. because it corresponds to different aggregate "
-                "function: {} instead of {}",
+                "Illegal type {} of argument for aggregate function with {} suffix because it corresponds to a different implementation "
+                "of aggregate function '{}'. The state was produced by a different implementation (e.g. aggregation vs window variant).",
                 argument->getName(),
                 getName(),
-                function->getFunctionName(),
-                nested_function->getName());
+                function->getFunctionName());
+        }
 
         return std::make_shared<AggregateFunctionMerge>(nested_function, argument, params);
     }
-};
+    };
 
 }
 

@@ -1,16 +1,37 @@
-cramersVWindow: state roundtrip
+cramersV: state roundtrip
 0.4472	0.4472	1
-cramersVWindow: merge roundtrip
+cramersV: merge roundtrip
 0.4472	0.4472	1
-cramersVBiasCorrectedWindow: state roundtrip
+cramersVBiasCorrected: state roundtrip
 0.4463	0.4463	1
-cramersVBiasCorrectedWindow: merge roundtrip
+cramersVBiasCorrected: merge roundtrip
 0.4463	0.4463	1
-theilsUWindow: state roundtrip
+theilsU: state roundtrip
 0.301	0.301	1
-theilsUWindow: merge roundtrip
+theilsU: merge roundtrip
 0.301	0.301	1
-contingencyWindow: state roundtrip
+contingency: state roundtrip
 0.7071	0.7071	1
-contingencyWindow: merge roundtrip
+contingency: merge roundtrip
 0.7071	0.7071	1
+cramersV: OVER(full frame) matches aggregate
+0.4472	0.4472	1
+cramersV: window state -> normal deserialize (serialization compat)
+0.4472	0.4472	1
+cramersV: normal states merged in OVER() (window consumes normal states)
+cramersVBiasCorrected: OVER(full frame) matches aggregate
+0.4463	0.4463	1
+cramersVBiasCorrected: window state -> normal deserialize (serialization compat)
+0.4463	0.4463	1
+cramersVBiasCorrected: normal states merged in OVER() (window consumes normal states)
+theilsU: OVER(full frame) matches aggregate
+0.301	0.301	1
+theilsU: window state -> normal deserialize (serialization compat)
+0.301	0.301	1
+theilsU: normal states merged in OVER() (window consumes normal states)
+contingency: OVER(full frame) matches aggregate
+0.7071	0.7071	1
+contingency: window state -> normal deserialize (serialization compat)
+0.7071	0.7071	1
+contingency: normal states merged in OVER() (window consumes normal states)
+cramersVBiasCorrected: window states merged in aggregate() (non-window consumes window states)

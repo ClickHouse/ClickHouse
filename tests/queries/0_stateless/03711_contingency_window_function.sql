@@ -1,3 +1,22 @@
+SELECT 'Sanity Check to ensure window variant is choosen. Non-window variant would take too long';
+SELECT
+    number,
+    round(cv, 2),
+    round(cvc, 2),
+    round(tu, 2),
+    round(ct, 2)
+FROM
+(
+  SELECT number,
+      cramersV(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND 99999 FOLLOWING) AS cv,
+      cramersVBiasCorrected(number % 99999, number % 99999) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND 99999 FOLLOWING) AS cvc,
+      theilsU(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND 99999 FOLLOWING) AS tu,
+      contingency(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND 99999 FOLLOWING) AS ct
+  FROM numbers(100000)
+)
+ORDER BY number
+LIMIT 1;
+
 SELECT 'OVER';
 SELECT
     round(cramersV(a,b) OVER (), 2),

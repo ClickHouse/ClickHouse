@@ -36,7 +36,7 @@ struct CramersVWindowData : CrossTabWindowPhiSquaredData
 {
     static const char * getName()
     {
-        return "cramersVWindow";
+        return CramersVData::getName();
     }
 
     Float64 getResult() const
@@ -127,21 +127,13 @@ FROM
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
         },
         {},
-        documentation
-    });
-
-    /// This version that will be used in window context. The rewrite happens via `rewriteAggregateFunctionNameForWindowIfNeeded`
-    /// in `resolveFunction.cpp`.
-    factory.registerFunction(CramersVWindowData::getName(),
-    {
+        documentation,
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVWindowData>>(argument_types);
-        },
-        {},
-        {}
+        }
     });
 }
 

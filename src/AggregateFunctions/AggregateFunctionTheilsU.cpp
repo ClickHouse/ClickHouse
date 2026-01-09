@@ -64,7 +64,11 @@ struct TheilsUData : CrossTabData
 /// This implementation ensures add() is always O(1) regardless of data distribution.
 struct TheilsUWindowData
 {
-    static const char * getName() { return "theilsUWindow"; }
+    static const char * getName() {
+        return TheilsUData::getName();
+    }
+
+    static constexpr CrossTabStateRepresentation state_representation = CrossTabStateRepresentation::Window;
 
     void add(UInt64 hash1, UInt64 hash2)
     {
@@ -269,17 +273,15 @@ FROM (
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
-        }, {}, documentation});
-
-    /// This version that will be used in window context. The rewrite happens via `rewriteAggregateFunctionNameForWindowIfNeeded`
-    /// in `resolveFunction.cpp`.
-    factory.registerFunction(TheilsUWindowData::getName(), {
+        },
+        {},
+        documentation,
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUWindowData>>(argument_types);
-        }, {}, {}});
+        }});
 }
 
 }

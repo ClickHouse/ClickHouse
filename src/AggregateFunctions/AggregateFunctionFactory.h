@@ -25,6 +25,17 @@ using DataTypes = std::vector<DataTypePtr>;
 
 class ASTFunction;
 
+/// Call context for resolving aggregate functions.
+/// Some functions have a dedicated implementation for window execution (OVER (...)),
+/// which may have different performance characteristics on add()/getResult().
+/// - Aggregation: resolve the normal GROUP BY implementation.
+/// - Window: prefer a window-specific implementation if registered (via `window_creator`), and fall back to the normal implementation if absent.
+enum class  AggregateFunctionUsage : UInt8
+{
+    Aggregation,
+    Window,
+};
+
 /**
  * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
@@ -35,6 +46,9 @@ using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String
 struct AggregateFunctionWithProperties
 {
     AggregateFunctionCreator creator;
+    /// Optional override to prefer in window context (OVER (...))
+    /// See TheilsU aggregate function for an example.
+    AggregateFunctionCreator window_creator;
     AggregateFunctionProperties properties;
     FunctionDocumentation documentation = {}; /// TODO remove default initialization ... all aggregate functions should have documentation
 
@@ -44,8 +58,8 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}, FunctionDocumentation documentation_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
+    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}, FunctionDocumentation documentation_ = {}, AggregateFunctionCreator window_creator_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), window_creator(std::move(window_creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
     {
     }
 };
@@ -77,7 +91,8 @@ public:
         NullsAction action,
         const DataTypes & argument_types,
         const Array & parameters,
-        AggregateFunctionProperties & out_properties) const;
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionUsage usage = AggregateFunctionUsage::Aggregation) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
@@ -93,7 +108,8 @@ private:
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        bool has_null_arguments) const;
+        bool has_null_arguments,
+        AggregateFunctionUsage usage) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>;
     using ActionMap = std::unordered_map<String, String>;

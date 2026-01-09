@@ -19,11 +19,26 @@
 namespace DB
 {
 
+enum class CrossTabStateRepresentation : UInt8
+{
+    Aggregation,
+    Window
+};
+
+class ICrossTabAggregateFunction
+{
+public:
+    virtual ~ICrossTabAggregateFunction() = default;
+    virtual CrossTabStateRepresentation getCrossTabStateRepresentation() const = 0;
+};
+
 /// add() — O(1) with low constant factor
 /// getResult() — O(|count_a| + |count_b| + |count_ab|)
 /// Suitable to be used in GROUP BY
 struct CrossTabData
 {
+    static constexpr CrossTabStateRepresentation state_representation = CrossTabStateRepresentation::Aggregation;
+
     /// Total count.
     UInt64 count = 0;
 
@@ -185,7 +200,7 @@ struct CrossTabData
 ///
 /// For example, the following is a worst-case (dense K × K grid, each row/column degree ≈ K):
 /// SELECT
-///     cramersVWindow(a, b) OVER (ORDER BY number) AS v
+///     cramersV(a, b) OVER (ORDER BY number) AS v
 /// FROM
 /// (
 ///     SELECT
@@ -201,6 +216,8 @@ struct CrossTabData
 /// and `contingencyCoefficient`.
 struct CrossTabWindowPhiSquaredData
 {
+    static constexpr CrossTabStateRepresentation state_representation = CrossTabStateRepresentation::Window;
+
     struct Edge
     {
         UInt32 a;
@@ -640,7 +657,7 @@ private:
 
 
 template <typename Data>
-class AggregateFunctionCrossTab final : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>
+class AggregateFunctionCrossTab final : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>, public ICrossTabAggregateFunction
 {
 public:
     explicit AggregateFunctionCrossTab(const DataTypes & arguments)
@@ -675,6 +692,23 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
         this->data(place).deserialize(buf);
+    }
+
+    CrossTabStateRepresentation getCrossTabStateRepresentation() const override
+    {
+        return Data::state_representation;
+    }
+
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        if (!IAggregateFunction::haveSameStateRepresentationImpl(rhs))
+            return false;
+
+        const auto * rhs_crosstab = dynamic_cast<const ICrossTabAggregateFunction *>(&rhs);
+        if (!rhs_crosstab)
+            return false;
+
+        return rhs_crosstab->getCrossTabStateRepresentation() == getCrossTabStateRepresentation();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
