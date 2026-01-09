@@ -327,19 +327,22 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMapping(db_uuid);
     }
-    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    for (auto & map : uuid_map)
     {
-        /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
-        const auto & not_empty_mapping = [] (const auto & mapping)
+        std::lock_guard map_lock(map.mutex);
+        for (auto & [_, db_table] : map.map)
         {
-            auto & db = mapping.second.first;
-            auto & table = mapping.second.second;
-            return db || table;
-        };
-        std::lock_guard map_lock{elem.mutex};
-        auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
-        return it != elem.map.end();
-    }) == uuid_map.end());
+            auto & storage = db_table.second;
+            if (storage)
+            {
+                /// SharedCatalog may leave leftovers
+                if (storage->is_dropped)
+                    storage.reset();
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database catalog contains alive storage: {}", storage->getStorageID());
+            }
+        }
+    }
 
     databases.clear();
     databases_without_datalake_catalogs.clear();
