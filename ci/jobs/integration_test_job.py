@@ -93,8 +93,8 @@ def parse_args():
     return parser.parse_args()
 
 
-FLAKY_CHECK_TEST_REPEAT_COUNT = 3
-FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
+FLAKY_CHECK_TEST_REPEAT_COUNT = 5
+FLAKY_CHECK_MODULE_REPEAT_COUNT = 100
 
 
 def get_parallel_sequential_tests_to_run(
@@ -439,7 +439,19 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        if failed_suits:
+        # For flaky checks, always collect logs to allow inspection of server logs
+        # even when tests pass
+        if is_flaky_check:
+            all_test_suits = set()
+            for test_module in parallel_test_modules + sequential_test_modules:
+                suit = test_module.split("/")[0]
+                all_test_suits.add(suit)
+            for suit in all_test_suits:
+                suit_path = f"tests/integration/{suit}"
+                if suit_path not in failed_tests_files:
+                    failed_tests_files.append(suit_path)
+
+        if failed_suits or is_flaky_check:
             attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
             )
