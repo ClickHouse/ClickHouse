@@ -613,6 +613,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     const auto & column_object = assert_cast<const ColumnObject &>(column);
+    column_object.validateDynamicPathsSizes();
     const auto & typed_paths = column_object.getTypedPaths();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
