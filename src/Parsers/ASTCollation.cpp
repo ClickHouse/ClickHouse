@@ -1,5 +1,5 @@
 #include <Parsers/ASTCollation.h>
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

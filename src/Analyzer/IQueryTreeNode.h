@@ -1,14 +1,15 @@
 #pragma once
 
 #include <memory>
-#include <Parsers/IAST_fwd.h>
-
-#include <city.h>
-#include <Common/SipHash.h>
 #include <vector>
 #include <deque>
 
+#include <Parsers/IAST_fwd.h>
 #include <Common/TypePromotion.h>
+
+#include <city.h>
+
+class SipHash;
 
 namespace DB
 {

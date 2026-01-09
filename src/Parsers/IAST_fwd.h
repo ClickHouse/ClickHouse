@@ -23,7 +23,7 @@ using ASTs = std::vector<ASTPtr>;
 template <typename T, typename ... Args>
 constexpr boost::intrusive_ptr<T> make_intrusive(Args && ... args)
 {
-  return boost::intrusive_ptr<T>(new T(std::forward<Args>(args)...));
+    return boost::intrusive_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
 }

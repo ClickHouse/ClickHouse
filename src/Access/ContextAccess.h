@@ -11,6 +11,7 @@
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace Poco { class Logger; }
@@ -30,7 +31,6 @@ struct SettingsProfilesInfo;
 class SettingsChanges;
 class AccessControl;
 struct IAccessEntity;
-#include <Parsers/IAST_fwd.h>
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
