@@ -45,6 +45,13 @@ class ClusterBuilder:
         worker = (os.environ.get("PYTEST_XDIST_WORKER", "") or "").strip()
         cbase = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
         cname = f"{cbase}_{worker}" if worker else cbase
+        # Sanitize name to characters safe for docker-compose project/network names and DNS
+        try:
+            cname = "".join(
+                (ch.lower() if (ch.isalnum() or ch in "-_") else "_") for ch in cname
+            ).strip("_") or "keeper"
+        except Exception:
+            pass
 
         cluster = ClickHouseCluster(self.file_anchor, name=cname)
         base_dir = pathlib.Path(cluster.base_dir)
