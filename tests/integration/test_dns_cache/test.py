@@ -478,8 +478,17 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
 
+    # Reset the node8 state
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/remote_servers_with_disable_dns_setting.xml",
+        "<disable_internal_dns_cache>[10]</disable_internal_dns_cache>",
+        "<disable_internal_dns_cache>0</disable_internal_dns_cache>"
+    )
+
 
 def test_reload_cluster_config_if_host_address_change(cluster_ready):
+    # `disable_internal_dns_cache` should be false for updating cache,
+    # so that we can reload cluster config if host address changes.
     node = node8
     # Back up DNS configuration (resolv.conf and hosts)
     resolv_conf_bak = node.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
