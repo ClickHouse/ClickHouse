@@ -1017,6 +1017,8 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Note: NULL literals are intentionally NOT recorded in the token map.
+    /// They are treated as tokens (not templated) because Nullable(Nothing) templates are useless.
     ParserKeyword nested_parser(Keyword::NULL_KEYWORD);
     if (nested_parser.parse(pos, node, expected))
     {
@@ -1029,6 +1031,8 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Note: Bool literals are intentionally NOT recorded in the token map.
+    /// The ConstantExpressionTemplate system does not support Bool type for templating.
     if (ParserKeyword(Keyword::TRUE_KEYWORD).parse(pos, node, expected))
     {
         node = make_intrusive<ASTLiteral>(true);
