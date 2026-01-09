@@ -1,9 +1,9 @@
 #include <Disks/IDisk.h>
-#include <Core/Field.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Storages/PartitionCommands.h>
@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+
 
 namespace CurrentMetrics
 {
@@ -138,7 +139,7 @@ void asyncCopy(
 {
     if (from_disk.existsFile(from_path))
     {
-        runner(
+        runner.enqueueAndKeepTrack(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
                 from_disk.copyFile(
                     from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);
@@ -162,7 +163,7 @@ void IDisk::copyThroughBuffers(
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, "AsyncCopy");
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, ThreadName::ASYNC_COPY);
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
@@ -189,11 +190,6 @@ void IDisk::copyDirectoryContent(
 void IDisk::truncateFile(const String &, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
-}
-
-bool IDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
 }
 
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const

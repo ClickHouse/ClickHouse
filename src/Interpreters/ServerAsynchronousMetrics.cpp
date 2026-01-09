@@ -74,12 +74,11 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
 void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     {
-        auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
         size_t max_bytes = 0;
         size_t total_files = 0;
 
-        for (const auto & [_, cache_data] : caches)
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
         {
             total_bytes += cache_data->cache->getUsedCacheSize();
             max_bytes += cache_data->cache->getMaxCacheSize();
@@ -204,7 +203,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -368,6 +367,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
+
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
@@ -392,7 +393,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;

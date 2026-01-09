@@ -454,6 +454,15 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             break;
         }
 
+        case TypeIndex::UUID:
+        {
+            parq::UUIDType uuid;
+            parq::LogicalType t;
+            t.__set_UUID(uuid);
+            fixed_string(16, std::nullopt, t);
+            break;
+        }
+
         /// Parquet doesn't have logical types for these.
         case TypeIndex::UInt128: fixed_string(16); break;
         case TypeIndex::UInt256: fixed_string(32); break;
@@ -644,7 +653,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {

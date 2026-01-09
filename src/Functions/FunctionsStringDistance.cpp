@@ -540,7 +540,7 @@ Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_hamming = {description_hamming, syntax_hamming, arguments_hamming, returned_value_hamming, examples_hamming, introduced_in, category};
+    FunctionDocumentation documentation_hamming = {description_hamming, syntax_hamming, arguments_hamming, {}, returned_value_hamming, examples_hamming, introduced_in, category};
 
     FunctionDocumentation::Description description_edit = R"(
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
@@ -562,7 +562,7 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
         )"
     }
     };
-    FunctionDocumentation documentation_edit = {description_edit, syntax_edit, arguments_edit, returned_value_edit, examples_edit, introduced_in, category};
+    FunctionDocumentation documentation_edit = {description_edit, syntax_edit, arguments_edit, {}, returned_value_edit, examples_edit, introduced_in, category};
 
     FunctionDocumentation::Description description_edit_utf8 = R"(
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings.
@@ -585,7 +585,7 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_utf8 = {24, 6};
-    FunctionDocumentation documentation_edit_utf8 = {description_edit_utf8, syntax_edit_utf8, arguments_edit_utf8, returned_value_edit_utf8, examples_edit_utf8, introduced_in_utf8, category};
+    FunctionDocumentation documentation_edit_utf8 = {description_edit_utf8, syntax_edit_utf8, arguments_edit_utf8, {}, returned_value_edit_utf8, examples_edit_utf8, introduced_in_utf8, category};
 
     FunctionDocumentation::Description description_damerau = R"(
 Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
@@ -608,7 +608,7 @@ Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Dame
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_damerau = {24, 1};
-    FunctionDocumentation documentation_damerau = {description_damerau, syntax_damerau, arguments_damerau, returned_value_damerau, examples_damerau, introduced_in_damerau, category};
+    FunctionDocumentation documentation_damerau = {description_damerau, syntax_damerau, arguments_damerau, {}, returned_value_damerau, examples_damerau, introduced_in_damerau, category};
 
     FunctionDocumentation::Description description_jaccard = R"(
 Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
@@ -631,7 +631,7 @@ Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaccard = {23, 11};
-    FunctionDocumentation documentation_jaccard = {description_jaccard, syntax_jaccard, arguments_jaccard, returned_value_jaccard, examples_jaccard, introduced_in_jaccard, category};
+    FunctionDocumentation documentation_jaccard = {description_jaccard, syntax_jaccard, arguments_jaccard, {}, returned_value_jaccard, examples_jaccard, introduced_in_jaccard, category};
 
     FunctionDocumentation::Description description_jaccard_utf8 = R"(
 Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
@@ -654,7 +654,7 @@ Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaccard_utf8 = {23, 11};
-    FunctionDocumentation documentation_jaccard_utf8 = {description_jaccard_utf8, syntax_jaccard_utf8, arguments_jaccard_utf8, returned_value_jaccard_utf8, examples_jaccard_utf8, introduced_in_jaccard_utf8, category};
+    FunctionDocumentation documentation_jaccard_utf8 = {description_jaccard_utf8, syntax_jaccard_utf8, arguments_jaccard_utf8, {}, returned_value_jaccard_utf8, examples_jaccard_utf8, introduced_in_jaccard_utf8, category};
 
     FunctionDocumentation::Description description_jaro = R"(
 Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
@@ -677,7 +677,7 @@ Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Wink
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaro = {24, 1};
-    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, arguments_jaro, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
+    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, arguments_jaro, {}, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
 
     FunctionDocumentation::Description description_jaro_winkler = R"(
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
@@ -700,7 +700,7 @@ Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%8
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_jaro_winkler = {24, 1};
-    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, arguments_jaro_winkler, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
+    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, arguments_jaro_winkler, {}, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
 
     factory.registerFunction<FunctionByteHammingDistance>(documentation_hamming);
     factory.registerAlias("mismatches", NameByteHammingDistance::name);

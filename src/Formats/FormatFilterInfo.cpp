@@ -15,11 +15,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
+    chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
+    for (const auto & [column_name, field_id] : storage_encoding)
+        if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(

@@ -13,6 +13,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 
@@ -42,11 +43,17 @@ bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) con
 }
 
 KafkaConsumer2::KafkaConsumer2(
-    LoggerPtr log_, size_t max_batch_size, size_t poll_timeout_, const std::atomic<bool> & stopped_, const Names & topics_)
+    LoggerPtr log_,
+    size_t max_batch_size,
+    size_t poll_timeout_,
+    const std::atomic<bool> & stopped_,
+    const Names & topics_,
+    size_t skip_bytes_)
     : exceptions_buffer(EXCEPTIONS_DEPTH)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
+    , skip_bytes(skip_bytes_)
     , stopped(stopped_)
     , current(messages.begin())
     , topics(topics_)
@@ -362,8 +369,8 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
         ++current;
 
         // `data` can be nullptr on case of the Kafka message has empty payload
-        if (data)
-            return std::make_shared<ReadBufferFromMemory>(data, size);
+        if (data && size >= skip_bytes)
+            return std::make_shared<ReadBufferFromMemory>(data + skip_bytes, size - skip_bytes);
     }
 
     return nullptr;

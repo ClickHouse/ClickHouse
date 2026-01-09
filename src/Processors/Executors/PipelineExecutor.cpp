@@ -558,7 +558,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            ThreadGroupSwitcher switcher(thread_group, "QueryPipelineEx");
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
 
             try
             {

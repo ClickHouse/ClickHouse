@@ -2,6 +2,7 @@
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -183,10 +184,10 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
  * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
  * To use DatabaseOverlay, it must be constructed programmatically in code
  */
-ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
+ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
     auto query = std::make_shared<ASTCreateQuery>();
-    query->setDatabase(getDatabaseName());
+    query->setDatabase(database_name);
     return query;
 }
 

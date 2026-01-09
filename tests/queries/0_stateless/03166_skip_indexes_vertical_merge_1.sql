@@ -1,8 +1,5 @@
-SET use_query_condition_cache = 0;
 DROP TABLE IF EXISTS t_ind_merge_1;
 
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 SET enable_analyzer = 1;
 
 CREATE TABLE t_ind_merge_1 (a UInt64, b UInt64, c UInt64, d UInt64, INDEX idx_b b TYPE minmax)

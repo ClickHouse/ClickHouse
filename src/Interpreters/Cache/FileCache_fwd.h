@@ -15,7 +15,7 @@ static constexpr int FILECACHE_DEFAULT_MAX_ELEMENTS = 10000000;
 static constexpr size_t FILECACHE_BYPASS_THRESHOLD = 256 * 1024 * 1024;
 static constexpr double FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO = 0; /// Disabled.
 static constexpr double FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO = 0; /// Disabled.
-static constexpr int FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH = 10;
+static constexpr int FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH = 100;
 static constexpr auto FILECACHE_DEFAULT_CONFIG_PATH = "filesystem_caches";
 
 static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = FileCachePolicy::SLRU;

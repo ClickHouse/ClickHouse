@@ -100,8 +100,6 @@
 
     CANNOT_PARSE_TEXT
 02771_ignore_data_skipping_indices
-    minor: Object('json')   Cannot parse string 'str' as Int8: syntax error at begin of string. Note: there are toInt8OrZero and toInt8OrNull functions, which returns zero/NULL instead of throwing exception.: While executing Remote. (CANNOT_PARSE_TEXT) (in query: SELECT * FROM t_json_race WHERE 0 IN (SELECT sleep(0.05)) FORMAT Null
-01825_type_json_schema_race_long
 
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
@@ -131,9 +129,7 @@
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
-02477_analyzer_array_join_with_join
 01483_merge_table_join_and_group_by
-03130_analyzer_array_join_prefer_column
 01147_partial_merge_full_join
 01010_partial_merge_join
 02789_filesystem_cache_alignment
@@ -173,12 +169,6 @@
     https://github.com/ClickHouse/ClickHouse/issues/80440
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
 03121_analyzer_filed_redefenition_in_subquery
-
-    Correlated subqueries are not supported
-    Cannot clone ReadFromPreparedSource plan step. (NOT_IMPLEMENTED)
-03448_analyzer_correlated_subquery_in_projection
-03412_analyzer_correlated_subquery_bug
-03399_analyzer_correlated_subquery
 
     Transactions
 02421_truncate_isolation_no_merges
@@ -379,6 +369,7 @@
 02402_merge_engine_with_view
     No order guarantee with group_by_overflow_mode='any'
 02180_group_by_lowcardinality
+03657_gby_overflow_any_sparse
 
     RMT zookeeper test
 01154_move_partition_long
@@ -459,3 +450,9 @@
 00443_optimize_final_vertical_merge
 01660_join_or_any
 01801_s3_cluster
+
+    Produces different result:
+03658_joined_block_split_single_row_bytes
+
+# https://github.com/ClickHouse/ClickHouse/issues/92056
+03712_nested_loop_join_merge_tree

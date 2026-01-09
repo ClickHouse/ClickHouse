@@ -162,9 +162,7 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitReadSchema(
-        ffi::SharedScan * scan,
-        SchemaVisitorData & data)
+    static void visitReadSchema(ffi::SharedScan * scan, SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::scan_physical_schema(scan));
         auto visitor = createVisitor(data);
@@ -172,9 +170,7 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitWriteSchema(
-        ffi::SharedWriteContext * write_context,
-        SchemaVisitorData & data)
+    static void visitWriteSchema(ffi::SharedWriteContext * write_context, SchemaVisitorData & data)
     {
         KernelSharedSchema schema(ffi::get_write_schema(write_context));
         auto visitor = createVisitor(data);
@@ -182,12 +178,17 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitPartitionColumns(
-        ffi::SharedSnapshot * snapshot,
-        SchemaVisitorData & data)
+    static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
+    }
+
+    static void visitSchema(ffi::SharedSchema * schema, SchemaVisitorData & data)
+    {
+        auto visitor = createVisitor(data);
+        [[maybe_unused]] size_t result = ffi::visit_schema(schema, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
 private:
@@ -514,6 +515,13 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
     SchemaVisitorData data;
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
+}
+
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
+{
+    SchemaVisitorData data;
+    SchemaVisitor::visitSchema(schema, data);
+    return data.getSchemaResult().names_and_types;
 }
 
 }

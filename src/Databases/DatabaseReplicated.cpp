@@ -19,6 +19,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -55,6 +56,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace DB
@@ -128,8 +130,9 @@ ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
+    auto host_port = global_context->getInterserverIOAddress();
     UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
-    return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
+    return Cluster::Address::toString(host_port.first, port) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -477,7 +480,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
         UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
-        ReplicasInfo replicas_info;
+        std::vector<ReplicaInfo> replicas_info;
         replicas_info.resize((zk_res.size() - 1) / 2);
 
         size_t global_replica_index = 0;
@@ -506,7 +509,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
             }
         }
 
-        return replicas_info;
+        return ReplicasInfo{.replicas = replicas_info, .replicas_belong_to_shared_catalog = false};
     }
     catch (...)
     {
@@ -1446,7 +1449,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
-        query_context->setCurrentQueryId("");
+        query_context->setCurrentQueryId({});
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
@@ -1482,17 +1485,35 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
         query_context->setSetting("allow_deprecated_database_ordinary", 1);
         query_context->setSetting("cloud_mode", false);
-        executeQuery(query, query_context, QueryFlags{.internal = true});
+        query_context->setCurrentQueryId({});
+        {
+            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            if (!CurrentThread::getGroup())
+            {
+                query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+            }
+            executeQuery(query, query_context, QueryFlags{.internal = true});
+        }
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
         /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
         /// so it's ok to save UUID of replicated table.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
         query_context->setSetting("cloud_mode", false);
-        executeQuery(query, query_context, QueryFlags{.internal = true});
+        query_context->setCurrentQueryId({});
+        {
+            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            if (!CurrentThread::getGroup())
+            {
+                query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+            }
+            executeQuery(query, query_context, QueryFlags{.internal = true});
+        }
     }
 
     size_t moved_tables = 0;
@@ -1638,7 +1659,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     auto allow_concurrent_table_creation = getContext()->getServerSettings()[ServerSetting::max_database_replicated_create_table_thread_pool_size] != 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), ThreadName::CREATE_TABLES);
 
     for (const auto & tables_to_create : tables_to_create_by_level)
     {
@@ -1684,7 +1705,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             };
 
             if (allow_concurrent_table_creation)
-                runner(std::move(task));
+                runner.enqueueAndKeepTrack(std::move(task));
             else
                 task();
         }
@@ -1699,6 +1720,16 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// It's a very rare case, and it's okay if some queries throw TIMEOUT_EXCEEDED when waiting for all replicas
     if (first_entry_to_mark_finished)
     {
+        /// Skip non-existing entries that were removed a long time ago (if the replica was offline for a long time)
+        Strings all_nodes = current_zookeeper->getChildren(fs::path(zookeeper_path) / "log");
+        std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
+        auto oldest_node = std::min_element(all_nodes.begin(), all_nodes.end());
+        if (oldest_node != all_nodes.end())
+        {
+            UInt32 oldest_entry = DDLTaskBase::getLogEntryNumber(*oldest_node);
+            first_entry_to_mark_finished = std::max(oldest_entry, first_entry_to_mark_finished);
+        }
+
         /// If the replica is new and some of the queries applied during recovery
         /// where issued after the replica was created, then other nodes might be
         /// waiting for this node to notify them that the query was applied.
@@ -1822,6 +1853,9 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
     if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
         create.attach = true;
+
+    if (create.select && create.isView())
+        ApplyWithSubqueryVisitor(context_).visit(*create.select);
 
     return ast;
 }

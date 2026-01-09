@@ -1,5 +1,5 @@
--- Tags: stateful, long, no-parallel, no-asan
--- no-asan: too long.
+-- Tags: stateful, long, no-parallel, no-asan, no-tsan, no-ubsan, no-msan
+-- no-*san: too long.
 
 DROP TABLE IF EXISTS hits_text;
 
@@ -14,7 +14,7 @@ CREATE TABLE hits_text
 ENGINE = MergeTree
 ORDER BY (CounterID, EventDate);
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 
 ALTER TABLE hits_text ADD INDEX idx_search_phrase SearchPhrase TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 8;

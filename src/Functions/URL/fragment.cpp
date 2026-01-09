@@ -34,7 +34,7 @@ SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1
     };
     FunctionDocumentation::IntroducedIn introduced_in_fragment = {1, 1};
     FunctionDocumentation::Category category_fragment = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_fragment = {description_fragment, syntax_fragment, arguments_fragment, returned_value_fragment, examples_fragment, introduced_in_fragment, category_fragment};
+    FunctionDocumentation documentation_fragment = {description_fragment, syntax_fragment, arguments_fragment, {}, returned_value_fragment, examples_fragment, introduced_in_fragment, category_fragment};
 
     factory.registerFunction<FunctionFragment>(documentation_fragment);
 }

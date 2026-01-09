@@ -289,7 +289,7 @@ class HtmlRunnerHooks:
 
             for dependee in dependees:
                 print(
-                    f"NOTE: Set job [{dependee}] status to [{Result.Status.SKIPPED}] due to current failure"
+                    f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
                 )
                 new_sub_results.append(
                     Result(

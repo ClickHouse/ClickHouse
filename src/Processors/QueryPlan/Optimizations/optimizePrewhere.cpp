@@ -63,7 +63,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     auto split_result = filter_expression.split(prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
-    /// Splited actions may have inputs which are needed only for PREWHERE.
+    /// Split actions may have inputs which are needed only for PREWHERE.
     /// This is fine for ActionsDAG to have such a split, but it breaks defaults calculation.
     ///
     /// See 00950_default_prewhere for example.

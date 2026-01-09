@@ -118,7 +118,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -275,7 +275,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         Block block;
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), database_column_name));
 
-        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter_by_database)
             VirtualColumnUtils::buildSetsForDAG(*filter_by_database, context);
 
@@ -284,7 +284,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), active_column_name));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), storage_uuid_column_name));
 
-        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter_by_other_columns)
             VirtualColumnUtils::buildSetsForDAG(*filter_by_other_columns, context);
     }

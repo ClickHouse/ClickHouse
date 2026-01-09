@@ -9,7 +9,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/AsyncLoader.h>
+#include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
 #include <functional>
@@ -180,6 +180,8 @@ public:
     /// - ...
     virtual bool isExternal() const { return true; }
 
+    virtual bool isDatalakeCatalog() const { return false; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
@@ -268,7 +270,7 @@ public:
 
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
-    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false, [[maybe_unused]] bool skip_data_lake_catalog = false) const /// NOLINT
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
     {
         return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
     }
@@ -363,7 +365,11 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    ASTPtr getCreateDatabaseQuery() const
+    {
+        std::lock_guard lock{mutex};
+        return getCreateDatabaseQueryImpl();
+    }
 
     String getDatabaseComment() const
     {
@@ -384,7 +390,7 @@ public:
     }
 
     // Alter comment of database.
-    virtual void alterDatabaseComment(const AlterCommand &);
+    virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
@@ -439,6 +445,7 @@ public:
     virtual ~IDatabase();
 
 protected:
+    virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
 
     mutable std::mutex mutex;
@@ -448,6 +455,6 @@ protected:
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
-using Databases = std::map<String, DatabasePtr>;
+using Databases = std::map<String, DatabasePtr, std::less<>>;
 
 }

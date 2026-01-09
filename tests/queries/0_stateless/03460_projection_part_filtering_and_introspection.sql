@@ -29,19 +29,29 @@ INSERT INTO test_simple_projection VALUES (4, '2023-01-02', 107, 'https://exampl
 INSERT INTO test_simple_projection VALUES (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
 
 SET enable_analyzer = 1;
-SET enable_parallel_replicas = 0;
 SET optimize_use_projection_filtering = 1;
+-- enable projection for parallel replicas
+SET parallel_replicas_local_plan = 1;
+SET optimize_aggregation_in_order = 0;
 
 -- region projection is enough effective for filtering
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 
 -- Only user_id projection is effective for filtering
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id = 106;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id = 106)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 
 -- Both region and user_id projections are effective for filtering
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 107;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 107)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 
 -- Neither projection is effective for filtering
-EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id != 999;
+SELECT trimLeft(explain)
+FROM (EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id != 999)
+WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 
 DROP TABLE test_simple_projection;

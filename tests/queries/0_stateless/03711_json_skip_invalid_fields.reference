@@ -1,0 +1,3 @@
+Test 1: Skip invalid typed path - string cannot be coerced to Int64
+{"a":0,"b":"valid","c":123}
+Test 2: Verify error thrown when setting disabled

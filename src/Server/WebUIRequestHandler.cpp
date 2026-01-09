@@ -1,20 +1,18 @@
 #include <Server/WebUIRequestHandler.h>
-#include <Server/IServer.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
+#include <incbin.h>
 
+#include <Common/re2.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Common/re2.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
-#include <incbin.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
-#include "config.h"
 
 /// Embedded HTML pages
 INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");

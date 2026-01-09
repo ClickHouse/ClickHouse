@@ -59,13 +59,13 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->data_object_file_path_key;
+    auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key;
     ASTPtr where_ast = makeASTFunction(
         "equals",
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
-    for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
+    for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
@@ -73,8 +73,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             continue;
 
         auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path);
-        auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
+        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
+        auto object_info = RelativePathWithMetadata{object_path, object_metadata};
 
 
         String format = position_deletes_object.file_format;
@@ -83,7 +83,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(*object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -96,7 +96,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 
-        delete_read_buffers.push_back(createReadBuffer(*object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);

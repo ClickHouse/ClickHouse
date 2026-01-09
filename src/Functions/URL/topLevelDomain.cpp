@@ -28,7 +28,7 @@ struct ExtractTopLevelDomain
 
             const auto * host_end = host.data() + host.size();
 
-            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             if (!last_dot)
                 return;
 
@@ -59,12 +59,14 @@ Extracts the the top-level domain from a URL.
 
 :::note
 The URL can be specified with or without a protocol.
-For examples
+For example:
 
 ```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
+```
+:::
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomain = "topLevelDomain(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomain = {
@@ -86,14 +88,14 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
     };
     FunctionDocumentation::IntroducedIn introduced_in_topLevelDomain = {1, 1};
     FunctionDocumentation::Category category_topLevelDomain = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_topLevelDomain = {description_topLevelDomain, syntax_topLevelDomain, arguments_topLevelDomain, returned_value_topLevelDomain, examples_topLevelDomain, introduced_in_topLevelDomain, category_topLevelDomain};
+    FunctionDocumentation documentation_topLevelDomain = {description_topLevelDomain, syntax_topLevelDomain, arguments_topLevelDomain, {}, returned_value_topLevelDomain, examples_topLevelDomain, introduced_in_topLevelDomain, category_topLevelDomain};
 
     factory.registerFunction<FunctionTopLevelDomain>(documentation_topLevelDomain);
 
     /// topLevelDomainRFC documentation
     FunctionDocumentation::Description description_topLevelDomainRFC = R"(
 Extracts the the top-level domain from a URL.
-Similar to [`topLevelDomain`](#topleveldomain), but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Similar to [`topLevelDomain`](#topLevelDomain), but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomainRFC = "topLevelDomainRFC(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomainRFC = {
@@ -115,7 +117,7 @@ SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http:/
     };
     FunctionDocumentation::IntroducedIn introduced_in_topLevelDomainRFC = {22, 10};
     FunctionDocumentation::Category category_topLevelDomainRFC = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_topLevelDomainRFC = {description_topLevelDomainRFC, syntax_topLevelDomainRFC, arguments_topLevelDomainRFC, returned_value_topLevelDomainRFC, examples_topLevelDomainRFC, introduced_in_topLevelDomainRFC, category_topLevelDomainRFC};
+    FunctionDocumentation documentation_topLevelDomainRFC = {description_topLevelDomainRFC, syntax_topLevelDomainRFC, arguments_topLevelDomainRFC, {}, returned_value_topLevelDomainRFC, examples_topLevelDomainRFC, introduced_in_topLevelDomainRFC, category_topLevelDomainRFC};
 
     factory.registerFunction<FunctionTopLevelDomainRFC>(documentation_topLevelDomainRFC);
 }

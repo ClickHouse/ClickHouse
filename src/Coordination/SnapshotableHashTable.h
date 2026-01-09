@@ -162,7 +162,7 @@ private:
 
         if (it == map.end())
         {
-            auto list_key = owns_key ? key : copyStringInArena(arena, StringRef{key}).toView();
+            auto list_key = owns_key ? key : copyStringInArena(arena, key);
             ListElem elem{list_key, std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
@@ -215,7 +215,7 @@ public:
         if (!it)
         {
             auto value_size = value.sizeInBytes();
-            ListElem elem{copyStringInArena(arena, key).toView(), std::move(value)};
+            ListElem elem{copyStringInArena(arena, key), std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;

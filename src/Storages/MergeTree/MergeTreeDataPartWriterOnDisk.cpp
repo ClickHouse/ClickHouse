@@ -180,7 +180,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             skip_indices_streams_holders.push_back(std::move(stream));
         }
 
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregator(settings));
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -262,7 +262,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator(settings);
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
 
                 for (const auto & [type, stream] : index_streams)
                 {
@@ -363,10 +363,13 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         }
     }
 
-    for (auto & stream : skip_indices_streams_holders)
+    for (const auto & streams : skip_indices_streams)
     {
-        stream->preFinalize();
-        stream->addToChecksums(checksums);
+        for (const auto & [type, stream] : streams)
+        {
+            stream->preFinalize();
+            stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
+        }
     }
 }
 
@@ -390,7 +393,7 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
         auto & stream = *stats_streams[i];
         stats[i]->serialize(stream.compressed_hashing);
         stream.preFinalize();
-        stream.addToChecksums(checksums);
+        stream.addToChecksums(checksums, true);
     }
 }
 
