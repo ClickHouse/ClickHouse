@@ -242,6 +242,8 @@ bool NgramsTokenExtractor::nextInString(const char * data, size_t length, size_t
         size_t sz = UTF8::seqLength(static_cast<UInt8>(data[token_start + token_length]));
         token_length += sz;
     }
+    /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+    token_length = std::min(token_length, length - token_start);
     pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
     return code_points == n;
 }
@@ -267,7 +269,8 @@ bool NgramsTokenExtractor::nextInStringLike(const char * data, size_t length, si
             token.clear();
             code_points = 0;
             escaped = false;
-            pos = ++i;
+            ++i;
+            pos = i;
         }
         else if (!escaped && data[i] == '\\')
         {
@@ -277,7 +280,8 @@ bool NgramsTokenExtractor::nextInStringLike(const char * data, size_t length, si
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
-            for (size_t j = 0; j < sz; ++j)
+            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+            for (size_t j = 0; j < sz && i + j < length; ++j)
                 token += data[i + j];
             i += sz;
             ++code_points;
@@ -441,7 +445,8 @@ bool SplitByNonAlphaTokenExtractor::nextInStringLike(const char * data, size_t l
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[pos]));
-            for (size_t j = 0; j < sz; ++j)
+            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+            for (size_t j = 0; j < sz && pos < length; ++j)
             {
                 token += data[pos];
                 ++pos;
@@ -619,7 +624,8 @@ bool SparseGramsTokenExtractor::nextInStringLike(const char * data, size_t lengt
             else
             {
                 const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
-                for (size_t j = 0; j < sz; ++j)
+                /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+                for (size_t j = 0; j < sz && i + j < length; ++j)
                     token.push_back(data[i + j]);
                 i += sz;
             }
