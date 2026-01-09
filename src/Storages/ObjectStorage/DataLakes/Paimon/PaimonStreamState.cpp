@@ -17,8 +17,6 @@ extern const int LOGICAL_ERROR;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
-namespace fs = std::filesystem;
-
 PaimonStreamState::PaimonStreamState(
     zkutil::ZooKeeperPtr keeper_,
     const String & keeper_path_,

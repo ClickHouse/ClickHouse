@@ -324,10 +324,15 @@ std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String
     if (persistent_components.hasMetadataCache())
     {
         String cache_key = PaimonMetadataCache::makeKey(persistent_components.table_path, manifest_list_path);
-        return persistent_components.metadata_cache->getOrSetManifestList(cache_key, [&]() {
-            LOG_TRACE(log, "Loading manifest list (cache miss): {}", manifest_list_path);
-            return table_client->getManifestMeta(manifest_list_path);
-        });
+        auto log_ptr = log;
+        auto client = table_client;
+        auto load_manifest_list = [log_ptr, client, manifest_list_path]()
+        {
+            LOG_TRACE(log_ptr, "Loading manifest list (cache miss): {}", manifest_list_path);
+            return client->getManifestMeta(manifest_list_path);
+        };
+
+        return persistent_components.metadata_cache->getOrSetManifestList(cache_key, load_manifest_list);
     }
 
     /// No cache, load directly
@@ -345,10 +350,16 @@ PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 s
     if (persistent_components.hasMetadataCache())
     {
         String cache_key = PaimonMetadataCache::makeKey(persistent_components.table_path, manifest_path);
-        return persistent_components.metadata_cache->getOrSetManifest(cache_key, [&]() {
-            LOG_TRACE(log, "Loading manifest (cache miss): {}", manifest_path);
-            return table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name);
-        });
+        auto log_ptr = log;
+        auto client = table_client;
+        auto partition_default_name = persistent_components.partition_default_name;
+        auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
+        {
+            LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
+            return client->getDataManifest(manifest_path, *schema, partition_default_name);
+        };
+
+        return persistent_components.metadata_cache->getOrSetManifest(cache_key, load_manifest);
     }
 
     /// No cache, load directly
