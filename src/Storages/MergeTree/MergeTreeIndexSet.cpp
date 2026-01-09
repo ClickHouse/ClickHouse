@@ -419,11 +419,6 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     return false;
 }
 
-std::string MergeTreeIndexConditionSet::getDescription() const
-{
-    return condition.getDescription().condition;
-}
-
 MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const
 {
     FilteredGranules res;

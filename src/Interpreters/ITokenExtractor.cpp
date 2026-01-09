@@ -638,36 +638,4 @@ bool SparseGramsTokenExtractor::nextInStringLike(const char * data, size_t lengt
     }
 }
 
-std::vector<String> SparseGramsTokenExtractor::compactTokens(const std::vector<String> & tokens) const
-{
-    std::unordered_set<String> result;
-    auto sorted_tokens = tokens;
-
-    /// Bug in clang-tidy: https://github.com/llvm/llvm-project/issues/78132
-    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); }); /// NOLINT(clang-analyzer-cplusplus.Move)
-
-    /// Filter out sparse grams that are covered by longer ones,
-    /// because if index has longer sparse gram, it has all shorter covered ones.
-    /// Using dumb O(n^2) algorithm to avoid unnecessary complexity, because this method
-    /// is used only for transforming constant searched tokens, which amount is usually small.
-    for (const auto & token : sorted_tokens)
-    {
-        bool is_covered = false;
-
-        for (const auto & existing_token : result)
-        {
-            if (existing_token.find(token) != std::string::npos)
-            {
-                is_covered = true;
-                break;
-            }
-        }
-
-        if (!is_covered)
-            result.insert(token);
-    }
-
-    return std::vector<String>(result.begin(), result.end());
-}
-
 }

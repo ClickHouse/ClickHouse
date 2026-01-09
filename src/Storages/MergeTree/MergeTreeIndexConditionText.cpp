@@ -351,29 +351,6 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
     return rpn_stack[0].can_be_true;
 }
 
-std::string MergeTreeIndexConditionText::getDescription() const
-{
-    std::string description = fmt::format("(mode: {}; tokens: [", global_search_mode);
-
-    if (all_search_tokens.size() > 50)
-    {
-        description += fmt::format("... {} tokens ...", all_search_tokens.size());
-    }
-    else
-    {
-        for (size_t i = 0; i < all_search_tokens.size(); ++i)
-        {
-            if (i > 0)
-                description += ", ";
-
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
-        }
-    }
-
-    description += "])";
-    return description;
-}
-
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     {
@@ -460,7 +437,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     std::vector<String> tokens;
     const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->stringToTokens(value.data(), value.size(), tokens);
-    return token_extractor->compactTokens(tokens);
+    return tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -468,7 +445,7 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     std::vector<String> tokens;
     const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
-    return token_extractor->compactTokens(tokens);
+    return tokens;
 }
 
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
@@ -476,7 +453,7 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     std::vector<String> tokens;
     const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
-    return token_extractor->compactTokens(tokens);
+    return tokens;
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
