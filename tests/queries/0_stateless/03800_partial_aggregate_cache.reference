@@ -1,0 +1,13 @@
+--- First query (cache miss expected)
+A	49995000	10000
+B	49995000	10000
+0	4
+--- Second query (cache hit expected)
+A	49995000	10000
+B	49995000	10000
+4	0
+--- Insert new data and query again
+A	99990000	20000
+B	99990000	20000
+4	2
+

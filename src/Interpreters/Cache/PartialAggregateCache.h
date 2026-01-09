@@ -19,6 +19,8 @@ namespace DB
 ///
 /// Use case: time-series queries that aggregate over append-only data. Historical parts
 /// produce the same partial aggregates on every execution, so we cache and reuse them.
+///
+/// Enable with: SET use_partial_aggregate_cache = 1
 class PartialAggregateCache
 {
 public:
@@ -71,6 +73,12 @@ public:
     /// Get cache statistics
     size_t sizeInBytes() const;
     size_t count() const;
+
+    /// Update cache configuration
+    void setMaxSizeInBytes(size_t max_size_in_bytes);
+
+    /// For debugging and system tables
+    std::vector<Cache::KeyMapped> dump() const;
 
 private:
     Cache cache;

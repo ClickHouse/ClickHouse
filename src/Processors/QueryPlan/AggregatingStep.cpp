@@ -11,6 +11,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -24,8 +25,10 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/PartialAggregateCachingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -524,8 +527,38 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+        /// Check if partial aggregate caching is enabled via setting
+        auto partial_aggregate_cache = settings.use_partial_aggregate_cache
+            ? Context::getGlobalContextInstance()->getPartialAggregateCache()
+            : nullptr;
+
+        if (partial_aggregate_cache)
+        {
+            /// Compute query hash from aggregation parameters (keys + aggregate functions)
+            SipHash hash;
+            for (const auto & key : params.keys)
+                hash.update(key);
+            for (const auto & aggregate : params.aggregates)
+            {
+                hash.update(aggregate.function->getName());
+                for (const auto & arg : aggregate.argument_names)
+                    hash.update(arg);
+            }
+            IASTHash query_hash;
+            query_hash.low64 = hash.get64();
+            query_hash.high64 = hash.get64();
+
+            pipeline.addSimpleTransform([&, query_hash, partial_aggregate_cache](const SharedHeader & header)
+            {
+                return std::make_shared<PartialAggregateCachingTransform>(
+                    *header, params, query_hash, partial_aggregate_cache, final);
+            });
+        }
+        else
+        {
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+        }
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 

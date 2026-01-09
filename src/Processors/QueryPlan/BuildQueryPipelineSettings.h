@@ -33,6 +33,8 @@ struct BuildQueryPipelineSettings
     size_t aggregation_memory_efficient_merge_threads;
     size_t min_outstreams_per_resize_after_split;
 
+    bool use_partial_aggregate_cache = false;
+
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };
 

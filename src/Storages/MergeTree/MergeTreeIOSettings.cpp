@@ -25,6 +25,7 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
@@ -108,6 +109,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer];
     result.query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext];
+    result.use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];
