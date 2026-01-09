@@ -82,7 +82,7 @@ SELECT toColumnTypeName(CAST('2025-01-01 01:02:03' AS DateTime));
     };
     FunctionDocumentation::IntroducedIn introduced_in_toColumnTypeName = {1, 1};
     FunctionDocumentation::Category category_toColumnTypeName = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_toColumnTypeName = {description_toColumnTypeName, syntax_toColumnTypeName, arguments_toColumnTypeName, returned_value_toColumnTypeName, examples_toColumnTypeName, introduced_in_toColumnTypeName, category_toColumnTypeName};
+    FunctionDocumentation documentation_toColumnTypeName = {description_toColumnTypeName, syntax_toColumnTypeName, arguments_toColumnTypeName, {}, returned_value_toColumnTypeName, examples_toColumnTypeName, introduced_in_toColumnTypeName, category_toColumnTypeName};
 
     factory.registerFunction<FunctionToColumnTypeName>(documentation_toColumnTypeName);
 }

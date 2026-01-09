@@ -80,7 +80,7 @@ private:
         "C328FF",
         "AAC328"};
 
-    const DB::Strings jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+    const DB::Strings jcols{"", "_", ".", "1", "叫", "c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
     pcg64_fast generator;

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class IDataType;
+
 struct SerializationInfoSettings
 {
     double ratio_of_defaults_for_sparse = 1.0;
@@ -21,23 +23,19 @@ struct SerializationInfoSettings
         bool choose_kind_,
         MergeTreeSerializationInfoVersion version_,
         MergeTreeStringSerializationVersion string_serialization_version_,
-        MergeTreeNullableSerializationVersion nullable_serialization_version_)
-        : ratio_of_defaults_for_sparse(ratio_of_defaults_for_sparse_)
-        , choose_kind(choose_kind_)
-        , version(version_)
-        , string_serialization_version(string_serialization_version_)
-        , nullable_serialization_version(nullable_serialization_version_)
-    {
-        /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
-        /// For older versions, it is automatically defaulted to preserve compatibility.
-        if (version < MergeTreeSerializationInfoVersion::WITH_TYPES)
-        {
-            string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
-            nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
-        }
-    }
+        MergeTreeNullableSerializationVersion nullable_serialization_version_);
+
+    /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
+    void tryDowngradeToBasic();
 
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+
+    bool canUseSparseSerialization(const IDataType & type) const;
+
+    /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
+    /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
+    /// Additional serialization versions can be added here in the future.
+    static SerializationInfoSettings enableAllSupportedSerializations();
 };
 
 }

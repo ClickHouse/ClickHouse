@@ -328,7 +328,8 @@ public:
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const;
+    MergeTreeDataPartFormat
+    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -961,7 +962,7 @@ public:
         AlterLockHolder & table_lock_holder);
 
     static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
-    static void verifySortingKey(const KeyDescription & sorting_key);
+    static void verifySortingKey(const KeyDescription & sorting_key, const MergeTreeData::MergingParams & merging_params);
 
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
@@ -1099,12 +1100,9 @@ public:
     virtual bool canUseAdaptiveGranularity() const;
 
     /// Get constant pointer to storage settings.
-    /// Copy this pointer into your scope and you will
-    /// get consistent settings.
-    MergeTreeSettingsPtr getSettings() const
-    {
-        return storage_settings.get();
-    }
+    /// Copy this pointer into your scope and you will get consistent settings.
+    /// When `projection` is provided, apply projection-level overrides on top of the table settings.
+    MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
 
     StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
 
@@ -1823,6 +1821,7 @@ protected:
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
+    void startStatisticsCache(UInt64 refresh_statistics_seconds);
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

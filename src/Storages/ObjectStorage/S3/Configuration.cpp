@@ -102,6 +102,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "no_sign_request",
     "partition_strategy",
     "partition_columns_in_data_file",
+    "storage_class_name",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -164,14 +165,12 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
-
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
         url,
         *s3_capabilities,
-        key_generator,
+        /*key_generator=*/nullptr,
         "StorageS3",
         false);
 }
@@ -343,7 +342,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     ASTs key_value_asts;
-    if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+    if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
         first_key_value_arg_it != args.end())
     {
         key_value_asts = ASTs(first_key_value_arg_it, args.end());
@@ -713,7 +712,7 @@ static void addStructureAndFormatToArgsIfNeededS3(
         size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
 
         ASTs key_value_asts;
-        auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+        auto first_key_value_arg_it = getFirstKeyValueArgument(args);
         if (first_key_value_arg_it != args.end())
         {
             key_value_asts = ASTs(first_key_value_arg_it, args.end());
@@ -734,7 +733,7 @@ static void addStructureAndFormatToArgsIfNeededS3(
 
         bool format_in_key_value = false;
         bool structure_in_key_value = false;
-        for (auto * it = first_key_value_arg_it; it != args.end(); ++it)
+        for (auto it = first_key_value_arg_it; it != args.end(); ++it)
         {
             const auto & arg = *it;
             const auto * function_ast = arg->as<ASTFunction>();
@@ -1012,4 +1011,3 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 }
 
 #endif
-

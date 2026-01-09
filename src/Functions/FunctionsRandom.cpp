@@ -130,13 +130,6 @@ void RandImpl::execute(char * output, size_t size)
     UInt64 rand_seed = randomSeed();
 
     UInt64 a = LinearCongruentialGenerator::a;
-    // TODO(dakovalkov): try to remove this.
-    /// Note: GCC likes to expand multiplication by a constant into shifts + additions.
-    /// In this case a few multiplications become tens of shifts and additions. That leads to a huge slow down.
-    /// To avoid it we pretend that 'a' is not a constant. Actually we hope that rand_seed is never 0.
-    if (rand_seed == 0)
-        a = LinearCongruentialGenerator::a + 2;
-
     constexpr UInt64 c = LinearCongruentialGenerator::c;
 
     UInt64x4 gens1{};

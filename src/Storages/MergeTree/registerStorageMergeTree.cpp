@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/registerMergeSelectors.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -675,8 +674,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
+
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
-            MergeTreeData::verifySortingKey(metadata.sorting_key);
+            MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
@@ -799,8 +799,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
+
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
-            MergeTreeData::verifySortingKey(metadata.sorting_key);
+            MergeTreeData::verifySortingKey(metadata.sorting_key, merging_params);
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
@@ -899,9 +900,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 void registerStorageMergeTree(StorageFactory & factory)
 {
-    /// Part of MergeTree
-    registerMergeSelectors();
-
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .supports_skipping_indices = true,

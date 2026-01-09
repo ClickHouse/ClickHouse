@@ -1,3 +1,4 @@
+#include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <base/scope_guard.h>
@@ -24,6 +25,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -43,12 +45,14 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageJoin.h>
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
@@ -134,7 +138,7 @@ static void addToNullableIfNeeded(
     if (outputs.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, String(join_dummy_result_name));
+        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
         const auto * node = &actions_dag->addColumn(std::move(column));
         actions_after_join.push_back(node);
         outputs.push_back(node);
@@ -358,7 +362,7 @@ IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMu
     if (required_nodes.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, String(join_dummy_result_name));
+        ColumnWithTypeAndName column(column_type->createColumnConst(0, 0), column_type, String(join_dummy_result_name));
         const auto * node = &actions_dag.addColumn(std::move(column));
         new_actions_after_join.push_back(node);
         required_nodes.push_back(node);
@@ -490,6 +494,17 @@ void JoinStepLogical::updateOutputHeader()
     if (!header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
 
+    /// Materialize constant columns because we need a non-constant dummy column as result
+    const auto & outputs = actions_dag->getOutputs();
+    for (const auto * node : outputs)
+    {
+        if (isDummyColumnOfThisStep(node))
+        {
+            materializeBlockInplace(header);
+            break;
+        }
+    }
+
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
@@ -542,16 +557,44 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
     return condition;
 }
 
+/// If side is not specified, check if filter can be executed after JOIN itself.
 bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
 {
-    /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
-    bool is_suitable_kind = join_operator.kind == JoinKind::Inner
-        || join_operator.kind == JoinKind::Cross
-        || join_operator.kind == JoinKind::Comma
-        || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
-        || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
+    switch (join_operator.strictness)
+    {
+        case JoinStrictness::Any:
+            /// We cannot push down to either side for ANY JOIN.
+            /// Let's say we have LEFT ANY JOIN:
+            /// 1. If we push down filter to the right side,
+            /// we may filter out rows that would otherwise match the left side rows,
+            /// resulting in different join results.
+            /// 2. If we push down filter to the left side,
+            /// we may filter out rows that should be included in the join result
+            /// with defaults or NULLs.
+            return false;
+        case JoinStrictness::All:
+        {
+            /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
+            bool is_suitable_kind = join_operator.kind == JoinKind::Inner
+                || join_operator.kind == JoinKind::Cross
+                || join_operator.kind == JoinKind::Comma
+                || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
 
-    return is_suitable_kind && join_operator.strictness == JoinStrictness::All;
+            return is_suitable_kind;
+        }
+        case JoinStrictness::Semi:
+            /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
+            return side.has_value();
+        case JoinStrictness::Anti:
+            /// We can push down to only to opposite sides for LEFT ANTI and RIGHT ANTI joins
+            /// See https://github.com/ClickHouse/ClickHouse/issues/93483
+            return (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
+        default:
+            /// TODO: Support RightAny strictness?
+            return false;
+    }
 }
 
 using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
@@ -689,7 +732,11 @@ static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
-JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::optional<JoinTableSide> side = {})
+JoinActionRef concatConditions(
+    std::vector<JoinActionRef> & conditions,
+    std::optional<JoinTableSide> side = {},
+    const bool can_extract_everything = true
+)
 {
     auto matching_point = std::ranges::partition(conditions,
         [side](const auto & node)
@@ -702,8 +749,16 @@ JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::opt
                 return true;
         });
 
-    std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
     JoinActionRef result(nullptr);
+
+    std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
+    if (matching.empty())
+        return result;
+
+    /// Leave at least one condition if needed
+    if (!can_extract_everything && matching.size() == conditions.size())
+        matching.pop_back(); /// TODO: Select condition depending on selectivity?
+
     if (matching.size() == 1)
         result = toBoolIfNeeded(matching.front());
     else if (matching.size() > 1)
@@ -983,6 +1038,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         rhs.setSourceRelations(BitSet().set(1));
 
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
+        table_join->setIsJoinWithConstant(true);
     }
 
     std::vector<JoinActionRef> used_expressions;
@@ -1169,9 +1226,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             auto input_it = name_to_nodes.find(column.name);
 
-            if (input_it == name_to_nodes.end())
+            if (input_it == name_to_nodes.end() || input_it->second.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in {}",
+                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in\n{}",
                     column.name,
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
@@ -1308,15 +1365,14 @@ void JoinStepLogical::buildPhysicalJoin(
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const SharedHeader & stream_header)
 {
-    if (join_operator.strictness != JoinStrictness::All)
-        return {};
-
-    auto & join_expression = join_operator.expression;
-
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
-    if (auto filter_condition = concatConditions(join_expression, side))
+    /// Check if condition can be extracted completely
+    const bool allow_join_on_const = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
+
+    auto & join_expression = join_operator.expression;
+    if (auto filter_condition = concatConditions(join_expression, side, /*can_extract_everything=*/allow_join_on_const))
         return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
     return {};
@@ -1333,7 +1389,7 @@ void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMappi
 
 ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
 {
-    ActionsDAG dag(stream_header->getColumnsWithTypeAndName());
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
 
     ActionsDAG::NodeMapping node_map;
     auto second_dag = ActionsDAG::cloneSubDAG(keys, node_map, false);

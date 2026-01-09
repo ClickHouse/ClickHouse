@@ -72,6 +72,7 @@ extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
 extern const Event KafkaWrites;
+extern const Event KafkaMVNotReady;
 }
 
 
@@ -1013,7 +1014,10 @@ void StorageKafka2::threadFunc(size_t idx)
             {
                 maybe_stall_reason.reset();
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                {
+                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 

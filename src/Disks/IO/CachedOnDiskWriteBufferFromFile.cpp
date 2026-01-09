@@ -282,6 +282,8 @@ void FileSegmentRangeWriter::completeFileSegment()
     if (file_segment.isDetached() || file_segment.isCompleted())
         return;
 
+    LOG_TEST(log, "Completing file segment {}:{}", file_segment.key(), file_segment.offset());
+
     /// We do not force shrink file segment in case of distributed cache,
     /// because it is possible that we reconnected and
     /// used a different connection to continue writing to cache,
@@ -323,6 +325,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const WriteSettings & settings_,
     const FileCacheUserInfo & user_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
+    bool is_distributed_cache_,
     FileSegmentKind file_segment_kind_)
     : WriteBufferFromFileDecorator(std::move(impl_))
     , log(getLogger("CachedOnDiskWriteBufferFromFile"))
@@ -333,10 +336,12 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , user(user_)
     , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
-    , is_distributed_cache(false)
+    , is_distributed_cache(is_distributed_cache_)
     , file_segment_kind(file_segment_kind_)
     , cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
+    LOG_TEST(log, "Cache key: {}, source path: {}, is distributed cache: {}",
+             key.toString(), source_path, is_distributed_cache);
 }
 
 void CachedOnDiskWriteBufferFromFile::nextImpl()

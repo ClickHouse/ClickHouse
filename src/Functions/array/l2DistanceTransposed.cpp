@@ -247,6 +247,21 @@ public:
         auto type_y = checkAndGetDataType<DataTypeArray>(last_arg.type.get())->getNestedType()->getTypeId();
         const size_t precision = arguments.size() - 2;
 
+        /// Expand constant bit plane columns to input_rows_count rows so executeDistanceCalculation doesn't need to handle constants
+        ColumnsWithTypeAndName expanded_arguments;
+        expanded_arguments.reserve(arguments.size());
+        for (size_t i = 0; i < precision; ++i)
+        {
+            const auto & arg = arguments[i];
+            if (arg.column->isConst())
+                expanded_arguments.emplace_back(arg.column->convertToFullColumnIfConst(), arg.type, arg.name);
+            else
+                expanded_arguments.emplace_back(arg);
+        }
+        /// Copy qbit_size and ref_vec arguments as-is
+        for (size_t i = precision; i < arguments.size(); ++i)
+            expanded_arguments.emplace_back(arguments[i]);
+
         /// We need to find two types: the type of the reference vector and the type of the calculation.
         /// The type of calculation is determined by the value of `precision. For example, if col_x is Float32 and p = 16, we will only have
         /// 16 meaningful bits to calculate the distance. So we can downcast the reference vector to BFloat16 and do calculations faster.
@@ -267,11 +282,17 @@ public:
                 UNREACHABLE();
         };
 
+        const bool ref_is_const = arguments.back().column->isConst();
+
         auto execute_with_type = [&]<typename T>() -> ColumnPtr
         {
             return dispatch_by_accum_type.template operator()<T>(
                 [&]<typename RefT, typename CalcT>()
-                { return executeDistanceCalculation<RefT, CalcT>(reference_vector, arguments, qbit_size, input_rows_count); });
+                {
+                    return ref_is_const
+                        ? executeDistanceCalculation<RefT, CalcT, true>(reference_vector, expanded_arguments, qbit_size, input_rows_count)
+                        : executeDistanceCalculation<RefT, CalcT, false>(reference_vector, expanded_arguments, qbit_size, input_rows_count);
+                });
         };
 
         /// Dispatch to type-specific implementation based on reference vector type
@@ -300,16 +321,25 @@ private:
     {
         ColumnsWithTypeAndName converted_arguments;
 
-        const auto precision = arguments[2].column->getUInt(0);
         const auto * qbit_type = assert_cast<const DataTypeQBit *>(arguments[0].type.get());
         const auto * qbit_ptr = assert_cast<const ColumnQBit *>(extractFromConst(arguments[0].column).get());
-        const auto qbit_dimension = qbit_type->getDimension();
         const auto & qbit_tuple = assert_cast<const ColumnTuple &>(qbit_ptr->getTupleColumn());
+        const auto precision = arguments[2].column->getUInt(0);
+        const auto qbit_is_const = arguments[0].column->isConst();
+        const auto qbit_dimension = qbit_type->getDimension();
         const auto bit_plane_type = qbit_type->getNestedTupleElementType();
 
+        /// Add qbit.i arguments
         for (size_t bit = 0; bit < precision; ++bit)
-            converted_arguments.emplace_back(qbit_tuple.getColumn(bit).getPtr(), bit_plane_type, toString(bit + 1));
-        /// Add dimension as penultimate argument and reference vector as last argument
+        {
+            auto bit_plane_col = qbit_tuple.getColumn(bit).getPtr();
+            /// If QBit was constant, wrap the bit plane in ColumnConst to preserve const-ness for downstream handling
+            if (qbit_is_const)
+                bit_plane_col = ColumnConst::create(std::move(bit_plane_col), input_rows_count);
+            converted_arguments.emplace_back(std::move(bit_plane_col), bit_plane_type, toString(bit + 1));
+        }
+
+        /// Add dimension and reference vector as last two arguments
         auto dimension_column = DataTypeUInt64().createColumnConst(1, qbit_dimension);
         converted_arguments.emplace_back(dimension_column, std::make_shared<DataTypeUInt64>(), "dimension");
 
@@ -331,8 +361,8 @@ private:
         return executeImpl(converted_arguments, nullptr, input_rows_count);
     }
 
-    /// RefT is the type of the reference vector, CalcT is the type used for calculation (can be downcasted from RefT if p is low enough)
-    template <typename RefT, typename CalcT>
+    /// RefT is the type of the reference vector, CalcT is the type used for calculation
+    template <typename RefT, typename CalcT, bool ref_is_const>
     ColumnPtr executeDistanceCalculation(
         const ColumnArray & col_y, const ColumnsWithTypeAndName & arguments, const size_t qbit_size, size_t input_rows_count) const
     {
@@ -340,7 +370,7 @@ private:
         const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(qbit_size);
         const size_t padded_array_size = bytes_per_fixedstring * 8;
 
-        /// For the sake of speed, downcast the reference vector to CalcT `precision` is low enough
+        /// For the sake of speed, downcast the reference vector to CalcT if `precision` is low enough
         const auto & array_data = static_cast<const ColumnVector<RefT> &>(col_y.getData()).getData();
         const PaddedPODArray<CalcT> * data_ptr;
         PaddedPODArray<CalcT> array_data_downcasted;
@@ -355,6 +385,9 @@ private:
         {
             data_ptr = &array_data;
         }
+
+        /// Only needed for non-const reference vectors
+        [[maybe_unused]] const auto & ref_offsets = col_y.getOffsets();
 
         auto col_res = ColumnVector<Float64>::create(input_rows_count);
         auto & result_data = col_res->getData();
@@ -375,13 +408,12 @@ private:
             /// Untranspose p bit planes into all rows of the block
             for (size_t bit = 0; bit < precision; ++bit)
             {
-                const auto & col = assert_cast<const ColumnFixedString &>(*extractFromConst(arguments[bit].column));
+                const auto & col = assert_cast<const ColumnFixedString &>(*arguments[bit].column);
                 Word bit_mask = Word(1) << (sizeof(Word) * 8 - 1 - bit);
 
                 for (size_t r = 0; r < rows_in_block; ++r)
                 {
                     const UInt8 * src = reinterpret_cast<const UInt8 *>(col.getChars().data()) + (base_row + r) * bytes_per_fixedstring;
-
                     SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(block_row(r)), padded_array_size, bit_mask);
                 }
             }
@@ -389,14 +421,23 @@ private:
             /// Calculate L2 distance
             for (size_t r = 0; r < rows_in_block; ++r)
             {
+                /// The branching in `else` is fine performance-wise since multiple reference vectors per QBit is rare
+                const CalcT * ref_data = [&]()
+                {
+                    if constexpr (ref_is_const)
+                        return data_ptr->data();
+                    else
+                        return data_ptr->data() + (base_row + r == 0 ? 0 : ref_offsets[base_row + r - 1]);
+                }();
+
                 auto * dst = block_row(r);
 
                 if constexpr (std::is_same_v<CalcT, BFloat16>)
-                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
+                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
                 else if constexpr (std::is_same_v<CalcT, Float32>)
-                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
+                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
                 else if constexpr (std::is_same_v<CalcT, Float64>)
-                    l2Distance(dst, data_ptr->data(), qbit_size, &result_data[base_row + r]);
+                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
                 else
                     UNREACHABLE();
             }

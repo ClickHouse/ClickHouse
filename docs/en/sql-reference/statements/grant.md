@@ -457,7 +457,7 @@ Examples of how this hierarchy is treated:
 
 ### BACKUP {#backup}
 
-Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](../../operations/backup.md).
+Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](/operations/backup/overview).
 
 ### CREATE {#create}
 

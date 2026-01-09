@@ -17,8 +17,9 @@ MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
-MAX_CPUS_PER_WORKER = 4
-MAX_MEM_PER_WORKER = 7
+
+MAX_CPUS_PER_WORKER = 5
+MAX_MEM_PER_WORKER = 11
 
 
 def _start_docker_in_docker():
@@ -97,7 +98,12 @@ FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
-    batch_num: int, total_batches: int, args_test: List[str], workers: int
+    batch_num: int,
+    total_batches: int,
+    args_test: List[str],
+    workers: int,
+    job_options: str,
+    info: Info,
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -111,7 +117,7 @@ def get_parallel_sequential_tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+        test_files, total_batches, batch_num, workers, job_options, info
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -212,6 +218,8 @@ def main():
     if args.workers:
         workers = args.workers
     else:
+        print("ncpu:", ncpu)
+        print("mem_gb:", mem_gb)
         workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
@@ -320,6 +328,8 @@ def main():
             total_batches,
             args.test or targeted_tests or changed_test_modules,
             workers,
+            args.options,
+            info,
         )
     )
 
@@ -414,7 +424,7 @@ def main():
             error_info.append(test_result_sequential.info)
 
     # Collect logs before rerun
-    files = []
+    attached_files = []
     if not info.is_local_run:
         failed_suits = []
         # Collect docker compose configs used in tests
@@ -430,14 +440,14 @@ def main():
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
         if failed_suits:
-            files.append(
+            attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
             )
-            files.append(
+            attached_files.append(
                 Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
             )
             if Path("./ci/tmp/docker-in-docker.log").exists():
-                files.append("./ci/tmp/docker-in-docker.log")
+                attached_files.append("./ci/tmp/docker-in-docker.log")
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
@@ -464,7 +474,6 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        failed_tests_files.append("dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
@@ -477,8 +486,9 @@ def main():
                         name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
                     )
                 )
+                attached_files.append("dmesg.log")
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=files)
+    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))

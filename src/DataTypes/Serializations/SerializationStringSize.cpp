@@ -61,7 +61,19 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
         }
         else
         {
-            state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+            auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+
+            /// If there is no state cache (e.g. StorageLog), we must always read the full string data. Without cached
+            /// state, we cannot know in advance whether the string data will be needed later, and the string size has
+            /// to be derived from the data itself.
+            ///
+            /// As a result, the subsequent deserialization relies on the substream cache to correctly share the string
+            /// data across subcolumns. We do not support an optimization that deserializes only the size substream in
+            /// this case, and therefore we must always populate the substream cache with the string data rather than
+            /// the size-only substream.
+            if (!cache)
+                string_state->need_string_data = true;
+            state = string_state;
             addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
         }
         settings.path.pop_back();
@@ -142,7 +154,7 @@ void SerializationStringSize::deserializeWithoutStringData(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        for (size_t i = 0; i < rows_offset; ++i)
+        for (size_t i = 0; unlikely(i < rows_offset); ++i)
         {
             UInt64 size;
             readVarUInt(size, *stream);
@@ -155,9 +167,9 @@ void SerializationStringSize::deserializeWithoutStringData(
         mutable_column_data.resize(prev_size + limit);
 
         size_t num_read_rows = 0;
-        for (; num_read_rows < limit; ++num_read_rows)
+        for (; likely(num_read_rows < limit); ++num_read_rows)
         {
-            if (stream->eof())
+            if (unlikely(stream->eof()))
                 break;
             UInt64 size;
             readVarUInt(size, *stream);

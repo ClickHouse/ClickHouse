@@ -54,6 +54,7 @@ namespace ProfileEvents
     extern const Event KafkaDirectReads;
     extern const Event KafkaBackgroundReads;
     extern const Event KafkaWrites;
+    extern const Event KafkaMVNotReady;
 }
 
 
@@ -579,7 +580,10 @@ void StorageKafka::threadFunc(size_t idx)
             while (!task->stream_cancelled)
             {
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                {
+                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 

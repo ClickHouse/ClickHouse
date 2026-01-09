@@ -141,7 +141,7 @@ class Runner:
 
 
 def test_insert_multithreaded(started_cluster):
-    DURATION_SECONDS = 50
+    DURATION_SECONDS = 30
 
     for node in nodes:
         node.query("DROP TABLE IF EXISTS repl_test")

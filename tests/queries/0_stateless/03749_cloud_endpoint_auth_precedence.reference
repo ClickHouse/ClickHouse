@@ -1,0 +1,13 @@
+Test 1: --host= with --secure should work
+OK
+Test 2: --host (space) with credentials should work
+OK
+Test 3: --host= with --port= should work
+OK
+Test 4: --host= with --port (space) should work
+OK
+Test 5: Config file credentials should be respected
+OK
+Test 6: Multiple host/port format variations
+OK
+All tests completed

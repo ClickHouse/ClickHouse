@@ -169,7 +169,7 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<Now64OverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }

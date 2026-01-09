@@ -391,6 +391,56 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     return create(res_values, std::move(res_offsets), res_offset);
 }
 
+void ColumnSparse::filter(const Filter & filt)
+{
+    if (_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), _size);
+
+    if (offsets->empty())
+    {
+        _size = countBytesInFilter(filt);
+        return;
+    }
+
+    auto & res_offsets_data = getOffsetsData();
+    size_t res_offsets_pos = 0;
+
+    Filter values_filter;
+    values_filter.reserve_exact(values->size());
+    values_filter.push_back(1);
+
+    size_t res_offset = 0;
+    auto offset_it = begin();
+    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
+    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
+    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    {
+        if (!offset_it.isDefault())
+        {
+            if (filt[i])
+            {
+                res_offsets_data[res_offsets_pos] = res_offset;
+                values_filter.push_back(1);
+                ++res_offsets_pos;
+                ++res_offset;
+            }
+            else
+            {
+                values_filter.push_back(0);
+            }
+            offset_it.increaseCurrentOffset();
+        }
+        else
+        {
+            res_offset += filt[i] != 0;
+        }
+    }
+
+    values->filter(values_filter);
+    res_offsets_data.resize_assume_reserved(res_offsets_pos);
+    _size = res_offset;
+}
+
 void ColumnSparse::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < _size)

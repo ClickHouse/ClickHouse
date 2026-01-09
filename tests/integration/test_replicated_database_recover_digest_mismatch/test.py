@@ -112,7 +112,7 @@ def test_recover_digest_mismatch(started_cluster):
 
     disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {db_disk_name} --save-logs --query "
     db_disk_path = dummy_node.query(
-        "SELECT path FROM system.disks WHERE name='{db_disk_name}'"
+        f"SELECT path FROM system.disks WHERE name='{db_disk_name}'"
     ).strip()
 
     print(f"db_data_path {db_data_path}")
@@ -128,7 +128,7 @@ def test_recover_digest_mismatch(started_cluster):
         f"""printf "%s" "{corrupted_mv1_metadata}" | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'""",
         f"{disk_cmd_prefix} 'remove {db_data_path}d1.sql'",
         "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' && rm -rf /var/lib/clickhouse/store",  # Remove both metadata and data
+        f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' || true && rm -rf /var/lib/clickhouse/store"
     ]
 
     for command in ways_to_corrupt_metadata:

@@ -20,6 +20,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
@@ -61,7 +62,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -169,13 +170,21 @@ public:
         {
             auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
             scan = KernelUtils::unwrapResult(
-                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
+                ffi::scan(
+                    kernel_snapshot_state->snapshot.get(),
+                    kernel_snapshot_state->engine.get(),
+                    predicate.get(),
+                    /* schema */nullptr),
                 "scan");
         }
         else
         {
             scan = KernelUtils::unwrapResult(
-                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), nullptr),
+                ffi::scan(
+                    kernel_snapshot_state->snapshot.get(),
+                    kernel_snapshot_state->engine.get(),
+                    /* predicate */nullptr,
+                    /* schema */nullptr),
                 "scan");
         }
 
@@ -310,6 +319,7 @@ public:
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
+        int64_t /*mod_time*/,
         const ffi::Stats * stats,
         const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
@@ -447,7 +457,12 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
     throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
     enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
-    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+
+    if (settings[DB::Setting::delta_lake_snapshot_version].value == LATEST_SNAPSHOT_VERSION)
+    {
+        snapshot_version_to_read = std::nullopt;
+    }
+    else
     {
         if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");
@@ -497,7 +512,9 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "snapshot");
     }
     snapshot_version = ffi::version(snapshot.get());
-    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
+    scan = KernelUtils::unwrapResult(
+        ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
+        "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const

@@ -843,8 +843,8 @@ There are several functions that can help to inspect the content of the JSON col
 - [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
 - [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
 - [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
-- [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
-- [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
+- [`distinctDynamicTypes`](../aggregate-functions/reference/distinctDynamicTypes.md)
+- [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctJSONPaths.md)
 
 **Examples**
 

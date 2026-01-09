@@ -142,6 +142,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -287,7 +289,6 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
-    extern const SettingsBool load_marks_asynchronously;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -851,7 +852,6 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
-        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -883,6 +883,9 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
+
+        // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
+        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
@@ -984,6 +987,8 @@ struct ContextSharedPart : boost::noncopyable
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
             zookeeper.reset();
         }
 
@@ -1515,7 +1520,7 @@ void Context::setFilesystemCacheUser(const String & user)
 static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
 try
 {
-    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
+    LOG_DEBUG(log, "Setting up temporary data storage at disk '{}' with path '{}'", disk->getName(), disk->getPath());
 
     if (disk->existsDirectory(""))
     {
@@ -2601,12 +2606,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions
             = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
         if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
-            && hasInsertionTable())
+            && hasInsertionTableColumnsDescription())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(getInsertionTable(), shared_from_this())
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
+            const auto & insert_columns = *getInsertionTableColumnsDescription();
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
@@ -2621,7 +2623,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            const auto * expression = expression_list.begin();
+            auto expression = expression_list.begin();
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
@@ -3140,6 +3142,14 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
+void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::optional<ColumnsDescription> column_description)
+{
+    insertion_table_info = {
+        .table = std::move(db_and_table),
+        .column_names = std::move(column_names),
+        .columns_description = std::move(column_description),
+    };
+}
 
 String Context::getDefaultFormat() const
 {
@@ -3445,7 +3455,6 @@ const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
         shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    SharedLockGuard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
 }
 
@@ -3455,14 +3464,7 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
         shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
-}
-
-void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
@@ -3471,7 +3473,6 @@ IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
         shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
     return *shared->workload_entity_storage;
 }
 
@@ -5390,18 +5391,12 @@ std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
     return shared->system_logs->query_views_log;
 }
 
-std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
+std::shared_ptr<PartLog> Context::getPartLog() const
 {
     SharedLockGuard lock(shared->mutex);
 
     /// No part log or system logs are shutting down.
     if (!shared->system_logs)
-        return {};
-
-    /// Will not log operations on system tables (including part_log itself).
-    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
-    /// and also make troubles on startup.
-    if (part_database == DatabaseCatalog::SYSTEM_DATABASE)
         return {};
 
     return shared->system_logs->part_log;
@@ -6074,9 +6069,31 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    UInt64 max_block_size,
+    const std::optional<FormatSettings> & format_settings,
+    const std::optional<UInt64> & max_block_size_bytes,
+    const std::optional<UInt64> & min_block_size_rows,
+    const std::optional<UInt64> & min_block_size_bytes) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(
+        name,
+        buf,
+        sample,
+        shared_from_this(),
+        max_block_size,
+        format_settings,
+        nullptr,
+        nullptr,
+        false,
+        CompressionMethod::None,
+        false,
+        max_block_size_bytes,
+        min_block_size_rows,
+        min_block_size_bytes);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -6221,16 +6238,15 @@ std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::ge
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
-std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> Context::getStorageMetadataCache() const
+QueryMetadataCachePtr Context::getQueryMetadataCache() const
 {
     chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->storage_metadata_cache, std::unique_lock(getQueryContext()->storage_metadata_cache_mutex));
+    return getQueryContext()->query_metadata_cache.lock();
 }
 
-std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> Context::getStorageSnapshotCache() const
+void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
 {
-    chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->storage_snapshot_cache, std::unique_lock(getQueryContext()->storage_snapshot_cache_mutex));
+    query_metadata_cache = query_metadata_cache_;
 }
 
 bool Context::hasQueryParameters() const
@@ -6751,6 +6767,10 @@ void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback
     merge_tree_read_task_callback = callback;
 }
 
+bool Context::hasMergeTreeAllRangesCallback() const
+{
+    return merge_tree_all_ranges_callback.has_value();
+}
 
 MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
 {
@@ -6774,6 +6794,13 @@ BlockMarshallingCallback Context::getBlockMarshallingCallback() const
 void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
 {
     block_marshalling_callback = std::move(callback);
+}
+
+RuntimeDataflowStatisticsCacheUpdaterPtr Context::getRuntimeDataflowStatisticsCacheUpdater() const
+{
+    if (!dataflow_cache_updater)
+        dataflow_cache_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>();
+    return dataflow_cache_updater;
 }
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)
@@ -6992,8 +7019,6 @@ ReadSettings Context::getReadSettings() const
 
     res.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
     res.remote_fs_prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
-
-    res.load_marks_asynchronously = settings_ref[Setting::load_marks_asynchronously];
 
     res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
 

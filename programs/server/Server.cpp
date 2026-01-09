@@ -114,12 +114,12 @@
 #include <Server/CloudPlacementInfo.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
-#include <Server/KeeperReadinessHandler.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
+#include <Server/KeeperHTTPHandlerFactory.h>
 #include <Server/ArrowFlightHandler.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
@@ -305,6 +305,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
@@ -1369,6 +1370,7 @@ try
 
     MemoryWorker memory_worker(
         server_settings[ServerSetting::memory_worker_period_ms],
+        server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
         server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup],
         global_context->getPageCache());
@@ -2058,6 +2060,29 @@ try
             extra_paths.emplace_back(key_path);
     }
 
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before any scenario that requires
+    /// DNS resolution (e.g. the loading of tables and clusters config).
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (server_settings[ServerSetting::disable_internal_dns_cache])
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
+        DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
+
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
+        dns_cache_updater->start();
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2478,10 +2503,11 @@ try
                     "HTTP Control: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(http_context),
-                        createKeeperHTTPControlMainHandlerFactory(
-                            config_getter(),
-                            global_context->getKeeperDispatcher(),
-                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
+                        createKeeperHTTPHandlerFactory(
+                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
             });
         }
 #else
@@ -2664,29 +2690,6 @@ try
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-
-    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
-    /// and thus this object must be created after the SCOPE_EXIT object where shared
-    /// context is destroyed.
-    /// In addition this object has to be created before the loading of the tables.
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (server_settings[ServerSetting::disable_internal_dns_cache])
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
-
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
-    }
-
-    if (dns_cache_updater)
-        dns_cache_updater->start();
 
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
 

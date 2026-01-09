@@ -800,9 +800,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 bool left_is_null = isNullConstant(in_first_argument);
                 const auto & candidate_name = non_const_set_candidate->getFunctionName();
+                bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
+                                  function_name == "notNullIn" || function_name == "globalNotNullIn");
 
-                /// Case 1: array(..) node
-                if (candidate_name == "array")
+                /// Case 1: array(..) node or any function returning Array type
+                if (candidate_name == "array" || isArray(non_const_set_candidate->getResultType()))
                 {
                     /// convert to has() by swapping arguments
                     function_name = "has";
@@ -814,8 +816,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         auto [wrapped_node, proj_names] = makeNullSafeHas(
                             fn_args[0], fn_args[1], arguments_projection_names, scope);
+                        if (is_not_in)
+                        {
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(wrapped_node);
+                            resolveFunction(wrapped_node = not_fn, scope);
+                        }
                         node = wrapped_node;
                         return proj_names;
+                    }
+
+                    if (is_not_in)
+                    {
+                        /// Wrap has() result with NOT for notIn/globalNotIn
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        resolveFunction(node, scope);
+                        auto not_fn = std::make_shared<FunctionNode>("not");
+                        not_fn->getArguments().getNodes().push_back(node);
+                        node = not_fn;
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
                     }
                 }
                 /// Case 2: tuple(..) node - rewrite into an array
@@ -823,37 +843,64 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
 
-                    /// special handling for NULL IN (tuple) with transform_null_in enabled
-                    if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
+                    /// If the left-hand side is a lambda, do not rewrite
+                    /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
+                    if (in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA)
                     {
-                        return handleNullInTuple(tuple_args, function_name,
-                                            parameters_projection_names,
-                                            arguments_projection_names, scope, node);
+                        /// Do nothing; leave IN as-is
                     }
-
-                    if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
+                    else
                     {
-                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                        auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-                        node = std::make_shared<ConstantNode>(Field{}, null_type);
-                        return ProjectionNames{proj};
-                    }
+                        /// special handling for NULL IN (tuple) with transform_null_in enabled
+                        if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            return handleNullInTuple(tuple_args, function_name,
+                                                parameters_projection_names,
+                                                arguments_projection_names, scope, node);
+                        }
 
-                    // convert tuple to array with proper type handling
-                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
+                        if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                            node = std::make_shared<ConstantNode>(Field{}, null_type);
+                            return ProjectionNames{proj};
+                        }
 
-                    /// convert to has() and handle null-safety
-                    function_name = "has";
-                    is_special_function_in = false;
-                    auto & fn_args = function_node.getArguments().getNodes();
-                    std::swap(fn_args[0], fn_args[1]);
+                        /// convert tuple to array with proper type handling
+                        in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
 
-                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
-                    {
-                        auto [wrapped_node, proj_names] = makeNullSafeHas(
-                            fn_args[0], fn_args[1], arguments_projection_names, scope);
-                        node = wrapped_node;
-                        return proj_names;
+                        /// convert to has() and handle null-safety
+                        function_name = "has";
+                        is_special_function_in = false;
+                        auto & fn_args = function_node.getArguments().getNodes();
+                        std::swap(fn_args[0], fn_args[1]);
+
+                        if (!scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            auto [wrapped_node, proj_names] = makeNullSafeHas(
+                                fn_args[0], fn_args[1], arguments_projection_names, scope);
+                            if (is_not_in)
+                            {
+                                auto not_fn = std::make_shared<FunctionNode>("not");
+                                not_fn->getArguments().getNodes().push_back(wrapped_node);
+                                resolveFunction(wrapped_node = not_fn, scope);
+                            }
+                            node = wrapped_node;
+                            return proj_names;
+                        }
+
+                        if (is_not_in)
+                        {
+                            /// Wrap has() result with NOT for notIn/globalNotIn
+                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            resolveFunction(node, scope);
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(node);
+                            node = not_fn;
+                            resolveFunction(node, scope);
+                            return ProjectionNames{proj};
+                        }
                     }
                 }
             }
@@ -931,7 +978,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (get_scalar_const_arg && scope.context->hasQueryContext())
             {
                 auto query_context = scope.context->getQueryContext();
-                auto scalar_string = toString(get_scalar_const_arg->getValue());
+                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);

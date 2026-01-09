@@ -636,6 +636,14 @@ public:
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
+    /// Returns true if stream with specified path corresponds to Variant subcolumn.
+    static bool isVariantSubcolumn(const SubstreamPath & path);
+
+    /// In old versions we could escape file names for some specific substreams differently and it can lead
+    /// to not found stream file names in new versions. To keep compatibility, if we can't find stream file name
+    /// we are trying to change escaping (via StreamFileNameSettings) and try to find stream file name again.
+    static bool tryToChangeStreamFileNameSettingsForNotFoundStream(const SubstreamPath & substream_path, StreamFileNameSettings & stream_file_name_settings);
+
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
     static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams = false);
 

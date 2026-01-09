@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache and global udf factory
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
 -- Tests the preprocessor argument for tokenizers in the text index definitions
@@ -139,9 +139,9 @@ CREATE TABLE tab
 (
     key UInt64,
     str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nonExistingFunction)
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = BAD)
 )
-ENGINE = MergeTree ORDER BY key;   -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY key;   -- { serverError BAD_ARGUMENTS }
 
 SELECT '- The preprocessor must be an expression, with existing functions';
 CREATE TABLE tab
@@ -186,7 +186,7 @@ CREATE TABLE tab
     arr_str Array(String),
     INDEX idx(arr_str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr_str))
 )
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
 
 
 

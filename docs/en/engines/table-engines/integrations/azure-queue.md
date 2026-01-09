@@ -85,6 +85,12 @@ SETTINGS
     after_processing_move_container = 'dst-container';
 ```
 
+## SELECT from AzureQueue table engine {#select}
+
+SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
+However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+
 ## Description {#description}
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
@@ -159,7 +165,6 @@ CREATE TABLE system.azure_queue_log
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (event_date, event_time)
-SETTINGS index_granularity = 8192
 COMMENT 'Contains logging entries with the information files processes by S3Queue engine.'
 
 ```

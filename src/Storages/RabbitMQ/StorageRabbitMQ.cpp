@@ -800,7 +800,7 @@ void StorageRabbitMQ::read(
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");

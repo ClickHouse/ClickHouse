@@ -169,6 +169,11 @@ FieldVector IndexDescription::parsePositionalArgumentsFromAST(const ASTPtr & arg
     return result;
 }
 
+bool IndexDescription::isSimpleSingleColumnIndex() const
+{
+    return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();
+}
+
 
 bool IndicesDescription::has(const String & name) const
 {

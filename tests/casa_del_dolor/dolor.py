@@ -5,6 +5,8 @@ import mmap
 import os
 import pathlib
 import random
+import re
+import subprocess
 import tempfile
 import time
 import signal
@@ -226,6 +228,7 @@ parser.add_argument("--with-redis", action="store_true", help="With Redis integr
 parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
+parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -324,6 +327,18 @@ parser.add_argument(
     action="store_true",
     help="Set shared merge tree disk or policy",
 )
+parser.add_argument(
+    "--without-monitoring",
+    action="store_false",
+    dest="with_monitoring",
+    help="Remove periodic monitoring of the cluster",
+)
+parser.add_argument(
+    "--time-between-monitoring-runs",
+    type=ordered_pair,
+    default=(5, 10),
+    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
+)
 
 args = parser.parse_args()
 
@@ -350,20 +365,38 @@ if seed == 0:
 random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
-# Start the cluster, by using one the server binaries
-server_path = os.path.join(tempfile.gettempdir(), f"clickhouse{seed}")
-new_temp_server_path = os.path.join(tempfile.gettempdir(), f"clickhousetemp{seed}")
-try:
-    os.unlink(server_path)
-except FileNotFoundError:
-    pass
-current_server = random.choice(args.server_binaries)
-os.symlink(current_server, server_path)
-os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
+sorted_binaries = []
+# Start the cluster, by using one of the server binaries
+if len(args.server_binaries) > 1 and random.randint(1, 100) <= 90:
+    # Pick the lowest version most of the times
+    def get_clickhouse_version(binary_path):
+        result = subprocess.run(
+            [binary_path, "--version"], capture_output=True, text=True
+        )
+        # Output like: "ClickHouse client version 24.3.1.2 (official build)."
+        match = re.search(r"version (\d+\.\d+\.\d+\.?\d*)", result.stdout)
+        if match:
+            return tuple(int(x) for x in match.group(1).split("."))
+        raise ValueError(f"Could not parse version from {binary_path}")
+
+    first_server = args.server_binaries[0]
+    lowest_version = get_clickhouse_version(first_server)
+    for val in args.server_binaries:
+        next_version = get_clickhouse_version(val)
+        if next_version < lowest_version:
+            first_server = val
+            lowest_version = next_version
+else:
+    first_server = random.choice(args.server_binaries)
+# Make sure the first server version is always first
+sorted_binaries.append(first_server)
+for val in args.server_binaries:
+    if val != first_server:
+        sorted_binaries.append(val)
 
 # Find if private binary is being used
 is_private_binary = False
-with open(current_server, "rb") as f:
+with open(first_server, "rb") as f:
     mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
     is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
@@ -389,7 +422,12 @@ if args.with_minio:
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 
 cluster = ClickHouseCluster(
-    __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
+    __file__,
+    custom_keeper_configs=keeper_configs,
+    azurite_default_port=10000,
+    server_bin_path=first_server,
+    client_bin_path=args.client_binary,
+    server_binaries=sorted_binaries,
 )
 
 # Set environment variables such as locales and timezones
@@ -441,6 +479,7 @@ for i in range(0, len(args.replica_values)):
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
+            with_kafka=args.with_kafka,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -448,9 +487,13 @@ for i in range(0, len(args.replica_values)):
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
     )
+# Copy the binaries into the containers
+server_versions = {}
+for server in servers:
+    server_versions[server.name] = first_server
 cluster.start()
 logger.info(
-    f"Starting cluster with {len(servers)} server(s) and server binary {current_server} "
+    f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
 for i in range(0, len(args.replica_values)):
     logger.info(
@@ -515,14 +558,6 @@ def dolor_cleanup():
         except FileNotFoundError:
             pass
     try:
-        os.unlink(server_path)
-    except FileNotFoundError:
-        pass
-    try:
-        os.unlink(new_temp_server_path)
-    except FileNotFoundError:
-        pass
-    try:
         os.unlink(generator.temp.name)
     except FileNotFoundError:
         pass
@@ -564,6 +599,8 @@ if args.with_mongodb:
     integrations.append("mongo")
 if args.with_redis:
     integrations.append("redis")
+if args.with_kafka:
+    integrations.append("kafka")
 
 # This is the main loop, run while client and server are running
 all_running = True
@@ -573,6 +610,7 @@ lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
 )
+monitoring_lower_bound, monitoring_upper_bound = args.time_between_monitoring_runs
 # Leak detection
 leak_detector: ElOracloDeLeaks = ElOracloDeLeaks()
 leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
@@ -602,6 +640,9 @@ while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
     next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
+    next_monitoring = start + random.randint(
+        monitoring_lower_bound, monitoring_upper_bound
+    )
 
     while all_running and start < finish:
         interval = 1
@@ -622,6 +663,11 @@ while all_running:
         ):
             leak_detector.run_next_leak_detection(cluster, client)
             next_leak_detection += random.randint(leak_lower_bound, leak_upper_bound)
+        if all_running and args.with_monitoring and next_monitoring < time.time():
+            tables_oracle.run_health_check(cluster, servers, logger)
+            next_monitoring += random.randint(
+                monitoring_lower_bound, monitoring_upper_bound
+            )
         time.sleep(interval)
         start += interval
 
@@ -643,27 +689,32 @@ while all_running:
         )
 
         next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
-        # Replace server binary, using a new temporary symlink, then replace the old one
+        time.sleep(1)
+        # Replace server binary, using a new temporary symlink
         if (
-            len(args.server_binaries) > 1
+            len(sorted_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
-            if len(servers) == 1 and len(args.server_binaries) == 2:
-                current_server = (
-                    args.server_binaries[0]
-                    if current_server == args.server_binaries[1]
-                    else args.server_binaries[1]
-                )
+            if len(servers) == 1 and len(sorted_binaries) == 2:
+                # Pick the other server version
+                next_server = sorted_binaries[
+                    0 if server_versions[next_pick.name] == sorted_binaries[1] else 1
+                ]
             else:
-                current_server = random.choice(args.server_binaries)
-            logger.info(f"Using the server binary {current_server} after restart")
-            try:
-                os.unlink(new_temp_server_path)
-            except FileNotFoundError:
-                pass
-            os.symlink(current_server, new_temp_server_path)
-            os.rename(new_temp_server_path, server_path)
-        time.sleep(15)  # Let the zookeeper session expire
+                next_server = random.choice(sorted_binaries)
+            logger.info(f"Picked the server binary {next_server} for restart")
+            # Update symlink in the container
+            next_pick.exec_in_container(
+                [
+                    "ln",
+                    "-sf",
+                    f"/usr/bin/clickhouse{sorted_binaries.index(next_server)}",
+                    "/usr/bin/clickhouse",
+                ],
+                user="root",
+            )
+            server_versions[next_pick.name] = next_server
+        time.sleep(3)  # Let the keeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
         if args.with_leak_detection and next_pick.name == "node0":
             # Has to reset leak detector
@@ -681,6 +732,7 @@ while all_running:
             "mysql8": ["mysql80"],
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
+            "kafka": ["kafka1"],
         }
 
         restart_choices = list(available_options[next_pick])

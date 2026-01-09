@@ -103,6 +103,7 @@ public:
         const WriteSettings & settings_,
         const FileCacheUserInfo & user_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
+        bool is_distributed_cache_,
         FileSegmentKind file_segment_kind_ = FileSegmentKind::Regular);
 
     void nextImpl() override;

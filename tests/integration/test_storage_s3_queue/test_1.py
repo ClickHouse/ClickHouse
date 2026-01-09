@@ -64,6 +64,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -80,6 +81,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -491,6 +493,7 @@ def test_max_set_size(started_cluster):
             "s3queue_cleanup_interval_min_ms": 0,
             "s3queue_cleanup_interval_max_ms": 0,
             "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1
         },
     )
     total_values = generate_random_files(

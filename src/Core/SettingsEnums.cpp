@@ -59,6 +59,11 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
+IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"greedy",             JoinOrderAlgorithm::GREEDY},
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},
@@ -320,7 +325,8 @@ IMPLEMENT_SETTING_ENUM(
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
-     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
