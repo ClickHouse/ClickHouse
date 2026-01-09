@@ -1,7 +1,14 @@
 #include <Interpreters/Cache/PartialAggregateCache.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Columns/IColumn.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric PartialAggregateCacheBytes;
+    extern const Metric PartialAggregateCacheEntries;
+}
 
 namespace DB
 {
@@ -16,7 +23,8 @@ bool PartialAggregateCache::Key::operator==(const Key & other) const
 size_t PartialAggregateCache::KeyHasher::operator()(const Key & key) const
 {
     SipHash hash;
-    hash.update(key.query_hash.value);
+    hash.update(key.query_hash.low64);
+    hash.update(key.query_hash.high64);
     hash.update(key.part_name);
     hash.update(key.part_mutation_version);
     return hash.get64();
@@ -31,7 +39,7 @@ size_t PartialAggregateCache::EntryWeight::operator()(const Entry & entry) const
 }
 
 PartialAggregateCache::PartialAggregateCache(size_t max_size_in_bytes, size_t max_entries)
-    : cache(/*name=*/"PartialAggregateCache", max_size_in_bytes, max_entries, /*strict_capacity=*/0)
+    : cache("LRU", CurrentMetrics::PartialAggregateCacheBytes, CurrentMetrics::PartialAggregateCacheEntries, max_size_in_bytes, max_entries, 0.5)
 {
 }
 
