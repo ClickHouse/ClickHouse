@@ -191,6 +191,8 @@ static void extractLiteralTokensImpl(
         if (!function->arguments)
             return;
 
+        /// Get the function resolver. If this fails, the exception will propagate and
+        /// template construction will fail - same as what happens in the visitor.
         FunctionOverloadResolverPtr builder = FunctionFactory::instance().get(function->name, context);
         ColumnNumbers dont_visit_children = builder->getArgumentsThatAreAlwaysConstant();
 
@@ -206,6 +208,9 @@ static void extractLiteralTokensImpl(
         return;
     if (ast->as<ASTIdentifier>())
         return;
+
+    /// For any other AST node type, the visitor will throw "Syntax error in constant expression".
+    /// Don't add anything to result - the visitor will fail before processing any nested literals.
 }
 
 static void extractLiteralTokens(
@@ -545,6 +550,11 @@ ConstantExpressionTemplate::TemplateStructurePtr ConstantExpressionTemplate::Cac
     /// Step 3: Replace literals using pre-extracted token info (matched by DFS order)
     ReplaceLiteralsVisitor visitor(context, literal_tokens);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
+
+    /// Verify that the number of literals in the cloned AST matches what we extracted from the original.
+    /// If this fails, there's a bug in the DFS traversal order between extractLiteralTokens and visit().
+    chassert(visitor.literal_index == literal_tokens.size());
+
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
