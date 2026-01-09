@@ -164,7 +164,7 @@ public:
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    DDLGuardPtr getDDLGuard(const String & database, const String & table);
+    DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
