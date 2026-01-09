@@ -1802,9 +1802,18 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
     if (!expr->has_comp_expr())
     {
-        flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-        colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), expr);
-        this->entries.clear();
+        if (rg.nextBool())
+        {
+            flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+            colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), expr);
+            this->entries.clear();
+        }
+        else
+        {
+            std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+
+            generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 16, expr);
+        }
     }
     switch (itpe)
     {
@@ -1889,13 +1898,10 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             if (rg.nextSmallNumber() < 4)
             {
                 IndexKeyVal * ikv = idef->add_params()->mutable_kval();
+                std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
 
                 ikv->set_key("preprocessor");
-                flatTableColumnPath(
-                    flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-                colRefOrExpression(
-                    rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), ikv->mutable_value());
-                this->entries.clear();
+                generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 11, ikv->mutable_value());
             }
             if (rg.nextBool())
             {
