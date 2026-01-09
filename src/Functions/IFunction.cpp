@@ -677,22 +677,15 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     {
         checkNumberOfArguments(arguments.size());
 
-        bool has_variant = false;
         for (const auto & arg : arguments)
         {
             if (isVariant(arg.type))
             {
-                has_variant = true;
-                break;
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
             }
-        }
-
-        if (has_variant && useDefaultImplementationForVariant())
-        {
-            DataTypes data_types(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-                data_types[i] = arguments[i].type;
-            return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
         }
     }
 
