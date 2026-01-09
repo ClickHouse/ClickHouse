@@ -876,7 +876,7 @@ class Result(MetaClasses.Serializable):
             pr_title=pr_title,
             branch=branch,
             ci_status=self.status,
-            results=[Result.to_dict(r) for r in self.results],
+            result=Result.to_dict(self),
             ext={},
         )
 

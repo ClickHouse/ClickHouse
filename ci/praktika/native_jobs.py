@@ -9,7 +9,6 @@ from ._environment import _Environment
 from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
-from .event import EventTimeline
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -520,33 +519,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         files.append(Result.file_name_static(workflow.name))
 
-    if workflow.enable_notifications:
-        print("Push events")
-
-        def do():
-            for commit_author in env.COMMIT_AUTHORS:
-                try:
-                    workflow_result = Result.from_fs(workflow.name)
-                    pr_status = "open" if env.PR_NUMBER else "merged"
-                    EventTimeline.update(
-                        commit_author,
-                        workflow_result.to_event(
-                            sha=env.SHA,
-                            pr_number=env.PR_NUMBER or env.LINKED_PR_NUMBER,
-                            branch=env.BRANCH,
-                            pr_status=pr_status,
-                            pr_title=env.PR_TITLE,
-                        ),
-                        s3_path=Settings.EVENTS_S3_PATH,
-                    )
-                except Exception as e:
-                    traceback.print_exc()
-                    print(f"ERROR: failed to update events for {commit_author}: {e}")
-
-        results.append(
-            Result.from_commands_run(name="Update events", command=lambda: do())
-        )
-
     return Result.create_from(name=job_name, results=results, files=files)
 
 
@@ -700,25 +672,6 @@ def _finish_workflow(workflow, job_name):
         ):
             print(f"ERROR: failed to set ReadyForMerge status")
             env.add_info(ResultInfo.GH_STATUS_ERROR)
-
-    if workflow.enable_notifications and env.COMMIT_AUTHORS:
-        for commit_author in env.COMMIT_AUTHORS:
-            try:
-                pr_status = "open" if env.PR_NUMBER else "merged"
-                EventTimeline.update(
-                    commit_author,
-                    workflow_result.to_event(
-                        sha=env.SHA,
-                        pr_number=env.PR_NUMBER or env.LINKED_PR_NUMBER,
-                        branch=env.BRANCH,
-                        pr_status=pr_status,
-                        pr_title=env.PR_TITLE,
-                    ),
-                    s3_path=Settings.EVENTS_S3_PATH,
-                )
-            except Exception as e:
-                traceback.print_exc()
-                print(f"ERROR: failed to update events for {commit_author}: {e}")
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)

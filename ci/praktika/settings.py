@@ -113,8 +113,12 @@ class _Settings:
     TEST_FAILURE_PATTERNS: Optional[List[str]] = None
 
     ######################################
-    #        Notification Settings       #
+    #        Infrastructure Settings     #
     ######################################
+    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = ""
+    AWS_REGION: str = ""
+    # S3 path for Slack feed events storage (format: bucket/prefix)
+    # Used by EventFeed and FeedSubscription for PR notification subscriptions
     EVENTS_S3_PATH: str = ""
 
 
@@ -122,6 +126,9 @@ _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
     "HTML_S3_PATH",
+    "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
+    "EVENTS_S3_PATH",
+    "AWS_REGION",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",
     "TEMP_DIR",
@@ -163,7 +170,6 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
-    "EVENTS_S3_PATH",
 ]
 
 

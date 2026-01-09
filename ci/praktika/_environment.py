@@ -34,6 +34,7 @@ class _Environment(MetaClasses.Serializable):
     PR_TITLE: str
     USER_LOGIN: str
     FORK_NAME: str
+    COMMIT_MESSAGE: str = ""
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
@@ -167,6 +168,16 @@ class _Environment(MetaClasses.Serializable):
             else:
                 assert False, "TODO: not supported"
 
+            if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
+                COMMIT_MESSAGE = Shell.get_output(
+                    f"git log -1 --pretty=%s {SHA}", verbose=True
+                )
+            else:
+                COMMIT_MESSAGE = Shell.get_output(
+                    f"gh api repos/{REPOSITORY}/commits/{SHA} --jq '.commit.message'",
+                    verbose=True,
+                )
+
             INSTANCE_TYPE = (
                 os.getenv("INSTANCE_TYPE", None)
                 or Shell.get_output("ec2metadata --instance-type")
@@ -192,6 +203,7 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TYPE = Workflow.Event.PUSH
             CHANGE_URL = ""
             COMMIT_URL = ""
+            COMMIT_MESSAGE = ""
             INSTANCE_TYPE = ""
             INSTANCE_ID = ""
             INSTANCE_LIFE_CYCLE = ""
@@ -219,6 +231,7 @@ class _Environment(MetaClasses.Serializable):
             USER_LOGIN=USER_LOGIN,
             COMMIT_AUTHORS=COMMIT_AUTHORS,
             FORK_NAME=FORK_NAME,
+            COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],

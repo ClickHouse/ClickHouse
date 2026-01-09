@@ -64,6 +64,8 @@ CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
 
 EVENTS_S3_PATH = "clickhouse-test-reports-private/events"
+CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
+AWS_REGION = "us-east-1"
 
 # Substrings used to classify and categorize test failures based on error output.
 # Use the following query to find test failures NOT covered by current patterns:

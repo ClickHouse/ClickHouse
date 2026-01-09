@@ -98,6 +98,10 @@ class Info:
         return self.env.FORK_NAME
 
     @property
+    def commit_message(self):
+        return self.env.COMMIT_MESSAGE
+
+    @property
     def user_name(self):
         return self.env.USER_LOGIN
 
