@@ -610,14 +610,14 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
             state.last_processed_path.value(), path);
     }
 
+    Coordination::RequestPtr request;
+    if (state.last_processed_path.has_value())
+        request = zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version);
+    else
+        request = zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent);
+
     if (created_nodes)
     {
-        Coordination::RequestPtr request;
-        if (state.last_processed_path.has_value())
-            request = zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version);
-        else
-            request = zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent);
-
         if (auto it = created_nodes->find(processed_node_path_); it != created_nodes->end())
         {
             if (it->second.file_path < path)
@@ -637,20 +637,30 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
                 processed_node_path_,
                 LastProcessedFileInfo({/* last_processed_path */path, /* request_index */requests.size()}));
 
+            LOG_TEST(
+                log, "Adding {} request for path {} (processed_node_path: {})",
+                state.last_processed_path.has_value() ? "SET" : "CREATE",
+                path, processed_node_path_);
+
             requests.push_back(std::move(request));
         }
     }
     else
     {
-        LOG_TEST(log, "Max processed file does not exist, creating at: {}", processed_node_path_);
-        requests.push_back(zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent));
+        LOG_TEST(
+            log, "Adding {} request for path {} (processed_node_path: {})",
+            state.last_processed_path.has_value() ? "SET" : "CREATE",
+            path, processed_node_path_);
+
+        requests.push_back(std::move(request));
     }
 
     if (created_processing_node)
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
-void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests,
+void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(
+    Coordination::Requests & requests,
     LastProcessedFileInfoMapPtr created_nodes)
 {
     chassert(created_processing_node);
