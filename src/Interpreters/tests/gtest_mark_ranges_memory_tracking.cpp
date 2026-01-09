@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/MemoryTracker.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/thread_local_rng.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -17,6 +18,9 @@ TEST(MarkRanges, MemoryTracking)
 
     total_memory_tracker.setHardLimit(1_KiB);
     CurrentThread::get().memory_tracker.setHardLimit(1_KiB);
+
+    SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(0));
+    SCOPE_EXIT_SAFE(CurrentThread::get().memory_tracker.setHardLimit(0));
 
     constexpr size_t num_ranges = 1'000'000;
     std::uniform_int_distribution<size_t> dist(0, 1'000'000);
