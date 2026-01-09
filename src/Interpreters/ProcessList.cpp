@@ -279,6 +279,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
+                    .metrics = {}, /// Metrics are set by child scopes
                 };
 
                 if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
@@ -865,6 +866,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
             .buffer_size = settings[Setting::temporary_files_buffer_size],
+            .metrics = {}, /// Metrics are set by child scopes
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

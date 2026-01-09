@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -213,6 +214,7 @@ static void splitAndModifyMutationCommands(
         NameSet dropped_columns;
         NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
+        auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
         for (const auto & command : commands)
         {
@@ -273,8 +275,9 @@ static void splitAndModifyMutationCommands(
                             auto required_columns = index.expression->getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
-                                if (!part_columns.has(column))
-                                    extra_columns_for_indices_and_projections.insert(column);
+                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                if (column_in_storage && !part_columns.has(*column_in_storage))
+                                    extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
                             break;
                         }
@@ -290,8 +293,9 @@ static void splitAndModifyMutationCommands(
                         {
                             for (const auto & column : projection.required_columns)
                             {
-                                if (!part_columns.has(column))
-                                    extra_columns_for_indices_and_projections.insert(column);
+                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                if (column_in_storage && !part_columns.has(*column_in_storage))
+                                    extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
                             break;
                         }
@@ -443,11 +447,19 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::REWRITE_PARTS
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE
                 || command.type == MutationCommand::Type::APPLY_DELETED_MASK
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::UPDATE)
+            {
+                for_interpreter.push_back(command);
+
+                /// Update column can change the set of substreams for column if it
+                /// changes serialization (for example from Sparse to not Sparse).
+                /// We add it "for renames" because these set of commands also removes redundant files
+                for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -1060,7 +1072,7 @@ static NameToNameVector collectFilesForRenames(
                     add_rename(*filename, new_filename);
                 }
             }
-            else if (command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 /// Remove files for streams that exist in source_part,
                 /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from

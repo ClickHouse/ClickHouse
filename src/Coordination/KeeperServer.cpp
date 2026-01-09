@@ -655,11 +655,6 @@ void KeeperServer::shutdown()
     state_machine->shutdownStorage();
 }
 
-namespace
-{
-
-
-}
 
 void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {

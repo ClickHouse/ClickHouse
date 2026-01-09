@@ -228,9 +228,11 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         if (!t)
             return false;
 
-        if (auto id = t->getStorageID(); !access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+        const auto storage_id = t->getStorageID();
+        if (!access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))
             return false;
 
+        access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
         auto structure = t->getInMemoryMetadataPtr()->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
@@ -981,6 +983,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
+                /// Skip columns that don't exists in this table. It may happen when we use merge over tables with different schemas.
+                if (!storage_columns.has(column))
+                    continue;
+
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
 
