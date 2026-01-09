@@ -110,6 +110,19 @@ defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFile
             end_it - deletes_objects.begin(),
             deletes_objects.size());
     }
+    if (beg_it != end_it)
+    {
+        auto previous_it = end_it;
+        --previous_it;
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergIterator"),
+            "Got {} {} delete elements for data file {}, first taken object info is {}, last taken object info is {}",
+            static_cast<size_t>(end_it - beg_it),
+            is_equality_delete ? "equality" : "position",
+            data_object_.file_path,
+            beg_it->dumpDeletesMatchingInfo(),
+            end_it->dumpDeletesMatchingInfo());
+    }
     return {beg_it, end_it};
 }
 
@@ -340,26 +353,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addPositionDeleteObject(position_delete);
         }
-        if (position_delete_span.size())
-        {
-            LOG_INFO(
-                &Poco::Logger::get("IcebergIterator"),
-                "Got {} position delete elements for file {}",
-                position_delete_span.size(),
-                object_info->relative_path_with_metadata.relative_path);
-        }
         auto equality_delete_span = defineDeletesSpan(manifest_file_entry, equality_deletes_files, true);
         for (const auto & equality_delete : equality_delete_span)
         {
             object_info->addEqualityDeleteObject(equality_delete);
-        }
-        if (equality_delete_span.size())
-        {
-            LOG_INFO(
-                &Poco::Logger::get("IcebergIterator"),
-                "Got {} equality delete elements for file {}",
-                equality_delete_span.size(),
-                object_info->relative_path_with_metadata.relative_path);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);

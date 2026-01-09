@@ -54,6 +54,10 @@ struct PartitionSpecsEntry
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
+String dumpPartitionSpecification(const PartitionSpecification & partition_specification);
+
+String dumpPartitionKeyValue(const DB::Row & partition_key_value);
+
 /// Description of Data file in manifest file
 struct ManifestFileEntry
 {
@@ -79,6 +83,8 @@ struct ManifestFileEntry
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
+
+    String dumpDeletesMatchingInfo() const;
 };
 
 /**
