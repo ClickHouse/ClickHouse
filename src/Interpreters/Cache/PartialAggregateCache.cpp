@@ -39,7 +39,13 @@ size_t PartialAggregateCache::EntryWeight::operator()(const Entry & entry) const
 }
 
 PartialAggregateCache::PartialAggregateCache(size_t max_size_in_bytes, size_t max_entries)
-    : cache("LRU", CurrentMetrics::PartialAggregateCacheBytes, CurrentMetrics::PartialAggregateCacheEntries, max_size_in_bytes, max_entries, 0.5)
+    : cache(
+        "LRU",
+        CurrentMetrics::PartialAggregateCacheBytes,
+        CurrentMetrics::PartialAggregateCacheEntries,
+        max_size_in_bytes,
+        max_entries,
+        /*size_ratio=*/0.5)
 {
 }
 
