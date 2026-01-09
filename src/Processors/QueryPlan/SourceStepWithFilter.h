@@ -119,7 +119,7 @@ public:
 
     bool isQueryWithFinal() const { return query_info.isFinal(); }
 
-    const Names & getRequiredSourceColumns() const { return required_source_columns; }
+    const Names & requiredSourceColumns() const { return required_source_columns; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
