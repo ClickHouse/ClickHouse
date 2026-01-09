@@ -19,12 +19,20 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Core/Block.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/Exception.h>
 #include <Storages/IStorage.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+
+#include <cmath>
 
 #include <substrait/plan.pb.h>
 #include <substrait/algebra.pb.h>
@@ -44,7 +52,206 @@ namespace ErrorCodes
 
 class SubstraitSerializer::Impl
 {
-private: 
+private:
+    /// Convert a Field value to a Substrait Literal
+    void convertFieldToLiteral(const Field & field, const DataTypePtr & type, substrait::Expression::Literal * literal)
+    {
+        if (field.isNull())
+        {
+            auto * null_type = literal->mutable_null();
+            convertType(type, null_type);
+            return;
+        }
+
+        TypeIndex type_id = type->getTypeId();
+
+        // Handle Nullable wrapper
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            convertFieldToLiteral(field, nullable->getNestedType(), literal);
+            return;
+        }
+
+        // Handle LowCardinality wrapper
+        if (const auto * lc = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        {
+            convertFieldToLiteral(field, lc->getDictionaryType(), literal);
+            return;
+        }
+
+        switch (type_id)
+        {
+            case TypeIndex::Nothing:
+            {
+                // Nothing type is always null - emit typed null with nullable i32
+                auto * null_type = literal->mutable_null();
+                null_type->mutable_i32()->set_nullability(substrait::Type::NULLABILITY_NULLABLE);
+                return;
+            }
+            case TypeIndex::Int8:
+                literal->set_i8(field.safeGet<Int8>());
+                break;
+            case TypeIndex::Int16:
+                literal->set_i16(field.safeGet<Int16>());
+                break;
+            case TypeIndex::Int32:
+                literal->set_i32(field.safeGet<Int32>());
+                break;
+            case TypeIndex::Int64:
+                literal->set_i64(field.safeGet<Int64>());
+                break;
+            case TypeIndex::UInt8:
+                if (type->getName() == "Bool")
+                    literal->set_boolean(field.safeGet<UInt8>() != 0);
+                else
+                    literal->set_i16(field.safeGet<UInt8>());
+                break;
+            case TypeIndex::UInt16:
+                literal->set_i32(field.safeGet<UInt16>());
+                break;
+            case TypeIndex::UInt32:
+                literal->set_i64(field.safeGet<UInt32>());
+                break;
+            case TypeIndex::UInt64:
+            {
+                UInt64 u64 = field.safeGet<UInt64>();
+                if (u64 <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                {
+                    literal->set_i64(static_cast<Int64>(u64));
+                }
+                else
+                {
+                    auto * decimal_literal = literal->mutable_decimal();
+                    decimal_literal->set_precision(20);
+                    decimal_literal->set_scale(0);
+                    Int128 raw_value = static_cast<Int128>(u64);
+                    std::string bytes(16, '\0');
+                    unsigned __int128 u = static_cast<unsigned __int128>(raw_value);
+                    for (int i = 0; i < 16; ++i)
+                        bytes[15 - i] = static_cast<char>((u >> (i * 8)) & 0xFF);
+                    decimal_literal->set_value(std::move(bytes));
+                }
+                break;
+            }
+            case TypeIndex::Float32:
+                literal->set_fp32(static_cast<float>(field.safeGet<Float64>()));
+                break;
+            case TypeIndex::Float64:
+                literal->set_fp64(field.safeGet<Float64>());
+                break;
+            case TypeIndex::String:
+                literal->set_string(field.safeGet<String>());
+                break;
+            case TypeIndex::Date:
+                literal->set_date(static_cast<Int32>(field.safeGet<UInt16>()));
+                break;
+            case TypeIndex::DateTime:
+                literal->set_timestamp(static_cast<Int64>(field.safeGet<UInt32>()) * 1000000LL);
+                break;
+            case TypeIndex::DateTime64:
+            {
+                const auto * dt64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
+                if (!dt64)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DateTime64 type");
+                Int64 raw = applyVisitor(FieldVisitorConvertToNumber<Int64>(), field);
+                int scale = dt64->getScale();
+                if (scale < 6)
+                {
+                    int diff = 6 - scale;
+                    Int64 factor = 1;
+                    for (int i = 0; i < diff; ++i) factor *= 10;
+                    raw *= factor;
+                }
+                else if (scale > 6)
+                {
+                    int diff = scale - 6;
+                    Int64 factor = 1;
+                    for (int i = 0; i < diff; ++i) factor *= 10;
+                    raw /= factor;
+                }
+                literal->set_timestamp(raw);
+                break;
+            }
+            case TypeIndex::Decimal32:
+            case TypeIndex::Decimal64:
+            case TypeIndex::Decimal128:
+            {
+                auto * decimal_literal = literal->mutable_decimal();
+                UInt32 target_scale = getDecimalScale(*type);
+                UInt32 target_precision = getDecimalPrecision(*type);
+
+                Int128 raw_value = 0;
+                if (type_id == TypeIndex::Decimal32)
+                    raw_value = static_cast<Int128>(field.safeGet<DecimalField<Decimal32>>().getValue().value);
+                else if (type_id == TypeIndex::Decimal64)
+                    raw_value = static_cast<Int128>(field.safeGet<DecimalField<Decimal64>>().getValue().value);
+                else
+                    raw_value = field.safeGet<DecimalField<Decimal128>>().getValue().value;
+
+                std::string bytes(16, '\0');
+                unsigned __int128 u = static_cast<unsigned __int128>(raw_value);
+                for (int i = 0; i < 16; ++i)
+                    bytes[15 - i] = static_cast<char>((u >> (i * 8)) & 0xFF);
+
+                decimal_literal->set_value(std::move(bytes));
+                decimal_literal->set_precision(target_precision);
+                decimal_literal->set_scale(target_scale);
+                break;
+            }
+            case TypeIndex::Array:
+            {
+                const auto & arr = field.safeGet<Array>();
+                auto * list_literal = literal->mutable_list();
+                const auto * array_type = checkAndGetDataType<DataTypeArray>(type.get());
+                if (!array_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array type");
+                
+                for (const auto & elem : arr)
+                {
+                    auto * elem_literal = list_literal->add_values();
+                    convertFieldToLiteral(elem, array_type->getNestedType(), elem_literal);
+                }
+                break;
+            }
+            case TypeIndex::Tuple:
+            {
+                const auto & tuple = field.safeGet<Tuple>();
+                auto * struct_literal = literal->mutable_struct_();
+                const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(type.get());
+                if (!tuple_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple type");
+                
+                const auto & element_types = tuple_type->getElements();
+                for (size_t i = 0; i < tuple.size(); ++i)
+                {
+                    auto * elem_literal = struct_literal->add_fields();
+                    convertFieldToLiteral(tuple[i], element_types[i], elem_literal);
+                }
+                break;
+            }
+            case TypeIndex::Map:
+            {
+                const auto & map_field = field.safeGet<Map>();
+                auto * map_literal = literal->mutable_map();
+                const auto * map_type = checkAndGetDataType<DataTypeMap>(type.get());
+                if (!map_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Map type");
+                
+                for (const auto & kv : map_field)
+                {
+                    const auto & kv_tuple = kv.safeGet<Tuple>();
+                    auto * key_value = map_literal->add_key_values();
+                    convertFieldToLiteral(kv_tuple[0], map_type->getKeyType(), key_value->mutable_key());
+                    convertFieldToLiteral(kv_tuple[1], map_type->getValueType(), key_value->mutable_value());
+                }
+                break;
+            }
+            default:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Field type {} not yet supported for Substrait literal conversion", type->getName());
+        }
+    }
+
     // Extension registry to track function references
     struct FunctionExtension
     {
@@ -181,9 +388,18 @@ private:
             convertType(nullable->getNestedType(), substrait_type, substrait::Type::NULLABILITY_NULLABLE);
             return;
         }
+        if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(ch_type.get()))
+        {
+            convertType(lc_type->getDictionaryType(), substrait_type, nullability);
+            return;
+        }
         
         switch (ch_type->getTypeId())
         {
+            case TypeIndex::Nothing:
+                // Nothing type (bare NULL) - map to nullable i32 as Substrait doesn't have a "nothing" type
+                substrait_type->mutable_i32()->set_nullability(substrait::Type::NULLABILITY_NULLABLE);
+                break;
             case TypeIndex::Int8:
                 substrait_type->mutable_i8()->set_nullability(nullability);
                 break;
@@ -234,9 +450,9 @@ private:
             }
             case TypeIndex::DateTime:
             {
-                // DateTime in seconds since epoch
+                // ClickHouse timestamp is in seconds while Substrait's is in microseconds so explicitly set precision to 6
                 auto * ts = substrait_type->mutable_precision_timestamp();
-                ts->set_precision(0);  // 0 = seconds precision
+                ts->set_precision(6);
                 ts->set_nullability(nullability);
                 break;
             }
@@ -251,47 +467,44 @@ private:
                 break;
             }
             case TypeIndex::Decimal32:
-            {
-                auto * decimal_type = substrait_type->mutable_decimal();
-                decimal_type->set_nullability(nullability);
-                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal32>>(ch_type.get());
-                if (!dec)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal32 type but got {}", ch_type->getName());
-                decimal_type->set_scale(dec->getScale());
-                decimal_type->set_precision(dec->getPrecision());
-                break;
-            }
             case TypeIndex::Decimal64:
-            {
-                auto * decimal_type = substrait_type->mutable_decimal();
-                decimal_type->set_nullability(nullability);
-                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal64>>(ch_type.get());
-                if (!dec)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal64 type but got {}", ch_type->getName());
-                decimal_type->set_scale(dec->getScale());
-                decimal_type->set_precision(dec->getPrecision());
-                break;
-            }
             case TypeIndex::Decimal128:
-            {
-                auto * decimal_type = substrait_type->mutable_decimal();
-                decimal_type->set_nullability(nullability);
-                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal128>>(ch_type.get());
-                if (!dec)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal128 type but got {}", ch_type->getName());
-                decimal_type->set_scale(dec->getScale());
-                decimal_type->set_precision(dec->getPrecision());
-                break;
-            }
             case TypeIndex::Decimal256:
             {
                 auto * decimal_type = substrait_type->mutable_decimal();
                 decimal_type->set_nullability(nullability);
-                const auto * dec = checkAndGetDataType<DataTypeDecimal<Decimal256>>(ch_type.get());
-                if (!dec)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal256 type but got {}", ch_type->getName());
-                decimal_type->set_scale(dec->getScale());
-                decimal_type->set_precision(dec->getPrecision());
+                decimal_type->set_scale(getDecimalScale(*ch_type));
+                decimal_type->set_precision(getDecimalPrecision(*ch_type));
+                break;
+            }
+            case TypeIndex::Array:
+            {
+                auto * list = substrait_type->mutable_list();
+                list->set_nullability(nullability);
+                // Recursively convert the nested element type
+                const auto * array_type = checkAndGetDataType<DataTypeArray>(ch_type.get());
+                convertType(array_type->getNestedType(), list->mutable_type());
+                break;
+            }
+            case TypeIndex::Tuple:
+            {
+                auto * strct = substrait_type->mutable_struct_();
+                strct->set_nullability(nullability);
+                const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(ch_type.get());
+                for (const auto & element : tuple_type->getElements())
+                {
+                    // Add each tuple element to the Substrait struct types
+                    convertType(element, strct->add_types());
+                }
+                break;
+            }
+            case TypeIndex::Map:
+            {
+                auto * map = substrait_type->mutable_map();
+                map->set_nullability(nullability);
+                const auto * ch_map = checkAndGetDataType<DataTypeMap>(ch_type.get());
+                convertType(ch_map->getKeyType(), map->mutable_key());
+                convertType(ch_map->getValueType(), map->mutable_value());
                 break;
             }
             default:
@@ -341,50 +554,15 @@ private:
                 // Constant value
                 auto * literal = expr.mutable_literal();
                 
-                if (!node->column || node->column->empty())
+                if (!node->column || node->column->empty() || (*node->column)[0].isNull())
                 {
-                    // NULL value - just create empty literal
-                    literal->set_boolean(false); // Placeholder for NULL
+                    auto * null_type = literal->mutable_null();
+                    convertType(node->result_type, null_type);
                 }
                 else
                 {
-                    // Get the first value from the column
-                    TypeIndex type_id = node->result_type->getTypeId();
-                    auto field = (*node->column)[0];
-                    
-                    switch (type_id)
-                    {
-                        case TypeIndex::UInt8:
-                            if (node->result_type->getName() == "Bool")
-                                literal->set_boolean(field.safeGet<UInt8>() != 0);
-                            else
-                                literal->set_i32(field.safeGet<UInt8>());
-                            break;
-                        case TypeIndex::Int32:
-                            literal->set_i32(field.safeGet<Int32>());
-                            break;
-                        case TypeIndex::Int64:
-                            literal->set_i64(field.safeGet<Int64>());
-                            break;
-                        case TypeIndex::UInt32:
-                            literal->set_i64(field.safeGet<UInt32>());
-                            break;
-                        case TypeIndex::UInt64:
-                            literal->set_i64(static_cast<Int64>(field.safeGet<UInt64>()));
-                            break;
-                        case TypeIndex::Float32:
-                            literal->set_fp32(static_cast<float>(field.safeGet<Float64>()));
-                            break;
-                        case TypeIndex::Float64:
-                            literal->set_fp64(field.safeGet<Float64>());
-                            break;
-                        case TypeIndex::String:
-                            literal->set_string(field.safeGet<String>());
-                            break;
-                        default:
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                "Constant type {} not yet supported", node->result_type->getName());
-                    }
+                    // Delegate to convertFieldToLiteral for all types
+                    convertFieldToLiteral((*node->column)[0], node->result_type, literal);
                 }
                 break;
             }
@@ -399,21 +577,19 @@ private:
             
             case ActionsDAG::ActionType::FUNCTION:
             {
-                // Function call
                 const String & func_name = node->function_base->getName();
                 auto * scalar_func = expr.mutable_scalar_function();
                 
-                // Register function and get reference ID (will be added to extension_urns)
                 int ref_id = registerFunction(func_name);
                 scalar_func->set_function_reference(ref_id);
                 
-                // Convert children arguments
+                convertType(node->result_type, scalar_func->mutable_output_type());
+                
                 for (const auto * child : node->children)
                 {
                     auto * arg = scalar_func->add_arguments();
                     arg->mutable_value()->CopyFrom(convertExpression(child, input_header));
                 }
-                
                 break;
             }
             
@@ -570,81 +746,23 @@ private:
         // Get the ActionsDAG containing the expressions
         const auto & actions_dag = expr_step->getExpression();
         
-        // Get headers
+        // Get input header from child node
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
         
         // Convert child node
         auto child_rel = convertNode(node->children[0]);
         
-        // Detect if this ExpressionStep contains a filter condition
-        // Check for boolean outputs which indicate filter predicates
+        // ExpressionStep always produces ProjectRel
+        auto * project_rel = rel->mutable_project();
+        project_rel->mutable_input()->Swap(&child_rel);
+        
+        // Convert all output expressions
         const auto & outputs = actions_dag.getOutputs();
-        const ActionsDAG::Node * filter_node = nullptr;
-        std::vector<const ActionsDAG::Node *> projection_outputs;
-        
-        // Analyze outputs to detect filter conditions
-        for (const auto * output : outputs)
+        for (const auto * output_node : outputs)
         {
-            // Boolean outputs from function calls are likely filters
-            bool is_boolean = output->result_type && 
-                            (output->result_type->getName() == "Bool" || 
-                             (output->result_type->getTypeId() == TypeIndex::UInt8 && 
-                              output->result_type->getName() != "UInt8"));
-            
-            if (is_boolean && output->type == ActionsDAG::ActionType::FUNCTION)
-            {
-                // Found a boolean function - likely a comparison for filtering
-                filter_node = output;
-                // Don't add to projections - this is the filter condition
-            }
-            else
-            {
-                projection_outputs.push_back(output);
-            }
-        }
-        
-        // If we found a filter, emit FilterRel followed by ProjectRel
-        if (filter_node)
-        {
-            auto * filter_rel = rel->mutable_filter();
-            filter_rel->mutable_input()->Swap(&child_rel);
-            
-            // Convert the filter expression
-            auto filter_expr = convertExpression(filter_node, input_header);
-            filter_rel->mutable_condition()->Swap(&filter_expr);
-            
-            // If there are non-filter projections, add a project layer on top
-            if (!projection_outputs.empty())
-            {
-                // Save the filter rel we just created
-                substrait::Rel temp_rel = *rel;
-                rel->Clear();
-                
-                // Create project rel
-                auto * project_rel = rel->mutable_project();
-                project_rel->mutable_input()->Swap(&temp_rel);
-                
-                // Add projection expressions (using output header schema)
-                for (const auto * output_node : projection_outputs)
-                {
-                    auto expr = convertExpression(output_node, input_header);
-                    project_rel->add_expressions()->Swap(&expr);
-                }
-            }
-        }
-        else
-        {
-            // No filter detected - just project all outputs
-            auto * project_rel = rel->mutable_project();
-            project_rel->mutable_input()->Swap(&child_rel);
-            
-            // Convert each output column expression
-            for (const auto * output_node : outputs)
-            {
-                auto expr = convertExpression(output_node, input_header);
-                project_rel->add_expressions()->Swap(&expr);
-            }
+            auto expr = convertExpression(output_node, input_header);
+            project_rel->add_expressions()->Swap(&expr);
         }
     }   
 
@@ -774,6 +892,8 @@ private:
             const String & func_name = aggregate.function->getName();
             int ref_id = registerFunction(func_name);
             agg_func->set_function_reference(ref_id);
+            
+            convertType(aggregate.function->getResultType(), agg_func->mutable_output_type());
             
             // Convert aggregate arguments
             for (const auto & arg_column : aggregate.argument_names)
