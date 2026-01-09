@@ -141,7 +141,7 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostin
 {
     if (info.header & IsCompressed)
     {
-       serialize(postings.getLarge(), info, posting_list_block_size, posting_list_codec, ostr);
+        serialize(postings.getLarge(), info, posting_list_block_size, posting_list_codec, ostr);
     }
     else if (postings.isLarge())
     {
@@ -708,6 +708,8 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header |= IsCompressed;
     }
 
+    /// Apply posting list compression only to non-embedded,
+    /// non-raw posting lists (these are the big ones).
     if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
         info.header |= RawPostings;
@@ -726,6 +728,8 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header |= SingleBlock;
     }
 
+    /// When posting compression is enabled, the posting list codec is used to compress posting lists.
+    /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
     if (info.header & IsCompressed)
     {
         PostingsSerialization::serialize(postings, info, params.posting_list_block_size, posting_list_codec, postings_stream.plain_hashing);
