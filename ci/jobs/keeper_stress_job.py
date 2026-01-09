@@ -296,7 +296,6 @@ def main():
     report_file = f"{temp_dir}/pytest.jsonl"
     junit_file = f"{temp_dir}/keeper_junit.xml"
     extra.append(f"--junitxml={junit_file}")
-    extra.append(f"--report-log={report_file}")
     base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
     if is_parallel:
         # Reduce report size/noise: disable pytest logging plugin and stdout capture for workers
