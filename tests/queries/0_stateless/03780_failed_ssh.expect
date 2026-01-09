@@ -7,8 +7,8 @@ if {[info exists env(CLICKHOUSE_TMP)]} {
 } else {
     set CLICKHOUSE_TMP "."
 }
-exp_internal 1
-#exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 
 log_user 0
 set timeout 5
