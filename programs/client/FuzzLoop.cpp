@@ -648,7 +648,7 @@ bool Client::buzzHouse()
             sq1.Clear();
             full_query.resize(0);
 
-            if (total_create_database_tries < 10 && nsuccessfull_create_database < max_initial_databases)
+            if (total_create_database_tries < 20 && nsuccessfull_create_database < max_initial_databases)
             {
                 gen.generateNextCreateDatabase(
                     rg, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_database());
@@ -661,7 +661,7 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 150
+                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 300
                 && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(

@@ -15,7 +15,8 @@ Uses `CRC32` as a hash function.
     FunctionDocumentation::Arguments arguments_sparse = {
         {"s", "An input string.", {"String"}},
         {"min_ngram_length", "Optional. The minimum length of extracted ngram. The default and minimal value is 3.", {"UInt*"}},
-        {"max_ngram_length", "Optional. The maximum length of extracted ngram. The default value is 100. Should be not less than `min_ngram_length`.", {"UInt*"}}
+        {"max_ngram_length", "Optional. The maximum length of extracted ngram. The default value is 100. Should be not less than `min_ngram_length`.", {"UInt*"}},
+        {"min_cutoff_length", "Optional. If specified, only n-grams with length greater or equal than `min_cutoff_length` are returned. The default value is the same as `min_ngram_length`. Should be not less than `min_ngram_length` and not greater than `max_ngram_length`.", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_sparse = {"Returns an array of selected substrings.", {"Array(String)"}};
     FunctionDocumentation::Examples examples_sparse = {

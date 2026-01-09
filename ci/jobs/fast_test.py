@@ -53,7 +53,6 @@ def clone_submodules():
         "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
         "contrib/StringZilla",
@@ -163,6 +162,11 @@ def main():
     results = []
     attach_files = []
     job_info = ""
+
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         results.append(
