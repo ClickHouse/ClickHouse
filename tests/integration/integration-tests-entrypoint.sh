@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#REMOVEME
+
 JEMALLOC_PROFILER=0
 if [[ ! -v MALLOC_CONF ]]; then
     jemalloc_profiles=/tmp/jemalloc_profiles
