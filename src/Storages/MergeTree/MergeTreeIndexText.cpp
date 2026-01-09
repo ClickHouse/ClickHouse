@@ -129,16 +129,28 @@ void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & pos
     }
 }
 
-void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr)
+void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr)
 {
-    if (postings.isLarge())
+    chassert(info.header & IsCompressed);
+    chassert(posting_list_codec);
+    chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
+    posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
+}
+
+void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr)
+{
+    if (info.header & IsCompressed)
+    {
+       serialize(postings.getLarge(), info, posting_list_block_size, posting_list_codec, ostr);
+    }
+    else if (postings.isLarge())
     {
         postings.getLarge().runOptimize();
-        serialize(postings.getLarge().roaring, header, ostr);
+        serialize(postings.getLarge().roaring, info.header, ostr);
     }
     else
     {
-        chassert(header & RawPostings);
+        chassert(info.header & RawPostings);
         size_t cardinality = postings.size();
         const auto & array = postings.getSmall();
 
@@ -149,14 +161,15 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, UInt64 head
 
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingListCodecPtr posting_list_codec)
 {
-    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
+    if (header & IsCompressed)
     {
-        chassert(header & Flags::IsCompressed);
+        chassert(posting_list_codec);
+        chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
         auto postings = std::make_shared<PostingList>();
         posting_list_codec->decode(istr, *postings);
         return postings;
     }
-    else if (header & Flags::RawPostings)
+    else if (header & RawPostings)
     {
         std::vector<UInt32> values(cardinality);
         for (size_t i = 0; i < cardinality; ++i)
@@ -694,15 +707,18 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     {
         info.header |= IsCompressed;
     }
-    else if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
+        info.header &= ~IsCompressed;
         return info;
     }
     else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
         info.header |= RawPostings;
+        info.header &= ~IsCompressed;
         info.header |= SingleBlock;
     }
     else if (info.cardinality <= params.posting_list_block_size)
@@ -710,15 +726,15 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header |= SingleBlock;
     }
 
-    if (info.header & SingleBlock)
+    if (info.header & IsCompressed)
+    {
+        PostingsSerialization::serialize(postings, info, params.posting_list_block_size, posting_list_codec, postings_stream.plain_hashing);
+    }
+    else if (info.header & SingleBlock)
     {
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(postings.minimum(), postings.maximum());
-        PostingsSerialization::serialize(postings, info.header, postings_stream.plain_hashing);
-    }
-    else if (info.header & IsCompressed)
-    {
-        posting_list_codec->encode(postings, params.posting_list_block_size, info, postings_stream.plain_hashing);
+        PostingsSerialization::serialize(postings, info, params.posting_list_block_size, posting_list_codec, postings_stream.plain_hashing);
     }
     else
     {
@@ -931,7 +947,7 @@ DictionarySparseIndex serializeTokensAndPostings(
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
 
             if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-                PostingsSerialization::serialize(postings, token_info.header, dictionary_stream.compressed_hashing);
+                PostingsSerialization::serialize(postings, token_info, params.posting_list_block_size, posting_list_codec, dictionary_stream.compressed_hashing);
         }
     }
 

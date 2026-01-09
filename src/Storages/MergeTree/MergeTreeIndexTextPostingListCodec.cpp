@@ -189,39 +189,26 @@ void PostingListCodecSIMDComp::decode(ReadBuffer & in, PostingList & postings) c
 }
 
 void PostingListCodecSIMDComp::encode(
-        const PostingListBuilder & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const
+        const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     PostingListCodecSIMDCompImpl impl(posting_list_block_size);
+    std::vector<uint32_t> rowids;
+    rowids.resize(postings.cardinality());
+    postings.toUint32Array(rowids.data());
 
-    if (postings.isSmall())
+    std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
+    while (rowids_view.size() >= BLOCK_SIZE)
     {
-        const auto & small_postings = postings.getSmall();
-        size_t num_postings = postings.size();
-        for (size_t i = 0; i < num_postings; ++i)
-            impl.insert(small_postings[i]);
-    }
-    else
-    {
-        std::vector<uint32_t> rowids;
-        rowids.resize(postings.size());
-        const auto & large_postings = postings.getLarge();
-        large_postings.toUint32Array(rowids.data());
-
-        std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
-        while (rowids_view.size() >= BLOCK_SIZE)
-        {
-            auto front = rowids_view.first(BLOCK_SIZE);
-            impl.insert(front);
-            rowids_view = rowids_view.subspan(BLOCK_SIZE);
-        }
-
-        if (!rowids_view.empty())
-        {
-            for (auto rowid : rowids_view)
-                impl.insert(rowid);
-        }
+        auto front = rowids_view.first(BLOCK_SIZE);
+        impl.insert(front);
+        rowids_view = rowids_view.subspan(BLOCK_SIZE);
     }
 
+    if (!rowids_view.empty())
+    {
+        for (auto rowid: rowids_view)
+            impl.insert(rowid);
+    }
     impl.encode(out, info);
 }
 }

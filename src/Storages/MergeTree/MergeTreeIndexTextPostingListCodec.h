@@ -211,7 +211,7 @@ struct PostingListCodecSIMDComp : public  IPostingListCodec
 
     PostingListCodecSIMDComp() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingListBuilder & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
@@ -222,7 +222,7 @@ struct PostingListCodecNone : public IPostingListCodec
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(const PostingListBuilder &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
+    void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
     void decode(ReadBuffer &, PostingList &) const override {}
 };
 

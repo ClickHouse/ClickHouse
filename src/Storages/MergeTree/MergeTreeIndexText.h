@@ -135,6 +135,7 @@ private:
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
+struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
@@ -152,7 +153,8 @@ struct PostingsSerialization
         IsCompressed = 1ULL << 3,
     };
 
-    static void serialize(PostingListBuilder & postings, UInt64 header, WriteBuffer & ostr);
+    static void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
+    static void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
     static void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingListCodecPtr posting_list_codec);
 };
