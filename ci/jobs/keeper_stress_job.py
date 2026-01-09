@@ -113,6 +113,13 @@ def main():
 
     # Ensure docker-in-docker is up for nested compose workloads
     os.makedirs("./ci/tmp", exist_ok=True)
+    # Force docker CLI to use in-container dockerd socket, not any inherited host DOCKER_HOST
+    try:
+        os.environ["DOCKER_HOST"] = "unix:///var/run/docker.sock"
+        os.environ.pop("DOCKER_TLS_VERIFY", None)
+        os.environ.pop("DOCKER_CERT_PATH", None)
+    except Exception:
+        pass
     if not Shell.check("docker info > /dev/null", verbose=True):
         with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
             dockerd_proc = subprocess.Popen(
@@ -122,8 +129,12 @@ def main():
             )
         # wait until docker responds
         for i in range(90):
-            if Shell.check("docker info > /dev/null", verbose=True):
-                break
+            # Prefer probe by socket existence and docker info
+            try:
+                if os.path.exists("/var/run/docker.sock") and Shell.check("docker info > /dev/null", verbose=True):
+                    break
+            except Exception:
+                pass
             time.sleep(2)
         if not Shell.check("docker info > /dev/null", verbose=True):
             results.append(
