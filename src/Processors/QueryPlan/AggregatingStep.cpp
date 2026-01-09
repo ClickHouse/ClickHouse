@@ -551,7 +551,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.addSimpleTransform([&, query_hash, partial_aggregate_cache](const SharedHeader & header)
             {
                 return std::make_shared<PartialAggregateCachingTransform>(
-                    *header, params, query_hash, partial_aggregate_cache, final);
+                    header, params, query_hash, partial_aggregate_cache, final);
             });
         }
         else

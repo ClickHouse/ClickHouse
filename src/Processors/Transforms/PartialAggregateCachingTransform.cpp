@@ -7,12 +7,15 @@ namespace DB
 {
 
 PartialAggregateCachingTransform::PartialAggregateCachingTransform(
-    const Block & header_,
+    SharedHeader header_,
     Aggregator::Params params_,
     IASTHash query_hash_,
     PartialAggregateCachePtr cache_,
     bool final_)
-    : IAccumulatingTransform(header_, Aggregator(header_, params_).getHeader(final_))
+    : IAccumulatingTransform(
+        header_,
+        std::make_shared<const Block>(Aggregator(*header_, params_).getHeader(final_)))
+    , input_header(std::move(header_))
     , params(std::move(params_))
     , query_hash(query_hash_)
     , cache(std::move(cache_))
@@ -82,18 +85,19 @@ Chunk PartialAggregateCachingTransform::generate()
             LOG_DEBUG(log, "Cache miss for part {}, aggregating {} chunks",
                       part_data.part_name, part_data.chunks.size());
 
-            Aggregator aggregator(getInputPort().getHeader(), params);
+            Aggregator aggregator(*input_header, params);
             AggregatedDataVariants variants;
 
             ColumnRawPtrs key_columns(params.keys_size);
             Aggregator::AggregateColumns aggregate_columns(params.aggregates_size);
+            bool no_more_keys = false;
 
             for (auto & chunk : part_data.chunks)
             {
                 const auto num_rows = chunk.getNumRows();
                 aggregator.executeOnBlock(
                     chunk.detachColumns(), 0, num_rows, variants,
-                    key_columns, aggregate_columns, /*no_more_keys=*/false);
+                    key_columns, aggregate_columns, no_more_keys);
             }
 
             /// Convert to blocks (non-final for caching, we'll finalize later)
@@ -120,7 +124,7 @@ Chunk PartialAggregateCachingTransform::generate()
         /// Merge all partial aggregates
         if (!partial_aggregates.empty())
         {
-            Aggregator aggregator(getInputPort().getHeader(), params);
+            Aggregator aggregator(*input_header, params);
             ManyAggregatedDataVariants many_data(1);
             many_data[0] = std::make_shared<AggregatedDataVariants>();
 
