@@ -338,6 +338,12 @@ $$)
 
 Values of a `Variant` type can be compared only with values with the same `Variant` type.
 
+By default, comparison operators use [default implementation for Variant](#functions-with-variant-arguments),
+applying comparison to each variant type separately. This can be disabled using setting `use_variant_default_implementation_for_comparisons = 0`
+to use native Variant comparison rules described below. **Note** that `ORDER BY` always uses native comparison.
+
+**Native Variant comparison rules:**
+
 The result of operator `<` for values `v1` with underlying type `T1` and `v2` with underlying type `T2`  of a type `Variant(..., T1, ... T2, ...)` is defined as follows:
 - If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
 - If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
