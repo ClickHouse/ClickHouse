@@ -874,7 +874,7 @@ logger.jetty.level = warn
         saved_exception = None
         catalog_name = data["catalog_name"]
         catalog_type = LakeCatalogs.NoCatalog
-        run_background_worker = data["async"] == 0 and random.randint(1, 2) == `0`
+        run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
 
         if data["engine"] != "kafka":
             with self.catalogs_lock:
