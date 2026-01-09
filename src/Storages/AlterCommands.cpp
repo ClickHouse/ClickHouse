@@ -1360,28 +1360,36 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                     command.default_kind = column_from_table.default_desc.kind;
                     command.default_expression = column_from_table.default_desc.expression;
                 }
-                if (const auto * column_enum_type = dynamic_cast<const IDataTypeEnum*>(column_from_table.type.get()))
+
+                if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum*>(command.data_type.get()))
                 {
-                    const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum*>(command.data_type.get());
-                    if (alter_enum_type && alter_enum_type->isAdd())
+                    const auto * column_enum_type = dynamic_cast<const IDataTypeEnum*>(column_from_table.type.get());
+                    if (alter_enum_type->isAdd())
                     {
-                        if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
+                        if (column_enum_type)
                         {
-                            if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
-                                command.data_type = mergeEnumTypes(*base_enum8, *add_enum8);
-                            else if (typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
-                                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add Enum16 values to Enum8 column");
-                            else
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
+                            {
+                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
+                                    command.data_type = mergeEnumTypes(*base_enum8, *add_enum8);
+                                else if (typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add Enum16 values to Enum8 column");
+                                else
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+                            else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
+                            {
+                                if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
+                                    command.data_type = mergeEnumTypes(*base_enum16, *add_enum8);
+                                else if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
+                                    command.data_type = mergeEnumTypes(*base_enum16, *add_enum16);
+                                else
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
                         }
-                        else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
+                        else
                         {
-                            if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
-                                command.data_type = mergeEnumTypes(*base_enum16, *add_enum8);
-                            else if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
-                                command.data_type = mergeEnumTypes(*base_enum16, *add_enum16);
-                            else
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply addToEnum to column {}", command.column_name);
                         }
                     }
                 }

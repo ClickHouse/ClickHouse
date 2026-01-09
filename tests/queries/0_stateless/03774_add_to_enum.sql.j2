@@ -25,8 +25,21 @@ SELECT '======================';
 SELECT * FROM enum ORDER BY x;
 
 DROP TABLE enum;
+{% endfor -%}
+
 
 CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
-CREATE TABLE addtoenum16 (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
+CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
 
-{% endfor -%}
+-- Would be nice to prohibit
+CREATE TABLE addtoenum (x addToEnum('One' = 1, 'Two' = 2)) ENGINE = Memory;
+
+-- Would be nice to prohibit
+ALTER TABLE addtoenum ADD COLUMN z addToEnum('A' = 1);
+
+DROP TABLE addtoenum;
+
+CREATE TABLE nonenum (x Int8) ENGINE = Memory;
+ALTER TABLE nonenum MODIFY COLUMN x addToEnum('A' = 1); -- { serverError ILLEGAL_COLUMN }
+
+DROP TABLE nonenum;
