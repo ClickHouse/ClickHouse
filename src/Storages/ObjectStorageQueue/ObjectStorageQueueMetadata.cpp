@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
@@ -310,7 +311,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 break;
 
             if (i == num_tries - 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to take alter setting lock");
 
             sleepForMilliseconds(50);
         }
