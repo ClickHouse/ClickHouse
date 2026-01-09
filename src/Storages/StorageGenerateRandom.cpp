@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/TypeId.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
@@ -15,6 +16,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -26,6 +28,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
@@ -99,67 +102,6 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
 }
 
 
-size_t estimateValueSize(
-    const DataTypePtr type,
-    UInt64 max_array_length,
-    UInt64 max_string_length)
-{
-    if (type->haveMaximumSizeOfValue())
-        return type->getMaximumSizeOfValueInMemory();
-
-    TypeIndex idx = type->getTypeId();
-
-    switch (idx)
-    {
-        case TypeIndex::String:
-        {
-            return max_string_length + sizeof(UInt64);
-        }
-
-        /// The logic in this function should reflect the logic of fillColumnWithRandomData.
-        case TypeIndex::Array:
-        {
-            auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
-        }
-
-        case TypeIndex::Map:
-        {
-            const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
-        }
-
-        case TypeIndex::Tuple:
-        {
-            auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
-            const size_t tuple_size = elements.size();
-            size_t res = 0;
-
-            for (size_t i = 0; i < tuple_size; ++i)
-                res += estimateValueSize(elements[i], max_array_length, max_string_length);
-
-            return res;
-        }
-
-        case TypeIndex::Nullable:
-        {
-            auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length);
-        }
-
-        case TypeIndex::LowCardinality:
-        {
-            auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length);
-        }
-
-        default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
-    }
-}
-
-}
-
 /// Helper function to calculate estimated size JSON Object type
 size_t estimateJSONValueSize(
     UInt64 max_array_length,
@@ -189,6 +131,75 @@ size_t estimateJSONValueSize(
     size_t expected_keys = std::max<size_t>(1,static_cast<size_t>(max_json_keys * (1.0 - null_ratio)));
 
     return (key_size + value_size) * expected_keys;
+}
+
+size_t estimateValueSize(
+    const DataTypePtr type,
+    UInt64 max_array_length,
+    UInt64 max_string_length, 
+    UInt64 max_json_keys,
+    UInt64 max_json_depth,
+    double null_ratio)
+{
+    if (type->haveMaximumSizeOfValue())
+        return type->getMaximumSizeOfValueInMemory();
+
+    TypeIndex idx = type->getTypeId();
+
+    switch (idx)
+    {
+        case TypeIndex::String:
+        {
+            return max_string_length + sizeof(UInt64);
+        }
+
+        /// The logic in this function should reflect the logic of fillColumnWithRandomData.
+        case TypeIndex::Array:
+        {
+            auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio);
+        }
+
+        case TypeIndex::Map:
+        {
+            const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio);
+        }
+
+        case TypeIndex::Tuple:
+        {
+            auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
+            const size_t tuple_size = elements.size();
+            size_t res = 0;
+
+            for (size_t i = 0; i < tuple_size; ++i)
+                res += estimateValueSize(elements[i], max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio);
+
+            return res;
+        }
+
+        case TypeIndex::Nullable:
+        {
+            auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
+            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio);
+        }
+
+        case TypeIndex::LowCardinality:
+        {
+            auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio);
+        }
+
+        case TypeIndex::Object:
+        {
+            return estimateJSONValueSize(max_array_length,max_string_length,max_json_keys,max_json_depth,null_ratio,0);
+        }
+
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
+    }
+}
+
 }
 
 ColumnPtr fillColumnWithRandomData(
