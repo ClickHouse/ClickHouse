@@ -495,6 +495,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    /// Check if partial aggregate caching is enabled via setting
+    auto partial_aggregate_cache = settings.use_partial_aggregate_cache
+        ? Context::getGlobalContextInstance()->getPartialAggregateCache()
+        : nullptr;
+
+    /// If partial aggregate cache is enabled, force single-stream aggregation to support per-part caching
+    if (partial_aggregate_cache && pipeline.getNumStreams() > 1)
+        pipeline.resize(1, false, settings.min_outstreams_per_resize_after_split);
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -527,11 +536,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        /// Check if partial aggregate caching is enabled via setting
-        auto partial_aggregate_cache = settings.use_partial_aggregate_cache
-            ? Context::getGlobalContextInstance()->getPartialAggregateCache()
-            : nullptr;
-
         if (partial_aggregate_cache)
         {
             /// Compute query hash from aggregation parameters (keys + aggregate functions)
