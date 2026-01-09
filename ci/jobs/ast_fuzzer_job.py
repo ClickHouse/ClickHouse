@@ -42,7 +42,7 @@ def get_run_command(
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE --workdir /repo "
         f"{image} "
-        f"bash -c './ci/jobs/scripts/fuzzer/run-fuzzer.sh' "
+        "bash -c './ci/jobs/scripts/fuzzer/run-fuzzer.sh' "
     )
 
 
