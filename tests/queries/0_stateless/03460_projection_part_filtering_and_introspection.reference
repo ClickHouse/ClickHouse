@@ -1,4 +1,4 @@
--- add_minmax_index_for_numeric_columns=0: We'd use implicit indices will work before projections
+-- add_minmax_index_for_numeric_columns=0: Implicit indices will filter before projections
 
 -- { echo ON }
 
