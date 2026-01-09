@@ -30,9 +30,9 @@ def started_cluster():
             DROP TABLE IF EXISTS test.elements;
             CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;
             INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);
-            SYSTEM RELOAD DICTIONARY dep_x;
             SYSTEM RELOAD DICTIONARY dep_y;
             SYSTEM RELOAD DICTIONARY dep_z;
+            SYSTEM RELOAD DICTIONARY dep_x;
             """
         )
 
