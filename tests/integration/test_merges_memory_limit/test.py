@@ -28,7 +28,7 @@ def test_memory_limit_success():
     )
     node.query("SYSTEM STOP MERGES test_merge_oom")
     node.query(
-        "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(3000)"Expand commentComment on line L31Code has comments. Press enter to view.
+        "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(3000)"
     )
     node.query(
         "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(3000)"
