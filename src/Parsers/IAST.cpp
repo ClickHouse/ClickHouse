@@ -61,7 +61,7 @@ IAST::~IAST()
           * it is possible that neither thead will see use_count == 1.
           * It is ok. Will need one more extra stack frame in this case.
           */
-        if (child->use_count() != 1)
+        if (child == nullptr || child->use_count() != 1)
             continue;
 
         ASTPtr child_to_delete;
