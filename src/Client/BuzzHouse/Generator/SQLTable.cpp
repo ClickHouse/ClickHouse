@@ -2465,7 +2465,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
         next.teng = val;
         te->set_engine(val);
-        cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
+        cta->set_clone(rg.nextSmallNumber() < 4);
         t.setName(cta->mutable_est(), false);
         dupTableDef(next, t);
         has_ttl = !next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool();
