@@ -92,7 +92,7 @@ common_stress_job_config = Job.Config(
 common_integration_test_job_config = Job.Config(
     name=JobNames.INTEGRATION,
     runs_on=[],  # from parametrize
-    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}'",
+    command="python3 ./ci/jobs/integration_test_job.py --options '{PARAMETER}' --session-timeout 60",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
@@ -103,7 +103,7 @@ common_integration_test_job_config = Job.Config(
         ],
     ),
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-    timeout=180,
+    timeout=180, # update a session timeout if you change this value
 )
 
 BINARY_DOCKER_COMMAND = (
