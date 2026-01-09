@@ -687,38 +687,12 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
             }
         }
 
-        if (has_variant)
+        if (has_variant && useDefaultImplementationForVariant())
         {
-            /// For comparison functions, check setting to allow disabling Variant adaptor for compatibility
-            bool skip_variant_adaptor = false;
-            auto name = getName();
-            if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
-                || name == "lessOrEquals" || name == "greaterOrEquals")
-            {
-                try
-                {
-                    if (auto query_context = CurrentThread::get().getQueryContext())
-                    {
-                        const auto & settings = query_context->getSettingsRef();
-                        /// If setting is disabled, skip the Variant adaptor to use built-in comparison
-                        if (!settings[Setting::use_variant_default_implementation_for_comparisons])
-                            skip_variant_adaptor = true;
-                    }
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                }
-            }
-
-            if (!skip_variant_adaptor)
-            {
-                DataTypes data_types(arguments.size());
-                for (size_t i = 0; i < arguments.size(); ++i)
-                    data_types[i] = arguments[i].type;
-                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
-            }
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+            return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
         }
     }
 

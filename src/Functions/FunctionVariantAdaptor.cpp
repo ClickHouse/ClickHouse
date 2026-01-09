@@ -460,6 +460,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Check if we can use optimized direct construction:
     /// 1. All result types must be different (no duplicates)
     /// 2. None of the result types should be a nested Variant
+    /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
+    ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
     std::unordered_set<String> result_type_names;
 
