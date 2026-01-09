@@ -7,7 +7,7 @@ DROP VIEW IF EXISTS mv;
 
 CREATE TABLE src
 (
-    data JSON,
+    data Array(Tuple(id UInt32)),
     dummy UInt8
 )
 ENGINE = MergeTree
@@ -24,15 +24,15 @@ CREATE MATERIALIZED VIEW mv
 TO dst
 AS
 SELECT
-    data.id AS id
+    data_joined.id AS id
 FROM
 (
-    SELECT data
+    SELECT arrayJoin(data) as data_joined
     FROM src
 )
-WHERE data.id IS NOT NULL;
+WHERE data_joined.id != 42;
 
-INSERT INTO src VALUES ('{"id" : 1}', 0), ('{}', 1), ('{"id" : 3}', 2);
+INSERT INTO src VALUES ([tuple(1), tuple(2)], 0), ([], 1), ([tuple(42)], 2);
 
 ALTER TABLE src DROP COLUMN dummy;
 
