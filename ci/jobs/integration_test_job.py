@@ -166,6 +166,23 @@ def main():
     is_sequential = False
     is_targeted_check = False
 
+    # Set on_error_hook to collect logs on hard timeout
+    Result.from_fs(info.job_name).set_on_error_hook(
+        """
+tar -czf ./ci/tmp/logs.tar.gz \
+  ./tests/integration/test_*/_instances*/ \
+  ./ci/tmp/*.log \
+  ./ci/tmp/*.jsonl 2>/dev/null || true
+dmesg -T > ./ci/tmp/dmesg.log
+"""
+    ).set_files(
+        [
+            "./ci/tmp/logs.tar.gz",
+            "./ci/tmp/dmesg.log",
+            "./ci/tmp/docker-in-docker.log",
+        ]
+    ).dump()
+
     if args.param:
         for item in args.param.split(","):
             print(f"Setting env variable: {item}")
@@ -397,6 +414,9 @@ def main():
             has_error = True
             error_info.append(test_result_parallel.info)
 
+    # test
+    assert False
+
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
@@ -439,6 +459,12 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
+        # Add all files matched ./ci/tmp/*.log ./ci/tmp/*.jsonl into failed_tests_files
+        for pattern in ["*.log", "*.jsonl"]:
+            for log_file in Path("./ci/tmp/").glob(pattern):
+                if log_file.is_file():
+                    failed_tests_files.append(str(log_file))
+
         if failed_suits:
             attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
@@ -473,8 +499,8 @@ def main():
 
     if not info.is_local_run:
         print("Dumping dmesg")
-        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        with open("dmesg.log", "rb") as dmesg:
+        Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True, strict=True)
+        with open("./ci/tmp/dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
                 b"Out of memory: Killed process" in dmesg
@@ -486,7 +512,7 @@ def main():
                         name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
                     )
                 )
-                attached_files.append("dmesg.log")
+                attached_files.append("./ci/tmp/dmesg.log")
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
