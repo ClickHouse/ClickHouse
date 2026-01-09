@@ -17,7 +17,6 @@ limitations under the License. */
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

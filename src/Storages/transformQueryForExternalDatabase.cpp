@@ -331,7 +331,7 @@ String transformQueryForExternalDatabaseImpl(
 
         if (isCompatible(original_where))
         {
-            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
+            select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
         else if (strict)
         {
