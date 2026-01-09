@@ -145,6 +145,12 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         {
             field_type = Field::Types::Map;
         }
+        else if (isBool(nested_type))
+        {
+            /// Bool is stored as UInt8 internally
+            nested_type = std::make_shared<DataTypeUInt8>();
+            field_type = Field::Types::UInt64;
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type inside Array: {}. It's a bug", nested_type->getName());
 
@@ -373,6 +379,12 @@ private:
             auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getKeyValueTypes();
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeMap>(nested_types);
+        }
+        else if (field_type == Field::Types::Bool)
+        {
+            /// Bool is stored as UInt8 internally, treat as UInt64 for templating
+            info.type = std::make_shared<DataTypeUInt8>();
+            info.special_parser = SpecialParserType(Field::Types::UInt64);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type {}", info.literal->value.getTypeName());
