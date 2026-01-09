@@ -866,7 +866,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
     return info;
 }
 
-DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & istr, PostingListCodecPtr posting_list_desc)
+DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & istr, PostingListCodecPtr posting_list_codec)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
@@ -893,7 +893,7 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
     token_infos.reserve(num_tokens);
 
     for (size_t i = 0; i < num_tokens; ++i)
-        token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, posting_list_desc));
+        token_infos.emplace_back(TextIndexSerialization::deserializeTokenInfo(istr, posting_list_codec));
 
     return DictionaryBlock{std::move(tokens_column), std::move(token_infos)};
 }
