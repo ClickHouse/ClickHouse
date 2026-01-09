@@ -121,7 +121,7 @@ namespace HistogramMetrics
     MetricFamily & KeeperBatchSizeElementsMetricFamily = Factory::instance().registerMetric(
         "keeper_batch_size_elements",
         "Size of batch sent to Raft in elements.",
-        {1, 4, 16, 64, 99},
+        {4, 8, 16, 32, 64, 128, 256, 299},
         {}
     );
     Metric & KeeperCurrentBatchSizeElements = KeeperBatchSizeElementsMetricFamily.withLabels({});
@@ -129,7 +129,7 @@ namespace HistogramMetrics
     MetricFamily & KeeperBatchSizeBytesMetricFamily = Factory::instance().registerMetric(
         "keeper_batch_size_bytes",
         "Size of batch sent to Raft in bytes.",
-        {1024, 4 * 1024, 16 * 1024, 64 * 1024, 99 * 1024},
+        {1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17, 1 << 18, 307199},
         {}
     );
     Metric & KeeperCurrentBatchSizeBytes = KeeperBatchSizeBytesMetricFamily.withLabels({});
