@@ -440,9 +440,9 @@ class Result(MetaClasses.Serializable):
             except Exception:
                 safe_command = command
             full_command = (
-                f"pytest {safe_command} --report-log={pytest_report_file}"
+                f"ulimit -n 262144 || true; pytest {safe_command} --report-log={pytest_report_file}"
                 if safe_command
-                else f"pytest --report-log={pytest_report_file}"
+                else f"ulimit -n 262144 || true; pytest --report-log={pytest_report_file}"
             )
 
             # Apply environment
