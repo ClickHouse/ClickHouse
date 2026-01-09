@@ -1275,11 +1275,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
-    /// Create a scope-aware version of the lookup for cache operations.
-    /// in_function_instance_id ensures unique table aliases in distributed queries
-    /// when aliased IN expressions are reused.
     IdentifierLookup cache_lookup = identifier_lookup;
-    cache_lookup.in_function_instance_id = scope.expressions_in_resolve_process_stack.getInFunctionInstanceId();
 
     auto it = scope.identifier_in_lookup_process.find(cache_lookup);
 
@@ -1306,17 +1302,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             if (cached_result)
             {
                 auto result = *cached_result;
-                /// Clone LOCAL IN/EXISTS functions when rewrite_in_to_join is enabled.
-                /// Must clone at retrieval so each alias usage gets an independent node.
-                if (scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
-                {
-                    if (auto * function_node = result.resolved_identifier->as<FunctionNode>())
-                    {
-                        const auto & func_name = function_node->getFunctionName();
-                        if (isNameOfLocalInFunction(func_name) || func_name == "exists")
-                            result.resolved_identifier = result.resolved_identifier->clone();
-                    }
-                }
+
                 return result;
             }
         }
@@ -1437,7 +1423,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             /// Don't cache nodes that are in nullable_group_by_keys - they need different
             /// treatment depending on whether they're inside an aggregate function or not.
             bool in_nullable_group_by_keys = scope.nullable_group_by_keys.contains(resolve_result.resolved_identifier);
-            if (!in_nullable_group_by_keys)
+            if (!in_nullable_group_by_keys && !hasSubqueryNode(resolve_result.resolved_identifier))
                 scope.identifier_to_resolved_expression_cache.insert(cache_lookup, resolve_result);
         }
     }
