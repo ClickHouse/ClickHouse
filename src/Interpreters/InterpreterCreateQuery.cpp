@@ -138,7 +138,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
-    extern const SettingsUInt64 max_subcolumns;
+    extern const SettingsUInt64 max_static_subcolumns;
 }
 
 namespace ServerSetting
