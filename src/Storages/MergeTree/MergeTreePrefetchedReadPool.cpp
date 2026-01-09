@@ -390,8 +390,6 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     if (per_part_infos.empty())
         return;
 
-    LOG_FATAL(getLogger("MergeTreePrefetchedReadPool"), "Reading!!!!");
-
     const auto & context = getContext();
     const auto & settings = context->getSettingsRef();
 
