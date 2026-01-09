@@ -9,7 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.

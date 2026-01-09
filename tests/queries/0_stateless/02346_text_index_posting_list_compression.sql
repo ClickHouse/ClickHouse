@@ -110,7 +110,7 @@ SELECT
     sum(bytes_on_disk) AS `total-bytes`,
     sum(secondary_indices_compressed_bytes) AS `text-index-bytes`
 FROM system.parts
-WHERE active AND table IN ('tab_bitpacking','table_uncompressed')
+WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking','table_uncompressed')
 GROUP BY `table`;
 
 -- Validates that a very large/high-frequency posting list is decoded correctly by checking the count in the compressed table matches the uncompressed baseline.
