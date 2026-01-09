@@ -75,6 +75,8 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::RemoteWrite;
         res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        if (config.has(config_prefix + ".table_name_url_prefix"))
+            res.table_name_url_prefix = config.getString(config_prefix + ".table_name_url_prefix");
         parseCommonConfig(config, res);
         return res;
     }

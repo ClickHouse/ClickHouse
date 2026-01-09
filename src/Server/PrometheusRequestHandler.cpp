@@ -15,6 +15,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
@@ -29,9 +30,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/QualifiedTableName.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
@@ -42,6 +46,60 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool prometheus_remote_write_dynamic_routing_enabled;
+}
+
+namespace
+{
+    String getRequestPath(const HTTPServerRequest & request)
+    {
+        const auto & uri = request.getURI();
+        auto query_pos = uri.find('?');
+        if (query_pos == String::npos)
+            return uri;
+        return uri.substr(0, query_pos);
+    }
+
+    QualifiedTableName resolveTableNameFromRequest(
+        const PrometheusRequestHandlerConfig & config,
+        const HTTPServerRequest & request)
+    {
+        if (!config.table_name_url_prefix)
+            return config.time_series_table_name;
+
+        const String path = getRequestPath(request);
+        const String & prefix = *config.table_name_url_prefix;
+        if (!startsWith(path, prefix))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not match table_name_url_prefix '{}'",
+                path,
+                prefix);
+
+        String table_part = path.substr(prefix.size());
+        if (!table_part.empty() && table_part.front() == '/')
+            table_part.erase(0, 1);
+        if (table_part.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a table name after prefix '{}'",
+                path,
+                prefix);
+
+        auto table_name = QualifiedTableName::tryParseFromString(table_part);
+        if (!table_name)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot parse table name '{}' from URL path '{}'",
+                table_part,
+                path);
+
+        return *table_name;
+    }
 }
 
 /// Base implementation of a prometheus protocol.
@@ -241,8 +299,22 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
-        PrometheusRemoteWriteProtocol protocol{table, context};
+        const bool is_dynamic_routing = config().table_name_url_prefix.has_value();
+        auto table_name = resolveTableNameFromRequest(config(), request);
+        auto table = DatabaseCatalog::instance().getTable(StorageID{table_name}, context);
+        auto time_series_storage = storagePtrToTimeSeries(table);
+        if (is_dynamic_routing)
+        {
+            const auto & time_series_settings = time_series_storage->getStorageSettings();
+            if (!time_series_settings[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Prometheus remote write dynamic routing is disabled for TimeSeries table {}",
+                    time_series_storage->getStorageID().getNameForLogs());
+            }
+        }
+        PrometheusRemoteWriteProtocol protocol{time_series_storage, context};
 
         if (write_request.timeseries_size())
             protocol.writeTimeSeries(write_request.timeseries());

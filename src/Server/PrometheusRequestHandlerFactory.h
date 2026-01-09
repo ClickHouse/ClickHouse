@@ -78,7 +78,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         <url>/write</url>
 ///         <handler>
 ///             <type>remote_write</type>
-///             <table>db.time_series_table_name</table>
+///             <!-- The remaining path after the prefix is treated as a table name (db.table or table). -->
+///             <table_name_url_prefix>/write/</table_name_url_prefix>
 ///         </handler>
 ///     </my_rule2>
 ///     <my_rule3>
