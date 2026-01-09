@@ -1276,12 +1276,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveContext identifier_resolve_context)
 {
     /// Create a scope-aware version of the lookup for cache operations.
-    /// Different values of allow_resolve_from_using need different cache entries
-    /// (e.g., PREWHERE sets it to false to avoid resolving USING columns).
     /// in_function_instance_id ensures unique table aliases in distributed queries
     /// when aliased IN expressions are reused.
     IdentifierLookup cache_lookup = identifier_lookup;
-    cache_lookup.allow_resolve_from_using = scope.allow_resolve_from_using;
     cache_lookup.in_function_instance_id = scope.expressions_in_resolve_process_stack.getInFunctionInstanceId();
 
     auto it = scope.identifier_in_lookup_process.find(cache_lookup);
@@ -4928,6 +4925,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
+        // allow_resolve_from_using is disabled during prewhere which changes the identifier resolution behavior.
+        // Just disable cache during prewhere instead of having a separate cache namespace for prewhere.
+        scope.identifier_to_resolved_expression_cache.disable();
+
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -4944,6 +4945,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         prewhere_node = prewhere_node->clone();
         ReplaceColumnsVisitor replace_visitor(scope.join_columns_with_changed_types, scope.context);
         replace_visitor.visit(prewhere_node);
+
+        scope.identifier_to_resolved_expression_cache.enable();
     }
 
     if (query_node_typed.getWhere())
