@@ -29,7 +29,7 @@ void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
 
 ASTPtr ASTTableExpression::clone() const
 {
-    auto res = std::make_shared<ASTTableExpression>(*this);
+    auto res = make_intrusive<ASTTableExpression>(*this);
     res->children.clear();
 
     CLONE(database_and_table_name);
@@ -51,7 +51,7 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
 
 ASTPtr ASTTableJoin::clone() const
 {
-    auto res = std::make_shared<ASTTableJoin>(*this);
+    auto res = make_intrusive<ASTTableJoin>(*this);
     res->children.clear();
 
     CLONE(using_expression_list);
@@ -91,7 +91,7 @@ void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
 
 ASTPtr ASTArrayJoin::clone() const
 {
-    auto res = std::make_shared<ASTArrayJoin>(*this);
+    auto res = make_intrusive<ASTArrayJoin>(*this);
     res->children.clear();
 
     CLONE(expression_list);
@@ -101,7 +101,7 @@ ASTPtr ASTArrayJoin::clone() const
 
 ASTPtr ASTTablesInSelectQueryElement::clone() const
 {
-    auto res = std::make_shared<ASTTablesInSelectQueryElement>(*this);
+    auto res = make_intrusive<ASTTablesInSelectQueryElement>(*this);
     res->children.clear();
 
     CLONE(table_join);
@@ -113,7 +113,7 @@ ASTPtr ASTTablesInSelectQueryElement::clone() const
 
 ASTPtr ASTTablesInSelectQuery::clone() const
 {
-    const auto res = std::make_shared<ASTTablesInSelectQuery>(*this);
+    const auto res = make_intrusive<ASTTablesInSelectQuery>(*this);
     res->children.clear();
 
     for (const auto & child : children)

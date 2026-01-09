@@ -41,13 +41,13 @@ void CompressionCodecFactory::validateCodec(
 
     if (level)
     {
-        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
             {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
             {}, sanity_check, allow_experimental_codecs);
     }

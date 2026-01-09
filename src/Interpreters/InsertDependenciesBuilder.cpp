@@ -487,7 +487,7 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
     {
-        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+        auto sign_column_check_constraint = make_intrusive<ASTConstraintDeclaration>();
         sign_column_check_constraint->name = "_implicit_sign_column_constraint";
         sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
 
@@ -495,8 +495,8 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
         valid_values_array.emplace_back(-1);
         valid_values_array.emplace_back(1);
 
-        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
-        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
+        auto valid_values_ast = make_intrusive<ASTLiteral>(std::move(valid_values_array));
+        auto sign_column_ast = make_intrusive<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
         sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTOperator("in", std::move(sign_column_ast), std::move(valid_values_ast)));
 
         auto constraints_ast = constraints.getConstraints();

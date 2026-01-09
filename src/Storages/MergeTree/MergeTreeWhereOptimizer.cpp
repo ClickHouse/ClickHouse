@@ -421,10 +421,10 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     if (conditions.size() == 1)
         return conditions.front().node.getASTNode()->clone();
 
-    const auto function = std::make_shared<ASTFunction>();
+    const auto function = make_intrusive<ASTFunction>();
 
     function->name = "and";
-    function->arguments = std::make_shared<ASTExpressionList>();
+    function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     for (const auto & elem : conditions)

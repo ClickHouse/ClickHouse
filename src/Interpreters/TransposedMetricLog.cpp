@@ -80,16 +80,16 @@ constexpr auto VIEW_COLUMNS_ORDER =
 constexpr auto HOUR_ALIAS_NAME = "hour";
 
 /// SELECT event_time, value ..., metric FROM system.transposed_metric_log ORDER BY event_time;
-std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source_storage_id)
+boost::intrusive_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source_storage_id)
 {
-    std::shared_ptr<ASTSelectWithUnionQuery> result = std::make_shared<ASTSelectWithUnionQuery>();
-    std::shared_ptr<ASTSelectQuery> select_query = std::make_shared<ASTSelectQuery>();
-    std::shared_ptr<ASTExpressionList> expression_list = std::make_shared<ASTExpressionList>();
+    boost::intrusive_ptr<ASTSelectWithUnionQuery> result = make_intrusive<ASTSelectWithUnionQuery>();
+    boost::intrusive_ptr<ASTSelectQuery> select_query = make_intrusive<ASTSelectQuery>();
+    boost::intrusive_ptr<ASTExpressionList> expression_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & column_name : VIEW_COLUMNS_ORDER)
-        expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+        expression_list->children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
 
-    auto last_element = makeASTFunction("toStartOfHour", std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_TIME_NAME));
+    auto last_element = makeASTFunction("toStartOfHour", make_intrusive<ASTIdentifier>(TransposedMetricLog::EVENT_TIME_NAME));
 
     auto select_list_last_element = last_element->clone();
     select_list_last_element->setAlias(HOUR_ALIAS_NAME);
@@ -98,24 +98,24 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expression_list));
 
-    auto tables = std::make_shared<ASTTablesInSelectQuery>();
-    auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_expression = std::make_shared<ASTTableExpression>();
-    auto database_and_table_name = std::make_shared<ASTTableIdentifier>(source_storage_id);
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    auto database_and_table_name = make_intrusive<ASTTableIdentifier>(source_storage_id);
     table_expression->database_and_table_name = database_and_table_name;
     table->table_expression = table_expression;
     tables->children.emplace_back(table);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
-    std::shared_ptr<ASTExpressionList> order_by = std::make_shared<ASTExpressionList>();
-    std::shared_ptr<ASTOrderByElement> order_by_date = std::make_shared<ASTOrderByElement>();
-    order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_DATE_NAME));
+    boost::intrusive_ptr<ASTExpressionList> order_by = make_intrusive<ASTExpressionList>();
+    boost::intrusive_ptr<ASTOrderByElement> order_by_date = make_intrusive<ASTOrderByElement>();
+    order_by_date->children.emplace_back(make_intrusive<ASTIdentifier>(TransposedMetricLog::EVENT_DATE_NAME));
     order_by_date->direction = 1;
-    std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
-    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>("hour"));
+    boost::intrusive_ptr<ASTOrderByElement> order_by_time = make_intrusive<ASTOrderByElement>();
+    order_by_time->children.emplace_back(make_intrusive<ASTIdentifier>("hour"));
     order_by_time->direction = 1;
-    std::shared_ptr<ASTOrderByElement> order_by_metric = std::make_shared<ASTOrderByElement>();
-    order_by_metric->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::METRIC_NAME));
+    boost::intrusive_ptr<ASTOrderByElement> order_by_metric = make_intrusive<ASTOrderByElement>();
+    order_by_metric->children.emplace_back(make_intrusive<ASTIdentifier>(TransposedMetricLog::METRIC_NAME));
     order_by_metric->direction = 1;
     order_by->children.emplace_back(order_by_date);
     order_by->children.emplace_back(order_by_time);
@@ -123,7 +123,7 @@ std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source
 
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by);
 
-    result->list_of_selects = std::make_shared<ASTExpressionList>();
+    result->list_of_selects = make_intrusive<ASTExpressionList>();
     result->list_of_selects->children.emplace_back(select_query);
 
     return result;
@@ -401,17 +401,17 @@ void TransposedMetricLog::prepareViewForTable(DatabasePtr system_database, Stora
         {
             ASTRenameQuery::Table
             {
-                std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
-                std::make_shared<ASTIdentifier>(view_table_name)
+                make_intrusive<ASTIdentifier>(system_database->getDatabaseName()),
+                make_intrusive<ASTIdentifier>(view_table_name)
             },
             ASTRenameQuery::Table
             {
-                std::make_shared<ASTIdentifier>(system_database->getDatabaseName()),
-                std::make_shared<ASTIdentifier>(rename_to_name)
+                make_intrusive<ASTIdentifier>(system_database->getDatabaseName()),
+                make_intrusive<ASTIdentifier>(rename_to_name)
             }
         };
 
-        auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+        auto rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
         ActionLock merges_lock;
         if (DatabaseCatalog::instance().getDatabase(system_database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)

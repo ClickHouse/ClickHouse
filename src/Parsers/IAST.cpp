@@ -24,18 +24,18 @@
 //     }
 // }
 
-void intrusive_ptr_add_ref(const DB::IAST* p)
-{
-    boost::intrusive_ptr_add_ref<DB::IAST, boost::thread_safe_counter>(p);
-}
-
-void intrusive_ptr_release(const DB::IAST * p)
-{
-    boost::intrusive_ptr_release<DB::IAST, boost::thread_safe_counter>(p);
-}
-
 namespace DB
 {
+
+void intrusive_ptr_add_ref(const IAST* p)
+{
+    boost::sp_adl_block::intrusive_ptr_add_ref<IAST, boost::thread_safe_counter>(p);
+}
+
+void intrusive_ptr_release(const IAST * p)
+{
+    boost::sp_adl_block::intrusive_ptr_release<IAST, boost::thread_safe_counter>(p);
+}
 
 namespace ErrorCodes
 {
@@ -61,7 +61,7 @@ IAST::~IAST()
           * it is possible that neither thead will see use_count == 1.
           * It is ok. Will need one more extra stack frame in this case.
           */
-        if (child.use_count() != 1)
+        if (child->use_count() != 1)
             continue;
 
         ASTPtr child_to_delete;

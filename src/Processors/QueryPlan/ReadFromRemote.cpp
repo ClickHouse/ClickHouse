@@ -285,10 +285,10 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column && isColumnConst(*node->column))
         {
-            auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
+            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
+            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -315,7 +315,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
                 /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
                 /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
-                res = std::make_shared<ASTIdentifier>(node->result_name);
+                res = make_intrusive<ASTIdentifier>(node->result_name);
             }
             else
             {
@@ -367,7 +367,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
         /// and() with 1 arg is not allowed. Make it AND(condition, 1)
         if (is_function_and && arguments.size() == 1)
-            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
+            arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
 
         /// Support for GLOBAL IN.
         if (external_tables && isNameOfGlobalInFunction(func_name))
@@ -409,7 +409,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                         context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
-                    node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
+                    node_to_ast[second_arg] = make_intrusive<ASTIdentifier>(temporary_table_name);
                     arguments[1] = node_to_ast[second_arg];
                 }
             }
@@ -773,11 +773,11 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
 static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 {
-    auto explain_settings = std::make_shared<ASTSetQuery>();
+    auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
     explain_settings->changes =  options.toSettingsChanges();
 
-    auto explain_query = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
+    auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
     explain_query->setExplainedQuery(query);
     explain_query->setSettings(explain_settings);
 

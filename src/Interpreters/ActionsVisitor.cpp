@@ -394,7 +394,7 @@ ColumnsWithTypeAndName createBlockForSet(
   */
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
-    const std::shared_ptr<ASTFunction> & right_arg,
+    const boost::intrusive_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
     ContextPtr context)
 {
@@ -421,7 +421,7 @@ ColumnsWithTypeAndName createBlockForSet(
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_tuple_depth == right_tuple_depth)
     {
-        ASTPtr exp_list = std::make_shared<ASTExpressionList>();
+        ASTPtr exp_list = make_intrusive<ASTExpressionList>();
         exp_list->children.push_back(right_arg);
         elements_ast = exp_list;
     }
@@ -477,7 +477,7 @@ FutureSetPtr makeExplicitSet(
             element_type = low_cardinality_type->getDictionaryType();
 
     ColumnsWithTypeAndName block;
-    const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
+    const auto & right_arg_func = boost::dynamic_pointer_cast<ASTFunction>(right_arg);
     if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
         block = createBlockForSet(left_arg_type, right_arg_func, set_element_types, context);
     else
@@ -827,7 +827,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
 
-        auto literal = std::make_shared<ASTLiteral>(UInt64{++tid});
+        auto literal = make_intrusive<ASTLiteral>(UInt64{++tid});
         visit(*literal, literal, data);
 
         auto func = makeASTOperator("tupleElement", tuple_ast, literal);

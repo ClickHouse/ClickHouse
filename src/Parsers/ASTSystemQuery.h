@@ -217,7 +217,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTSystemQuery>(*this);
+        auto res = make_intrusive<ASTSystemQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }

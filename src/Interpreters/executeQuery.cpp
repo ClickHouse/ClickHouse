@@ -1038,7 +1038,7 @@ class ImplicitTransactionControlExecutor
 public:
     void begin(const ContextMutablePtr & query_context)
     {
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::BEGIN);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::BEGIN);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
         auto txn = query_context->getCurrentTransaction();
@@ -1057,7 +1057,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::COMMIT);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::COMMIT);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1072,7 +1072,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }

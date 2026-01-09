@@ -43,7 +43,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr like;
     ASTPtr database;
 
-    auto query = std::make_shared<ASTShowTablesQuery>();
+    auto query = make_intrusive<ASTShowTablesQuery>();
 
     if (!s_show.ignore(pos, expected))
         return false;

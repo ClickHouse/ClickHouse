@@ -20,7 +20,7 @@ String ASTAlterCommand::getID(char delim) const
 
 ASTPtr ASTAlterCommand::clone() const
 {
-    auto res = std::make_shared<ASTAlterCommand>(*this);
+    auto res = make_intrusive<ASTAlterCommand>(*this);
     res->children.clear();
 
     if (col_decl)
@@ -655,7 +655,7 @@ String ASTAlterQuery::getID(char delim) const
 
 ASTPtr ASTAlterQuery::clone() const
 {
-    auto res = std::make_shared<ASTAlterQuery>(*this);
+    auto res = make_intrusive<ASTAlterQuery>(*this);
     res->children.clear();
 
     if (command_list)

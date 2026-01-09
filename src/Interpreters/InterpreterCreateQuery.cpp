@@ -254,10 +254,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         if (!create.storage)
         {
-            auto storage = std::make_shared<ASTStorage>();
+            auto storage = make_intrusive<ASTStorage>();
             create.set(create.storage, storage);
         }
-        auto engine = std::make_shared<ASTFunction>();
+        auto engine = make_intrusive<ASTFunction>();
         engine->name = "Atomic";
         engine->no_empty_args = true;
         create.storage->set(create.storage->engine, engine);
@@ -397,11 +397,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
-    auto columns_list = std::make_shared<ASTExpressionList>();
+    auto columns_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & column : columns)
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column.name;
 
         ParserDataType type_parser;
@@ -417,11 +417,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns)
 {
-    std::shared_ptr<ASTExpressionList> columns_list = std::static_pointer_cast<ASTExpressionList>(formatColumns(columns));
+    boost::intrusive_ptr<ASTExpressionList> columns_list = boost::static_pointer_cast<ASTExpressionList>(formatColumns(columns));
 
     for (const auto & alias_column : alias_columns)
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = alias_column.name;
 
         ParserDataType type_parser;
@@ -447,11 +447,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
 
 ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 {
-    auto columns_list = std::make_shared<ASTExpressionList>();
+    auto columns_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & column : columns)
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 
         column_declaration->name = column.name;
@@ -473,7 +473,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (!column.comment.empty())
         {
-            column_declaration->comment = std::make_shared<ASTLiteral>(Field(column.comment));
+            column_declaration->comment = make_intrusive<ASTLiteral>(Field(column.comment));
             column_declaration->children.push_back(column_declaration->comment);
         }
 
@@ -497,7 +497,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (!column.settings.empty())
         {
-            auto settings = std::make_shared<ASTSetQuery>();
+            auto settings = make_intrusive<ASTSetQuery>();
             settings->is_standalone = false;
             settings->changes = column.settings;
             column_declaration->settings = std::move(settings);
@@ -511,7 +511,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
 ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 {
-    auto res = std::make_shared<ASTExpressionList>();
+    auto res = make_intrusive<ASTExpressionList>();
 
     for (const auto & index : indices)
         if (!index.isImplicitlyCreated())
@@ -522,7 +522,7 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 
 ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & constraints)
 {
-    auto res = std::make_shared<ASTExpressionList>();
+    auto res = make_intrusive<ASTExpressionList>();
 
     for (const auto & constraint : constraints.getConstraints())
         res->children.push_back(constraint->clone());
@@ -532,7 +532,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 
 ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & projections)
 {
-    auto res = std::make_shared<ASTExpressionList>();
+    auto res = make_intrusive<ASTExpressionList>();
 
     for (const auto & projection : projections)
         res->children.push_back(projection.definition_ast->clone());
@@ -589,7 +589,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
 
-    DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
     bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
@@ -803,7 +803,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.columns = as_storage_metadata->getColumns();
 
         if (!create.comment && !as_storage_metadata->comment.empty())
-            create.set(create.comment, std::make_shared<ASTLiteral>(as_storage_metadata->comment));
+            create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
 
         /// Secondary indices and projections make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
@@ -970,7 +970,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
-        create.set(create.columns_list, std::make_shared<ASTColumns>());
+        create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -1151,7 +1151,7 @@ namespace
         if (engine == DefaultTableEngine::None)
             throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
 
-        auto engine_ast = std::make_shared<ASTFunction>();
+        auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
@@ -1164,7 +1164,7 @@ namespace
             *ptr = nullptr;
         });
 
-        auto engine_ast = std::make_shared<ASTFunction>();
+        auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
@@ -1180,9 +1180,9 @@ namespace
             if (info && info->is_local)
                 return;
         }
-        auto source_ast = std::make_shared<ASTFunctionWithKeyValueArguments>();
+        auto source_ast = make_intrusive<ASTFunctionWithKeyValueArguments>();
         source_ast->name = "null";
-        source_ast->elements = std::make_shared<ASTExpressionList>();
+        source_ast->elements = make_intrusive<ASTExpressionList>();
         source_ast->children.push_back(source_ast->elements);
         dict.set(dict.source, source_ast);
     }
@@ -1227,7 +1227,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 return;
             if (!create.storage)
             {
-                auto storage_ast = std::make_shared<ASTStorage>();
+                auto storage_ast = make_intrusive<ASTStorage>();
                 create.set(create.storage, storage_ast);
             }
             else
@@ -1253,7 +1253,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (!create.storage)
         {
-            auto storage_ast = std::make_shared<ASTStorage>();
+            auto storage_ast = make_intrusive<ASTStorage>();
             create.set(create.storage, storage_ast);
         }
 
@@ -1304,7 +1304,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     /// We'll try to extract a storage definition from clause `AS`:
     ///     CREATE TABLE table_name AS other_table_name
-    std::shared_ptr<ASTStorage> storage_def;
+    boost::intrusive_ptr<ASTStorage> storage_def;
     if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
@@ -1347,7 +1347,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.storage)
         {
-            storage_def = typeid_cast<std::shared_ptr<ASTStorage>>(as_create.getChild(*as_create.storage));
+            storage_def = boost::static_pointer_cast<ASTStorage>(as_create.getChild(*as_create.storage));
             create.is_time_series_table = as_create.is_time_series_table;
         }
         else
@@ -1359,7 +1359,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (!storage_def)
     {
         /// Set ENGINE by default.
-        storage_def = std::make_shared<ASTStorage>();
+        storage_def = make_intrusive<ASTStorage>();
         setDefaultTableEngine(*storage_def, getContext()->getSettingsRef()[Setting::default_table_engine].value);
     }
 
@@ -1503,7 +1503,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
-        create.set(create.sql_security, std::make_shared<ASTSQLSecurity>());
+        create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
         processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
@@ -1819,7 +1819,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.replace_view)
         {
             /// when executing CREATE OR REPLACE VIEW, drop current existing view
-            auto drop_ast = std::make_shared<ASTDropQuery>();
+            auto drop_ast = make_intrusive<ASTDropQuery>();
             drop_ast->setDatabase(create.getDatabase());
             drop_ast->setTable(create.getTable());
             drop_ast->no_ddl_lock = true;
@@ -2082,7 +2082,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         return drop_context;
     };
 
-    auto ast_drop = std::make_shared<ASTDropQuery>();
+    auto ast_drop = make_intrusive<ASTDropQuery>();
     String table_to_replace_name = create.getTable();
 
     {
@@ -2150,17 +2150,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         {
             ASTRenameQuery::Table
             {
-                create.getDatabase().empty() ? nullptr : std::make_shared<ASTIdentifier>(create.getDatabase()),
-                std::make_shared<ASTIdentifier>(create.getTable())
+                create.getDatabase().empty() ? nullptr : make_intrusive<ASTIdentifier>(create.getDatabase()),
+                make_intrusive<ASTIdentifier>(create.getTable())
             },
             ASTRenameQuery::Table
             {
-                create.getDatabase().empty() ? nullptr : std::make_shared<ASTIdentifier>(create.getDatabase()),
-                std::make_shared<ASTIdentifier>(table_to_replace_name)
+                create.getDatabase().empty() ? nullptr : make_intrusive<ASTIdentifier>(create.getDatabase()),
+                make_intrusive<ASTIdentifier>(table_to_replace_name)
             }
         };
 
-        auto ast_rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+        auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
         if (create.create_or_replace || create.replace_view)
         {
@@ -2244,7 +2244,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.isCreateQueryWithImmediateInsertSelect())
     {
-        auto insert = std::make_shared<ASTInsertQuery>();
+        auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         if (create.is_window_view)
         {
@@ -2270,10 +2270,10 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
 
-        auto partition = std::make_shared<ASTPartition>();
+        auto partition = make_intrusive<ASTPartition>();
         partition->all = true;
 
-        auto command = std::make_shared<ASTAlterCommand>();
+        auto command = make_intrusive<ASTAlterCommand>();
         command->replace = false;
         command->type = ASTAlterCommand::REPLACE_PARTITION;
         command->partition = command->children.emplace_back(std::move(partition)).get();
@@ -2282,10 +2282,10 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         command->to_database = create.getDatabase();
         command->to_table = create.getTable();
 
-        auto command_list = std::make_shared<ASTExpressionList>();
+        auto command_list = make_intrusive<ASTExpressionList>();
         command_list->children.push_back(command);
 
-        auto query = std::make_shared<ASTAlterQuery>();
+        auto query = make_intrusive<ASTAlterQuery>();
         query->database = create.database;
         query->table = create.table;
         query->uuid = create.uuid;
@@ -2466,7 +2466,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
         return;
 
-    auto ast_storage = std::make_shared<ASTStorage>();
+    auto ast_storage = make_intrusive<ASTStorage>();
     unsigned max_parser_depth_v = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_parser_depth]);
     unsigned max_parser_backtracks_v = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
     auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false, max_parser_depth_v, max_parser_backtracks_v, true);
@@ -2474,12 +2474,12 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
 
     if (!create.columns_list)
     {
-        ASTPtr columns_list = std::make_shared<ASTColumns>(*create_query_from_storage.columns_list);
+        ASTPtr columns_list = make_intrusive<ASTColumns>(*create_query_from_storage.columns_list);
         create.set(create.columns_list, columns_list);
     }
     else
     {
-        ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
+        ASTPtr columns = make_intrusive<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
 }
@@ -2502,7 +2502,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             if (default_definer == "CURRENT_USER")
                 sql_security.is_definer_current_user = true;
             else
-                sql_security.definer = std::make_shared<ASTUserNameWithHost>(default_definer);
+                sql_security.definer = make_intrusive<ASTUserNameWithHost>(default_definer);
         }
 
         sql_security.type = default_security;
@@ -2521,7 +2521,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         else if (sql_security.definer)
             sql_security.definer->replace(current_user_name);
         else
-            sql_security.definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
+            sql_security.definer = make_intrusive<ASTUserNameWithHost>(current_user_name);
     }
 
     /// Checks the permissions for the specified definer user.
@@ -2536,7 +2536,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
         {
             definer_name = user->getName() + ":definer";
-            sql_security.definer = std::make_shared<ASTUserNameWithHost>(definer_name);
+            sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
             auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());
             new_user->setName(definer_name);
             new_user->authentication_methods.clear();

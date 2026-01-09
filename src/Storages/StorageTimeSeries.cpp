@@ -109,11 +109,11 @@ void StorageTimeSeries::normalizeTableDefinition(ASTCreateQuery & create_query, 
     TimeSeriesSettings time_series_settings;
     if (create_query.storage)
         time_series_settings.loadFromQuery(*create_query.storage);
-    std::shared_ptr<const ASTCreateQuery> as_create_query;
+    boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
     if (!create_query.as_table.empty())
     {
         auto as_database = local_context->resolveDatabase(create_query.as_database);
-        as_create_query = typeid_cast<std::shared_ptr<const ASTCreateQuery>>(
+        as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
             DatabaseCatalog::instance().getDatabase(as_database)->getCreateTableQuery(create_query.as_table, local_context));
     }
     TimeSeriesDefinitionNormalizer normalizer{time_series_storage_id, time_series_settings, as_create_query.get()};

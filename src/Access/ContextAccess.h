@@ -29,9 +29,8 @@ struct Settings;
 struct SettingsProfilesInfo;
 class SettingsChanges;
 class AccessControl;
-class IAST;
 struct IAccessEntity;
-using ASTPtr = std::shared_ptr<IAST>;
+#include <Parsers/IAST_fwd.h>
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 

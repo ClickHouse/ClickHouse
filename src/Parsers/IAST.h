@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 #include <base/types.h>
 #include <Parsers/IASTHash.h>
-#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>

@@ -6891,7 +6891,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     if (is_first_replica)
         for (const String& part_name : active_parts_names)
-            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+            attachPartition(make_intrusive<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
 
     if (!is_called_during_attach)
     {

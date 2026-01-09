@@ -1,15 +1,14 @@
 #pragma once
 
 #include <memory>
-#include <string>
+#include <Parsers/IAST_fwd.h>
+
+#include <city.h>
+#include <Common/SipHash.h>
 #include <vector>
 #include <deque>
 
 #include <Common/TypePromotion.h>
-
-#include <city.h>
-
-class SipHash;
 
 namespace DB
 {
@@ -18,9 +17,6 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;

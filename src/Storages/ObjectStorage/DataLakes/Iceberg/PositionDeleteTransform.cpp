@@ -62,8 +62,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key;
     ASTPtr where_ast = makeASTFunction(
         "equals",
-        std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
-        std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
+        make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
+        make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {

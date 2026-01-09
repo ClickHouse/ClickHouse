@@ -271,7 +271,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Create query and fill its fields.
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     node = query;
 
     if (infile)

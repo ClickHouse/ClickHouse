@@ -5,10 +5,11 @@
 namespace DB
 {
     class IAST;
+
+    void intrusive_ptr_add_ref(const IAST * p);
+    void intrusive_ptr_release(const IAST * p);
 }
 
-void intrusive_ptr_add_ref(const DB::IAST * p);
-void intrusive_ptr_release(const DB::IAST * p);
 
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>

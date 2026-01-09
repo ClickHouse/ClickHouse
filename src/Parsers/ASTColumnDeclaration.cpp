@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTColumnDeclaration::clone() const
 {
-    const auto res = std::make_shared<ASTColumnDeclaration>(*this);
+    const auto res = make_intrusive<ASTColumnDeclaration>(*this);
     res->children.clear();
 
     if (type)

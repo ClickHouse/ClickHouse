@@ -17,12 +17,11 @@ limitations under the License. */
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 class InterpreterWatchQuery : public IInterpreter, WithContext

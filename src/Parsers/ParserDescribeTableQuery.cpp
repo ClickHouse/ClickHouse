@@ -27,7 +27,7 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (!s_describe.ignore(pos, expected) && !s_desc.ignore(pos, expected))
         return false;
 
-    auto query = std::make_shared<ASTDescribeQuery>();
+    auto query = make_intrusive<ASTDescribeQuery>();
 
     s_table.ignore(pos, expected);
 
