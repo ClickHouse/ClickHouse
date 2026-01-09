@@ -126,6 +126,7 @@ def main():
     min_string_length = random.randint(0, 100)
     max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 1000)
     buzz_config = {
+        "seed": random.randint(1, 18446744073709551615),
         "max_depth": random.randint(2, 6),
         "max_width": random.randint(2, 8),
         "max_databases": random.randint(2, 5),
@@ -153,6 +154,8 @@ def main():
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
+        "client_file_path": "/var/lib/clickhouse/user_files",
+        "server_file_path": "/var/lib/clickhouse/user_files",
         "log_path": "/workspace/fuzzerout.sql",
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
@@ -161,6 +164,7 @@ def main():
         "random_limited_values": random.choice([True, False]),
         "max_reconnection_attempts": 3,
         "time_to_sleep_between_reconnects": 5000,
+        "keeper_map_path_prefix": "/keeper_map_tables",
         # Oracles don't run check correctness on CI, so set deterministic probability low
         "deterministic_prob": random.randint(0, 20),
         "disabled_types": disabled_types_str,
@@ -171,6 +175,10 @@ def main():
         "allow_transactions": random.randint(1, 5) == 1,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
+        "remote_servers": ["localhost:9000"],
+        "remote_secure_servers": ["localhost:9440"],
+        "http_servers": ["localhost:8123"],
+        "https_servers": ["localhost:8443"],
         "disallowed_settings": [
             # Disable old analyzer always
             "enable_analyzer",

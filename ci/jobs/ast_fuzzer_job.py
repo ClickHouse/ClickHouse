@@ -42,7 +42,7 @@ def get_run_command(
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE --workdir /repo "
         f"{image} "
-        f"bash -c './ci/jobs/scripts/fuzzer/run-{"server" if buzzhouse else "fuzzer"}.sh' "
+        f"bash -c './ci/jobs/scripts/fuzzer/run-fuzzer.sh' "
     )
 
 
@@ -78,7 +78,7 @@ def run_fuzz_job(check_name: str):
         f.write("\n".join(changed_files))
 
     Shell.check(command=run_command, verbose=True)
-    
+
     # Fix file ownership after running docker as root
     logging.info("Fixing file ownership after running docker as root")
     uid = os.getuid()
@@ -102,7 +102,7 @@ def run_fuzz_job(check_name: str):
         dmesg_log,
     ]
     if buzzhouse:
-        paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json", workspace_path / "dolor.log"])
+        paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json"])
 
     server_died = False
     server_exit_code = 0
