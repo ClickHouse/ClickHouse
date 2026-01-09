@@ -163,3 +163,71 @@ class ElOraculoDeTablas:
                 )
             except Exception as ex:
                 logger.warn(f"Error while renaming table after restarting server: {ex}")
+
+    HEALTH_CHECKS = [
+        "broken detached part(s)",
+        "broken replica(s)",
+        "broken data part(s)",
+        "shared catalog replica(s) needing recovery",
+        "shared catalog drop/detach error(s)",
+        "readonly replica(s)",
+        "part(s) with excessive errors",
+        "replica(s) with REPLICA_ALREADY_EXISTS errors",
+    ]
+
+    def run_health_check(
+        self, cluster: ClickHouseCluster, servers: list[ClickHouseInstance], logger
+    ):
+        for next_node in servers:
+            logger.info(f"Collecting monitoring information for node {next_node.name}")
+            client = Client(
+                host=next_node.ip_address, port=9000, command=cluster.client_bin_path
+            )
+            info_str = ""
+            try:
+                info_str = client.query(
+                    """
+                    SELECT x FROM (
+                    (SELECT count() x, 1 y FROM system.detached_parts WHERE startsWith("name", 'broken'))
+                     UNION ALL
+                    (SELECT ifNull(sum(lost_part_count), 0), 2 y FROM system.replicas)
+                     UNION ALL
+                    (SELECT count() x, 3 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE '%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%')
+                     UNION ALL
+                    (SELECT count() x, 4 y FROM clusterAllReplicas(default, system.clusters)
+                     WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)
+                     UNION ALL
+                    (SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, system.metrics) WHERE name = 'SharedCatalogDropDetachLocalTablesErrors')
+                     UNION ALL
+                    (SELECT count() x, 6 y FROM clusterAllReplicas(default, system.replicas) WHERE readonly_start_time IS NOT NULL)
+                     UNION ALL
+                    (SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, system.part_log)
+                     WHERE exception != '' AND event_time > (now() - toIntervalSecond(30)) GROUP BY part_name HAVING count() > 5) tx)
+                     UNION ALL
+                    (SELECT count() x, 8 y FROM system.text_log
+                     WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE '%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')
+                    ) tx ORDER BY y;
+                    """
+                )
+            except Exception as ex:
+                logger.warn(
+                    f"Error occurred while fetching monitoring information for node {next_node.name}: {ex}"
+                )
+                continue
+            if not isinstance(info_str, str) or info_str == "":
+                logger.warn(
+                    f"No monitoring information found for node {next_node.name}"
+                )
+                continue
+
+            fetched_info: list[int] = [
+                int(line) for line in info_str.split("\n") if line
+            ]
+            for idx, check_name in enumerate(ElOraculoDeTablas.HEALTH_CHECKS):
+                if fetched_info[idx] != 0:
+                    message: str = (
+                        f"Health check '{check_name}' failed on node {next_node.name}: {fetched_info[idx]} issues found"
+                    )
+                    logger.warn(message)
+                    raise ValueError(message)

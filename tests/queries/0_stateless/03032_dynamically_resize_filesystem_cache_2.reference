@@ -1,7 +1,7 @@
-1
-1
-1
-1
-1
-1
-1
+1	current size is non-zero
+1	max size is changed
+1	current size is still non-zero
+1	current size is less than max size
+1	max size is reloaded
+1	current size is still non-zero
+1	current size is less than max size
