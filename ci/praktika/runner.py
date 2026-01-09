@@ -15,7 +15,7 @@ from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _check_and_link_open_issues, _is_praktika_job
+from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -69,21 +69,10 @@ class Runner:
             filtered_jobs={},
             custom_data={},
         )
-        # Extract repository name from git remote (format: owner/repo)
-        repo_url = Shell.get_output("git config --get remote.origin.url")
-        repo_name = ""
-        if repo_url:
-            # Handle both HTTPS and SSH formats
-            # HTTPS: https://github.com/owner/repo.git
-            # SSH: git@github.com:owner/repo.git
-            match = re.search(r"[:/]([^/]+/[^/]+?)(\.git)?$", repo_url)
-            if match:
-                repo_name = match.group(1)
-
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
-            REPOSITORY=repo_name,
+            REPOSITORY="",
             BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr if not branch else 0,
@@ -105,7 +94,7 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={
+            WORKFLOW_DATA={
                 Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
                     "outputs": {
                         "data": json.dumps(
@@ -250,7 +239,6 @@ class Runner:
         debug=False,
         path="",
         path_1="",
-        workers=None,
     ):
         # re-set envs for local run
         env = _Environment.get()
@@ -276,9 +264,6 @@ class Runner:
                 Utils.raise_with_error(
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
-
-        if job.enable_gh_auth:
-            _GH_Auth(workflow=workflow)
 
         if job.run_in_docker and not no_docker:
             job.run_in_docker, docker_settings = (
@@ -318,11 +303,6 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
-            if job.enable_gh_auth:
-                # pass gh auth seamlessly into the docker container
-                gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
-            else:
-                gh_mount = ""
             # enable tty mode & interactive for docker if we have real tty
             tty = ""
             if preserve_stdio:
@@ -333,7 +313,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -357,9 +337,6 @@ class Runner:
         if path_1:
             print(f"Custom --path_1 [{path_1}] will be passed to job's script")
             cmd += f" --path_1 {path_1}"
-        if workers is not None:
-            print(f"Custom --workers [{workers}] will be passed to job's script")
-            cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
@@ -405,20 +382,6 @@ class Runner:
                         process.get_latest_log(max_lines=20)
                     ).set_info("---")
             result.dump()
-
-        # When running Docker containers as root (non-rootless mode), any files created
-        # by the job will be owned by root. This causes issues when:
-        # 1. Files need to be read/compressed/uploaded by subsequent steps
-        # 2. Root-owned files remain in the repository working directory
-        # The ownership fix below ensures all root-owned files are changed to the current user
-        if job.run_in_docker and not no_docker and from_root:
-            print(f"--- Fixing file ownership after running docker as root")
-            # Get host user's UID and GID (not from inside the container)
-            uid = os.getuid()
-            gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
-            print(f"--- Run ownership fix command [{chown_cmd}]")
-            Shell.check(chown_cmd, verbose=True)
 
         return exit_code
 
@@ -477,8 +440,16 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+        elif (
+            not result.is_ok()
+            and workflow.enable_merge_ready_status
+            and not job.allow_merge_on_failure
+        ):
+            print("set required label")
+            result.set_required_label()
 
         result.update_duration()
+        # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
         job_outputs = env.JOB_KV_DATA
@@ -599,15 +570,8 @@ class Runner:
                                 "cidb",
                                 ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
-                                    failure_patterns=Settings.TEST_FAILURE_PATTERNS,
-                                    test_output=test_case_result.info,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
-                                    job_name=job.name,
-                                    pr_base_branches=[
-                                        env.BASE_BRANCH,
-                                        Settings.MAIN_BRANCH,
-                                    ],
                                 ),
                             )
                     result.dump()
@@ -628,29 +592,13 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
-        if workflow.enable_open_issues_check:
-            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
-            #   to upload updated job and workflow results to S3
-            try:
-                if is_final_job:
-                    # re-check entire workflow in the final job as some new issues may appear
-                    workflow_result = Result.from_fs(workflow.name)
-                    _check_and_link_open_issues(workflow_result, job_name="")
-                else:
-                    _check_and_link_open_issues(result, job_name=job.name)
-            except Exception as e:
-                print(f"ERROR: failed to check open issues: {e}")
-                traceback.print_exc()
-                if is_final_job:
-                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
-
-        # always in the end
+        workflow_result = None
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
             workflow_result = Result.from_fs(workflow.name)
-            if is_final_job and ci_db:
+
+            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
                 workflow_storage_usage = StorageUsage.from_dict(
                     workflow_result.ext.get("storage_usage", {})
@@ -675,7 +623,6 @@ class Runner:
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
             _GH_Auth(workflow)
-            workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
                     workflow_result
@@ -757,7 +704,6 @@ class Runner:
         debug=False,
         path="",
         path_1="",
-        workers=None,
     ):
         res = True
         setup_env_code = -10
@@ -786,7 +732,7 @@ class Runner:
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
 
-        if res and (not local_run or ((pr or branch) and sha)):
+        if res and (not local_run or pr or sha or branch):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:
@@ -815,7 +761,6 @@ class Runner:
                     debug=debug,
                     path=path,
                     path_1=path_1,
-                    workers=workers,
                 )
                 res = run_code == 0
                 if not res:

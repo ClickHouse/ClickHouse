@@ -92,8 +92,6 @@ public:
 
         virtual const Iterator * getNestedOrThis() const { return this; }
         virtual Iterator * getNestedOrThis() { return this; }
-
-        virtual void check(const CachePriorityGuard::Lock &) const {}
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
@@ -247,10 +245,6 @@ public:
         bool released = false;
     };
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
-
-    virtual size_t getHoldSize() = 0;
-
-    virtual size_t getHoldElements() = 0;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

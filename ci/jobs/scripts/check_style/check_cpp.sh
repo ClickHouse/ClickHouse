@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|base/base/openpty\.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
@@ -91,10 +91,9 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
-    CurrentMetrics::set
-    CurrentMetrics::cas
     CurrentMetrics::getDocumentation
     CurrentMetrics::getName
+    CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
@@ -226,7 +225,6 @@ std_cerr_cout_excludes=(
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/Common/ProgressIndication.h
-    src/Common/ZooKeeper/KeeperClientCLI/KeeperClient.h
     src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(
@@ -342,8 +340,7 @@ do
 done
 
 # Currently fmt::format is faster both at compile and runtime
-EXCLUDE_STD_FORMAT='HTTPHandler'
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | grep -vP $EXCLUDE_STD_FORMAT | xargs grep -l "std::format" | while read -r file;
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | xargs grep -l "std::format" | while read -r file;
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done
