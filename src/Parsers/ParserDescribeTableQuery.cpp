@@ -34,9 +34,9 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     /// Try to parse SELECT query without parentheses (e.g., DESCRIBE SELECT 1)
     if (ParserSelectWithUnionQuery().parse(pos, select, expected))
     {
-        auto table_expr = std::make_shared<ASTTableExpression>();
+        auto table_expr = make_intrusive<ASTTableExpression>();
         /// Wrap SELECT in ASTSubquery, as expected by the rest of the codebase
-        auto subquery = std::make_shared<ASTSubquery>(std::move(select));
+        auto subquery = make_intrusive<ASTSubquery>(std::move(select));
         table_expr->subquery = subquery;
         table_expr->children.push_back(table_expr->subquery);
         query->table_expression = table_expr;
