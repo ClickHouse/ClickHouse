@@ -136,7 +136,17 @@ def test_create_workload():
     do_checks()
 
 
-def test_independent_pools():
+@pytest.mark.parametrize(
+    "with_custom_config",
+    [
+        pytest.param(
+            {'node': {"cpu_slot_preemption_timeout_ms": "60000"}},
+            id="cpu-slot-preemption-timeout-60s",
+        )
+    ],
+    indirect=True,
+)
+def test_independent_pools(with_custom_config):
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
@@ -175,7 +185,7 @@ def test_independent_pools():
             "ConcurrencyControlSlotsAcquired",
             lambda x: x <= slots,
         )
-        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not
+        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not. To enforce that we set high preemption timeout.
         assert_profile_event(
             node,
             query_id,
