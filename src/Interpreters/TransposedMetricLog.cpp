@@ -237,7 +237,7 @@ public:
         query_plan.addStep(std::make_unique<CustomMetricLogViewStep>(std::make_shared<const Block>(std::move(input_header)), std::make_shared<const Block>(std::move(output_header))));
     }
 
-    std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
+    static std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
     {
         std::optional<String> additional_name;
         MutableColumnPtr column_for_set = ColumnString::create();
