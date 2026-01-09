@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/TextIndexCommon.h>
 #include <Columns/IColumn.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
@@ -13,10 +14,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
-
-#include <vector>
-
-#include <roaring/roaring.hh>
 
 namespace DB
 {
@@ -77,9 +74,6 @@ struct MergeTreeIndexTextParams
     size_t posting_list_block_size = 1024 * 1024;
     String preprocessor;
 };
-
-using PostingList = roaring::Roaring;
-using PostingListPtr = std::shared_ptr<PostingList>;
 
 /// A struct for building a posting list with optimization for infrequent tokens.
 /// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
@@ -152,31 +146,6 @@ struct PostingsSerialization
     static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
 };
 
-/// Closed range of rows.
-struct RowsRange
-{
-    size_t begin;
-    size_t end;
-
-    RowsRange() = default;
-    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
-
-    bool intersects(const RowsRange & other) const;
-};
-
-/// Stores information about posting list for a token.
-struct TokenPostingsInfo
-{
-    UInt64 header = 0;
-    UInt32 cardinality = 0;
-    std::vector<UInt64> offsets;
-    std::vector<RowsRange> ranges;
-    PostingListPtr embedded_postings;
-
-    /// Returns indexes of posting list blocks to read for the given range of rows.
-    std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
-};
-
 struct DictionaryBlockBase
 {
     ColumnPtr tokens;
@@ -242,7 +211,6 @@ struct TextIndexSerialization
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
     using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
@@ -252,17 +220,16 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return sparse_index->empty(); }
+    bool empty() const override { return is_empty; }
     size_t memoryUsageBytes() const override;
 
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
-    const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokenToPostingsInfosMap & getRemainingTokens() const { return *remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
-    void resetAfterAnalysis();
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -271,17 +238,15 @@ public:
         size_t block_idx);
 
 private:
-    void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
-    /// Header of the text index contains the number of tokens and sparse index.
-    DictionarySparseIndexPtr sparse_index;
     /// Tokens that are in the index granule after analysis.
-    TokenToPostingsInfosMap remaining_tokens;
+    TokenToPostingsInfosPtr remaining_tokens;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.

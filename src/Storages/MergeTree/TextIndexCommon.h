@@ -1,0 +1,79 @@
+#pragma once
+#include <Core/Names.h>
+#include <roaring/roaring.hh>
+#include <Core/Types.h>
+#include <absl/container/flat_hash_map.h>
+#include <mutex>
+#include <string_view>
+#include <unordered_set>
+
+namespace DB
+{
+
+enum class TextSearchMode : uint8_t
+{
+    Any,
+    All,
+};
+
+using PostingList = roaring::Roaring;
+using PostingListPtr = std::shared_ptr<PostingList>;
+
+/// Closed range of rows.
+struct RowsRange
+{
+    size_t begin;
+    size_t end;
+
+    RowsRange() = default;
+    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+
+    bool intersects(const RowsRange & other) const;
+};
+
+/// Stores information about posting list for a token.
+struct TokenPostingsInfo
+{
+    UInt64 header = 0;
+    UInt32 cardinality = 0;
+    std::vector<UInt64> offsets;
+    std::vector<RowsRange> ranges;
+    PostingListPtr embedded_postings;
+
+    /// Returns indexes of posting list blocks to read for the given range of rows.
+    std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
+};
+
+using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfo>;
+using TokenToPostingsInfosPtr = std::shared_ptr<TokenToPostingsInfosMap>;
+
+class TokenInfosCache
+{
+public:
+    using CardinalityMap = std::unordered_map<std::string_view, size_t>;
+    TokenInfosCache(std::vector<String> all_search_tokens_, TextSearchMode global_search_mode_);
+
+    bool has(const String & part_name) const;
+    TokenToPostingsInfosPtr get(const String & part_name) const;
+    void set(const String & part_name, TokenToPostingsInfosPtr token_infos);
+    void updateCardinalities(const TokenToPostingsInfosMap & token_infos, size_t total_rows);
+    std::vector<String> getOrderedTokens() const;
+
+private:
+    const std::vector<String> all_search_tokens;
+    const TextSearchMode global_search_mode;
+
+    struct CardinalityAggregate
+    {
+        size_t cardinality = 0;
+        size_t checked_rows = 0;
+
+        bool operator==(const CardinalityAggregate & other) const = default;
+    };
+
+    mutable std::mutex mutex;
+    std::unordered_map<String, CardinalityAggregate> cardinalities;
+    std::unordered_map<String, TokenToPostingsInfosPtr> cache;
+};
+
+}

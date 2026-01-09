@@ -232,7 +232,6 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
         may_be_true_granules.add(mark);
 
     analyzed_granules.add(mark);
-    granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
 
@@ -339,7 +338,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
+double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
     chassert(!query.tokens.empty());
 
