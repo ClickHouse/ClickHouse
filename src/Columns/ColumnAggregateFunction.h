@@ -136,7 +136,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t) const override
     {
@@ -173,9 +173,9 @@ public:
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    const char * skipSerializedInArena(const char *) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -212,7 +212,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override

@@ -5,21 +5,18 @@ description: 'This engine provides integration with the Amazon S3 ecosystem and 
 sidebar_label: 'S3Queue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/s3queue
-title: 'S3Queue table engine'
-doc_type: 'reference'
+title: 'S3Queue Table Engine'
 ---
 
 import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
 
-# S3Queue table engine
+# S3Queue Table Engine
 
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
-It is important to understand this note from the [original PR for S3Queue implementation](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183): when the `MATERIALIZED VIEW` joins the engine, the S3Queue Table Engine starts collecting data in the background.
+## Create Table {#creating-a-table}
 
-## Create table {#creating-a-table}
-
-```sql
+``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
@@ -27,24 +24,15 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [after_processing = 'keep',]
     [keeper_path = '',]
     [loading_retries = 0,]
-    [processing_threads_num = 16,]
-    [parallel_inserts = false,]
-    [enable_logging_to_queue_log = true,]
-    [last_processed_path = "",]
-    [tracked_files_limit = 1000,]
-    [tracked_file_ttl_sec = 0,]
+    [processing_threads_num = 1,]
+    [enable_logging_to_s3queue_log = 0,]
     [polling_min_timeout_ms = 1000,]
     [polling_max_timeout_ms = 10000,]
     [polling_backoff_ms = 0,]
+    [tracked_file_ttl_sec = 0,]
+    [tracked_files_limit = 1000,]
     [cleanup_interval_min_ms = 10000,]
     [cleanup_interval_max_ms = 30000,]
-    [buckets = 0,]
-    [list_objects_batch_size = 1000,]
-    [enable_hash_ring_filtering = 0,]
-    [max_processed_files_before_commit = 100,]
-    [max_processed_rows_before_commit = 0,]
-    [max_processed_bytes_before_commit = 0,]
-    [max_processing_time_sec_before_commit = 0,]
 ```
 
 :::warning
@@ -66,7 +54,7 @@ SETTINGS
 
 Using named collections:
 
-```xml
+``` xml
 <clickhouse>
     <named_collections>
         <s3queue_conf>
@@ -89,7 +77,7 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-### Mode {#mode}
+### mode {#mode}
 
 Possible values:
 
@@ -98,7 +86,7 @@ Possible values:
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 
-### `after_processing` {#after_processing}
+### after_processing {#after_processing}
 
 Delete or keep file after successful processing.
 Possible values:
@@ -108,7 +96,7 @@ Possible values:
 
 Default value: `keep`.
 
-### `keeper_path` {#keeper_path}
+### keeper_path {#keeper_path}
 
 The path in ZooKeeper can be specified as a table engine setting or default path can be formed from the global configuration-provided path and table UUID.
 Possible values:
@@ -117,7 +105,7 @@ Possible values:
 
 Default value: `/`.
 
-### `s3queue_loading_retries` {#loading_retries}
+### s3queue_loading_retries {#loading_retries}
 
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
@@ -126,30 +114,19 @@ Possible values:
 
 Default value: `0`.
 
-### `s3queue_processing_threads_num` {#processing_threads_num}
+### s3queue_processing_threads_num {#processing_threads_num}
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
-Default value: Number of CPUs or 16.
+Default value: `1`.
 
-### `s3queue_parallel_inserts` {#parallel_inserts}
-
-By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
-But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
-
-:::note
-`INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-:::
-
-Default value: `false`.
-
-### `s3queue_enable_logging_to_s3queue_log` {#enable_logging_to_s3queue_log}
+### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
 
 Enable logging to `system.s3queue_log`.
 
 Default value: `0`.
 
-### `s3queue_polling_min_timeout_ms` {#polling_min_timeout_ms}
+### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
 Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
 
@@ -159,7 +136,7 @@ Possible values:
 
 Default value: `1000`.
 
-### `s3queue_polling_max_timeout_ms` {#polling_max_timeout_ms}
+### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
 
 Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
 
@@ -169,7 +146,7 @@ Possible values:
 
 Default value: `10000`.
 
-### `s3queue_polling_backoff_ms` {#polling_backoff_ms}
+### s3queue_polling_backoff_ms {#polling_backoff_ms}
 
 Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
 
@@ -179,7 +156,7 @@ Possible values:
 
 Default value: `0`.
 
-### `s3queue_tracked_files_limit` {#tracked_files_limit}
+### s3queue_tracked_files_limit {#tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
@@ -190,7 +167,7 @@ Possible values:
 
 Default value: `1000`.
 
-### `s3queue_tracked_file_ttl_sec` {#tracked_file_ttl_sec}
+### s3queue_tracked_file_ttl_sec {#tracked_file_ttl_sec}
 
 Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
@@ -201,33 +178,23 @@ Possible values:
 
 Default value: `0`.
 
-### `s3queue_cleanup_interval_min_ms` {#cleanup_interval_min_ms}
+### s3queue_cleanup_interval_min_ms {#cleanup_interval_min_ms}
 
 For 'Ordered' mode. Defines a minimum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `10000`.
 
-### `s3queue_cleanup_interval_max_ms` {#cleanup_interval_max_ms}
+### s3queue_cleanup_interval_max_ms {#cleanup_interval_max_ms}
 
 For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `30000`.
 
-### `s3queue_buckets` {#buckets}
+### s3queue_buckets {#buckets}
 
 For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 
-### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
-
-By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session. 
-
-### `persistent_processing_nodes_ttl_seconds` {#persistent_processing_nodes_ttl_seconds}
-
-In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up.
-
-Default value: `3600` (1 hour).
-
-## S3-related settings {#s3-settings}
+## S3-related Settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
@@ -236,7 +203,7 @@ Engine supports all s3 related settings. For more information about S3 settings 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/cloud/data-sources/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -253,7 +220,7 @@ SETTINGS
     ...
 ```
 
-## S3Queue ordered mode {#ordered-mode}
+## S3Queue Ordered mode {#ordered-mode}
 
 `S3Queue` processing mode allows to store less metadata in ZooKeeper, but has a limitation that files, which added later by time, are required to have alphanumerically bigger names.
 
@@ -274,7 +241,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
@@ -293,12 +260,11 @@ Example:
 
 - `_path` — Path to the file.
 - `_file` — Name of the file.
-- `_size` — Size of the file.
-- `_time` — Time of the file creation.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-## Wildcards in path {#wildcards-in-path}
+
+## Wildcards In Path {#wildcards-in-path}
 
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
 
@@ -316,11 +282,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 - an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
-- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is not true since version 25.8 if `use_persistent_processing_nodes = 1`.
+- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
 
 - abnormal server termination.
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
+
 
 ## Introspection {#introspection}
 
@@ -328,7 +295,7 @@ For introspection use `system.s3queue` stateless table and `system.s3queue_log` 
 
 1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
-```sql
+``` sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE system.s3queue
 (
@@ -349,7 +316,7 @@ COMMENT 'Contains in-memory state of S3Queue metadata and currently processed ro
 
 Example:
 
-```sql
+``` sql
 
 SELECT *
 FROM system.s3queue
@@ -370,7 +337,7 @@ exception:
 
 The table has the following structure:
 
-```sql
+``` sql
 SHOW CREATE TABLE system.s3queue_log
 
 Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
@@ -398,7 +365,7 @@ SETTINGS index_granularity = 8192 │
 
 In order to use `system.s3queue_log` define its configuration in server config file:
 
-```xml
+``` xml
     <s3queue_log>
         <database>system</database>
         <table>s3queue_log</table>
@@ -407,7 +374,7 @@ In order to use `system.s3queue_log` define its configuration in server config f
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.s3queue_log
 

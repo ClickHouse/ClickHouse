@@ -4,7 +4,6 @@ sidebar_label: 'welchTTest'
 sidebar_position: 214
 slug: /sql-reference/aggregate-functions/reference/welchttest
 title: 'welchTTest'
-doc_type: 'reference'
 ---
 
 # welchTTest
@@ -13,7 +12,7 @@ Applies Welch's t-test to samples from two populations.
 
 **Syntax**
 
-```sql
+``` sql
 welchTTest([confidence_level])(sample_data, sample_index)
 ```
 
@@ -38,11 +37,12 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 - calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
 - calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
 
+
 **Example**
 
 Input table:
 
-```text
+``` text
 ┌─sample_data─┬─sample_index─┐
 │        20.3 │            0 │
 │        22.1 │            0 │
@@ -55,13 +55,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
 ```
 
 Result:
 
-```text
+``` text
 ┌─welchTTest(sample_data, sample_index)─────┐
 │ (2.7988719532211235,0.051807360348581945) │
 └───────────────────────────────────────────┘
@@ -71,3 +71,4 @@ Result:
 
 - [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
 - [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
+

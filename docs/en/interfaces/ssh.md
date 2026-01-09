@@ -5,7 +5,6 @@ sidebar_label: 'SSH Interface'
 sidebar_position: 60
 slug: /interfaces/ssh
 title: 'SSH Interface'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -19,6 +18,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 ## Preface {#preface}
 
 ClickHouse server allows to connect to itself directly using the SSH protocol. Any client is allowed.
+
 
 After creating a [database user identified by an SSH key](/knowledgebase/how-to-connect-to-ch-cloud-using-ssh-keys):
 ```sql
@@ -50,6 +50,7 @@ The command execution over SSH (the non-interactive mode) is also supported:
 > ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
 1
 ```
+
 
 ## Server configuration {#server-configuration}
 

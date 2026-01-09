@@ -42,7 +42,7 @@ private:
         if (!number_parser.parse(pos, number, expected))
             return false;
 
-        node = makeASTOperator("equals", identifier, number);
+        node = makeASTFunction("equals", identifier, number);
         return true;
     }
 };
@@ -99,7 +99,7 @@ private:
             if (!number_parser.parse(pos, number, expected))
                 return false;
 
-            argument->parameter = makeASTOperator("equals", identifier, number);
+            argument->parameter = makeASTFunction("equals", identifier, number);
             argument->children.push_back(argument->parameter);
             node = argument;
             return true;
@@ -110,8 +110,8 @@ private:
         if (!type_parser.parse(pos, type, expected))
             return false;
 
-        auto name_and_type = std::make_shared<ASTNameTypePair>();
-        name_and_type->name = getIdentifierName(identifier);
+        auto name_and_type = std::make_shared<ASTObjectTypedPathArgument>();
+        name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
         name_and_type->children.push_back(name_and_type->type);
         argument->path_with_type = name_and_type;

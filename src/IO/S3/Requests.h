@@ -9,7 +9,6 @@
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
-#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -93,12 +92,6 @@ public:
         return BaseRequest::GetChecksumAlgorithmName();
     }
 
-    /// TODO Understand what is it. Maybe we need it...
-    bool IsStreaming() const override
-    {
-        return false;
-    }
-
     std::string getRegionOverride() const
     {
         return region_override;
@@ -148,7 +141,6 @@ public:
 };
 
 using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
-using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
@@ -157,15 +149,6 @@ class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
-};
-
-class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
-{
-public:
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
 };
 
 class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
@@ -178,19 +161,10 @@ using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploa
 using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
-class DeleteObjectRequest : public ExtendedRequest<Model::DeleteObjectRequest>
-{
-public:
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
-};
+using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
+using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
+using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
 
-class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
-{
-public:
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
-};
 
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
 {

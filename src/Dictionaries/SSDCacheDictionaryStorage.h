@@ -572,7 +572,7 @@ public:
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
+        Memory read_buffer_memory(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;
@@ -1072,10 +1072,7 @@ private:
 
                     const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
                     char * serialized_columns_place = partition.getPlace(cell.index);
-                    /// This is larger size than necessary but we don't know the exact size of serialized columns
-                    size_t size = partition.block_size;
-                    ReadBufferFromString in({serialized_columns_place, size});
-                    deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
+                    deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, serialized_columns_place);
                     break;
                 }
                 case Cell::on_disk:
@@ -1122,10 +1119,7 @@ private:
             for (auto & key_in_block : keys_in_block)
             {
                 char * key_data = block_data + key_in_block.offset_in_block;
-                /// This is larger size than necessary but we don't know the exact size of serialized columns
-                size_t size = configuration.read_buffer_blocks_size;
-                ReadBufferFromString in({key_data, size});
-                deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
+                deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
                 result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(
                     default_mask ? fetched_columns_index_without_default : fetched_columns_index);

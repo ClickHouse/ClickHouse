@@ -23,10 +23,8 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 
     bool empty() const override { return hyperrectangle.empty(); }
 
-    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
-
-    const String & index_name;
-    const Block & index_sample_block;
+    const String index_name;
+    const Block index_sample_block;
 
     std::vector<Range> hyperrectangle;
 };
@@ -76,13 +74,13 @@ public:
     ~MergeTreeIndexMinMax() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
+    const char* getSerializedFileExtension() const override { return ".idx2"; }
+    MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override; /// NOLINT
 };
 
 }

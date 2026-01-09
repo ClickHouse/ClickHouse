@@ -1,15 +1,14 @@
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include "MetadataStorageFromPlainObjectStorage.h"
 
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
-#include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
-#include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
 
@@ -22,19 +21,32 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+namespace
+{
+
+std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
+{
+    return path / "";
+}
+
+}
+
 MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
-    : object_storage(object_storage_)
-    , storage_path_prefix(std::move(storage_path_prefix_))
-    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
+    : object_storage(object_storage_), storage_path_prefix(std::move(storage_path_prefix_))
 {
     if (object_metadata_cache_size)
-        object_metadata_cache = std::make_shared<CacheBase<UInt128, ObjectMetadataEntry>>(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
+        object_metadata_cache.emplace(object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
 {
     return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this, object_storage);
+}
+
+const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
+{
+    return storage_path_prefix;
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const
@@ -66,6 +78,7 @@ bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::str
     return object_storage->existsOrHasAnyChild(key_prefix);
 }
 
+
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
     if (auto res = getFileSizeIfExists(path))
@@ -75,7 +88,6 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    Expect404ResponseScope scope;  // 404 is not an error
     if (auto res = getObjectMetadataEntryWithCache(path))
         return res->file_size;
     return std::nullopt;
@@ -152,12 +164,13 @@ std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageOb
     return std::nullopt;
 }
 
-ObjectMetadataEntryPtr MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
+MetadataStorageFromPlainObjectStorage::ObjectMetadataEntryPtr
+MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
 {
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
-        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize(), /*with_tags=*/ false))
+        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;
     };
@@ -176,24 +189,82 @@ ObjectMetadataEntryPtr MetadataStorageFromPlainObjectStorage::getObjectMetadataE
     return get();
 }
 
-MetadataStorageFromPlainObjectStorageTransaction::MetadataStorageFromPlainObjectStorageTransaction(
-    MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_)
-    : metadata_storage(metadata_storage_), object_storage(object_storage_)
-{
-}
-
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
 {
     return metadata_storage;
 }
 
-std::optional<StoredObjects> MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    return metadata_storage.getStorageObjectsIfExist(path);
-}
-
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
+    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object = StoredObject(object_key.serialize());
+    metadata_storage.object_storage->removeObjectIfExists(object);
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+    {
+        for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
+            metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
+    }
+    else
+    {
+        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
+            normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    addOperation(
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap(), object_storage));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
+    const std::string & path, ObjectStorageKey /*object_key*/, uint64_t /* size_in_bytes */)
+{
+    createEmptyMetadataFile(path);
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    auto normalized_path = normalizeDirectoryPath(path);
+    auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
+        std::move(normalized_path),
+        *metadata_storage.getPathMap(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix());
+    addOperation(std::move(op));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
+{
+    createDirectory(path);
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
+        normalizeDirectoryPath(path_from),
+        normalizeDirectoryPath(path_to),
+        *metadata_storage.getPathMap(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix()));
+}
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
+{
+    /// The record has become stale, remove it from cache.
     if (metadata_storage.object_metadata_cache)
     {
         auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
@@ -202,26 +273,15 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
         metadata_storage.object_metadata_cache->remove(hash.get128());
     }
 
-    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-    metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
+    auto result = std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    if (!metadata_storage.object_storage->isWriteOnce())
+        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
+            path, *metadata_storage.getPathMap(), object_storage));
+    return result;
 }
 
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
+void MetadataStorageFromPlainObjectStorageTransaction::commit()
 {
-    unlinkFile(path);
-    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
-
-void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
-{
-    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-        metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path)
-{
-    /// TODO: Implement recursive listing.
-    removeDirectory(path);
-}
-
 }

@@ -6,6 +6,9 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 
+# shellcheck disable=SC1091
+source /basic_helpers.sh
+
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
@@ -29,24 +32,6 @@ function trim_server_logs()
     head -n "$FAILURE_CONTEXT_LINES" "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
 }
 
-function run_with_retry()
-{
-    local retries="$1" && shift
-
-    local retry=0
-    until [ "$retry" -ge "$retries" ]; do
-        if "$@"; then
-            return
-        else
-            retry=$((retry + 1))
-            sleep 5
-        fi
-    done
-
-    echo "Command '$*' failed after $retries retries, exiting" >&2
-    return 1
-}
-
 function install_packages()
 {
     run_with_retry 3 dpkg -i "$1"/clickhouse-common-static_*.deb
@@ -60,14 +45,7 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
-
-    # --no-remote-database-disk - stress tests does not enable remote database
-    # disk since server left some garbage files in the root, and clickhouse failed
-    # to start after with:
-    #
-    #  DB::Exception: Incorrect file extension: V.sql.move_from.X in metadata directory store/346/346b09d6-907d-4b6b-a1e3-361ecfdab8a4/. (INCORRECT_FILE_NAME)
-    #
-    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk
+    /repo/tests/config/install.sh
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -76,8 +54,7 @@ function configure()
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
     function randomize_config_boolean_value {
-        local value=$((RANDOM % 2))
-        echo "Replacing $1 with $value"
+        value=$((RANDOM % 2))
         sudo cat "/etc/clickhouse-server/config.d/$2.xml" \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
         > "/etc/clickhouse-server/config.d/$2.xml.tmp"
@@ -170,6 +147,11 @@ EOL
                     <readonly/>
                 </enable_analyzer>
 
+                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
+                <allow_experimental_object_type>
+                    <readonly/>
+                </allow_experimental_object_type>
+
                 <!-- Prevent stack overflow -->
                 <max_ast_depth>
                     <readonly/>
@@ -197,8 +179,8 @@ EOL
 
 function stop_server()
 {
-    local max_tries=${1:-300}
-    local check_hang=${2:-true}
+    local max_tries=90
+    local check_hang=true
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
@@ -227,7 +209,7 @@ function stop_server()
       # - server may do some work at shutdown
       # - main use case it not to mark failure as hung check when server exits abnormally with sanitizer/crash
       kill -s CONT "$pid" ||:
-      kill -s 0 "$pid" && sleep 60
+      kill -s 0 "$pid" && sleep 60 
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
       kill -s 0 "$pid" || return
@@ -244,7 +226,7 @@ function stop_server()
 function start_server()
 {
     counter=0
-    max_attempt=${1:-5}
+    max_attempt=120
     until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
@@ -255,11 +237,11 @@ function start_server()
             cat /var/log/clickhouse-server/stdout.log
             tail -n100 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
-            exit 1
+            break
         fi
         # use root to match with current uid
         clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
-        sleep 60
+        sleep 0.5
         counter=$((counter + 1))
     done
 
@@ -301,10 +283,9 @@ function check_logs_for_critical_errors()
     # ignore:
     #  - a.myext which is used in 02724_database_s3.sh and does not exist
     #  - "DistributedCacheTCPHandler" and "caller id: None:DistribCache" because they happen inside distributed cache server
-    #  - "ReadBuffer is canceled by the exception" -- this is a normal situation when the buffer is canceled, the message neded for debug purposes
     #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer", "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage"
     #    exceptions printed internally by a buffer, exception will be rethrown and handled correctly
-    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
+    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 

@@ -10,8 +10,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
@@ -22,15 +22,12 @@
 #include <Core/Settings.h>
 #include <Core/Types.h>
 #include <Core/callOnTypeIndex.h>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -41,8 +38,8 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -51,8 +48,8 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
-#include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
@@ -63,7 +60,6 @@
 #include <Functions/FunctionsCodingIP.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/TransformDateTime64.h>
-#include <Functions/TransformTime64.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/toFixedString.h>
 #include <IO/Operators.h>
@@ -87,13 +83,11 @@ namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
-    extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -119,7 +113,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -195,145 +188,132 @@ struct ToDateTimeImpl
     }
 };
 
-/** Conversion of Date to Time: adding 00:00:00 time component.
-  */
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
-struct ToTimeImpl
-{
-    static constexpr auto name = "toTime";
-
-    static Int32 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Day number {} is out of bounds of type Time", d);
-        }
-        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-        {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
-        }
-        return static_cast<Int32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
-    }
-
-    static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-        {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
-        }
-        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", d);
-        }
-        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(time_zone.toTime(d))));
-    }
-
-    static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
-    {
-        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int32>(dt))))));
-    }
-
-    static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
-    {
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
-        Int64 offset = time_zone.timezoneOffset(dt64);
-        Int64 local_seconds = (dt64 + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-
-        if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
-        {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-            {
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
-            }
-            else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            {
-                return MAX_TIME_TIMESTAMP;
-            }
-        }
-
-        return static_cast<Int32>(local_seconds);
-    }
-};
 
 /// Implementation of toDate function.
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires is_arithmetic_v<FromType>
-struct ToDateTransformFromSecondsOrDays
+struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
     static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
-        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
         }
-
-        if constexpr (is_signed_v<FromType>)
-            if (from < 0)
-            {
-                if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
-                else
-                    return 0;
-            }
-
         /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
-        if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
-            if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+        if (from <= DATE_LUT_MAX_DAY_NUM)
+            return from;
+        else
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+    }
+};
 
-        return static_cast<UInt16>(from);
+
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform32Or64Signed
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        // TODO: decide narrow or extended range based on FromType
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < 0 || from > MAX_DATE_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+        }
+        else
+        {
+            if (from < 0)
+                return 0;
+        }
+        return (from <= DATE_LUT_MAX_DAY_NUM)
+            ? static_cast<UInt16>(from)
+            : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
+    }
+};
+
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform8Or16Signed
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl &)
+    {
+        if (from < 0)
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+            else
+                return 0;
+        }
+        return from;
     }
 };
 
 /// Implementation of toDate32 function.
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires is_arithmetic_v<FromType>
-struct ToDate32TransformFromSecondsOrDays
+struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
 
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
-        constexpr Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
-
-        if constexpr (is_signed_v<FromType>)
+        if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
         {
-            bool is_nan = false;
-            if constexpr (is_floating_point<FromType>)
-                 is_nan = isNaN(from);
-            if (is_nan || from < daynum_min_offset)
-            {
-                if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
-                return daynum_min_offset;
-            }
+            return static_cast<Int32>(from);
         }
-
-        if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
-            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
-
-        if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-            if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
-
-        return static_cast<Int32>(from);
+        else
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+            }
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME64_TIMESTAMP)));
+        }
     }
 };
 
-/// Implementation of toDateTime function.
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDate32Transform32Or64Signed
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
+
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < daynum_min_offset || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+        }
+
+        if (from < daynum_min_offset)
+            return daynum_min_offset;
+
+        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+            ? static_cast<Int32>(from)
+            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+    }
+};
+
+template <typename FromType>
+struct ToDate32Transform8Or16Signed
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl &)
+    {
+        return from;
+    }
+};
 
 template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTimeTransform64
@@ -385,81 +365,6 @@ struct ToDateTimeTransform64Signed
         if (from < 0)
             return 0;
         return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
-    }
-};
-
-/** Conversion of numeric to Time
-  */
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTimeTransformFromDateTime
-{
-    static constexpr auto name = "toTime";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        auto utc_seconds = from;
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
-        Int64 offset = time_zone.timezoneOffset(utc_seconds);
-        /// compute local time-of-day in seconds
-        Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
-        }
-
-        return static_cast<ToType>(std::min(time_t(local_seconds), time_t(MAX_TIME_TIMESTAMP)));
-    }
-};
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTimeTransform64
-{
-    static constexpr auto name = "toTime";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from > MAX_TIME_TIMESTAMP || from < (-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
-        }
-
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
-    }
-};
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTimeTransformSigned
-{
-    static constexpr auto name = "toTime";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
-    {
-        return static_cast<ToType>(from);
-    }
-};
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTimeTransform64Signed
-{
-    static constexpr auto name = "toTime";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
-        }
-        if (from > 0)
-            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
-        else
-            return static_cast<ToType>(std::max(time_t(from), time_t(-1 * MAX_TIME_TIMESTAMP)));
     }
 };
 
@@ -553,17 +458,8 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
-        /*
-         * Previous implementation delegated to ToDateTimeImpl, which returns a
-         * UInt32 unix timestamp and therefore saturates at 0xFFFFFFFF (2106-02-07).
-         * This caused overflows when casting Date values beyond that day to
-         * DateTime64.
-         *
-         * Compute the timestamp directly in 64-bit space from the day number so we
-         * can represent the full range supported by DateTime64.
-         */
-        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+        const auto dt = ToDateTimeImpl<>::execute(d, time_zone);
+        return execute(dt, time_zone);
     }
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
@@ -575,116 +471,6 @@ struct ToDateTime64Transform
     DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
-    }
-};
-
-/** Conversion of numeric to Time64
-  */
-
-template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTime64TransformUnsigned
-{
-    static constexpr auto name = "toTime64";
-
-    const Time64::NativeType scale_multiplier;
-
-    ToTime64TransformUnsigned(UInt32 scale) /// NOLINT
-        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
-    {}
-
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
-    {
-        const auto converted = time_zone.toTime(from);
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-            else
-                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
-        }
-        else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
-    }
-};
-
-template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTime64TransformSigned
-{
-    static constexpr auto name = "toTime64";
-
-    const Time64::NativeType scale_multiplier;
-
-    ToTime64TransformSigned(UInt32 scale) /// NOLINT
-        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
-    {}
-
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        }
-
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
-    }
-};
-
-template <typename FromDataType, typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToTime64TransformFloat
-{
-    static constexpr auto name = "toTime64";
-
-    const UInt32 scale;
-
-    ToTime64TransformFloat(UInt32 scale_) /// NOLINT
-        : scale(scale_)
-    {}
-
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
-        } // need to reconsider this
-
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
-        return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
-    }
-};
-
-struct ToTime64Transform
-{
-    static constexpr auto name = "toTime64";
-
-    const Time64::NativeType scale_multiplier;
-
-    ToTime64Transform(UInt32 scale) /// NOLINT
-        : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
-    {}
-
-    Time64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
-    {
-        const auto dt = ToTimeImpl<>::execute(d, time_zone);
-        return execute(dt, time_zone);
-    }
-
-    Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
-    {
-        Int32 dt = static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<int>(d))));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
-    }
-
-    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
-    {
-        /// Compute local seconds-of-day using timezone offset at this moment.
-        Int64 offset = time_zone.timezoneOffset(dt);
-        Int64 local_seconds = (static_cast<Int64>(dt) + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(local_seconds, 0, scale_multiplier);
     }
 };
 
@@ -741,28 +527,6 @@ struct FormatImpl<DataTypeDateTime64>
     static ReturnType execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
-        return ReturnType(true);
-    }
-};
-
-template <>
-struct FormatImpl<DataTypeTime>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeTime::FieldType x, WriteBuffer & wb, const DataTypeTime *, const DateLUTImpl * time_zone)
-    {
-        writeTimeText(x, wb, *time_zone);
-        return ReturnType(true);
-    }
-};
-
-template <>
-struct FormatImpl<DataTypeTime64>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeTime64::FieldType x, WriteBuffer & wb, const DataTypeTime64 * type, const DateLUTImpl *)
-    {
-        writeTime64Text(Time64(x), type->getScale(), wb);
         return ReturnType(true);
     }
 };
@@ -824,7 +588,7 @@ struct ConvertImplGenericToString
         auto col_to = removeNullable(result_type)->createColumn();
 
         {
-            ColumnStringHelpers::WriteHelper<StringColumnType> write_helper(
+            ColumnStringHelpers::WriteHelper write_helper(
                     assert_cast<StringColumnType &>(*col_to),
                     size);
 
@@ -835,7 +599,7 @@ struct ConvertImplGenericToString
             for (size_t row = 0; row < size; ++row)
             {
                 serialization->serializeText(col_from, row, write_buffer, format_settings);
-                write_helper.finishRow();
+                write_helper.rowWritten();
             }
 
             write_helper.finalize();
@@ -864,15 +628,6 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
         x = MAX_DATETIME_TIMESTAMP;
     else
         x = static_cast<UInt32>(time);
-}
-
-template <>
-inline void convertFromTime<DataTypeTime>(DataTypeTime::FieldType & x, time_t & time)
-{
-    if (unlikely(time > MAX_TIME_TIMESTAMP))
-        x = MAX_TIME_TIMESTAMP;
-    else
-        x = static_cast<Int32>(time);
 }
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
@@ -915,14 +670,6 @@ inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuf
     time_t time = 0;
     readDateTimeText(time, rb, *time_zone);
     convertFromTime<DataTypeDateTime>(x, time);
-}
-
-template <>
-inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
-{
-    time_t time = 0;
-    readTimeText(time, rb, *time_zone);
-    convertFromTime<DataTypeTime>(x, time);
 }
 
 template <>
@@ -994,16 +741,6 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 }
 
 template <>
-[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
-{
-    time_t time = 0;
-    if (!tryReadTimeText(time, rb, *time_zone))
-        return false;
-    convertFromTime<DataTypeTime>(x, time);
-    return true;
-}
-
-template <>
 inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
 {
     UUID tmp;
@@ -1069,7 +806,7 @@ enum class ConvertFromStringExceptionMode : uint8_t
 
 enum class ConvertFromStringParsingMode : uint8_t
 {
-    Basic,
+    Normal,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
     BestEffortUS
 };
@@ -1091,13 +828,11 @@ struct ConvertThroughParsing
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
-    static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-    static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
 
     static bool isAllRead(ReadBuffer & in)
     {
-        /// In case of FixedString, skip zero padding at the end.
+        /// In case of FixedString, skip zero bytes at end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
             while (!in.eof() && *in.position() == 0)
                 ++in.position();
@@ -1131,7 +866,7 @@ struct ConvertThroughParsing
     }
 
     template <typename Additions = void *>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count, const ContextPtr & context,
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
                         Additions additions [[maybe_unused]] = Additions())
     {
         using ColVecTo = typename ToDataType::ColumnType;
@@ -1139,8 +874,8 @@ struct ConvertThroughParsing
         const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
-        /// For conversion to Date/Time or DateTime type, second argument with time zone could be specified.
-        if constexpr (to_datetime || std::is_same_v<ToDataType, DataTypeTime> || to_datetime64 || to_time64)
+        /// For conversion to Date or DateTime type, second argument with time zone could be specified.
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
         {
             const auto result_type = removeNullable(res_type);
             // Time zone is already figured out during result type resolution, no need to do it here.
@@ -1181,10 +916,6 @@ struct ConvertThroughParsing
             {
                 ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
             }
-            else if constexpr (to_time64)
-            {
-                ToDataType check_bounds_in_ctor(scale);
-            }
             else
             {
                 ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
@@ -1222,37 +953,31 @@ struct ConvertThroughParsing
         size_t current_offset = 0;
 
         bool precise_float_parsing = false;
-        if (context)
-            precise_float_parsing = context->getSettingsRef()[Setting::precise_float_parsing];
+
+        if (DB::CurrentThread::isInitialized())
+        {
+            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+            if (query_context)
+                precise_float_parsing = query_context->getSettingsRef()[Setting::precise_float_parsing];
+        }
 
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
-                    }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 res = 0;
-                        parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                    {
-                        time_t res;
-                        parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
@@ -1261,25 +986,13 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
-                    }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 res = 0;
-                        parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                    {
-                        time_t res;
-                        parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
@@ -1296,12 +1009,6 @@ struct ConvertThroughParsing
                         readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 value = 0;
-                        readTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                        vec_to[i] = value;
-                    }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                     {
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
@@ -1315,14 +1022,6 @@ struct ConvertThroughParsing
                             if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
                             {
                                 if (fixed_string_size == IPV6_BINARY_LENGTH)
-                                {
-                                    readBinary(vec_to[i], read_buffer);
-                                    break;
-                                }
-                            }
-                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeUUID>)
-                            {
-                                if (fixed_string_size == UUID_BINARY_LENGTH)
                                 {
                                     readBinary(vec_to[i], read_buffer);
                                     break;
@@ -1346,25 +1045,13 @@ struct ConvertThroughParsing
             {
                 bool parsed;
 
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
-                    }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 res = 0;
-                        parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                    {
-                        time_t res;
-                        parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
@@ -1373,25 +1060,13 @@ struct ConvertThroughParsing
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
-                    }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 res = 0;
-                        parsed = tryParseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                    {
-                        time_t res;
-                        parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
@@ -1408,21 +1083,13 @@ struct ConvertThroughParsing
                         parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 value = 0;
-                        parsed = tryReadTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                        vec_to[i] = value;
-                    }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                     {
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
-                    else if (
-                        std::is_same_v<FromDataType, DataTypeFixedString>
-                        && ((std::is_same_v<ToDataType, DataTypeIPv6> && fixed_string_size == IPV6_BINARY_LENGTH)
-                            || (std::is_same_v<ToDataType, DataTypeUUID> && fixed_string_size == UUID_BINARY_LENGTH)))
+                    else if (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>
+                            && fixed_string_size == IPV6_BINARY_LENGTH)
                     {
                         readBinary(vec_to[i], read_buffer);
                         parsed = true;
@@ -1483,7 +1150,7 @@ struct ConvertImpl
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], const ContextPtr & context, Additions additions = Additions())
+        BehaviourOnErrorFromString from_string_tag [[maybe_unused]], Additions additions = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
@@ -1521,134 +1188,115 @@ struct ConvertImpl
             return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        /** Special case of converting Int8, Int16, (U)Int32, (U)Int64, (U)Int128 or (U)Int256 (and also, for convenience,
-          * Float32, Float64, BFloat16) to Date. If the
+        /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
+          * Float32, Float64) to Date. If the
           * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
           * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
           * It's a bit illogical, as we actually have two functions in one.
           * But allows to support frequent case,
           *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
           *  (otherwise such usage would be frequent mistake).
-          *
-          * Same for converting to Date32, but the threshold is 120530 (DATE_LUT_MAX_EXTEND_DAY_NUM)
-          * instead of 65536.
           */
         else if constexpr ((
-            std::is_same_v<FromDataType, DataTypeUInt16>
-            || std::is_same_v<FromDataType, DataTypeUInt32>
-            || std::is_same_v<FromDataType, DataTypeUInt64>
-            || std::is_same_v<FromDataType, DataTypeUInt128>
-            || std::is_same_v<FromDataType, DataTypeUInt256>
-            || std::is_same_v<FromDataType, DataTypeInt8>
-            || std::is_same_v<FromDataType, DataTypeInt16>
-            || std::is_same_v<FromDataType, DataTypeInt32>
-            || std::is_same_v<FromDataType, DataTypeInt64>
-            || std::is_same_v<FromDataType, DataTypeInt128>
-            || std::is_same_v<FromDataType, DataTypeInt256>
-            || std::is_same_v<FromDataType, DataTypeFloat32>
-            || std::is_same_v<FromDataType, DataTypeFloat64>
-            || std::is_same_v<FromDataType, DataTypeBFloat16>
-            ) && std::is_same_v<ToDataType, DataTypeDate>)
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
-            std::is_same_v<FromDataType, DataTypeUInt16>
-            || std::is_same_v<FromDataType, DataTypeUInt32>
-            || std::is_same_v<FromDataType, DataTypeUInt64>
-            || std::is_same_v<FromDataType, DataTypeUInt128>
-            || std::is_same_v<FromDataType, DataTypeUInt256>
-            || std::is_same_v<FromDataType, DataTypeInt16>
-            || std::is_same_v<FromDataType, DataTypeInt32>
-            || std::is_same_v<FromDataType, DataTypeInt64>
-            || std::is_same_v<FromDataType, DataTypeInt128>
-            || std::is_same_v<FromDataType, DataTypeInt256>
-            || std::is_same_v<FromDataType, DataTypeFloat32>
-            || std::is_same_v<FromDataType, DataTypeFloat64>
-            || std::is_same_v<FromDataType, DataTypeBFloat16>
-            ) && std::is_same_v<ToDataType, DataTypeDate32>)
+                std::is_same_v<FromDataType, DataTypeInt8>
+                || std::is_same_v<FromDataType, DataTypeInt16>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
+                || std::is_same_v<FromDataType, DataTypeFloat64>)
+            && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt8>
+                || std::is_same_v<FromDataType, DataTypeInt16>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
+                || std::is_same_v<FromDataType, DataTypeFloat64>)
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>)
-            && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
-            else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
-            && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
-            else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt64>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
-            else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>
                 || std::is_same_v<FromDataType, DataTypeInt64>)
-            && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
-            else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
-            && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
-            else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
-            && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
+            && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
-            else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
@@ -1663,12 +1311,6 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
-            && std::is_same_v<ToDataType, DataTypeTime>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
-        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
@@ -1679,96 +1321,7 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr ((std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeTime>)
-                            && std::is_same_v<ToDataType, DataTypeTime64>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64Transform, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
-        }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
-                        && std::is_same_v<ToDataType, DataTypeTime64>)
-        {
-            using ToFieldType = typename ToDataType::FieldType;
-            using ColVecFrom = typename FromDataType::ColumnType;
-            using ColVecTo = typename ToDataType::ColumnType;
-
-            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
-            typename ColVecTo::MutablePtr col_to = nullptr;
-
-            const DateLUTImpl * time_zone = nullptr;
-
-            UInt32 scale;
-
-            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
-                        || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                scale = additions.scale;
-            else
-                scale = additions;
-
-            col_to = ColVecTo::create(0, scale);
-            const auto & vec_from = col_from->getData();
-            auto & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
-
-            ColumnUInt8::MutablePtr col_null_map_to;
-            ColumnUInt8::Container * vec_null_map_to = nullptr;
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-            {
-                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
-                vec_null_map_to = &col_null_map_to->getData();
-            }
-
-            // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
-            const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-            time_zone = &from_type.getTimeZone();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
-
-                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                {
-                    ToFieldType result;
-                    bool convert_result = false;
-
-                    convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-
-                    if (convert_result)
-                        vec_to[i] = result;
-                    else
-                    {
-                        vec_to[i] = static_cast<ToFieldType>(0);
-                        (*vec_null_map_to)[i] = true;
-                    }
-                }
-                else
-                {
-                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-                }
-
-                auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_to->getScale());
-
-                // Get the UTC seconds (the integer part) from the input value
-                auto utc_seconds = vec_to[i] / scale_mult;
-                auto fraction = vec_to[i] % scale_mult;
-
-                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
-                Int64 offset = time_zone->timezoneOffset(utc_seconds);
-                Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
-                if (local_seconds < 0)
-                    local_seconds += 86400;
-
-                // Reassemble the result
-                vec_to[i] = local_seconds * scale_mult + fraction;
-            }
-
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-            else
-                return col_to;
-        }
-        else if constexpr (IsDataTypeDateOrDateTimeOrTime<FromDataType>
+        else if constexpr (IsDataTypeDateOrDateTime<FromDataType>
             && std::is_same_v<ToDataType, DataTypeString>)
         {
             /// Date or DateTime to String
@@ -1814,17 +1367,13 @@ struct ConvertImpl
                 size_t size = vec_from.size();
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * strlen("YYYY-MM-DD"));
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                    data_to.resize(size * strlen("YYYY-MM-DD"));
-                else if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
-                    data_to.resize(size * strlen("hhh:mm:ss"));
-                else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
-                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale()));
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                    data_to.resize(size * strlen("YYYY-MM-DD hh:mm:ss"));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale()));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
                 else
                     data_to.resize(size * 3);   /// Arbitrary
 
@@ -1836,8 +1385,13 @@ struct ConvertImpl
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = false;
-                if (context)
-                    cut_trailing_zeros_align_to_groups_of_thousands = context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+                if (DB::CurrentThread::isInitialized())
+                {
+                    const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+                    if (query_context)
+                        cut_trailing_zeros_align_to_groups_of_thousands = query_context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+                }
 
                 if (!null_map && arguments.size() > 1)
                     null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
@@ -1861,18 +1415,12 @@ struct ConvertImpl
                             else
                                 is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
-                        {
-                            if (cut_trailing_zeros_align_to_groups_of_thousands)
-                                writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
-                            else
-                                is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
-                        }
                         else
                         {
                             is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
                         null_map->getData()[i] |= !is_ok;
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1894,17 +1442,11 @@ struct ConvertImpl
                             else
                                 FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
-                        {
-                            if (cut_trailing_zeros_align_to_groups_of_thousands)
-                                writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
-                            else
-                                FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
-                        }
                         else
                         {
                             FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1935,7 +1477,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = col_from->size();
                 size_t n = col_from->getN();
-                data_to.resize(size * n);
+                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
                 offsets_to.resize(size);
 
                 size_t offset_from = 0;
@@ -1951,6 +1493,8 @@ struct ConvertImpl
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
                     }
+                    data_to[offset_to] = 0;
+                    ++offset_to;
                     offsets_to[i] = offset_to;
                     offset_from += n;
                 }
@@ -1985,7 +1529,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                data_to.resize(size * 3); /// A guess (arbitrary).
+                data_to.resize(size * 3);
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
@@ -1997,6 +1541,7 @@ struct ConvertImpl
                         bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
                         /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2005,6 +1550,7 @@ struct ConvertImpl
                     for (size_t i = 0; i < size; ++i)
                     {
                         FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2024,56 +1570,34 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeUInt32>)
         {
             return ConvertImpl<FromDataType, DataTypeDateTime, Name, date_time_overflow_behavior>::template execute<Additions>(
-                arguments, result_type, input_rows_count, from_string_tag, context);
+                arguments, result_type, input_rows_count, from_string_tag);
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>))
         {
-            auto parsing_mode = FormatSettings::DateTimeInputFormat::Basic;
-            if (context)
-                parsing_mode = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
-
-#define GENERATE_PARSING_MODE_CASE(PARSING_MODE, EXCEPTION_MODE) \
-    case FormatSettings::DateTimeInputFormat::PARSING_MODE: \
-    { \
-        return ConvertThroughParsing<FromDataType, \
-                                     ToDataType, \
-                                     Name, \
-                                     ConvertFromStringExceptionMode::EXCEPTION_MODE, \
-                                     ConvertFromStringParsingMode::PARSING_MODE>::execute(arguments, result_type, input_rows_count, context, additions); \
-    }
-
             switch (from_string_tag)
             {
-                case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
-                {
-                    switch (parsing_mode)
-                    {
-                        GENERATE_PARSING_MODE_CASE(Basic, Throw)
-                        GENERATE_PARSING_MODE_CASE(BestEffort, Throw)
-                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Throw)
-                    }
-                }
-                case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
-                {
-                    switch (parsing_mode)
-                    {
-                        GENERATE_PARSING_MODE_CASE(Basic, Null)
-                        GENERATE_PARSING_MODE_CASE(BestEffort, Null)
-                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Null)
-                    }
-                }
-                case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
-                {
-                    switch (parsing_mode)
-                    {
-                        GENERATE_PARSING_MODE_CASE(Basic, Zero)
-                        GENERATE_PARSING_MODE_CASE(BestEffort, Zero)
-                        GENERATE_PARSING_MODE_CASE(BestEffortUS, Zero)
-                    }
-                }
+            case BehaviourOnErrorFromString::ConvertDefaultBehaviorTag:
+                return ConvertThroughParsing<FromDataType,
+                                             ToDataType,
+                                             Name,
+                                             ConvertFromStringExceptionMode::Throw,
+                                             ConvertFromStringParsingMode::Normal>::execute(
+                        arguments, result_type, input_rows_count, additions);
+            case BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag:
+                return ConvertThroughParsing<FromDataType,
+                                             ToDataType,
+                                             Name,
+                                             ConvertFromStringExceptionMode::Null,
+                                             ConvertFromStringParsingMode::Normal>::execute(
+                        arguments, result_type, input_rows_count, additions);
+            case BehaviourOnErrorFromString::ConvertReturnZeroOnErrorTag:
+                return ConvertThroughParsing<FromDataType,
+                                             ToDataType,
+                                             Name,
+                                             ConvertFromStringExceptionMode::Zero,
+                                             ConvertFromStringParsingMode::Normal>::execute(
+                        arguments, result_type, input_rows_count, additions);
             }
-
-#undef GENERATE_PARSING_MODE_CASE
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeInterval> && std::is_same_v<ToDataType, DataTypeInterval>)
         {
@@ -2113,7 +1637,6 @@ struct ConvertImpl
 
             if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>)
-                && !(std::is_same_v<DataTypeTime64, FromDataType> || std::is_same_v<DataTypeTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
@@ -2182,20 +1705,11 @@ struct ConvertImpl
                 else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
                 {
                     static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
                         "UInt128 and IPv6 types must be same");
 
                     vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
                     vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
-                }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeUInt128> && std::is_same_v<ToDataType, DataTypeIPv6>)
-                {
-                    static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
-                        "IPv6 and UInt128 types must be same");
-
-                    vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
-                    vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
                 }
                 else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
@@ -2218,15 +1732,6 @@ struct ConvertImpl
                                     "Conversion between numeric types and IPv6 is not supported. "
                                     "Probably the passed IPv6 is unquoted");
                 }
-                else if constexpr (
-                    ((std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
-                        && (std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeTime64>))
-                    || ((std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
-                        && (std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)))
-                {
-                    vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
-                }
-                /// Time64->Time64 scale conversion is handled by the generic decimal conversion logic below.
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2466,7 +1971,6 @@ struct ConvertImplFromDynamicToColumn
         /// First, cast usual variants to result type.
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
         std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
-        std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
             /// Skip shared variant, it will be processed later.
@@ -2476,11 +1980,6 @@ struct ConvertImplFromDynamicToColumn
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
             cast_variant_columns[i] = nested_convert(new_args, result_type);
-            if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
-            {
-                cast_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_variant_columns[i]).getDataColumnPtr();
-                cast_variant_columns_is_const[i] = true;
-            }
         }
 
         /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -2532,17 +2031,11 @@ struct ConvertImplFromDynamicToColumn
 
         /// Cast all extracted variants into result type.
         std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
-        std::vector<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
         for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
         {
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
             cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
-            if (cast_shared_variant_columns[i] && isColumnConst(*cast_shared_variant_columns[i]))
-            {
-                cast_shared_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_shared_variant_columns[i]).getDataColumnPtr();
-                cast_shared_variant_columns_is_const[i] = true;
-            }
         }
 
         /// Construct result column from all cast variants.
@@ -2558,26 +2051,16 @@ struct ConvertImplFromDynamicToColumn
             else if (global_discr == shared_variant_discr)
             {
                 if (cast_shared_variant_columns[shared_variant_indexes[i]])
-                {
-                    size_t offset = cast_shared_variant_columns_is_const[shared_variant_indexes[i]] ? 0 : shared_variant_offsets[i];
-                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], offset);
-                }
+                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
                 else
-                {
                     res->insertDefault();
-                }
             }
             else
             {
                 if (cast_variant_columns[global_discr])
-                {
-                    size_t offset = cast_variant_columns_is_const[global_discr] ? 0 : offsets[i];
-                    res->insertFrom(*cast_variant_columns[global_discr], offset);
-                }
+                    res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
                 else
-                {
                     res->insertDefault();
-                }
             }
         }
 
@@ -2589,8 +2072,6 @@ struct ConvertImplFromDynamicToColumn
 struct NameToDate { static constexpr auto name = "toDate"; };
 struct NameToDate32 { static constexpr auto name = "toDate32"; };
 struct NameToDateTime { static constexpr auto name = "toDateTime"; };
-struct NameToTime { static constexpr auto name = "toTime"; };
-struct NameToTime64 { static constexpr auto name = "toTime64"; };
 struct NameToDateTime32 { static constexpr auto name = "toDateTime32"; };
 struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
 struct NameToString { static constexpr auto name = "toString"; };
@@ -2638,19 +2119,6 @@ constexpr bool mightBeDateTime()
     return false;
 }
 
-template <typename Name, typename ToDataType>
-constexpr bool mightBeTime()
-{
-    if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
-        return true;
-    else if constexpr (
-        std::is_same_v<Name, NameToTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
-        || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
-        return true;
-
-    return false;
-}
-
 template<typename Name, typename ToDataType>
 inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
 {
@@ -2658,19 +2126,6 @@ inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
         return true;
     else if constexpr (std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
         || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
-    {
-        return (arguments.size() == 2 && isUInt(arguments[1].type)) || arguments.size() == 3;
-    }
-
-    return false;
-}
-
-template<typename Name, typename ToDataType>
-inline bool isTime64(const ColumnsWithTypeAndName & arguments)
-{
-    if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
-        return true;
-    else if constexpr (std::is_same_v<Name, NameToTime>)
     {
         return (arguments.size() == 2 && isUInt(arguments[1].type)) || arguments.size() == 3;
     }
@@ -2686,8 +2141,7 @@ public:
 
     static constexpr auto name = Name::name;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-    static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
-    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -2756,7 +2210,7 @@ public:
             mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
         }
 
-        if (!to_decimal && (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments)))
+        if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
         {
             mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
         }
@@ -2816,22 +2270,10 @@ public:
 
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             }
-            else if (isTime64<Name, ToDataType>(arguments))
-            {
-                timezone_arg_position += 1;
-                scale = static_cast<UInt32>(arguments[1].column->get64(0));
-
-                if (to_time64 || scale != 0) /// toTime('xxx:xx:xx', 0) return Time
-                    return std::make_shared<DataTypeTime64>(scale);
-
-                return std::make_shared<DataTypeTime>();
-            }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                return std::make_shared<DataTypeTime>();
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
                 return std::make_shared<ToDataType>();
@@ -2923,8 +2365,7 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
-        /// Only use context settings if the overflow behavior was not explicitly set via createWithOverflow
-        if (context && datetime_overflow_behavior == default_date_time_overflow_behavior)
+        if (context)
             context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         if (isDynamic(from_type))
@@ -2945,7 +2386,7 @@ private:
 
             if constexpr (IsDataTypeDecimal<RightDataType>)
             {
-                if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
+                if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
@@ -2962,39 +2403,39 @@ private:
                 switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, context, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, context, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, context, scale);
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                 }
             }
-            else if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
+            else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
                 switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, context, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, context, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
                         break;
                     case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, context, dt64->getScale());
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
                         break;
                 }
             }
             else if constexpr ((IsDataTypeNumber<LeftDataType>
-                                || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)&&IsDataTypeDateOrDateTimeOrTime<RightDataType>)
+                                || IsDataTypeDateOrDateTime<LeftDataType>)&&IsDataTypeDateOrDateTime<RightDataType>)
             {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-            arguments, result_type, input_rows_count, from_string_tag, context); \
+            arguments, result_type, input_rows_count, from_string_tag); \
         break;
                 switch (context_datetime_overflow_behavior)
                 {
@@ -3024,11 +2465,11 @@ private:
                 else
                 {
                     result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(
-                        arguments, result_type, input_rows_count, from_string_tag, context);
+                        arguments, result_type, input_rows_count, from_string_tag);
                 }
             }
             else
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag, context);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
             return true;
         };
@@ -3044,28 +2485,6 @@ private:
                 if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
                 {
                     if (!callOnIndexAndDataType<DataTypeDateTime64>(
-                            from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag))
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of argument of function {}",
-                            arguments[0].type->getName(),
-                            getName());
-
-                    return result_column;
-                }
-            }
-        }
-
-        if  constexpr (mightBeTime<Name, ToDataType>())
-        {
-            if (isTime64<Name, ToDataType>(arguments))
-            {
-                const ColumnWithTypeAndName & scale_column = arguments[1];
-                UInt32 scale = extractToDecimalScale(scale_column);
-
-                if (to_time64 || scale != 0) /// When scale = 0, the data type is Time otherwise the data type is Time64
-                {
-                    if (!callOnIndexAndDataType<DataTypeTime64>(
                             from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag))
                         throw Exception(
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -3138,18 +2557,15 @@ private:
   */
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
-    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
+    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
 class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-    static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
-    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvertFromString>(context); }
-
-    explicit FunctionConvertFromString(ContextPtr context_) : context(std::move(context_)) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
 
     String getName() const override
     {
@@ -3169,34 +2585,22 @@ public:
     {
         DataTypePtr res;
 
-        if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
+        if (isDateTime64<Name, ToDataType>(arguments))
         {
-            const auto required = FunctionArgumentDescriptors{
-                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-            };
-            const auto precision_opt = FunctionArgumentDescriptors{
-                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
-            };
-            const auto precision_with_timezone_opt = FunctionArgumentDescriptors{
-                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
-                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"}
-            };
+            validateFunctionArguments(*this, arguments,
+                FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
+                // optional
+                FunctionArgumentDescriptors{
+                    {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"},
+                });
 
-            if (isTime64<Name, ToDataType>(arguments))
-                validateFunctionArguments(*this, arguments, required, precision_opt);
-            else
-                validateFunctionArguments(*this, arguments, required, precision_with_timezone_opt);
-
-            UInt64 scale = (to_datetime64 || to_time64) ? DataTypeDateTime64::default_scale : 0;
+            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
-
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
-            if (isTime64<Name, ToDataType>(arguments))
-                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
-            else
-                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+            res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -3271,12 +2675,12 @@ public:
         if (checkAndGetDataType<DataTypeString>(from_type))
         {
             return ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, context, scale);
+                arguments, result_type, input_rows_count, scale);
         }
         else if (checkAndGetDataType<DataTypeFixedString>(from_type))
         {
             return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, context, scale);
+                arguments, result_type, input_rows_count, scale);
         }
 
         return nullptr;
@@ -3314,29 +2718,6 @@ public:
                 result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
             }
         }
-        else if constexpr (mightBeTime<Name, ToDataType>())
-        {
-            if (isTime64<Name, ToDataType>(arguments))
-            {
-                UInt64 scale = to_time64 ? DataTypeTime64::default_scale : 0;
-                if (arguments.size() > 1)
-                    scale = extractToDecimalScale(arguments[1]);
-
-                if (scale == 0)
-                {
-                    result_column = executeInternal<DataTypeTime>(arguments, result_type, input_rows_count, 0);
-                }
-                else
-                {
-                    result_column
-                        = executeInternal<DataTypeTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
-                }
-            }
-            else
-            {
-                result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
-            }
-        }
         else
         {
             result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
@@ -3349,9 +2730,6 @@ public:
 
         return result_column;
     }
-
-private:
-    ContextPtr context;
 };
 
 
@@ -3397,9 +2775,13 @@ struct ToNumberMonotonicity
         /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
-            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// Float cases.
+
+        /// When converting to Float, the conversion is always monotonic.
+        if constexpr (is_floating_point<T>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
         const IDataType * low_cardinality_dictionary_type = nullptr;
@@ -3410,24 +2792,6 @@ struct ToNumberMonotonicity
         WhichDataType which_inner_type = low_cardinality
             ? WhichDataType(low_cardinality_dictionary_type)
             : WhichDataType(type);
-
-        /// When converting to Float, the conversion is always monotonic.
-        if constexpr (is_floating_point<T>)
-        {
-            if (std::is_same_v<T, BFloat16> && (which_inner_type.isInt8() || which_inner_type.isUInt8()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            if (std::is_same_v<T, Float32> && (which_inner_type.isBFloat16() || which_inner_type.isInt8() || which_inner_type.isInt16()
-                || which_inner_type.isUInt8() || which_inner_type.isUInt16()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            if (std::is_same_v<T, Float64> && (which_inner_type.isBFloat16() || which_inner_type.isFloat32()
-                || which_inner_type.isInt8() || which_inner_type.isInt16() || which_inner_type.isInt32()
-                || which_inner_type.isUInt8() || which_inner_type.isUInt16() || which_inner_type.isUInt32()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            return { .is_monotonic = true, .is_always_monotonic = true };
-        }
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (which_inner_type.isFloat())
@@ -3452,23 +2816,8 @@ struct ToNumberMonotonicity
         /// Only support types represented by native integers.
         /// It can be extended to big integers, decimals and DateTime64 later.
         /// By the way, NULLs are representing unbounded ranges.
-        /// For null Field, check if the type is valid.
-        /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
-        auto is_valid_uint64_or_int64_or_null = [&](const Field & f)
-        {
-            /// allow NULL only when inner type is a nativeInteger/enum/date/date32/datetime
-            if (f.isNull())
-                return which_inner_type.isNativeInteger() || which_inner_type.isEnum() || which_inner_type.isDateOrDate32()
-                    || which_inner_type.isDateTime();
-
-            /// otherwise must be one of the two 64-bit types
-            auto t = f.getType();
-            return t == Field::Types::UInt64
-                || t == Field::Types::Int64;
-        };
-
-        if (!is_valid_uint64_or_int64_or_null(left)
-            || !is_valid_uint64_or_int64_or_null(right))
+        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
             return {};
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
@@ -3489,7 +2838,7 @@ struct ToNumberMonotonicity
         if (size_of_from == size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (left_in_first_half == right_in_first_half)
                 return { .is_monotonic = true };
@@ -3501,10 +2850,10 @@ struct ToNumberMonotonicity
         if (size_of_from < size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (!to_is_unsigned)
-                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
@@ -3539,7 +2888,6 @@ struct ToNumberMonotonicity
     }
 };
 
-template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
@@ -3547,16 +2895,9 @@ struct ToDateMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         auto which = WhichDataType(type);
-        if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
+        if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
             || which.isUInt16())
         {
-            if (std::is_same_v<T, DataTypeDate> && (which.isDate() || which.isInt8() || which.isUInt8() || which.isUInt16()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            if (std::is_same_v<T, DataTypeDate32> && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isUInt8()
-                || which.isUInt16()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
         else if (
@@ -3579,7 +2920,6 @@ struct ToDateMonotonicity
     }
 };
 
-template <typename T>
 struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
@@ -3587,17 +2927,7 @@ struct ToDateTimeMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
         if (type.isValueRepresentedByNumber())
-        {
-            auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
-                || which.isUInt32()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
-            if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger()))
-                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
-
             return {.is_monotonic = true, .is_always_monotonic = true};
-        }
         else
             return {};
     }
@@ -3624,7 +2954,7 @@ struct ToStringMonotonicity
             return not_monotonic;
 
         /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
-        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
+        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeString>(type_ptr))
             return positive;
 
         if (left.isNull() || right.isNull())
@@ -3686,19 +3016,15 @@ extern template class FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumber
 extern template class FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 extern template class FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
-extern template class FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity<DataTypeDate>>;
+extern template class FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
 
-extern template class FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity<DataTypeDate32>>;
+extern template class FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity>;
 
-extern template class FunctionConvert<DataTypeTime, NameToTime, ToDateTimeMonotonicity<DataTypeTime>>;
+extern template class FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
 
-extern template class FunctionConvert<DataTypeTime64, NameToTime64, ToDateTimeMonotonicity<DataTypeTime64>>;
+extern template class FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 
-extern template class FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity<DataTypeDateTime>>;
-
-extern template class FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity<DataTypeDateTime>>;
-
-extern template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity<DataTypeDateTime64>>;
+extern template class FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
 
 extern template class FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 extern template class FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
@@ -3727,19 +3053,15 @@ using FunctionToBFloat16 = FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToN
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 
-using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity<DataTypeDate>>;
+using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
 
-using FunctionToDate32 = FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity<DataTypeDate32>>;
+using FunctionToDate32 = FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity>;
 
-using FunctionToTime = FunctionConvert<DataTypeTime, NameToTime, ToDateTimeMonotonicity<DataTypeTime>>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
 
-using FunctionToTime64 = FunctionConvert<DataTypeTime64, NameToTime64, ToDateTimeMonotonicity<DataTypeTime64>>;
+using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 
-using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity<DataTypeDateTime>>;
-
-using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity<DataTypeDateTime>>;
-
-using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity<DataTypeDateTime64>>;
+using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
 
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
@@ -3771,8 +3093,6 @@ template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64;
 
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
 template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; };
-template <> struct FunctionTo<DataTypeTime> { using Type = FunctionToTime; };
-template <> struct FunctionTo<DataTypeTime64> { using Type = FunctionToTime64; };
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
 template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 
@@ -3808,8 +3128,6 @@ struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
 struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; };
-struct NameToTimeOrZero { static constexpr auto name = "toTimeOrZero"; };
-struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
 struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; };
 struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; };
@@ -3837,8 +3155,6 @@ extern template class FunctionConvertFromString<DataTypeFloat32, NameToFloat32Or
 extern template class FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDate32, NameToDate32OrZero, ConvertFromStringExceptionMode::Zero>;
-extern template class FunctionConvertFromString<DataTypeTime, NameToTimeOrZero, ConvertFromStringExceptionMode::Zero>;
-extern template class FunctionConvertFromString<DataTypeTime64, NameToTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3866,8 +3182,6 @@ using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDate32OrZero = FunctionConvertFromString<DataTypeDate32, NameToDate32OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToTimeOrZero = FunctionConvertFromString<DataTypeTime, NameToTimeOrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToTime64OrZero = FunctionConvertFromString<DataTypeTime64, NameToTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTime64OrZero = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -3895,8 +3209,6 @@ struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
 struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; };
-struct NameToTimeOrNull { static constexpr auto name = "toTimeOrNull"; };
-struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
 struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; };
 struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; };
@@ -3924,8 +3236,6 @@ extern template class FunctionConvertFromString<DataTypeFloat32, NameToFloat32Or
 extern template class FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
-extern template class FunctionConvertFromString<DataTypeTime, NameToTimeOrNull, ConvertFromStringExceptionMode::Null>;
-extern template class FunctionConvertFromString<DataTypeTime64, NameToTime64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 extern template class FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
@@ -3953,8 +3263,6 @@ using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDate32OrNull = FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToTimeOrNull = FunctionConvertFromString<DataTypeTime, NameToTimeOrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToTime64OrNull = FunctionConvertFromString<DataTypeTime64, NameToTime64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTime64OrNull = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
@@ -4201,8 +3509,7 @@ private:
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = function_date_time_overflow_behavior;
-        /// Only use context settings if the overflow behavior was not explicitly set via createFunctionBaseCast
-        if (context && function_date_time_overflow_behavior == default_date_time_overflow_behavior)
+        if (context)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -4226,7 +3533,7 @@ private:
             }
         }
 
-        return [ctx = this->context, wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
+        return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -4238,13 +3545,13 @@ private:
 
                 if constexpr (IsDataTypeNumber<LeftDataType>)
                 {
-                    if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
+                    if constexpr (IsDataTypeDateOrDateTime<RightDataType>)
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column \
             = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
-                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, ADDITIONS()); \
+                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ADDITIONS()); \
         break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
@@ -4277,7 +3584,6 @@ private:
                                 result_type,
                                 input_rows_count,
                                 BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                                ctx,
                                 AccurateConvertStrategyAdditions());
                         }
                         else
@@ -4287,7 +3593,6 @@ private:
                                 result_type,
                                 input_rows_count,
                                 BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                                ctx,
                                 AccurateOrNullConvertStrategyAdditions());
                         }
 
@@ -4304,7 +3609,6 @@ private:
                             result_type,
                             input_rows_count,
                             BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                            ctx,
                             AccurateConvertStrategyAdditions());
                     }
                     return true;
@@ -4427,7 +3731,7 @@ private:
 
         WhichDataType which(type_index);
         bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
-            || which.isTime() || which.isTime64() || which.isStringOrFixedString();
+            || which.isStringOrFixedString();
         if (!ok)
         {
             if (cast_type == CastType::accurateOrNull)
@@ -4439,7 +3743,7 @@ private:
 
         auto wrapper_cast_type = cast_type;
 
-        return [ctx = this->context, wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
+        return [wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -4449,14 +3753,14 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !(std::is_same_v<DataTypeDateTime64, RightDataType> || std::is_same_v<DataTypeTime64, RightDataType>))
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !std::is_same_v<DataTypeDateTime64, RightDataType>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, additions);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
 
                         return true;
                     }
@@ -4465,7 +3769,7 @@ private:
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, additions);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, additions);
 
                         return true;
                     }
@@ -4478,13 +3782,13 @@ private:
                         /// In case when converting to Nullable type, we apply different parsing rule,
                         /// that will not throw an exception but return NULL in case of malformed input.
                         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, ctx, scale);
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, scale);
 
                         return true;
                     }
                 }
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ctx, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, scale);
 
                 return true;
             });
@@ -4672,7 +3976,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
@@ -4718,13 +4022,6 @@ private:
             const auto * col = arguments.front().column.get();
 
             size_t tuple_size = to_element_types.size();
-
-            if (tuple_size == 0)
-            {
-                /// Preserve the number of rows for empty tuple columns
-                return ColumnTuple::create(col->size());
-            }
-
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);
@@ -4746,172 +4043,6 @@ private:
 
             return ColumnTuple::create(converted_columns);
         };
-    }
-
-    WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const
-    {
-        /// Conversion from String through parsing.
-        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, context);
-            };
-        }
-
-        const auto * from_qbit_type = checkAndGetDataType<DataTypeQBit>(from_type_untyped.get());
-        const auto * from_array_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
-
-        /// TODO: possible to add from Map to QBit too
-        /// From another QBit
-        if (from_qbit_type)
-        {
-            if (from_qbit_type->getDimension() != to_type.getDimension())
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS between two QBits can only be performed if they have the same number of elements. From: {}, To: {}",
-                    from_qbit_type->getName(),
-                    to_type.getName());
-            else if (!from_qbit_type->getElementType()->equals(*to_type.getElementType()))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "CAST AS between two QBits containing different types isn't implemented. From: {}, To: {}",
-                    from_qbit_type->getName(),
-                    to_type.getName());
-            /// For identical types we create createIdentityWrapper in prepareImpl, so this is unreachable
-            UNREACHABLE();
-        }
-
-        /// From Array to QBit
-        if (from_array_type)
-        {
-            switch (to_type.getElementSize())
-            {
-                case 16:
-                    return createArrayToQBitWrapper<BFloat16>(*from_array_type, to_type);
-                case 32:
-                    return createArrayToQBitWrapper<Float32>(*from_array_type, to_type);
-                case 64:
-                    return createArrayToQBitWrapper<Float64>(*from_array_type, to_type);
-                default:
-                    UNREACHABLE();
-            }
-        }
-
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "CAST AS QBit can only be performed from String, Array or another QBit. Left type: {}, right type: {}",
-            from_type_untyped->getName(),
-            to_type.getName());
-    }
-
-    template <typename FloatType>
-    static ColumnPtr convertArrayToQBit(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size)
-    {
-        using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
-
-        ColumnPtr src_col = arguments.front().column;
-
-        if (nullable_source)
-            src_col = nullable_source->getNestedColumnPtr();
-
-        const auto * col_array = checkAndGetColumn<ColumnArray>(src_col.get());
-
-        if (!col_array)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unexpected column type {} for Array source when converting to QBit", src_col->getName());
-
-        const auto & offsets = col_array->getOffsets();
-        const auto & data = typeid_cast<const ColumnVector<FloatType> &>(col_array->getData()).getData();
-        const size_t arrays_count = offsets.size();
-        const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(n);
-        const size_t padded_dimension = bytes_per_fixedstring * 8;
-
-        /// Verify array size matches expected QBit size
-        size_t prev_offset = 0;
-        for (auto off : offsets)
-        {
-            size_t array_size = off - prev_offset;
-            if (array_size != n)
-                throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments must have size {} for QBit conversion, got {}", n, array_size);
-            prev_offset = off;
-        }
-
-        /// Handle empty input column
-        if (arrays_count == 0)
-        {
-            MutableColumns empty_tuple_columns(size);
-
-            for (size_t i = 0; i < size; ++i)
-                empty_tuple_columns[i] = ColumnFixedString::create(bytes_per_fixedstring);
-
-            ColumnPtr tuple = ColumnTuple::create(std::move(empty_tuple_columns));
-            return ColumnQBit::create(tuple, n);
-        }
-
-        MutableColumns tuple_columns(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            auto column = ColumnFixedString::create(bytes_per_fixedstring);
-            column->reserve(arrays_count);
-            tuple_columns[i] = std::move(column);
-        }
-
-        prev_offset = 0;
-        for (auto off : offsets)
-        {
-            /// Insert default values for each FixedString column and keep pointers to them
-            std::vector<char *> row_ptrs(size);
-            for (size_t j = 0; j < size; ++j)
-            {
-                auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
-                fixed_string_column.insertDefault();
-                auto & chars = fixed_string_column.getChars();
-                row_ptrs[j] = reinterpret_cast<char *>(&chars[chars.size() - bytes_per_fixedstring]);
-            }
-
-            /// Transpose bits right inside the FixedStrings
-            for (size_t i = 0; i < n; ++i)
-            {
-                Word w = 0;
-
-                FloatType v = data[prev_offset + i];
-                std::memcpy(&w, &v, sizeof(Word));
-
-                SerializationQBit::transposeBits<Word>(w, i, padded_dimension, row_ptrs.data());
-            }
-
-            prev_offset = off;
-        }
-
-        ColumnPtr tuple = ColumnTuple::create(std::move(tuple_columns));
-        return ColumnQBit::create(tuple, n);
-    }
-
-    template <typename T>
-    WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const
-    {
-        const DataTypePtr & nested_type = from_array_type.getNestedType();
-
-        if (!nested_type->equals(*to_qbit_type.getElementType()))
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Cannot convert from Array({}) to QBit({}, {})",
-                nested_type->getName(),
-                to_qbit_type.getElementType()->getName(),
-                to_qbit_type.getDimension());
-
-        /// Number of elements in the vector and width (in bits) of each element
-        size_t n = to_qbit_type.getDimension();
-        size_t size = to_qbit_type.getElementSize();
-
-        return [n, size](
-                   ColumnsWithTypeAndName & arguments,
-                   const DataTypePtr & result_type,
-                   const ColumnNullable * nullable_source,
-                   size_t /* input_rows_count */) -> ColumnPtr
-        { return convertArrayToQBit<T>(arguments, result_type, nullable_source, n, size); };
     }
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
@@ -4984,6 +4115,7 @@ private:
         };
     }
 
+
     WrapperType createMapWrapper(const DataTypePtr & from_type_untyped, const DataTypeMap * to_type) const
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
@@ -5041,39 +4173,762 @@ private:
         }
     }
 
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
+    WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
+    {
+        if (!from_tuple.haveExplicitNames())
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
+
+        PathsInData paths;
+        DataTypes from_types;
+
+        std::tie(paths, from_types) = flattenTuple(from_tuple.getPtr());
+        auto to_types = from_types;
+
+        for (auto & type : to_types)
+        {
+            if (isTuple(type) || isNested(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}",
+                    from_tuple.getName());
+
+            type = recursiveRemoveLowCardinality(type);
+        }
+
+        return [element_wrappers = getElementWrappers(from_types, to_types),
+            has_nullable_subcolumns, from_types, to_types, paths]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
+        {
+            size_t tuple_size = to_types.size();
+            auto flattened_column = flattenTuple(arguments.front().column);
+            const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
+
+            if (tuple_size != column_tuple.getColumns().size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Expected tuple with {} subcolumn, but got {} subcolumns",
+                    tuple_size, column_tuple.getColumns().size());
+
+            auto res = ColumnObjectDeprecated::create(has_nullable_subcolumns);
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
+                auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
+                res->addSubcolumn(paths[i], converted_column->assumeMutable());
+            }
+
+            return res;
+        };
+    }
+
+    WrapperType createMapToObjectDeprecatedWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
+    {
+        auto key_value_types = from_map.getKeyValueTypes();
+
+        if (!isStringOrFixedString(key_value_types[0]))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Cast to Object from Map can be performed only from Map "
+                "with String or FixedString key. Got: {}", from_map.getName());
+
+        const auto & value_type = key_value_types[1];
+        auto to_value_type = value_type;
+
+        if (!has_nullable_subcolumns && value_type->isNullable())
+            to_value_type = removeNullable(value_type);
+
+        if (has_nullable_subcolumns && !value_type->isNullable())
+            to_value_type = makeNullable(value_type);
+
+        DataTypes to_key_value_types{std::make_shared<DataTypeString>(), std::move(to_value_type)};
+        auto element_wrappers = getElementWrappers(key_value_types, to_key_value_types);
+
+        return [has_nullable_subcolumns, element_wrappers, key_value_types, to_key_value_types]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
+        {
+            const auto & column_map = assert_cast<const ColumnMap &>(*arguments.front().column);
+            const auto & offsets = column_map.getNestedColumn().getOffsets();
+            auto key_value_columns = column_map.getNestedData().getColumnsCopy();
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                ColumnsWithTypeAndName element{{key_value_columns[i], key_value_types[i], ""}};
+                key_value_columns[i] = element_wrappers[i](element, to_key_value_types[i], nullable_source, key_value_columns[i]->size());
+            }
+
+            const auto & key_column_str = assert_cast<const ColumnString &>(*key_value_columns[0]);
+            const auto & value_column = *key_value_columns[1];
+
+            using SubcolumnsMap = HashMap<StringRef, MutableColumnPtr, StringRefHash>;
+            SubcolumnsMap subcolumns;
+
+            for (size_t row = 0; row < offsets.size(); ++row)
+            {
+                for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
+                {
+                    auto ref = key_column_str.getDataAt(i);
+
+                    bool inserted;
+                    SubcolumnsMap::LookupResult it;
+                    subcolumns.emplace(ref, it, inserted);
+                    auto & subcolumn = it->getMapped();
+
+                    if (inserted)
+                        subcolumn = value_column.cloneEmpty()->cloneResized(row);
+
+                    /// Map can have duplicated keys. We insert only first one.
+                    if (subcolumn->size() == row)
+                        subcolumn->insertFrom(value_column, i);
+                }
+
+                /// Insert default values for keys missed in current row.
+                for (const auto & [_, subcolumn] : subcolumns)
+                    if (subcolumn->size() == row)
+                        subcolumn->insertDefault();
+            }
+
+            auto column_object = ColumnObjectDeprecated::create(has_nullable_subcolumns);
+            for (auto && [key, subcolumn] : subcolumns)
+            {
+                PathInData path(key.toView());
+                column_object->addSubcolumn(path, std::move(subcolumn));
+            }
+
+            return column_object;
+        };
+    }
+
+    WrapperType createObjectDeprecatedWrapper(const DataTypePtr & from_type, const DataTypeObjectDeprecated * to_type) const
+    {
+        if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
+        {
+            return createTupleToObjectDeprecatedWrapper(*from_tuple, to_type->hasNullableSubcolumns());
+        }
+        else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
+        {
+            return createMapToObjectDeprecatedWrapper(*from_map, to_type->hasNullableSubcolumns());
+        }
+        else if (checkAndGetDataType<DataTypeString>(from_type.get()))
+        {
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
+                res->finalize();
+                return res;
+            };
+        }
+        else if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()))
+        {
+            return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
+            {
+                const auto & column_object = assert_cast<const ColumnObjectDeprecated &>(*arguments.front().column);
+                auto res = ColumnObjectDeprecated::create(is_nullable);
+                for (size_t i = 0; i < column_object.size(); i++)
+                    res->insert(column_object[i]);
+
+                res->finalize();
+                return res;
+            };
+        }
+
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
+    }
+
+    /// We support nested Objects types. For example, in JSON we can have paths with type Array(JSON).
+    /// The parameters max_dynamic_types/max_dynamic_paths of these nested Object types depend on the
+    /// parameters of the original Object type (they are reduced by constant factors to avoid subcolumns
+    /// explosion). And this logic is used to read typed subcolumns without knowing the reduced parameters
+    /// like this: "SELECT json.a.b.:`Array(JSON)`" (or simply "SELECT json.a.b[]"). In this case we substitute the
+    /// nested JSON type name to the JSON type name with reduced parameters (see replaceJSONTypeNameIfNeeded function in DataTypeObject.cpp).
+    /// It's done to allow the user to request nested JSON subcolumns without specifying these parameters.
+    /// All this means that during conversion from one Object type to another the max_dynamic_types/max_dynamic_paths
+    /// parameters may change and we should change the parameters of all nested Object types recursively.
+    /// The next few functions are needed to do this conversion of nested Object types.
+
+    /// Convert all nested object types to new provided object type. Go inside Array and Tuple types.
+    DataTypePtr convertNestedObjectType(const DataTypePtr & type, const DataTypePtr & new_object_type) const
+    {
+        if (isObject(type))
+            return new_object_type;
+
+        if (const auto * type_array = checkAndGetDataType<DataTypeArray>(type.get()))
+            return std::make_shared<DataTypeArray>(convertNestedObjectType(type_array->getNestedType(), new_object_type));
+
+        if (const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get()))
+        {
+            const auto & elements = type_tuple->getElements();
+            DataTypes new_elements;
+            new_elements.reserve(elements.size());
+            for (const auto & element : elements)
+                new_elements.push_back(convertNestedObjectType(element, new_object_type));
+            return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
+                                                   : std::make_shared<DataTypeTuple>(new_elements);
+        }
+
+        return type;
+    }
+
+    /// Copy the value in a form <binary_encoded_type><binary_value> with converted Object type.
+    /// Such values are used in shared variant inside Dynamic column and shared data inside Object column.
+    void copySharedValueWithConvertedNestedObjectType(const ColumnString & old_values, ColumnString & new_values, const DataTypePtr & new_object_type, size_t row, const FormatSettings & format_settings) const
+    {
+        auto value = old_values.getDataAt(row);
+        ReadBufferFromMemory value_buf(value.data, value.size);
+        auto type = decodeDataType(value_buf);
+        if (type->hasDynamicSubcolumns())
+        {
+            /// Deserialize value into temporary column.
+            auto tmp_column = type->createColumn();
+            type->getDefaultSerialization()->deserializeBinary(*tmp_column, value_buf, format_settings);
+            /// Create new type and cast temporary column to it.
+            auto new_type = convertNestedObjectType(type, new_object_type);
+            auto wrapper = prepareUnpackDictionaries(type, new_type);
+            ColumnsWithTypeAndName args = {{tmp_column->getPtr(), type, ""}};
+            auto new_column = wrapper(args, new_type, nullptr, tmp_column->size());
+            /// Encode new type and serialize new value.
+            WriteBufferFromVector<ColumnString::Chars> new_value_buf(new_values.getChars(), AppendModeTag());
+            encodeDataType(new_type, new_value_buf);
+            new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
+            new_value_buf.finalize();
+            new_values.getChars().push_back(0);
+            new_values.getOffsets().push_back(new_values.getChars().size());
+        }
+        else
+        {
+            /// Just copy the value.
+            new_values.insertFrom(old_values, row);
+        }
+    }
+
+    /// Create new values of shared data/shared variant with all object types converted to new provided object type.
+    ColumnPtr getSharedValuesWithConvertedNestedObjectTypes(const ColumnString & old_values, const DataTypePtr & new_object_type) const
+    {
+        auto new_values = ColumnString::create();
+        new_values->reserve(old_values.size());
+        FormatSettings format_settings;
+        for (size_t i = 0; i != old_values.size(); ++i)
+            copySharedValueWithConvertedNestedObjectType(old_values, *new_values, new_object_type, i, format_settings);
+        return new_values;
+    }
+
+    bool checkIfSharedValuesContainNestedObjectsTypes(const ColumnString & values) const
+    {
+        for (size_t i = 0; i != values.size(); ++i)
+        {
+            auto value = values.getDataAt(i);
+            ReadBufferFromMemory buf(value.data, value.size);
+            auto type = decodeDataType(buf);
+            if (type->hasDynamicSubcolumns())
+                return true;
+        }
+
+        return false;
+    }
+
+    ColumnPtr getSharedDataWithConvertedNestedObjectTypes(const ColumnPtr & shared_data, const DataTypePtr & new_object_type) const
+    {
+        const auto & shared_data_array = assert_cast<const ColumnArray &>(*shared_data);
+        const auto & shared_data_offsets = shared_data_array.getOffsetsPtr();
+        const auto & shared_data_tuple = assert_cast<const ColumnTuple &>(shared_data_array.getData());
+        const auto & shared_data_paths = shared_data_tuple.getColumnPtr(0);
+        const auto & shared_data_values = shared_data_tuple.getColumnPtr(1);
+        const auto & shared_data_values_str = assert_cast<const ColumnString &>(*shared_data_values);
+
+        /// First check if we actually have any object type in the values.
+        /// If we don't have object types, just return the original shared data column.
+        if (!checkIfSharedValuesContainNestedObjectsTypes(shared_data_values_str))
+            return shared_data;
+
+        /// Otherwise we should create new shared data column with converted object types.
+        auto new_shared_data_values = getSharedValuesWithConvertedNestedObjectTypes(shared_data_values_str, new_object_type);
+        return ColumnArray::create(ColumnTuple::create(Columns{shared_data_paths, new_shared_data_values}), shared_data_offsets);
+    }
+
+    ColumnPtr getDynamicColumnWithConvertedNestedObjectTypes(const ColumnPtr & column, const DataTypePtr & new_object_type) const
+    {
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
+        const auto & variant_info = dynamic_column.getVariantInfo();
+        const auto & variants_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+
+        /// First check if we have any nested object type inside this dynamic column.
+        bool has_nested_object_type = false;
+        for (const auto & variant_type : variants_types)
+        {
+            if (variant_type->hasDynamicSubcolumns())
+            {
+                has_nested_object_type = true;
+                break;
+            }
+        }
+
+        /// If there are no variants with object type, check shared variant
+        if (!has_nested_object_type)
+            has_nested_object_type = checkIfSharedValuesContainNestedObjectsTypes(dynamic_column.getSharedVariant());
+
+        /// If there are no nested objects, don't do anything.
+        if (!has_nested_object_type)
+            return column;
+
+        /// If there are nested objects, we need to convert them to new object type.
+        const auto & variant_column = dynamic_column.getVariantColumn();
+        const auto & variants_columns = variant_column.getVariants();
+        auto shared_variant_global_discriminator = dynamic_column.getSharedVariantDiscriminator();
+        DataTypes new_variants_types;
+        new_variants_types.reserve(variants_types.size());
+        Columns new_variants_columns;
+        new_variants_columns.resize(variants_columns.size());
+        for (size_t global_discr = 0; global_discr != variants_types.size(); ++global_discr)
+        {
+            auto local_discr = variant_column.localDiscriminatorByGlobal(global_discr);
+            if (global_discr == shared_variant_global_discriminator)
+            {
+                new_variants_columns[local_discr] = getSharedValuesWithConvertedNestedObjectTypes(dynamic_column.getSharedVariant(), new_object_type);
+                new_variants_types.push_back(variants_types[global_discr]);
+            }
+            else if (variants_types[global_discr]->hasDynamicSubcolumns())
+            {
+                /// Cast variant to new type with converted object type.
+                auto new_variant_type = convertNestedObjectType(variants_types[global_discr], new_object_type);
+                auto wrapper = prepareUnpackDictionaries(variants_types[global_discr], new_variant_type);
+                ColumnsWithTypeAndName args = {{variants_columns[local_discr], variants_types[global_discr], ""}};
+                new_variants_columns[local_discr] = wrapper(args, new_variant_type, nullptr, variants_columns[local_discr]->size());
+                new_variants_types.push_back(new_variant_type);
+            }
+            else
+            {
+                new_variants_columns[local_discr] = variants_columns[local_discr];
+                new_variants_types.push_back(variants_types[global_discr]);
+            }
+        }
+
+        auto new_variant_type = std::make_shared<DataTypeVariant>(new_variants_types);
+        auto new_variant_column = ColumnVariant::create(variant_column.getLocalDiscriminatorsPtr(), variant_column.getOffsetsPtr(), new_variants_columns, variant_column.getLocalToGlobalDiscriminatorsMapping());
+        return ColumnDynamic::create(std::move(new_variant_column), new_variant_type, dynamic_column.getMaxDynamicTypes(), dynamic_column.getGlobalMaxDynamicTypes());
+    }
+
+    WrapperType createObjectToObjectWrapper(const DataTypeObject & from_object, const DataTypeObject & to_object) const
+    {
+        bool skip_rules_are_changed = from_object.getPathsToSkip() != to_object.getPathsToSkip() || from_object.getPathRegexpsToSkip() != to_object.getPathRegexpsToSkip();
+        bool typed_paths_are_changed = false;
+        bool have_new_typed_paths = false;
+        const auto & old_typed_paths_types = from_object.getTypedPaths();
+        const auto & new_typed_paths_types = to_object.getTypedPaths();
+        /// If numbers of typed paths are different - they are 100% different.
+        typed_paths_are_changed |= old_typed_paths_types.size() != new_typed_paths_types.size();
+        for (const auto & [new_typed_path, new_type] : new_typed_paths_types)
+        {
+            auto it = old_typed_paths_types.find(new_typed_path);
+            /// Check if there is no such path in from_object typed paths.
+            if (it == old_typed_paths_types.end())
+            {
+                typed_paths_are_changed = true;
+                have_new_typed_paths = true;
+                break;
+            }
+
+            /// Check if type is changed for this typed path.
+            if (!it->second->equals(*new_type))
+            {
+                typed_paths_are_changed = true;
+            }
+        }
+
+        auto new_max_dynamic_paths = to_object.getMaxDynamicPaths();
+        auto old_max_dynamic_types = from_object.getMaxDynamicTypes();
+        auto new_max_dynamic_types = to_object.getMaxDynamicTypes();
+        auto old_dynamic_type = std::make_shared<DataTypeDynamic>(old_max_dynamic_types);
+        auto new_dynamic_type = std::make_shared<DataTypeDynamic>(new_max_dynamic_types);
+        auto wrapper_from_old_to_new_dynamic_type = createDynamicToDynamicWrapper(*old_dynamic_type, *new_dynamic_type);
+        /// When object type changes, the type of nested objects (like Array(JSON)) also may change.
+        const auto & old_type_of_nested_objects = from_object.getTypeOfNestedObjects();
+        const auto & new_type_of_nested_objects = to_object.getTypeOfNestedObjects();
+        bool need_to_convert_nested_objects_type = !old_type_of_nested_objects->equals(*new_type_of_nested_objects);
+
+        /// Simple use case - when only max_dynamic_paths/max_dynamic_types parameters are changed and max_dynamic_paths is not decreased.
+        /// In this case we almost don't need to rewrite anything (except nested objects) and can process it separately.
+        if (!skip_rules_are_changed && !typed_paths_are_changed && from_object.getMaxDynamicPaths() <= to_object.getMaxDynamicPaths())
+        {
+            return [this,
+                    new_max_dynamic_paths,
+                    old_max_dynamic_types,
+                    new_max_dynamic_types,
+                    old_dynamic_type,
+                    new_dynamic_type,
+                    wrapper_from_old_to_new_dynamic_type,
+                    new_type_of_nested_objects,
+                    need_to_convert_nested_objects_type](
+                       ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
+            {
+                const auto & old_column_object = assert_cast<const ColumnObject &>(*arguments[0].column);
+                const auto & old_typed_paths = old_column_object.getTypedPaths();
+                const auto & old_dynamic_paths = old_column_object.getDynamicPaths();
+                const auto & old_shared_data = old_column_object.getSharedDataPtr();
+
+                std::unordered_map<String, ColumnPtr> new_typed_paths;
+                new_typed_paths.reserve(old_typed_paths.size());
+                for (const auto & [path, column] : old_typed_paths)
+                    new_typed_paths[path] = column;
+
+                std::unordered_map<String, ColumnPtr> new_dynamic_paths;
+                new_dynamic_paths.reserve(old_dynamic_paths.size());
+                if (old_max_dynamic_types == new_max_dynamic_types)
+                {
+                    for (const auto & [path, column] : old_dynamic_paths)
+                        new_dynamic_paths[path] = column;
+                }
+                else
+                {
+                    for (const auto & [path, column] : old_dynamic_paths)
+                    {
+                        ColumnsWithTypeAndName args = {ColumnWithTypeAndName(column, old_dynamic_type, path)};
+                        new_dynamic_paths[path] = wrapper_from_old_to_new_dynamic_type(args, new_dynamic_type, nullptr, column->size());
+                    }
+                }
+
+                ColumnPtr new_shared_data = old_shared_data;
+
+                /// Convert nested object types inside dynamic paths and shared data if needed.
+                if (need_to_convert_nested_objects_type)
+                {
+                    for (auto & [_, column] : new_dynamic_paths)
+                        column = getDynamicColumnWithConvertedNestedObjectTypes(column, new_type_of_nested_objects);
+                    new_shared_data = getSharedDataWithConvertedNestedObjectTypes(old_shared_data, new_type_of_nested_objects);
+                }
+
+                return ColumnObject::create(new_typed_paths, new_dynamic_paths, new_shared_data, old_column_object.getMaxDynamicPaths(), new_max_dynamic_paths, new_max_dynamic_types);
+            };
+        }
+
+        /// Create wrappers for:
+        ///  - typed paths with changed data type
+        ///  - typed paths that will be casted to new Dynamic
+        ///  - new typed paths from old Dynamic type.
+        std::unordered_map<String, WrapperType> typed_paths_wrappers;
+        if (typed_paths_are_changed)
+        {
+            for (const auto & [path, old_type] : old_typed_paths_types)
+            {
+                /// Check if this path remains in typed paths.
+                if (auto it = new_typed_paths_types.find(path); it != new_typed_paths_types.end())
+                {
+                    /// Check if the data type is changed.
+                    if (!old_type->equals(*it->second))
+                        typed_paths_wrappers[path] = prepareUnpackDictionaries(old_type, it->second);
+                }
+                /// Otherwise this path will be casted to Dynamic.
+                else
+                {
+                    typed_paths_wrappers[path] = createColumnToDynamicWrapper(old_type, *new_dynamic_type);
+                }
+            }
+
+            /// For new typed paths create a wrapper from old Dynamic type.
+            if (have_new_typed_paths)
+            {
+                for (const auto & [path, type] : new_typed_paths_types)
+                {
+                    if (!old_typed_paths_types.contains(path))
+                        typed_paths_wrappers[path] = createDynamicToColumnWrapper(type);
+                }
+            }
+        }
+
+        const auto & new_paths_to_skip = to_object.getPathsToSkip();
+        std::vector<String> new_paths_to_skip_sorted;
+        new_paths_to_skip_sorted.reserve(new_paths_to_skip.size());
+        for (const auto & path : new_paths_to_skip)
+            new_paths_to_skip_sorted.push_back(path);
+        std::sort(new_paths_to_skip_sorted.begin(), new_paths_to_skip_sorted.end());
+
+        auto should_skip_path =
+            [new_paths_to_skip,
+             new_paths_to_skip_sorted,
+             new_path_regexps_to_skip = to_object.getPathRegexpsToSkip()](const String & path)
+        {
+            /// Check if we have this path in skip list.
+            if (new_paths_to_skip.contains(path))
+                return true;
+
+            /// Check if skip list contains prefix of this path.
+            if (!new_paths_to_skip_sorted.empty())
+            {
+                auto it = std::lower_bound(new_paths_to_skip_sorted.begin(), new_paths_to_skip_sorted.end(), path);
+                if (it != new_paths_to_skip_sorted.begin() && path.starts_with(*std::prev(it)))
+                    return true;
+            }
+
+            /// Check if path matches any skip regexps.
+            for (const auto & path_regexp_to_skip : new_path_regexps_to_skip)
+            {
+                if (re2::RE2::FullMatch(path, path_regexp_to_skip))
+                    return true;
+            }
+
+            return false;
+        };
+
+        /// General case when we need to rewrite the data manually according to the new constraints
+        return [this,
+                skip_rules_are_changed,
+                typed_paths_are_changed,
+                have_new_typed_paths,
+                old_typed_paths_types,
+                new_typed_paths_types,
+                typed_paths_wrappers,
+                new_max_dynamic_paths,
+                new_max_dynamic_types,
+                old_dynamic_type,
+                new_dynamic_type,
+                wrapper_from_old_to_new_dynamic_type,
+                should_skip_path,
+                new_type_of_nested_objects,
+                need_to_convert_nested_objects_type](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr &,
+                   const ColumnNullable *,
+                   size_t)
+        {
+            const auto & old_column_object = assert_cast<const ColumnObject &>(*arguments[0].column);
+            const auto & old_typed_paths = old_column_object.getTypedPaths();
+            const auto & old_dynamic_paths = old_column_object.getDynamicPaths();
+            const auto & old_shared_data = old_column_object.getSharedDataPtr();
+            const auto & old_shared_data_offsets = old_column_object.getSharedDataOffsets();
+            const auto [old_shared_data_paths, old_shared_data_values] = old_column_object.getSharedDataPathsAndValues();
+
+            std::unordered_map<String, ColumnPtr> new_typed_paths;
+            new_typed_paths.reserve(new_typed_paths_types.size());
+            std::unordered_map<String, ColumnPtr> new_dynamic_paths;
+
+            /// If the set of typed paths was changed, we should distribute old typed paths to new_typed_paths or new_dynamic_paths.
+            if (typed_paths_are_changed)
+            {
+                for (const auto & [path, column] : old_typed_paths)
+                {
+                    /// Check if this path should remain in typed paths.
+                    if (auto new_types_it = new_typed_paths_types.find(path); new_types_it != new_typed_paths_types.end())
+                    {
+                        /// Check if we need to cast the column to another type.
+                        if (auto wrapper_it = typed_paths_wrappers.find(path); wrapper_it != typed_paths_wrappers.end())
+                        {
+                            ColumnsWithTypeAndName args = {{column, old_typed_paths_types.at(path), path}};
+                            new_typed_paths[path] = wrapper_it->second(args, new_types_it->second, nullptr, column->size());
+                        }
+                        /// Otherwise just reuse existing column.
+                        else
+                        {
+                            new_typed_paths[path] = column;
+                        }
+                    }
+                    /// Otherwise if this path is not skipped, move this path to dynamic paths.
+                    else if (!skip_rules_are_changed || !should_skip_path(path))
+                    {
+                        /// First cast column to Dynamic.
+                        ColumnsWithTypeAndName args = {{column, old_typed_paths_types.at(path), path}};
+                        new_dynamic_paths[path] = typed_paths_wrappers.at(path)(args, new_dynamic_type, nullptr, column->size());
+                    }
+                }
+            }
+            /// If the set of typed paths wasn't changed, just use the old typed paths.
+            else
+            {
+                for (const auto & [path, column] : old_typed_paths)
+                    new_typed_paths[path] = column;
+            }
+
+            /// Now iterate over old dynamic paths and distribute them to new_typed_paths or new_dynamic_paths.
+            for (const auto & [path, column] : old_dynamic_paths)
+            {
+                ColumnsWithTypeAndName args = {{column, old_dynamic_type, path}};
+                /// Check if we need to move this path to typed paths. If yes, cast dynamic column to the required type.
+                if (auto it = new_typed_paths_types.find(path); it != new_typed_paths_types.end())
+                    new_typed_paths[path] = typed_paths_wrappers.at(path)(args, it->second, nullptr, column->size());
+                /// Otherwise cast it to new Dynamic type and move it to new dynamic paths if not skipped.
+                else if (!skip_rules_are_changed || !should_skip_path(path))
+                    new_dynamic_paths[path] = wrapper_from_old_to_new_dynamic_type(args, new_dynamic_type, nullptr, column->size());
+            }
+
+            /// Convert nested object types inside dynamic paths if needed.
+            if (need_to_convert_nested_objects_type)
+            {
+                for (auto & [_, column] : new_dynamic_paths)
+                    column = getDynamicColumnWithConvertedNestedObjectTypes(column, new_type_of_nested_objects);
+            }
+
+            /// We could exceed the new_max_dynamic_paths limit in new_dynamic_paths.
+            /// In this case we keep the most frequent paths and move the rarest to the shared data.
+            std::vector<std::pair<String, ColumnPtr>> paths_for_shared_data;
+            if (new_dynamic_paths.size() > new_max_dynamic_paths)
+            {
+                std::vector<std::pair<size_t, String>> new_dynamic_paths_with_sizes;
+                new_dynamic_paths_with_sizes.reserve(new_dynamic_paths.size());
+                /// If column has statistics from the data part, use size from it for consistency for alters.
+                const auto & statistics = old_column_object.getStatistics();
+                for (const auto & [path, column] : new_dynamic_paths)
+                {
+                    size_t size = column->size() - column->getNumberOfDefaultRows();
+                    /// If this path was moved from old typed paths, we won't have it statistics but consider it as the most frequent.
+                    if (old_typed_paths_types.contains(path))
+                    {
+                        size = std::numeric_limits<size_t>::max();
+                    }
+                    else if (statistics)
+                    {
+                        auto it = statistics->dynamic_paths_statistics.find(path);
+                        if (it != statistics->dynamic_paths_statistics.end())
+                            size = it->second;
+                    }
+
+                    new_dynamic_paths_with_sizes.emplace_back(size, path);
+                }
+
+                std::sort(new_dynamic_paths_with_sizes.begin(), new_dynamic_paths_with_sizes.end(), std::greater());
+                paths_for_shared_data.reserve(new_dynamic_paths_with_sizes.size() - new_max_dynamic_paths);
+                /// Move the rarest paths into paths_for_shared_data.
+                for (size_t i = new_max_dynamic_paths; i != new_dynamic_paths_with_sizes.size(); ++i)
+                {
+                    auto it = new_dynamic_paths.find(new_dynamic_paths_with_sizes[i].second);
+                    paths_for_shared_data.emplace_back(it->first, it->second);
+                    new_dynamic_paths.erase(it);
+                }
+
+                /// Sort paths_for_shared_data. Paths in shared data are sorted, so it will be easier to insert data there.
+                std::sort(paths_for_shared_data.begin(), paths_for_shared_data.end());
+            }
+
+            /// Now we have new typed paths (possibly incomplete) and dynamic paths and we need to create new shared data column.
+            ColumnPtr new_shared_data;
+
+            /// We can reuse shared data from old column if:
+            ///   - there are no new typed paths
+            ///   - we don't have paths in paths_for_shared_data to be inserted into shared data
+            ///   - we don't have new skipped rules
+            if (!have_new_typed_paths && paths_for_shared_data.empty() && !skip_rules_are_changed)
+            {
+                /// Convert nested object types inside shared data if needed.
+                if (need_to_convert_nested_objects_type)
+                    new_shared_data = getSharedDataWithConvertedNestedObjectTypes(old_shared_data, new_type_of_nested_objects);
+                else
+                    new_shared_data = old_shared_data;
+            }
+            /// Otherwise we should iterate over old shared data and construct the new one.
+            else
+            {
+                auto new_shared_data_mutable = DataTypeObject::getTypeOfSharedData()->createColumn();
+                auto & new_shared_data_array = assert_cast<ColumnArray &>(*new_shared_data_mutable);
+                auto & new_shared_data_offsets = new_shared_data_array.getOffsets();
+                new_shared_data_offsets.reserve(old_shared_data_offsets.size());
+                auto & new_shared_data_tuple = assert_cast<ColumnTuple &>(new_shared_data_array.getData());
+                auto & new_shared_data_paths = assert_cast<ColumnString &>(new_shared_data_tuple.getColumn(0));
+                auto & new_shared_data_values = assert_cast<ColumnString &>(new_shared_data_tuple.getColumn(1));
+
+                /// Collect extracted values of new typed paths into separate dynamic columns.
+                /// These columns will be casted to the required type later and inserted into new typed paths.
+                std::unordered_map<String, MutableColumnPtr> extracted_new_typed_paths;
+                FormatSettings format_settings;
+                for (size_t i = 0; i != old_shared_data_offsets.size(); ++i)
+                {
+                    size_t start = old_shared_data_offsets[i - 1];
+                    size_t end = old_shared_data_offsets[i];
+                    size_t paths_for_shared_data_index = 0;
+                    for (size_t j = start; j != end; ++j)
+                    {
+                        auto path = old_shared_data_paths->getDataAt(j).toString();
+                        /// Check if we have this path in new typed paths.
+                        if (new_typed_paths_types.contains(path))
+                        {
+                            auto it = extracted_new_typed_paths.find(path);
+                            if (it == extracted_new_typed_paths.end())
+                            {
+                                it = extracted_new_typed_paths.emplace(path, new_dynamic_type->createColumn()).first;
+                                it->second->insertManyDefaults(i);
+                            }
+                            ColumnObject::deserializeValueFromSharedData(old_shared_data_values, j, *it->second);
+                        }
+                        /// Insert this path into new shared data if not skipped.
+                        else if (!skip_rules_are_changed || !should_skip_path(path))
+                        {
+                            /// Before inserting check if we need to insert paths from paths_for_shared_data before.
+                            while (paths_for_shared_data_index < paths_for_shared_data.size()
+                                   && paths_for_shared_data[paths_for_shared_data_index].first < path)
+                            {
+                                const auto & path_and_column = paths_for_shared_data[paths_for_shared_data_index];
+                                ColumnObject::serializePathAndValueIntoSharedData(&new_shared_data_paths, &new_shared_data_values, path_and_column.first, *path_and_column.second, i);
+                                ++paths_for_shared_data_index;
+                            }
+
+                            /// Insert path and value from old shared data to new shared data.
+                            new_shared_data_paths.insertFrom(*old_shared_data_paths, j);
+                            /// Convert nested object type inside the value if needed.
+                            if (need_to_convert_nested_objects_type)
+                                copySharedValueWithConvertedNestedObjectType(*old_shared_data_values, new_shared_data_values, new_type_of_nested_objects, j, format_settings);
+                            else
+                                new_shared_data_values.insertFrom(*old_shared_data_values, j);
+                        }
+                    }
+
+                    /// Insert remaining paths from paths_for_shared_data.
+                    for (; paths_for_shared_data_index < paths_for_shared_data.size(); ++paths_for_shared_data_index)
+                    {
+                        const auto & path_and_column = paths_for_shared_data[paths_for_shared_data_index];
+                        ColumnObject::serializePathAndValueIntoSharedData(&new_shared_data_paths, &new_shared_data_values, path_and_column.first, *path_and_column.second, i);
+                    }
+
+                    new_shared_data_offsets.push_back(new_shared_data_paths.size());
+
+                    /// Insert default value in all not visited typed paths in extracted_new_typed_paths.
+                    for (auto & [_, column] : extracted_new_typed_paths)
+                    {
+                        if (column->size() == i)
+                            column->insertDefault();
+                    }
+                }
+
+                new_shared_data = std::move(new_shared_data_mutable);
+
+                /// Fill remaining typed paths from extracted values (or with defaults if no values were extracted).
+                for (const auto & [path, type] : new_typed_paths_types)
+                {
+                    if (!new_typed_paths.contains(path))
+                    {
+                        /// Check if we have values extracted from shared data for this typed path.
+                        if (auto it = extracted_new_typed_paths.find(path); it != extracted_new_typed_paths.end())
+                        {
+                            ColumnsWithTypeAndName args = {{it->second->getPtr(), new_dynamic_type, path}};
+                            new_typed_paths[path] = typed_paths_wrappers.at(path)(args, type, nullptr, it->second->size());
+                        }
+                        /// Otherwise fill this typed path with default values.
+                        else
+                        {
+                            auto column = type->createColumn();
+                            column->insertManyDefaults(old_column_object.size());
+                            new_typed_paths[path] = std::move(column);
+                        }
+                    }
+                }
+            }
+
+            return ColumnObject::create(new_typed_paths, new_dynamic_paths, new_shared_data, new_dynamic_paths.size(), new_max_dynamic_paths, new_max_dynamic_types);
+        };
+    }
+
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                    return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, context);
-
                 return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
             };
         }
 
-        /// Cast Tuple/Object/Map/JSON to JSON type through serializing into JSON string and parsing back into JSON column.
+        /// Cast Tuple/Object/Map to JSON type through serializing into JSON string and parsing back into JSON column.
         /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
         /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).
-        /// Proper implementation of a conversion between 2 different JSON types is really complex, because different JSON types
-        /// can have different parameters:
-        /// - set of typed paths
-        /// - set of skip rules
-        /// - max_dynamic_paths/max_dynamic_types parameters
-        /// Also max_dynamic_paths/max_dynamic_types parameters of nested JSON types depend on current max_dynamic_paths/max_dynamic_types,
-        /// so if these parameters are changed, we have to recursively find all nested JSON types and change their parameters as well.
-        /// It's all complicates the implementation and last attempt to implement it led to several bugs.
-        /// So for now let's perform this conversion through cast to String and parsing new JSON back from it.
-        /// It's not effective, but 100% accurate.
-        if (checkAndGetDataType<DataTypeTuple>(from_type.get())
-            || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
+        if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()) || checkAndGetDataType<DataTypeTuple>(from_type.get()) || checkAndGetDataType<DataTypeMap>(from_type.get()))
         {
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
                 auto json_string = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
                 auto serialization = arguments[0].type->getDefaultSerialization();
@@ -5081,7 +4936,7 @@ private:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                    write_helper.finishRow();
+                    write_helper.rowWritten();
                 }
                 write_helper.finalize();
 
@@ -5090,6 +4945,10 @@ private:
             };
         }
 
+        if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()))
+            return createObjectToObjectWrapper(*from_object, *to_object);
+
+        /// TODO: support CAST between JSON types with different parameters
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple/JSON. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
     }
 
@@ -5302,7 +5161,7 @@ private:
 
         auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
         /// Cast String to Variant through parsing if it's not Variant(String).
-        if (context && context->getSettingsRef()[Setting::cast_string_to_variant_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
+        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
             return createStringToVariantWrapper();
 
         if (!variant_discr_opt)
@@ -6065,7 +5924,7 @@ private:
                 DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
                 DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
                 DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
-                DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime,
+                DataTypeDate, DataTypeDate32, DataTypeDateTime,
                 DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
@@ -6089,7 +5948,7 @@ private:
             if constexpr (is_any_of<ToDataType,
                 DataTypeDecimal<Decimal32>, DataTypeDecimal<Decimal64>,
                 DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal256>,
-                DataTypeDateTime64, DataTypeTime64>)
+                DataTypeDateTime64>)
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
@@ -6239,12 +6098,12 @@ private:
                 return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
-            case TypeIndex::QBit:
-                return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
+            case TypeIndex::ObjectDeprecated:
+                return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
-                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
+                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             case TypeIndex::Interval:

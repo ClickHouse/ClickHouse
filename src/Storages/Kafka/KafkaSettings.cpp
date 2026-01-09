@@ -1,7 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -39,18 +38,11 @@ namespace ErrorCodes
     /* default is stream_flush_interval_ms */ \
     DECLARE(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
     DECLARE(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
-    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error), dead_letter_queue (error related data will be saved in system.dead_letter).", 0) \
+    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
     DECLARE(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     DECLARE(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
     DECLARE(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
     DECLARE(String, kafka_replica_name, "", "The replica name in ClickHouse Keeper", 0) \
-    DECLARE(String, kafka_security_protocol, "", "Protocol used to communicate with brokers.", 0) \
-    DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.", 0) \
-    DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
-    DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
-    DECLARE(String, kafka_compression_codec, "", "Compression codec used for producing messages. Supported: empty string, none, gzip, snappy, lz4, zstd. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used.", 0) \
-    DECLARE(Int64, kafka_compression_level, -1, "Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: [0-9] for gzip; [0-12] for lz4; only 0 for snappy; [0-12] for zstd; -1 = codec-dependent default compression level.", 0) \
-    DECLARE(UInt64, kafka_schema_registry_skip_bytes, 0, "Number of bytes to skip from the beginning of each Kafka message (e.g., 5 for Confluent Schema Registry, 19 for AWS Glue Schema Registry envelope header). Maximum: 255 bytes.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
@@ -72,11 +64,11 @@ struct KafkaSettingsImpl : public BaseSettings<KafkaSettingsTraits>
 };
 
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) KafkaSettings##TYPE NAME = &KafkaSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) KafkaSettings##TYPE NAME = &KafkaSettingsImpl ::NAME;
 
 namespace KafkaSetting
 {
-LIST_OF_KAFKA_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_KAFKA_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -130,7 +122,7 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
     }
 }
 
-void KafkaSettings::sanityCheck(ContextPtr global_context) const
+void KafkaSettings::sanityCheck() const
 {
     if (impl->kafka_consumers_pool_ttl_ms < KAFKA_RESCHEDULE_MS)
         throw Exception(
@@ -145,11 +137,6 @@ void KafkaSettings::sanityCheck(ContextPtr global_context) const
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be too big (greater then {}), since this may cause live memory leaks",
             impl->kafka_consumers_pool_ttl_ms.value,
             KAFKA_CONSUMERS_POOL_TTL_MS_MAX);
-
-    if (impl->kafka_handle_error_mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE
-        && !global_context->getDeadLetterQueue())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The table system.dead_letter_queue is not configured on the server. You cannot create a table with this `kafka_handle_error_mode`.");
 }
 
 SettingsChanges KafkaSettings::getFormatSettings() const

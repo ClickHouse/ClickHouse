@@ -1,11 +1,7 @@
 #pragma once
 
-#if !defined(LEXER_STANDALONE_BUILD)
-
 #include <stddef.h>
-#include <stdint.h>
-
-#endif
+#include <cstdint>
 
 
 namespace DB
@@ -88,10 +84,8 @@ APPLY_FOR_TOKENS(M)
 #undef M
 };
 
-#if !defined(LEXER_STANDALONE_BUILD)
 const char * getTokenName(TokenType type);
 const char * getErrorTokenDescription(TokenType type);
-#endif
 
 
 struct Token

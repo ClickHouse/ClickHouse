@@ -4,7 +4,6 @@ description: 'System table containing metrics that are calculated periodically i
 keywords: ['system table', 'asynchronous_metrics']
 slug: /operations/system-tables/asynchronous_metrics
 title: 'system.asynchronous_metrics'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -23,11 +22,11 @@ Columns:
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.asynchronous_metrics LIMIT 10
 ```
 
-```text
+``` text
 ┌─metric──────────────────────────────────┬──────value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ AsynchronousMetricsCalculationTimeSpent │ 0.00179053 │ Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics).                                                                                                                                              │
 │ NumberOfDetachedByUserParts             │          0 │ The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed.                          │
@@ -47,6 +46,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
       Listing them here explicitly for reader convenience. --->
 
 ## Metric descriptions {#metric-descriptions}
+
 
 ### AsynchronousHeavyMetricsCalculationTimeSpent {#asynchronousheavymetricscalculationtimespent}
 
@@ -128,13 +128,13 @@ Time in seconds spend in write operations requested from the block device, summe
 
 The current frequency of the CPU, in MHz. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting.
 
-### DictionaryMaxUpdateDelay {#dictionarymaxlastsuccessfulupdatetime}
+### CompiledExpressionCacheBytes {#compiledexpressioncachebytes}
 
-The maximum delay (in seconds) of dictionary update.
+Total bytes used for the cache of JIT-compiled code.
 
-### DictionaryTotalFailedUpdates {#dictionaryloadfailed}
+### CompiledExpressionCacheCount {#compiledexpressioncachecount}
 
-Number of errors since last successful loading in all dictionaries.
+Total entries in the cache of JIT-compiled code.
 
 ### DiskAvailable_*name* {#diskavailable_name}
 
@@ -223,6 +223,18 @@ The difference in time the thread for calculation of the asynchronous metrics wa
 ### LoadAverage*N* {#loadaveragen}
 
 The whole system load, averaged with exponential smoothing over 1 minute. The load represents the number of threads across all the processes (the scheduling entities of the OS kernel), that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time. This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores, if the system is overloaded, and many processes are ready to run but waiting for CPU or IO.
+
+### MMapCacheCells {#mmapcachecells}
+
+The number of files opened with `mmap` (mapped in memory). This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`. The files opened with `mmap` are kept in the cache to avoid costly TLB flushes.
+
+### MarkCacheBytes {#markcachebytes}
+
+Total size of mark cache in bytes
+
+### MarkCacheFiles {#markcachefiles}
+
+Total number of mark files cached in the mark cache
 
 ### MaxPartCountForPartition {#maxpartcountforpartition}
 
@@ -488,6 +500,14 @@ The value is similar to `OSUserTime` but divided to the number of CPU cores to b
 
 Number of threads in the server of the PostgreSQL compatibility protocol.
 
+### QueryCacheBytes {#querycachebytes}
+
+Total size of the query cache in bytes.
+
+### QueryCacheEntries {#querycacheentries}
+
+Total number of entries in the query cache.
+
 ### ReplicasMaxAbsoluteDelay {#replicasmaxabsolutedelay}
 
 Maximum difference in seconds between the most fresh replicated part and the most fresh data part still to be replicated, across Replicated tables. A very high value indicates a replica with no data.
@@ -551,6 +571,14 @@ The total amount of memory (in bytes) reserved for primary key values (only take
 ### TotalRowsOfMergeTreeTables {#totalrowsofmergetreetables}
 
 Total amount of rows (records) stored in all tables of MergeTree family.
+
+### UncompressedCacheBytes {#uncompressedcachebytes}
+
+Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided.
+
+### UncompressedCacheCells {#uncompressedcachecells}
+
+Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided.
 
 ### Uptime {#uptime}
 

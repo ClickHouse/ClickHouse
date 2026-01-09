@@ -10,10 +10,10 @@ class AllMergeSelector : public IMergeSelector
 {
 public:
     /// Parameter max_total_size_to_merge is ignored.
-    PartsRanges select(
+    PartsRange select(
         const PartsRanges & parts_ranges,
-        const MergeSizes & max_merge_sizes,
-        const RangeFilter & range_filter) const override;
+        size_t max_total_size_to_merge,
+        RangeFilter range_filter) const override;
 };
 
 }

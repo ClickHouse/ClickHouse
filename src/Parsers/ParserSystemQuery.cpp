@@ -193,9 +193,6 @@ enum class SystemQueryTargetType : uint8_t
         }
         else
             return false;
-
-        if (database && ParserKeyword{Keyword::WITH_TABLES}.ignore(pos, expected))
-            res->with_tables = true;
     }
     else
         res->is_drop_whole_replica = true;
@@ -299,9 +296,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (res->type == Type::SYNC_REPLICA)
             {
-                if (ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected))
-                    res->if_exists = true;
-
                 if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{Keyword::LIGHTWEIGHT}.ignore(pos, expected))
@@ -330,8 +324,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
-            if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
-                res->sync_replica_mode = SyncReplicaMode::STRICT;
             break;
         }
         case Type::RESTART_DISK:
@@ -371,14 +363,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RESTORE_REPLICA:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
-                return false;
-            break;
-        }
-        case Type::RESTORE_DATABASE_REPLICA:
-        {
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
             break;
         }
@@ -539,13 +523,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             ParserLiteral parser;
             ASTPtr ast;
-            if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
+            if (parser.parse(pos, ast, expected))
+            {
+                res->distributed_cache_servive_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+            }
+            else if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
             {
                 res->distributed_cache_drop_connections = true;
             }
-            else if (parser.parse(pos, ast, expected))
+            else
             {
-                res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+                return false;
             }
 
             break;
@@ -591,8 +579,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (ParserKeyword{Keyword::PROTOBUF}.ignore(pos, expected))
                     res->schema_cache_format = toStringView(Keyword::PROTOBUF);
-                else if (ParserKeyword{Keyword::FILES}.ignore(pos, expected))
-                    res->schema_cache_format = toStringView(Keyword::FILES);
+
                 else
                     return false;
             }
@@ -626,8 +613,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 res->backup_source = ast;
-                res->children.push_back(res->backup_source);
             }
+            else
+                return false;
 
             break;
         }
@@ -707,7 +695,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             Pos prev_token = pos;
@@ -721,26 +708,26 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserToken s_dot(TokenType::Dot);
             ParserIdentifier table_parser(true);
 
+
             do
             {
                 ASTPtr table_first;
                 if (!table_parser.parse(pos, table_first, expected))
                 {
-                    if (res->tables.empty())
+                    if (res->logs.empty())
                         break;
                     return false;
                 }
 
                 if (!s_dot.ignore(pos))
-                {
-                    res->tables.emplace_back(String{}, table_first->as<ASTIdentifier &>().full_name);
-                }
+                    res->logs.emplace_back(table_first->as<ASTIdentifier &>().full_name);
                 else
                 {
                     ASTPtr table_second;
                     if (!table_parser.parse(pos, table_second, expected))
                         return false;
-                    res->tables.emplace_back(table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name);
+                    res->logs.emplace_back(
+                        fmt::format("{}.{}", table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name));
                 }
 
 
@@ -748,19 +735,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
-#if USE_JEMALLOC
-        case Type::JEMALLOC_FLUSH_PROFILE:
-        {
-            Pos prev_token = pos;
-            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
-            {
-                pos = prev_token;
-                if (!parseQueryWithOnCluster(res, pos, expected))
-                    return false;
-            }
-            break;
-        }
-#endif
 
         default:
         {

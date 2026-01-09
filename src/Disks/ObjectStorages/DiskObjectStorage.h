@@ -2,6 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
 
@@ -27,6 +28,7 @@ class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
+friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 
 public:
     DiskObjectStorage(
@@ -35,15 +37,14 @@ public:
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        bool use_fake_transaction_ = true);
+        const String & config_prefix);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    bool supportZeroCopyReplication() const override { return true; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
@@ -69,11 +70,9 @@ public:
 
     void moveFile(const String & from_path, const String & to_path) override;
 
+    void moveFile(const String & from_path, const String & to_path, bool should_send_metadata);
+
     void replaceFile(const String & from_path, const String & to_path) override;
-
-    void renameExchange(const std::string & old_path, const std::string & new_path) override;
-
-    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
@@ -109,6 +108,7 @@ public:
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+    void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
@@ -118,11 +118,11 @@ public:
 
     void createDirectories(const String & path) override;
 
+    void clearDirectory(const String & path) override;
+
     void moveDirectory(const String & from_path, const String & to_path) override;
 
     void removeDirectory(const String & path) override;
-
-    void removeDirectoryIfExists(const String & path) override;
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
@@ -138,11 +138,11 @@ public:
 
     void shutdown() override;
 
-    void startupImpl() override;
+    void startupImpl(ContextPtr context) override;
 
-    void refresh(UInt64 not_sooner_than_milliseconds) override
+    void refresh() override
     {
-        metadata_storage->refresh(not_sooner_than_milliseconds);
+        metadata_storage->refresh();
     }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -150,12 +150,14 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -178,6 +180,14 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
+    void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
+
+    void onFreeze(const String & path) override;
+
+    void syncRevision(UInt64 revision) override;
+
+    UInt64 getRevision() const override;
+
     ObjectStoragePtr getObjectStorage() override;
 
     DiskObjectStoragePtr createDiskObjectStorage() override;
@@ -189,16 +199,13 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
-    bool isPlain() const override;
+    bool isPlain() const;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it
     /// does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
-
-    /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
-    bool isSharedCompatible() const;
 
     bool supportsHardLinks() const override;
 
@@ -207,11 +214,6 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
-
-    std::string getObjectsKeyPrefix() const
-    {
-        return object_key_prefix;
-    }
 
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
@@ -259,6 +261,8 @@ private:
     bool tryReserve(UInt64 bytes);
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
+    const bool send_metadata;
+
     mutable std::mutex resource_mutex;
     String read_resource_name_from_config; // specified in disk config.xml read_resource element
     String write_resource_name_from_config; // specified in disk config.xml write_resource element
@@ -267,9 +271,9 @@ private:
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
     String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
     scope_guard resource_changes_subscription;
-    std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
+    std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
+
     UInt64 remove_shared_recursive_file_limit;
 };
 

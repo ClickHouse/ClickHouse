@@ -1,4 +1,4 @@
-#include <Dictionaries/DictionaryHelpers.h>
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -18,10 +18,10 @@ MutableColumns deserializeColumnsFromKeys(
     for (size_t index = start; index < end; ++index)
     {
         const auto & key = keys[index];
-        ReadBufferFromString in({key.data, key.size});
+        const auto * ptr = key.data;
 
         for (auto & result_column : result_columns)
-            result_column->deserializeAndInsertFromArena(in);
+            ptr = result_column->deserializeAndInsertFromArena(ptr);
     }
 
     return result_columns;

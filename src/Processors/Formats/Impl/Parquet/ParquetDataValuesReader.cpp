@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/Parquet/ParquetDataValuesReader.h>
+#include "ParquetDataValuesReader.h"
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -261,6 +261,7 @@ void ParquetPlainByteArrayValuesReader<TColumn>::readBatch(
             }
             else
             {
+                chars.push_back(0);
                 offset_data[cursor] = chars.size();
                 null_map.setNull(cursor);
             }
@@ -281,11 +282,15 @@ void ParquetPlainByteArrayValuesReader<TColumn>::readBatch(
                 null_map.setNull(cursor, count);
 
                 auto chars_size_bak = chars.size();
+                chars.resize(chars_size_bak + count);
+                memset(&chars[chars_size_bak], 0, count);
 
                 auto idx = cursor;
                 cursor += count;
-                for (; idx < cursor; ++idx)
-                    offset_data[idx] = chars_size_bak;
+                for (auto val_offset = chars_size_bak; idx < cursor; idx++)
+                {
+                    offset_data[idx] = ++val_offset;
+                }
             }
         }
     );
@@ -478,6 +483,7 @@ void ParquetRleDictReader<ColumnString>::readBatch(
     {
         for (auto limit = cursor + num; cursor < limit; cursor++)
         {
+            chars.push_back(0);
             offset_data[cursor] = chars.size();
             null_map.setNull(cursor);
         }

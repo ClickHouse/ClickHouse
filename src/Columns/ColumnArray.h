@@ -45,11 +45,11 @@ private:
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
 public:
-    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
-
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
+    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
         return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
@@ -74,17 +74,15 @@ public:
     size_t size() const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
@@ -123,7 +121,7 @@ public:
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -139,8 +137,6 @@ public:
     /** More efficient methods of manipulation */
     IColumn & getData() { return *data; }
     const IColumn & getData() const { return *data; }
-
-    size_t getSize(size_t n) const { return sizeAt(n); }
 
     IColumn & getOffsetsColumn() { return *offsets; }
     const IColumn & getOffsetsColumn() const { return *offsets; }
@@ -214,8 +210,9 @@ public:
     size_t getNumberOfDimensions() const;
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override { data->fixDynamicStructure(); }
 
     bool dynamicStructureEquals(const IColumn & rhs) const override
     {

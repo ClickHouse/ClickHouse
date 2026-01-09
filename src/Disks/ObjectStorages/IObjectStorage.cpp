@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -36,30 +35,25 @@ void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
-/// Read single object
-SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    size_t max_size_bytes,
-    std::optional<size_t> read_hint) const
-{
-    auto buffer = readObject(object, read_settings, read_hint);
-    SmallObjectDataWithMetadata result;
-    WriteBufferFromString out(result.data);
-    copyDataMaxBytes(*buffer, out, max_size_bytes);
-    out.finalize();
 
-    /// By default no metadata available, derived classes may override this method
-
-    return result;
-}
-
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     RelativePathsWithMetadata files;
     listObjects(path_prefix, files, max_keys);
 
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
+}
+
+std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
+{
+    try
+    {
+        return getObjectMetadata(path);
+    }
+    catch (...)
+    {
+        return {};
+    }
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
@@ -90,7 +84,7 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 
 const std::string & IObjectStorage::getCacheName() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const

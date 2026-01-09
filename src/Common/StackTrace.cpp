@@ -1,4 +1,4 @@
-#include <Common/StackTrace.h>
+#include "StackTrace.h"
 
 #include <base/FnTraits.h>
 #include <base/constexpr_helpers.h>
@@ -30,7 +30,7 @@
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
-#include <execinfo.h>
+#include "execinfo.h"
 #endif
 
 namespace
@@ -226,8 +226,6 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #elif defined(__loongarch64)
     return reinterpret_cast<void *>(context.uc_mcontext.__pc);
-#elif defined(__e2k__)
-    return reinterpret_cast<void *>(context.uc_mcontext.cr0_hi);
 #else
     return nullptr;
 #endif
@@ -296,7 +294,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
             current_frame.symbol = demangle(symbol->name);
 
         for (const auto & frame : inline_frames)
@@ -371,10 +369,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         /// Skip excessive stack frames that we have created while finding stack trace.
         for (size_t i = 0; i < size; ++i)
         {
-            if (frame_pointers[i] == caller_address ||
-                /// This compensates for a hack in libunwind, see the "+ 1" in
-                /// UnwindCursor<A, R>::stepThroughSigReturn.
-                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
+            if (frame_pointers[i] == caller_address)
             {
                 offset = i;
                 break;
@@ -382,12 +377,6 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         }
     }
 }
-
-StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
-    : size(size_)
-    , offset(offset_)
-    , frame_pointers(std::move(frame_pointers_))
-{}
 
 void StackTrace::tryCapture()
 {

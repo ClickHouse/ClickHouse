@@ -4,17 +4,16 @@ description: 'This engine provides an integration with the Azure Blob Storage ec
 sidebar_label: 'AzureQueue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/azure-queue
-title: 'AzureQueue table engine'
-doc_type: 'reference'
+title: 'AzureQueue Table Engine'
 ---
 
-# AzureQueue table engine
+# AzureQueue Table Engine
 
 This engine provides an integration with the [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
 
-## Create table {#creating-a-table}
+## Create Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE test (name String, value UInt32)
     ENGINE = AzureQueue(...)
     [SETTINGS]
@@ -59,7 +58,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
   ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
   SETTINGS
@@ -83,7 +82,7 @@ For more information about virtual columns see [here](../../../engines/table-eng
 
 ## Introspection {#introspection}
 
-Enable logging for the table via the table setting `enable_logging_to_queue_log=1`.
+Enable logging for the table via the table setting `enable_logging_to_s3queue_log=1`.
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 

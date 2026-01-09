@@ -68,8 +68,7 @@ public:
     virtual size_t getNestedTypeDefaultValueIndex() const = 0;  /// removeNullable()->getDefault() value index
     virtual bool canContainNulls() const = 0;
 
-    virtual size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in) = 0;
-    virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) = 0;
+    virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
 
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
@@ -116,7 +115,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for ColumnUnique.");
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer &) override
+    const char * deserializeAndInsertFromArena(const char *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for ColumnUnique.");
     }
@@ -163,7 +162,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePermutation is not supported for ColumnUnique.");
     }
 
-    std::vector<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
     }
@@ -186,16 +185,6 @@ public:
     bool hasEqualValues() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
-    }
-
-    ColumnPtr updateFrom(const IColumn::Patch &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for ColumnUnique.");
-    }
-
-    void updateInplaceFrom(const IColumn::Patch &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for ColumnUnique.");
     }
 
     /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its

@@ -23,12 +23,11 @@ struct EmptyImpl
 
     static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        ColumnString::Offset prev_offset = 0;
+        ColumnString::Offset prev_offset = 1;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            ColumnString::Offset next_offset = offsets[i];
-            res[i] = negative ^ (next_offset == prev_offset);
-            prev_offset = next_offset;
+            res[i] = negative ^ (offsets[i] == prev_offset);
+            prev_offset = offsets[i] + 1;
         }
     }
 

@@ -1,3 +1,0 @@
-<clickhouse>
-    <s3queue_disable_streaming>0</s3queue_disable_streaming>
-</clickhouse>

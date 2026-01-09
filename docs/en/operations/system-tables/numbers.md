@@ -4,7 +4,6 @@ description: 'System table containing a single UInt64 column named `number` that
 keywords: ['system table', 'numbers']
 slug: /operations/system-tables/numbers
 title: 'system.numbers'
-doc_type: 'reference'
 ---
 
 # system.numbers

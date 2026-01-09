@@ -3,9 +3,9 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Type
 
-from . import Job, Workflow
+from . import Workflow
 from .settings import Settings
 from .utils import MetaClasses, Shell, T
 
@@ -19,7 +19,6 @@ class _Environment(MetaClasses.Serializable):
     SHA: str
     PR_NUMBER: int
     EVENT_TYPE: str
-    EVENT_TIME: str
     JOB_OUTPUT_STREAM: str
     EVENT_FILE_PATH: str
     CHANGE_URL: str
@@ -39,11 +38,6 @@ class _Environment(MetaClasses.Serializable):
     LOCAL_RUN: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
-    JOB_CONFIG: Optional[Job.Config] = None
-    TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
-    WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    WORKFLOW_STATUS_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     name = "environment"
 
     @classmethod
@@ -60,20 +54,11 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
-        FORK_NAME = REPOSITORY
+        FORK_NAME = ""
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
-        EVENT_TIME = ""
-
-        assert Path(Settings.WORKFLOW_JOB_FILE).is_file(), f"File not found: {Settings.WORKFLOW_JOB_FILE}"
-        with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
-            WORKFLOW_JOB_DATA = json.load(f)
-
-        assert Path(Settings.WORKFLOW_STATUS_FILE).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
-        with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
-            WORKFLOW_STATUS_DATA = json.load(f)
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -91,9 +76,6 @@ class _Environment(MetaClasses.Serializable):
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
                 USER_LOGIN = github_event["pull_request"]["user"]["login"]
-                EVENT_TIME = github_event.get("pull_request", {}).get(
-                    "updated_at", None
-                )
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -107,7 +89,6 @@ class _Environment(MetaClasses.Serializable):
                 if len(parts) >= 2:
                     pr_str = parts[1].split()[0]
                     LINKED_PR_NUMBER = int(pr_str) if pr_str.isdigit() else 0
-                EVENT_TIME = github_event.get("repository", {}).get("updated_at", None)
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
                 SHA = os.getenv(
@@ -193,7 +174,6 @@ class _Environment(MetaClasses.Serializable):
             JOB_OUTPUT_STREAM=JOB_OUTPUT_STREAM,
             SHA=SHA,
             EVENT_TYPE=EVENT_TYPE,
-            EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
             CHANGE_URL=CHANGE_URL,
@@ -210,9 +190,6 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
-            JOB_KV_DATA={},
-            WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
-            WORKFLOW_STATUS_DATA=WORKFLOW_STATUS_DATA,
         )
 
     @classmethod
@@ -262,12 +239,13 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
-        assert pr_number > 0 or branch
+        assert pr_number or branch
         if pr_number:
             prefix = f"PRs/{pr_number}"
         else:
             prefix = f"REFs/{branch}"
         assert sha or latest
+        assert pr_number >= 0
         if latest:
             prefix += f"/latest"
         elif sha:

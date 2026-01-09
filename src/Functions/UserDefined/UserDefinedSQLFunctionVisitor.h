@@ -23,8 +23,8 @@ class UserDefinedSQLFunctionVisitor
 {
 public:
     static void visit(ASTPtr & ast, ContextPtr context_);
+
 private:
-    static void visit(IAST *, ContextPtr context_);
     static ASTPtr tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_);
 
 };

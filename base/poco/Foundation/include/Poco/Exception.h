@@ -84,7 +84,7 @@ public:
     /// The copy can later be thrown again by
     /// invoking rethrow() on it.
 
-    [[noreturn]] virtual void rethrow() const;
+    virtual void rethrow() const;
     /// (Re)Throws the exception.
     ///
     /// This is useful for temporarily storing a

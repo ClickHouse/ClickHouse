@@ -11,7 +11,6 @@
 #include <unordered_set>
 #include <future>
 #include <vector>
-#include <filesystem>
 
 namespace nuraft
 {
@@ -396,12 +395,6 @@ public:
     bool isInitialized() const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
-
-    static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
-
-    static void readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage);
-    static void spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog);
-    static std::string formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension);
 
     /// Fsync log to disk
     ~Changelog();

@@ -6,7 +6,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -28,7 +27,6 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Core/Settings.h>
 
 #include <stack>
@@ -84,22 +82,6 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         }
 
         return merge;
-    }
-
-    if (auto * reading = typeid_cast<ReadFromObjectStorageStep *>(step))
-    {
-        /// Already read-in-order, skip.
-        if (!allow_existing_order && reading->getQueryInfo().input_order_info)
-        {
-            return nullptr;
-        }
-
-        const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-        if (sorting_key.column_names.empty())
-        {
-            return nullptr;
-        }
-        return reading;
     }
 
     return nullptr;
@@ -442,12 +424,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with
-        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
-        /// supported only this direction, other cases are represented as nulls_direction==-1
-        /// Also actual for floating point values NaN.
-        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
-        if (column_is_nullable && sort_column_description.nulls_direction == -1)
+        /// Since sorting key columns are always sorted with NULLS LAST, reading in order
+        /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
+        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
+        if (column_is_nullable && sort_column_description.nulls_direction != sort_column_description.direction)
             break;
 
         /// Direction for current sort key.
@@ -832,25 +812,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
-    const ReadFromObjectStorageStep * reading,
-    const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
-    const SortDescription & description,
-    size_t limit)
-{
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    const auto & pk_column_names = sorting_key.column_names;
-
-    return buildInputOrderFromSortDescription(
-        fixed_columns,
-        dag, description,
-        sorting_key,
-        pk_column_names,
-        limit);
-}
-
-
-SortingInputOrder buildInputOrderFromSortDescription(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -891,21 +852,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMergeTree * reading,
-    const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
-    const Names & unordered_keys)
-{
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    const auto & sorting_key_columns = sorting_key.column_names;
-
-    return buildInputOrderFromUnorderedKeys(
-        fixed_columns,
-        dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
-}
-
-InputOrder buildInputOrderFromUnorderedKeys(
-    ReadFromObjectStorageStep * reading,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys)
@@ -1011,24 +957,6 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         return order_info.input_order;
     }
-    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
-    {
-        auto order_info = buildInputOrderFromSortDescription(
-            object_storage_step,
-            fixed_columns,
-            dag, description,
-            limit);
-
-        if (order_info.input_order)
-        {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
-            if (!can_read)
-            {
-                return nullptr;
-            }
-        }
-        return order_info.input_order;
-    }
 
     return nullptr;
 }
@@ -1079,23 +1007,6 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         if (order_info.input_order)
         {
             bool can_read = merge->requestReadingInOrder(order_info.input_order);
-            if (!can_read)
-                return {};
-        }
-
-        return order_info;
-    }
-
-    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
-    {
-        auto order_info = buildInputOrderFromUnorderedKeys(
-            object_storage_step,
-            fixed_columns,
-            dag, keys);
-
-        if (order_info.input_order)
-        {
-            bool can_read = object_storage_step->requestReadingInOrder(order_info.input_order);
             if (!can_read)
                 return {};
         }
@@ -1184,22 +1095,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
             return {};
 
         if (!merge->requestReadingInOrder(order_info.input_order))
-            return {};
-
-        return order_info;
-    }
-
-    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
-    {
-        auto order_info = buildInputOrderFromUnorderedKeys(
-            object_storage_step,
-            fixed_columns,
-            dag, keys);
-
-        if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
-            return {};
-
-        if (!object_storage_step->requestReadingInOrder(order_info.input_order))
             return {};
 
         return order_info;

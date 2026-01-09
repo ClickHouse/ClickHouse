@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 
 /* Trivial case */
 

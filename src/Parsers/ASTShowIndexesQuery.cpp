@@ -17,21 +17,22 @@ ASTPtr ASTShowIndexesQuery::clone() const
 
 void ASTShowIndexesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr
+    ostr << (settings.hilite ? hilite_keyword : "")
                   << "SHOW "
                   << (extended ? "EXTENDED " : "")
                   << "INDEXES"
-                 ;
+                  << (settings.hilite ? hilite_none : "");
 
-    ostr << " FROM " << backQuoteIfNeed(table);
+    ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
     if (!database.empty())
-        ostr << " FROM " << backQuoteIfNeed(database);
+        ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
 
     if (where_expression)
     {
-        ostr << " WHERE ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         where_expression->format(ostr, settings, state, frame);
     }
 }
 
 }
+

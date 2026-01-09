@@ -4,7 +4,6 @@ description: 'Computes an approximate quantile of a sample consisting of bfloat1
 sidebar_position: 171
 slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
 title: 'quantileBFloat16'
-doc_type: 'reference'
 ---
 
 # quantileBFloat16Weighted
@@ -17,7 +16,7 @@ The function is a fast quantile estimator with a relative error no more than 0.3
 
 **Syntax**
 
-```sql
+``` sql
 quantileBFloat16[(level)](expr)
 ```
 
@@ -41,7 +40,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 Input table has an integer and a float columns:
 
-```text
+``` text
 ┌─a─┬─────b─┐
 │ 1 │ 1.001 │
 │ 2 │ 1.002 │
@@ -52,13 +51,13 @@ Input table has an integer and a float columns:
 
 Query to calculate 0.75-quantile (third quartile):
 
-```sql
+``` sql
 SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
 ```
 
 Result:
 
-```text
+``` text
 ┌─quantileBFloat16(0.75)(a)─┬─quantileBFloat16(0.75)(b)─┐
 │                         3 │                         1 │
 └───────────────────────────┴───────────────────────────┘

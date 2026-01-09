@@ -4,7 +4,6 @@ description: 'Calculates the maximum from `value` array according to the keys sp
 sidebar_position: 165
 slug: /sql-reference/aggregate-functions/reference/maxmap
 title: 'maxMap'
-doc_type: 'reference'
 ---
 
 # maxMap
@@ -41,14 +40,14 @@ Alias: `maxMappedArrays`
 
 Query:
 
-```sql
+``` sql
 SELECT maxMap(a, b)
-FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]))
+FROM values('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]))
 ```
 
 Result:
 
-```text
+``` text
 ┌─maxMap(a, b)───────────┐
 │ [['x','y','z'],[2,3,1]]│
 └────────────────────────┘

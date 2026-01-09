@@ -5,10 +5,10 @@ env:
   PYTHONUNBUFFERED: 1
 
 "on":
-  schedule:
-    # Thursdays 15:55 UTC
-    # autorelease are done at the moment, and we'll have the whole Friday to fix any issues
-    - cron: '55 15 * * 4'
+  ### Disabled until the workflow will work ###
+  # schedule:
+  #   # Fridays 09:55 UTC
+  #   - cron: '55 9 * * 5'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -34,7 +34,7 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
+          DRY_RUN=${{ github.event.inputs.dry-run && '--dry-run' || '' }}
           ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK

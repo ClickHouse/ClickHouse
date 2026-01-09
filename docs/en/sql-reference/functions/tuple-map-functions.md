@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for Tuple Map Functions'
 sidebar_label: 'Maps'
+sidebar_position: 120
 slug: /sql-reference/functions/tuple-map-functions
 title: 'Map Functions'
-doc_type: 'reference'
 ---
 
 ## map {#map}
@@ -35,7 +35,7 @@ SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
 
 Result:
 
-```text
+``` text
 ┌─map('key1', number, 'key2', multiply(number, 2))─┐
 │ {'key1':0,'key2':0}                              │
 │ {'key1':1,'key2':2}                              │
@@ -76,7 +76,7 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 Query:
 
 ```sql
-SELECT mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
+select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 ```
 
 Result:
@@ -124,7 +124,7 @@ Keys and values can be quoted.
 **Syntax**
 
 ```sql
-extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character[, unexpected_quoting_character_strategy]]])
+extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character]]])
 ```
 
 Alias:
@@ -137,7 +137,6 @@ Alias:
 - `key_value_delimiter` - Single character delimiting keys and values. Defaults to `:`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `pair_delimiters` - Set of character delimiting pairs. Defaults to ` `, `,` and `;`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `quoting_character` - Single character used as quoting character. Defaults to `"`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: "invalid", "accept" and "promote". Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character.
 
 **Returned values**
 
@@ -148,12 +147,12 @@ Alias:
 Query
 
 ```sql
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') AS kv
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 ```
 
 Result:
 
-```Result:
+``` Result:
 ┌─kv──────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -162,83 +161,15 @@ Result:
 With a single quote `'` as quoting character:
 
 ```sql
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') AS kv
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 ```
 
 Result:
 
-```text
+``` text
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-unexpected_quoting_character_strategy examples:
-
-unexpected_quoting_character_strategy=invalid
-
-```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') AS kv;
-```
-
-```text
-┌─kv────────────────┐
-│ {'abc':'5'}  │
-└───────────────────┘
-```
-
-```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') AS kv;
-```
-
-```text
-┌─kv──┐
-│ {}  │
-└─────┘
-```
-
-unexpected_quoting_character_strategy=accept
-
-```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
-```
-
-```text
-┌─kv────────────────┐
-│ {'name"abc':'5'}  │
-└───────────────────┘
-```
-
-```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
-```
-
-```text
-┌─kv─────────────────┐
-│ {'name"abc"':'5'}  │
-└────────────────────┘
-```
-
-unexpected_quoting_character_strategy=promote
-
-```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
-```
-
-```text
-┌─kv──┐
-│ {}  │
-└─────┘
-```
-
-```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
-```
-
-```text
-┌─kv───────────┐
-│ {'abc':'5'}  │
-└──────────────┘
 ```
 
 Escape sequences without escape sequences support:
@@ -249,7 +180,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
 Result:
 
-```text
+``` text
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
 └────────────────────────┘
@@ -260,7 +191,7 @@ To restore a map string key-value pairs serialized with `toString`:
 ```sql
 SELECT
     map('John', '33', 'Paula', '31') AS m,
-    toString(m) AS map_serialized,
+    toString(m) as map_serialized,
     extractKeyValuePairs(map_serialized, ':', ',', '\'') AS map_restored
 FORMAT Vertical;
 ```
@@ -343,7 +274,7 @@ Result:
 Query with a tuple:
 
 ```sql
-SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) AS res, toTypeName(res) AS type;
+SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
 ```
 
 Result:
@@ -391,7 +322,7 @@ Result:
 Query with a tuple map:
 
 ```sql
-SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1])) AS res, toTypeName(res) AS type;
+SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1])) as res, toTypeName(res) as type;
 ```
 
 Result:
@@ -467,6 +398,47 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
+## mapContains {#mapcontains}
+
+Returns if a given key is contained in a given map.
+
+**Syntax**
+
+```sql
+mapContains(map, key)
+```
+
+**Arguments**
+
+- `map` — Map. [Map](../data-types/map.md).
+- `key` — Key. Type must match the key type of `map`.
+
+**Returned value**
+
+- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
+
+INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContains(a, 'name') FROM tab;
+
+```
+
+Result:
+
+```text
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
+```
+
 ## mapKeys {#mapkeys}
 
 Returns the keys of a given map.
@@ -510,26 +482,27 @@ Result:
 └───────────────────────┘
 ```
 
-## mapContains {#mapcontains}
+## mapValues {#mapvalues}
 
-Returns if a given key is contained in a given map.
+Returns the values of a given map.
+
+This function can be optimized by enabling setting [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns).
+With enabled setting, the function only reads the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn instead the whole map.
+The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
 
 **Syntax**
 
 ```sql
-mapContains(map, key)
+mapValues(map)
 ```
-
-Alias: `mapContainsKey(map, key)`
 
 **Arguments**
 
 - `map` — Map. [Map](../data-types/map.md).
-- `key` — Key. Type must match the key type of `map`.
 
 **Returned value**
 
-- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
+- Array containing all the values from `map`. [Array](../data-types/array.md).
 
 **Example**
 
@@ -540,17 +513,16 @@ CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
 
 INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
 
-SELECT mapContains(a, 'name') FROM tab;
-
+SELECT mapValues(a) FROM tab;
 ```
 
 Result:
 
 ```text
-┌─mapContains(a, 'name')─┐
-│                      1 │
-│                      0 │
-└────────────────────────┘
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
 ```
 
 ## mapContainsKeyLike {#mapcontainskeylike}
@@ -628,169 +600,6 @@ Result:
 │ {'abc':'abc'}              │
 │ {}                         │
 └────────────────────────────┘
-```
-
-## mapValues {#mapvalues}
-
-Returns the values of a given map.
-
-This function can be optimized by enabling setting [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns).
-With enabled setting, the function only reads the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn instead the whole map.
-The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
-
-**Syntax**
-
-```sql
-mapValues(map)
-```
-
-**Arguments**
-
-- `map` — Map. [Map](../data-types/map.md).
-
-**Returned value**
-
-- Array containing all the values from `map`. [Array](../data-types/array.md).
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
-
-INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
-
-SELECT mapValues(a) FROM tab;
-```
-
-Result:
-
-```text
-┌─mapValues(a)─────┐
-│ ['eleven','11']  │
-│ ['twelve','6.0'] │
-└──────────────────┘
-```
-
-## mapContainsValue {#mapcontainsvalue}
-
-Returns if a given key is contained in a given map.
-
-**Syntax**
-
-```sql
-mapContainsValue(map, value)
-```
-
-Alias: `mapContainsValue(map, value)`
-
-**Arguments**
-
-- `map` — Map. [Map](../data-types/map.md).
-- `value` — Value. Type must match the value type of `map`.
-
-**Returned value**
-
-- `1` if `map` contains `value`, `0` if not. [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
-
-INSERT INTO tab VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
-
-SELECT mapContainsValue(a, '11') FROM tab;
-
-```
-
-Result:
-
-```text
-┌─mapContainsValue(a, '11')─┐
-│                         1 │
-│                         0 │
-└───────────────────────────┘
-```
-
-## mapContainsValueLike {#mapcontainsvaluelike}
-
-**Syntax**
-
-```sql
-mapContainsValueLike(map, pattern)
-```
-
-**Arguments**
-- `map` — Map. [Map](../data-types/map.md).
-- `pattern`  - String pattern to match.
-
-**Returned value**
-
-- `1` if `map` contains `value` like specified pattern, `0` if not.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
-
-INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
-
-SELECT mapContainsValueLike(a, 'a%') FROM tab;
-```
-
-Result:
-
-```text
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
-```
-
-## mapExtractValueLike {#mapextractvaluelike}
-
-Give a map with string values and a LIKE pattern, this function returns a map with elements where the value matches the pattern.
-
-**Syntax**
-
-```sql
-mapExtractValueLike(map, pattern)
-```
-
-**Arguments**
-
-- `map` — Map. [Map](../data-types/map.md).
-- `pattern`  - String pattern to match.
-
-**Returned value**
-
-- A map containing elements the value matching the specified pattern. If no elements match the pattern, an empty map is returned.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tab (a Map(String, String)) ENGINE = Memory;
-
-INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
-
-SELECT mapExtractValueLike(a, 'a%') FROM tab;
-```
-
-Result:
-
-```text
-┌─mapExtractValueLike(a, 'a%')─┐
-│ {'abc':'abc'}                │
-│ {}                           │
-└──────────────────────────────┘
 ```
 
 ## mapApply {#mapapply}
@@ -1016,27 +825,27 @@ If the `func` function is specified, the sorting order is determined by the resu
 
 **Examples**
 
-```sql
+``` sql
 SELECT mapSort(map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-```text
+``` text
 ┌─map──────────────────────────┐
 │ {'key1':3,'key2':2,'key3':1} │
 └──────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-```text
+``` text
 ┌─map──────────────────────────┐
 │ {'key3':1,'key2':2,'key1':3} │
 └──────────────────────────────┘
 ```
 
-For more details see the [reference](/sql-reference/functions/array-functions#arraySort) for `arraySort` function. 
+For more details see the [reference](/sql-reference/functions/array-functions#sort) for `arraySort` function. 
 
 ## mapPartialSort {#mappartialsort}
 
@@ -1060,11 +869,11 @@ mapPartialSort([func,] limit, map)
 
 **Example**
 
-```sql
+``` sql
 SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 ```
 
-```text
+``` text
 ┌─mapPartialSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
 │ {'k2':1,'k3':2,'k1':3}                                                    │
 └───────────────────────────────────────────────────────────────────────────┘
@@ -1077,27 +886,27 @@ If the `func` function is specified, the sorting order is determined by the resu
 
 **Examples**
 
-```sql
+``` sql
 SELECT mapReverseSort(map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-```text
+``` text
 ┌─map──────────────────────────┐
 │ {'key3':1,'key2':2,'key1':3} │
 └──────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT mapReverseSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 ```
 
-```text
+``` text
 ┌─map──────────────────────────┐
 │ {'key1':3,'key2':2,'key3':1} │
 └──────────────────────────────┘
 ```
 
-For more details see function [arrayReverseSort](/sql-reference/functions/array-functions#arrayReverseSort).
+For more details see function [arrayReverseSort](/sql-reference/functions/array-functions#arrayreversesort).
 
 ## mapPartialReverseSort {#mappartialreversesort}
 
@@ -1121,21 +930,12 @@ mapPartialReverseSort([func,] limit, map)
 
 **Example**
 
-```sql
+``` sql
 SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 ```
 
-```text
+``` text
 ┌─mapPartialReverseSort(lambda(tuple(k, v), v), 2, map('k1', 3, 'k2', 1, 'k3', 2))─┐
 │ {'k1':3,'k3':2,'k2':1}                                                           │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->
