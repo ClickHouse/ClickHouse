@@ -544,9 +544,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 for (const auto & arg : aggregate.argument_names)
                     hash.update(arg);
             }
-            IASTHash query_hash;
-            query_hash.low64 = hash.get64();
-            query_hash.high64 = hash.get64();
+            IASTHash query_hash = getSipHash128AsPair(hash);
 
             pipeline.addSimpleTransform([&, query_hash, partial_aggregate_cache](const SharedHeader & header)
             {

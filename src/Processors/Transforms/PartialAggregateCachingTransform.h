@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Processors/Port.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Parsers/IASTHash.h>
 #include <Core/Block.h>
+#include <Core/UUID.h>
 
 #include <unordered_map>
 
