@@ -153,7 +153,7 @@ public:
     QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromPostgreSQL>(
-            getRequiredSourceColumns(),
+            requiredSourceColumns(),
             query_info,
             storage_snapshot,
             context,
