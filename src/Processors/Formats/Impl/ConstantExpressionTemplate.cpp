@@ -1,59 +1,62 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/SipHash.h>
-#include <Formats/FormatSettings.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Processors/Formats/IRowInputFormat.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/castColumn.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/CommonParsers.h>
-#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <boost/functional/hash.hpp>
+#include <Common/SipHash.h>
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+extern const int SYNTAX_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 
 struct SpecialParserType
 {
     SpecialParserType() = default;
-    explicit SpecialParserType(Field::Types::Which main_type_) : main_type(main_type_) {}
+    explicit SpecialParserType(Field::Types::Which main_type_)
+        : main_type(main_type_)
+    {
+    }
 
     Field::Types::Which main_type = Field::Types::String;
     bool is_nullable = false;
@@ -65,20 +68,25 @@ struct SpecialParserType
 
     bool useDefaultParser() const
     {
-        return main_type == Field::Types::String || (!nested_types.empty()
-            && std::all_of(
-                nested_types.begin(),
-                nested_types.end(),
-                [](const auto & type) { return type.first == Field::Types::String; }));
+        return main_type == Field::Types::String
+            || (!nested_types.empty()
+                && std::all_of(
+                    nested_types.begin(), nested_types.end(), [](const auto & type) { return type.first == Field::Types::String; }));
     }
 };
 
 struct LiteralInfo
 {
     using ASTLiteralPtr = boost::intrusive_ptr<ASTLiteral>;
-    LiteralInfo(const ASTLiteralPtr & literal_, const String & column_name_, bool force_nullable_)
-            : literal(literal_), dummy_column_name(column_name_), force_nullable(force_nullable_) { }
+    LiteralInfo(const ASTLiteralPtr & literal_, const LiteralTokenInfo & token_info_, const String & column_name_, bool force_nullable_)
+        : literal(literal_)
+        , token_info(token_info_)
+        , dummy_column_name(column_name_)
+        , force_nullable(force_nullable_)
+    {
+    }
     ASTLiteralPtr literal;
+    LiteralTokenInfo token_info; /// Token positions from parsing (for template construction)
     String dummy_column_name;
     /// Make column nullable even if expression type is not.
     /// (for literals in functions like ifNull and assumeNotNul, which never return NULL even for NULL arguments)
@@ -138,8 +146,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
             field_type = Field::Types::Map;
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type inside Array: {}. It's a bug",
-                            nested_type->getName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type inside Array: {}. It's a bug", nested_type->getName());
 
         if (is_nullable)
             nested_type = std::make_shared<DataTypeNullable>(nested_type);
@@ -148,15 +155,78 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
     }
 }
 
+/// Extracts token info for all literals in the AST in DFS order.
+/// This must be called on the ORIGINAL AST before cloning, because the token map
+/// contains pointers to original AST nodes.
+/// The resulting vector is indexed by DFS order and used during replacement on the cloned AST.
+static void extractLiteralTokens(
+    const ASTPtr & ast, const LiteralTokenMap & token_map, std::vector<std::optional<LiteralTokenInfo>> & result, ContextPtr context);
+
+static void extractLiteralTokensImpl(
+    const ASTPtr & ast, const LiteralTokenMap & token_map, std::vector<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
+{
+    if (auto * literal = ast->as<ASTLiteral>())
+    {
+        auto it = token_map.find(literal);
+        if (it != token_map.end())
+            result.push_back(it->second);
+        else
+            result.push_back(std::nullopt);
+        return;
+    }
+
+    if (auto * function = ast->as<ASTFunction>())
+    {
+        if (function->name == "lambda")
+            return;
+        if (function->name.starts_with("toInterval"))
+            return;
+
+        if (!function->arguments)
+            return;
+
+        FunctionOverloadResolverPtr builder = FunctionFactory::instance().get(function->name, context);
+        ColumnNumbers dont_visit_children = builder->getArgumentsThatAreAlwaysConstant();
+
+        for (size_t i = 0; i < function->arguments->children.size(); ++i)
+        {
+            if (std::find(dont_visit_children.begin(), dont_visit_children.end(), i) == dont_visit_children.end())
+                extractLiteralTokensImpl(function->arguments->children[i], token_map, result, context);
+        }
+        return;
+    }
+
+    if (ast->as<ASTQueryParameter>())
+        return;
+    if (ast->as<ASTIdentifier>())
+        return;
+}
+
+static void extractLiteralTokens(
+    const ASTPtr & ast, const LiteralTokenMap & token_map, std::vector<std::optional<LiteralTokenInfo>> & result, ContextPtr context)
+{
+    result.clear();
+    extractLiteralTokensImpl(ast, token_map, result, context);
+}
+
 /// Extracts ASTLiterals from expression, replaces them with ASTIdentifiers where needed
-/// and deduces data types for dummy columns by field type of literal
+/// and deduces data types for dummy columns by field type of literal.
+///
+/// Note: Token positions are extracted from the original AST before cloning via extractLiteralTokens(),
+/// then matched by DFS traversal order during replacement on the cloned AST.
 class ReplaceLiteralsVisitor
 {
 public:
     LiteralsInfo replaced_literals;
     ContextPtr context;
+    const std::vector<std::optional<LiteralTokenInfo>> & literal_tokens;
+    size_t literal_index = 0;
 
-    explicit ReplaceLiteralsVisitor(ContextPtr context_) : context(context_) { }
+    ReplaceLiteralsVisitor(ContextPtr context_, const std::vector<std::optional<LiteralTokenInfo>> & literal_tokens_)
+        : context(context_)
+        , literal_tokens(literal_tokens_)
+    {
+    }
 
     void visit(ASTPtr & ast, bool force_nullable)
     {
@@ -212,7 +282,13 @@ private:
         auto literal = boost::dynamic_pointer_cast<ASTLiteral>(ast);
         if (!literal)
             return false;
-        if (literal->begin && literal->end)
+
+        /// Get pre-extracted token info by DFS index (extracted from original AST before cloning)
+        if (literal_index >= literal_tokens.size())
+            return true;
+
+        const auto & token_info_opt = literal_tokens[literal_index++];
+        if (token_info_opt.has_value())
         {
             /// Do not replace empty array and array of NULLs
             if (literal->value.getType() == Field::Types::Array)
@@ -243,7 +319,7 @@ private:
             /// inserting named tuples with different names into another named
             /// tuple will result in only default values being inserted.
             String column_name = "-dummy-" + std::to_string(replaced_literals.size());
-            replaced_literals.emplace_back(literal, column_name, force_nullable);
+            replaced_literals.emplace_back(literal, token_info_opt.value(), column_name, force_nullable);
             setDataType(replaced_literals.back());
             ast = make_intrusive<ASTIdentifier>(column_name);
         }
@@ -277,7 +353,7 @@ private:
         {
             info.special_parser.is_array = true;
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            DataTypes nested_types = { assert_cast<const DataTypeArray &>(*info.type).getNestedType() };
+            DataTypes nested_types = {assert_cast<const DataTypeArray &>(*info.type).getNestedType()};
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeArray>(nested_types[0]);
         }
@@ -299,9 +375,7 @@ private:
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected literal type {}",
-                info.literal->value.getTypeName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type {}", info.literal->value.getTypeName());
 
         /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
         if (info.force_nullable && info.type->canBeInsideNullable())
@@ -316,29 +390,41 @@ private:
 /// Expression template is a sequence of tokens and data types of literals.
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
-ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, ContextPtr context)
+///
+/// NOTE: This function uses char* positions from LiteralTokenInfo to locate literals in the token stream.
+/// These positions point into the original query buffer which must remain valid during this call.
+ConstantExpressionTemplate::TemplateStructure::TemplateStructure(
+    LiteralsInfo & replaced_literals,
+    TokenIterator expression_begin,
+    TokenIterator expression_end,
+    ASTPtr & expression,
+    const IDataType & result_type,
+    bool null_as_default_,
+    ContextPtr context)
 {
     null_as_default = null_as_default_;
 
-    ::sort(replaced_literals.begin(), replaced_literals.end(), [](const LiteralInfo & a, const LiteralInfo & b)
-    {
-        return a.literal->begin.value() < b.literal->begin.value();
-    });
+    /// Sort literals by their position in the query string (char* comparison)
+    ::sort(
+        replaced_literals.begin(),
+        replaced_literals.end(),
+        [](const LiteralInfo & a, const LiteralInfo & b) { return a.token_info.begin < b.token_info.begin; });
 
     /// Make sequence of tokens and determine IDataType by Field::Types:Which for each literal.
     token_after_literal_idx.reserve(replaced_literals.size());
     special_parser.resize(replaced_literals.size());
     serializations.resize(replaced_literals.size());
 
-    TokenIterator prev_end = expression_begin;
+    TokenIterator cur = expression_begin;
     for (size_t i = 0; i < replaced_literals.size(); ++i)
     {
         const LiteralInfo & info = replaced_literals[i];
-        while (prev_end < info.literal->begin.value())
+
+        /// Collect tokens before this literal (compare char* positions)
+        while (cur < expression_end && cur->begin < info.token_info.begin)
         {
-            tokens.emplace_back(prev_end->begin, prev_end->size());
-            ++prev_end;
+            tokens.emplace_back(cur->begin, cur->size());
+            ++cur;
         }
         token_after_literal_idx.push_back(tokens.size());
 
@@ -346,15 +432,18 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 
         literals.insert({nullptr, info.type, info.dummy_column_name});
 
-        prev_end = info.literal->end.value();
+        /// Skip tokens that belong to this literal (until we're past the literal's end)
+        while (cur < expression_end && cur->begin < info.token_info.end)
+            ++cur;
 
         serializations[i] = info.type->getDefaultSerialization();
     }
 
-    while (prev_end < expression_end)
+    /// Collect remaining tokens after the last literal
+    while (cur < expression_end)
     {
-        tokens.emplace_back(prev_end->begin, prev_end->size());
-        ++prev_end;
+        tokens.emplace_back(cur->begin, cur->size());
+        ++cur;
     }
 
     addNodesToCastResult(result_type, expression, null_as_default);
@@ -363,9 +452,8 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
     if (actions_on_literals->hasArrayJoin())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Array joins are not allowed in constant expressions for IN, VALUES, LIMIT and similar sections.");
-
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Array joins are not allowed in constant expressions for IN, VALUES, LIMIT and similar sections.");
 }
 
 String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
@@ -393,17 +481,18 @@ String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
     return res.str();
 }
 
-size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
-                                                                      const LiteralsInfo & replaced_literals,
-                                                                      const DataTypePtr & result_column_type,
-                                                                      bool null_as_default,
-                                                                      const String & salt)
+size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(
+    const ASTPtr & expression,
+    const LiteralsInfo & replaced_literals,
+    const DataTypePtr & result_column_type,
+    bool null_as_default,
+    const String & salt)
 {
     /// TODO distinguish expressions with the same AST and different tokens (e.g. "CAST(expr, 'Type')" and "CAST(expr AS Type)")
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
-    expression->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
+    expression->updateTreeHash(hash_state, /*ignore_aliases=*/true);
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
@@ -420,31 +509,42 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
 }
 
 
-ConstantExpressionTemplate::TemplateStructurePtr
-ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & result_column_type,
-                                                           bool null_as_default,
-                                                           TokenIterator expression_begin,
-                                                           TokenIterator expression_end,
-                                                           const ASTPtr & expression_,
-                                                           ContextPtr context,
-                                                           bool * found_in_cache,
-                                                           const String & salt)
+ConstantExpressionTemplate::TemplateStructurePtr ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(
+    const DataTypePtr & result_column_type,
+    bool null_as_default,
+    TokenIterator expression_begin,
+    TokenIterator expression_end,
+    const ASTPtr & expression_,
+    ContextPtr context,
+    const LiteralTokenMap & token_map,
+    bool * found_in_cache,
+    const String & salt)
 {
     TemplateStructurePtr res;
+
+    /// Step 1: Extract token info from ORIGINAL AST before cloning
+    /// (the token_map contains pointers to original AST nodes)
+    std::vector<std::optional<LiteralTokenInfo>> literal_tokens;
+    extractLiteralTokens(expression_, token_map, literal_tokens, context);
+
+    /// Step 2: Clone the AST for modification
     ASTPtr expression = expression_->clone();
-    ReplaceLiteralsVisitor visitor(context);
+
+    /// Step 3: Replace literals using pre-extracted token info (matched by DFS order)
+    ReplaceLiteralsVisitor visitor(context, literal_tokens);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
-    size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
+    size_t template_hash
+        = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
     auto iter = cache.find(template_hash);
     if (iter == cache.end())
     {
         if (max_size <= cache.size())
             cache.clear();
-        res = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end,
-                                                  expression, *result_column_type, null_as_default, context);
+        res = std::make_shared<TemplateStructure>(
+            visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, null_as_default, context);
         cache.insert({template_hash, res});
         if (found_in_cache)
             *found_in_cache = false;
@@ -550,7 +650,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserTupleOfLiterals parser_tuple;
 
         IParser::Pos iterator(
-            token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+            token_iterator,
+            static_cast<unsigned>(settings[Setting::max_parser_depth]),
+            static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;
@@ -594,10 +696,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
                     nested_types[i] = nullable->getNestedType();
 
             WhichDataType nested_type_info(nested_types[i]);
-            bool are_types_compatible =
-                (nested_type_info.isNativeUInt() && nested_field_type == Type::UInt64) ||
-                (nested_type_info.isNativeInt()  && nested_field_type == Type::Int64)  ||
-                (nested_type_info.isFloat64()    && nested_field_type == Type::Float64);
+            bool are_types_compatible = (nested_type_info.isNativeUInt() && nested_field_type == Type::UInt64)
+                || (nested_type_info.isNativeInt() && nested_field_type == Type::Int64)
+                || (nested_type_info.isFloat64() && nested_field_type == Type::Float64);
 
             if (!are_types_compatible)
                 return false;
@@ -665,7 +766,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
     return true;
 }
 
-ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset)
+ColumnPtr
+ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset)
 {
     Block evaluated = structure->literals.cloneWithColumns(std::move(columns));
     columns = structure->literals.cloneEmptyColumns();
@@ -674,12 +776,19 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     structure->actions_on_literals->execute(evaluated);
 
     if (evaluated.empty() || evaluated.rows() != rows_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of rows mismatch after evaluation of batch of constant expressions: "
-                        "got {} rows for {} expressions", evaluated.rows(), rows_count);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of rows mismatch after evaluation of batch of constant expressions: "
+            "got {} rows for {} expressions",
+            evaluated.rows(),
+            rows_count);
 
     if (!evaluated.has(structure->result_column_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate template {}, block structure:\n{}",
-                        structure->result_column_name, evaluated.dumpStructure());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot evaluate template {}, block structure:\n{}",
+            structure->result_column_name,
+            evaluated.dumpStructure());
 
     rows_count = 0;
     auto res = evaluated.getByName(structure->result_column_name);
@@ -702,7 +811,8 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     return castColumn(res, expected_type);
 }
 
-void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)
+void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(
+    const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)
 {
     /// Replace "expr" with "CAST(expr, 'TypeName')"
     /// or with "(if(isNull(_dummy_0 AS _expression), defaultValueOfTypeName('TypeName'), _CAST(_expression, 'TypeName')), isNull(_expression))" if null_as_default is true
