@@ -111,7 +111,7 @@ public:
 
     ASTPtr getChild(const IAST & child) const
     {
-        for (const auto & node :children)
+        for (const auto & node : children)
             if (node.get() == &child)
                 return node;
 
