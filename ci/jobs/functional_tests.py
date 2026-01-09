@@ -154,22 +154,31 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
-            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
-            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif to.startswith("amd_") or to.startswith("arm_") or "llvm coverage" in to:
+            pass
+        elif (
+            to.startswith("amd_")
+            or to.startswith("arm_")
+            or "llvm coverage" in to
+        ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
+            pass
         else:
-            assert False, f"Unknown option [{to}]"
+            assert False, f"Unknown option [{to}]"           
+
+        if to in OPTIONS_TO_INSTALL_ARGUMENTS:
+            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
+            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+            else:
+                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+                print(
+                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+                )
 
         if "targeted" in to:
             is_targeted_check = True
