@@ -429,9 +429,21 @@ class Result(MetaClasses.Serializable):
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
-            full_command = f"pytest {command} --report-log={pytest_report_file}"
-            if logfile:
-                full_command += f" --log-file={logfile}"
+            try:
+                cmd_tokens = (command or "").split()
+                cmd_tokens = [
+                    t
+                    for t in cmd_tokens
+                    if not (t.startswith("--report-log=") or t.startswith("--log-file="))
+                ]
+                safe_command = " ".join(cmd_tokens).strip()
+            except Exception:
+                safe_command = command
+            full_command = (
+                f"pytest {safe_command} --report-log={pytest_report_file}"
+                if safe_command
+                else f"pytest --report-log={pytest_report_file}"
+            )
 
             # Apply environment
             for key, value in (env or {}).items():
