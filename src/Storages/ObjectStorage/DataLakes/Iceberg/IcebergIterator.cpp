@@ -104,8 +104,9 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
+            "{} deletes objects are not sorted by common_partition_specification and partition_key_value, "
             "beginning: {}, end: {}, position_deletes_objects size: {}",
+            is_equality_delete ? "Equality" : "Position",
             beg_it - deletes_objects.begin(),
             end_it - deletes_objects.begin(),
             deletes_objects.size());
@@ -118,16 +119,23 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
         assert(*previous_it);
         LOG_DEBUG(
             logger,
-            "Got {} {} delete elements for data file {}, first taken object info is {}, last taken object info is {}",
+            "Got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is {}, last taken "
+            "delete object info is {}",
             static_cast<size_t>(end_it - beg_it),
             is_equality_delete ? "equality" : "position",
             data_object_->file_path,
+            data_object_->dumpDeletesMatchingInfo(),
             (*beg_it)->dumpDeletesMatchingInfo(),
             (*previous_it)->dumpDeletesMatchingInfo());
     }
     else
     {
-        LOG_DEBUG(logger, "No {} delete elements for data file {}", is_equality_delete ? "equality" : "position", data_object_->file_path);
+        LOG_DEBUG(
+            logger,
+            "No {} delete elements for data file {}, taken data file object info: {}",
+            is_equality_delete ? "equality" : "position",
+            data_object_->file_path,
+            data_object_->dumpDeletesMatchingInfo());
     }
     return {beg_it, end_it};
 }
@@ -355,13 +363,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
-        auto position_delete_span = defineDeletesSpan(manifest_file_entry, position_deletes_files, false, logger);
-        for (const auto & position_delete : position_delete_span)
+        for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false, logger))
         {
             object_info->addPositionDeleteObject(position_delete);
         }
-        auto equality_delete_span = defineDeletesSpan(manifest_file_entry, equality_deletes_files, true, logger);
-        for (const auto & equality_delete : equality_delete_span)
+        for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files, true, logger))
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
