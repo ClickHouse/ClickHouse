@@ -67,18 +67,17 @@ def update_interserver_http_address(node, new_address):
 def started_cluster():
     try:
         cluster.start()
-
-        # Replace NODE_NAME placeholder with actual IP addresses in config
-        for node in [node1, node2]:
-            update_interserver_http_address(node, node.ip_address)
-
         yield cluster
+
     finally:
         cluster.shutdown()
 
 
 def test_replicated_database_uses_interserver_host(started_cluster):
     """Test that DatabaseReplicated uses interserver_http_host for replica registration."""
+
+    for node in [node1, node2]:
+        update_interserver_http_address(node, node.ip_address)
 
     node1.query(
         "CREATE DATABASE test_db ENGINE = Replicated('/clickhouse/databases/test_db', 'shard1', 'node1')"
