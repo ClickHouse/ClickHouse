@@ -1711,6 +1711,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+        if (database.get() != DatabaseCatalog::instance().tryGetDatabase(database_name).get())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "The database {} was dropped or renamed concurrently", database_name);
         assertOrSetUUID(create, database);
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
