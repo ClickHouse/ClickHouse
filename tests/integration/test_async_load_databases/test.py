@@ -146,6 +146,7 @@ def test_dependent_tables(started_cluster):
     query = node1.query
     query("drop database if exists a")
     query("create database a")
+    query("drop table if exists src")
     query("drop table if exists system.join")
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
