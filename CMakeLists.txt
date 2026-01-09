@@ -294,7 +294,8 @@ if (DISABLE_ALL_DEBUG_SYMBOLS)
 endif()
 
 if (OS_DARWIN)
-    set (DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -fstandalone-debug")
+    # On Darwin the optimizatiosns to reduce the debug size are off by default. `-fno-standalone-debug` enables them
+    set (DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -fno-standalone-debug")
 endif()
 
 # generate ranges for fast "addr2line" search
