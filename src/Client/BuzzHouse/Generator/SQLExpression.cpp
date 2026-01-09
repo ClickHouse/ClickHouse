@@ -137,7 +137,7 @@ void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelati
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol = estc->mutable_col();
 
-    if (!rel_col.rel_name.empty())
+    if (!rel_col.rel_name.empty() && rg.nextMediumNumber() < 86)
     {
         estc->mutable_table()->set_table(rel_col.rel_name);
     }
