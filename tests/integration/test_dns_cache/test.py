@@ -64,6 +64,8 @@ node8 = cluster.add_instance(
         "configs/remote_servers_with_disable_dns_setting.xml",
         "configs/listen_host.xml"
     ],
+    # Disable `with_remote_database_disk` as the `test_reload_cluster_config_if_host_address_change` may simulate DNS service outage, causing it to fail to start.
+    with_remote_database_disk=False,
     stay_alive=True,
     ipv6_address="2001:3984:3989::1:1118",
 )
