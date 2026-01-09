@@ -500,7 +500,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (rows_offset)
             col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows);
+            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache);
 
         num_read_discriminators = num_read_rows;
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
@@ -815,15 +815,6 @@ void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read value of {}: unexpected discriminator {}", variant_name, UInt64(global_discr));
     }
-}
-
-void SerializationVariant::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
-    auto global_discr = col.globalDiscriminatorAt(row_num);
-    writeBinaryLittleEndian(global_discr, ostr);
-    if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
-        variant_serializations[global_discr]->serializeForHashCalculation(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr);
 }
 
 namespace

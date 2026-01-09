@@ -149,32 +149,26 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
 {
     const size_t tuple_size = columns.size();
 
-    if (options.notFull(name_buf))
-    {
-        if (tuple_size > 1)
-            name_buf << "(";
-        else
-            name_buf << "tuple(";
-    }
+    String value_name {tuple_size > 1 ? "(" : "tuple("};
 
     DataTypes element_types;
     element_types.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+        const auto & [value, type] = columns[i]->getValueNameAndType(n);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << ")";
+    value_name += ")";
 
-    return std::make_shared<DataTypeTuple>(element_types);
+    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -199,17 +193,12 @@ void ColumnTuple::insertData(const char *, size_t)
 void ColumnTuple::insert(const Field & x)
 {
     const auto & tuple = x.safeGet<Tuple>();
-    const size_t tuple_size = columns.size();
 
+    const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
-        throw Exception(
-            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
-            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
-            tuple.size(),
-            tuple_size);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     ++column_length;
-
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
 }
@@ -247,17 +236,12 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
-    const size_t tuple_size = columns.size();
 
+    const size_t tuple_size = columns.size();
     if (src.columns.size() != tuple_size)
-        throw Exception(
-            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
-            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
-            src.columns.size(),
-            tuple_size);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     ++column_length;
-
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
@@ -272,15 +256,10 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
     const size_t tuple_size = columns.size();
     if (src_tuple.columns.size() != tuple_size)
-        throw Exception(
-            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
-            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
-            src_tuple.columns.size(),
-            tuple_size);
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
-
     column_length += length;
 }
 
@@ -329,7 +308,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -342,7 +321,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     StringRef res(begin, 0);
     for (const auto & column : columns)
     {
-        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
         res.data = value_ref.data - res.size;
         res.size += value_ref.size;
     }
@@ -350,28 +329,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
-StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    if (columns.empty())
-    {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
-    }
-
-    StringRef res(begin, 0);
-    for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
-    }
-
-    return res;
-}
-
-char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -380,12 +338,12 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
     }
 
     for (const auto & column : columns)
-        memory = column->serializeValueIntoMemory(n, memory);
+        memory = column->serializeValueIntoMemory(n, memory, settings);
 
     return memory;
 }
 
-std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
         return 1;
@@ -393,7 +351,7 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
     size_t res = 0;
     for (const auto & column : columns)
     {
-        auto element_size = column->getSerializedValueSize(n);
+        auto element_size = column->getSerializedValueSize(n, settings);
         if (!element_size)
             return std::nullopt;
         res += *element_size;
@@ -403,7 +361,7 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     ++column_length;
 
@@ -414,21 +372,7 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
     }
 
     for (auto & column : columns)
-        column->deserializeAndInsertFromArena(in);
-}
-
-void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    ++column_length;
-
-    if (columns.empty())
-    {
-        in.ignore(1);
-        return;
-    }
-
-    for (auto & column : columns)
-        column->deserializeAndInsertAggregationStateValueFromArena(in);
+        column->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
@@ -516,8 +460,8 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (limit == 0 && column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
+        if (column_length != perm.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column");
 
         return cloneResized(limit ? std::min(column_length, limit) : column_length);
     }
@@ -569,7 +513,7 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     if (columns.empty())
     {
@@ -926,6 +870,11 @@ void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column
         columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
+void ColumnTuple::fixDynamicStructure()
+{
+    for (auto & column : columns)
+        column->fixDynamicStructure();
+}
 
 ColumnPtr ColumnTuple::compress(bool force_compression) const
 {

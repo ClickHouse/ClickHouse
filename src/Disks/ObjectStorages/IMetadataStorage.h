@@ -12,7 +12,6 @@
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
@@ -26,6 +25,7 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
+struct PartitionCommand;
 
 /// Return the result of operation to the caller.
 /// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
@@ -53,16 +53,11 @@ using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOut
 class IMetadataTransaction : private boost::noncopyable
 {
 public:
-    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
-    void commit() { commit(NoCommitOptions{}); }
+    virtual void commit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) = 0; // NOLINT
 
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) // NOLINT
     {
         throwNotImplemented();
-    }
-    TransactionCommitOutcomeVariant tryCommit()
-    {
-        return tryCommit(NoCommitOptions{});
     }
 
     virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;
@@ -144,13 +139,18 @@ public:
 
     /// Metadata related methods
 
-    /// Create metadata file on paths with content consisting of objects
-    virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
+    /// Create empty file in metadata storage
+    virtual void createEmptyMetadataFile(const std::string & path) = 0;
+
+    virtual void createEmptyFile(const std::string & /* path */) {}
+
+    /// Create metadata file on paths with content (blob_name, size_in_bytes)
+    virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
 
     virtual bool supportAddingBlobToMetadata() { return false; }
     /// Add to new blob to metadata file (way to implement appends).
     /// If `addBlobToMetadata` is supported, `supportAddingBlobToMetadata` must return `true`
-    virtual void addBlobToMetadata(const std::string & /* path */, const StoredObject & /* object */)
+    virtual void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* key */, uint64_t /* size_in_bytes */)
     {
         throwNotImplemented();
     }
@@ -240,6 +240,8 @@ public:
         throwNotImplemented();
     }
 
+    virtual bool supportsPartitionCommand(const PartitionCommand & /* command */) const = 0;
+
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
@@ -322,9 +324,6 @@ public:
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
         ContextPtr /* context */) {}
-
-    /// Only support writing with Append if MetadataTransactionPtr created by `createTransaction` has `supportAddingBlobToMetadata`
-    virtual bool supportWritingWithAppend() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotImplemented()

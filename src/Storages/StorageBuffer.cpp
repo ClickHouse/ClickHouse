@@ -95,7 +95,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
 {
     return lockImpl(/* read= */true);
@@ -138,6 +137,11 @@ StoragePtr StorageBuffer::getDestinationTable() const
     return destination;
 }
 
+
+std::string StorageBuffer::Thresholds::toString() const
+{
+    return fmt::format("time={}, rows={}, bytes={}", time, rows, bytes);
+}
 
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
@@ -183,6 +187,8 @@ StorageBuffer::StorageBuffer(
             num_shards, 0, num_shards);
     }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
+
+    LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
 
 
@@ -348,36 +354,27 @@ void StorageBuffer::read(
             else
             {
                 auto src_table_query_info = query_info;
-                ActionsDAG converting_dag;
-                if (src_table_query_info.prewhere_info || src_table_query_info.row_level_filter)
-                {
-                    converting_dag = ActionsDAG::makeConvertingActions(
-                        header_after_adding_defaults.getColumnsWithTypeAndName(),
-                        header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name,
-                        local_context);
-                }
-
-                if (src_table_query_info.row_level_filter)
-                {
-                    auto row_level_filter = std::make_shared<FilterDAGInfo>();
-                    row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
-                    row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
-
-                    row_level_filter->actions = ActionsDAG::merge(
-                        converting_dag.clone(),
-                        src_table_query_info.row_level_filter->actions.clone());
-
-                    row_level_filter->actions.removeUnusedActions();
-                    src_table_query_info.row_level_filter = std::move(row_level_filter);
-                }
-
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
+                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
+
+                    auto actions_dag = ActionsDAG::makeConvertingActions(
+                            header_after_adding_defaults.getColumnsWithTypeAndName(),
+                            header.getColumnsWithTypeAndName(),
+                            ActionsDAG::MatchColumnsMode::Name);
+
+                    if (src_table_query_info.prewhere_info->row_level_filter)
+                    {
+                        src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
+                            actions_dag.clone(),
+                            std::move(*src_table_query_info.prewhere_info->row_level_filter));
+
+                        src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
+                    }
+
                     {
                         src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            converting_dag.clone(),
+                            actions_dag.clone(),
                             std::move(src_table_query_info.prewhere_info->prewhere_actions));
 
                         src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
@@ -411,8 +408,7 @@ void StorageBuffer::read(
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name,
-                            local_context);
+                            ActionsDAG::MatchColumnsMode::Name);
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
@@ -483,23 +479,23 @@ void StorageBuffer::read(
     }
     else
     {
-        if (query_info.row_level_filter)
-        {
-            ExpressionActionsSettings actions_settings(local_context);
-            auto actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone(), actions_settings);
-            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(
-                        header,
-                        actions,
-                        query_info.row_level_filter->column_name,
-                        query_info.row_level_filter->do_remove_column);
-            });
-        }
-
         if (query_info.prewhere_info)
         {
             ExpressionActionsSettings actions_settings(local_context);
+
+            if (query_info.prewhere_info->row_level_filter)
+            {
+                auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings);
+                pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                            header,
+                            actions,
+                            query_info.prewhere_info->row_level_column_name,
+                            false);
+                });
+            }
+
             auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -533,8 +529,7 @@ void StorageBuffer::read(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 result_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                local_context);
+                ActionsDAG::MatchColumnsMode::Name);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
@@ -742,7 +737,7 @@ public:
         insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
         least_busy_lock.unlock();
 
-        storage.reschedule();
+        storage.reschedule(0);
     }
 private:
     StorageBuffer & storage;
@@ -927,7 +922,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     if (flush_pool)
-        runner.emplace(*flush_pool, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
+        runner.emplace(*flush_pool, "BufferFlush");
     for (auto & buf : buffers)
     {
         if (runner)
@@ -1113,13 +1108,14 @@ void StorageBuffer::backgroundFlush()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    reschedule();
+    reschedule(BACKGROUND_RESCHEDULE_MIN_DELAY);
 }
 
-void StorageBuffer::reschedule()
+void StorageBuffer::reschedule(size_t min_delay)
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
-    time_t rows = 0;
+    size_t rows = 0;
+    size_t processed_buffers = 0;
 
     for (auto & buffer : buffers)
     {
@@ -1135,6 +1131,7 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
+            ++processed_buffers;
             if (!buffer.data.empty())
             {
                 min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
@@ -1145,15 +1142,37 @@ void StorageBuffer::reschedule()
 
     /// will be rescheduled via INSERT
     if (!rows)
+    {
+        LOG_TRACE(log, "Skipping reschedule (processed buffers: {})", processed_buffers);
         return;
+    }
 
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
-    size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 1);
-    flush_handle->scheduleAfter(std::min({min, max, flush}) * 1000);
+    /// checkThresholdsImpl() uses strict comparison (> not >=), so we need to add offset to original time values
+    static constexpr time_t THRESHOLD_COMPARISON_OFFSET = 1;
+
+    /// For minimal threshold min_delay is ignored, since otherwise it will be triggered too frequently, once it is reached
+    /// (while the Buffer cannot be flushed due to other min thresholds).
+    size_t min = std::max<ssize_t>(min_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, 1);
+    size_t max = std::max<ssize_t>(max_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
+    size_t reschedule_sec = 0;
+    if (flush_thresholds.time)
+    {
+        size_t flush = std::max<ssize_t>(flush_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
+        reschedule_sec = std::min({min, max, flush});
+    }
+    else
+    {
+        reschedule_sec = std::min({min, max});
+    }
+    /// Schedule flush in background immediately, otherwise in case of frequent INSERTs we will never schedule the background flush
+    if (reschedule_sec == 0)
+        flush_handle->schedule();
+    else
+        flush_handle->scheduleAfter(reschedule_sec * 1000);
+    LOG_TRACE(log, "Reschedule in {} sec (processed buffers: {}, rows in processed buffers: {}, time passed: {})", reschedule_sec, processed_buffers, rows, time_passed);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -1208,7 +1227,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 

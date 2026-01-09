@@ -68,6 +68,7 @@ private:
     bool processBuzzHouseQuery(const String & full_query);
     bool fuzzLoopReconnect();
 #endif
+    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 
     std::optional<CurrentThread::QueryScope> query_scope;

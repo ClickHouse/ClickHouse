@@ -3,6 +3,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
 #include <exception>
 #include <future>
 
@@ -13,8 +14,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
-
-enum class ThreadName : uint8_t;
 
 /// High-order function to run callbacks (functions with 'void()' signature) somewhere asynchronously.
 template <typename Result, typename Callback = std::function<Result()>>
@@ -27,13 +26,13 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
-ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
+ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, const std::string & thread_name)
 {
     return [my_pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name);
+            ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
 
             SCOPE_EXIT_SAFE(
             {
@@ -57,7 +56,7 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
 }
 
 template <typename Result, typename T>
-std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, ThreadName thread_name, Priority priority = {})
+std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, const std::string & thread_name, Priority priority = {})
 {
     auto schedule = threadPoolCallbackRunnerUnsafe<Result, T>(pool, thread_name);
     return schedule(std::move(task), priority); /// NOLINT
@@ -72,7 +71,7 @@ class ThreadPoolCallbackRunnerLocal final
     static_assert(!std::is_same_v<PoolT, GlobalThreadPool>, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
     PoolT & pool;
-    ThreadName thread_name;
+    std::string thread_name;
 
     enum TaskState
     {
@@ -102,7 +101,7 @@ class ThreadPoolCallbackRunnerLocal final
 
     /// Set promise result for non-void callbacks
     template <typename Function, typename FunctionResult>
-    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
+    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, const std::string & thread_name)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
@@ -110,7 +109,7 @@ class ThreadPoolCallbackRunnerLocal final
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
                 res = callback();
                 callback = {};
             }
@@ -125,14 +124,14 @@ class ThreadPoolCallbackRunnerLocal final
 
     /// Set promise result for void callbacks
     template <typename Function>
-    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
+    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, const std::string & thread_name)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
                 callback();
                 callback = {};
             }
@@ -146,7 +145,7 @@ class ThreadPoolCallbackRunnerLocal final
     }
 
 public:
-    ThreadPoolCallbackRunnerLocal(PoolT & pool_, ThreadName thread_name_)
+    ThreadPoolCallbackRunnerLocal(PoolT & pool_, const std::string & thread_name_)
         : pool(pool_)
         , thread_name(thread_name_)
     {
@@ -250,6 +249,8 @@ public:
         Disabled,
     };
 
+    /// TODO [parquet]: Add metrics for queue size and active threads, and maybe event for tasks executed.
+
     ThreadPoolCallbackRunnerFast();
 
     void initManual()
@@ -257,7 +258,7 @@ public:
         mode = Mode::Manual;
     }
 
-    void initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_);
+    void initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_);
 
     /// Manual or Disabled.
     explicit ThreadPoolCallbackRunnerFast(Mode mode_);
@@ -281,13 +282,10 @@ public:
     bool isIdle() const { return active_tasks.load(std::memory_order_relaxed) == 0; }
 
 private:
-    /// Stop thread if it had nothing to do for this long.
-    static constexpr UInt64 THREAD_IDLE_TIMEOUT_NS = 3'000'000; // 3 ms
-
     Mode mode = Mode::Disabled;
     ThreadPool * pool = nullptr;
     size_t max_threads = 0;
-    ThreadName thread_name;
+    std::string thread_name;
     ThreadGroupPtr thread_group;
 
     std::mutex mutex;
@@ -310,25 +308,6 @@ private:
 #else
     std::condition_variable queue_cv;
 #endif
-
-    /// We dynamically start more threads when queue grows and stop idle threads after a timeout.
-    ///
-    /// Interestingly, this is required for correctness, not just performance.
-    /// If we kept max_threads threads at all times, we may deadlock because the "threads" that we
-    /// schedule on ThreadPool are not necessarily running, they may be sitting in ThreadPool's
-    /// queue, blocking other "threads" from running. E.g. this may happen:
-    ///  1. Iceberg reader creates many parquet readers, and their ThreadPoolCallbackRunnerFast(s)
-    ///     occupy all slots in the shared ThreadPool (getFormatParsingThreadPool()).
-    ///  2. Iceberg reader creates some more parquet readers for positional deletes, using separate
-    ///     ThreadPoolCallbackRunnerFast-s (because the ones from above are mildly inconvenient to
-    ///     propagate to that code site). Those ThreadPoolCallbackRunnerFast-s make
-    ///     pool->scheduleOrThrowOnError calls, but ThreadPool just adds them to queue, no actual
-    ///     ThreadPoolCallbackRunnerFast::threadFunction()-s are started.
-    ///  3. The readers from step 2 are stuck because their ThreadPoolCallbackRunnerFast-s have no
-    ///     threads. The readers from step 1 are idle but not destroyed (keep occupying threads)
-    ///     because the iceberg reader is waiting for positional deletes to be read (by readers
-    ///     from step 2). We're stuck.
-    void startMoreThreadsIfNeeded(size_t active_tasks_, std::unique_lock<std::mutex> &);
 
     void threadFunction();
 };
@@ -360,9 +339,12 @@ private:
 ///     }
 /// }
 ///
-/// Fun fact: ShutdownHelper can almost be replaced with SharedMutex.
+/// Fun fact: ShutdownHelper can almost be replaced with std::shared_mutex.
 /// Background tasks would do try_lock_shared(). Shutdown would do lock() and never unlock.
-/// Alas, SharedMutex::try_lock_shared() is allowed to spuriously fail, so this doesn't work.
+/// Alas, std::shared_mutex::try_lock_shared() is allowed to spuriously fail, so this doesn't work.
+/// (In Common/SharedMutex.h, the futex-based implementation has reliable try_lock_shared(), but the
+/// fallback absl implementation can fail spuriously. In Common/CancelableSharedMutex.h there's
+/// another suitable futex-based linux-only implementation.)
 class ShutdownHelper
 {
 public:
@@ -392,7 +374,7 @@ private:
     std::condition_variable cv;
 };
 
-extern template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool & thread_pool, ThreadName thread_name);
+extern template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool &, const std::string &);
 extern template class ThreadPoolCallbackRunnerLocal<void>;
 
 }

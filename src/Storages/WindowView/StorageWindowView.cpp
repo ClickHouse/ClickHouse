@@ -56,7 +56,7 @@
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
-#include <Storages/WindowView/StorageBlocks.h>
+#include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -425,7 +425,7 @@ UInt32 StorageWindowView::getCleanupBound()
 ASTPtr StorageWindowView::getCleanupQuery()
 {
     ASTPtr function_less;
-    function_less= makeASTOperator(
+    function_less= makeASTFunction(
         "less",
         std::make_shared<ASTIdentifier>(window_id_name),
         std::make_shared<ASTLiteral>(getCleanupBound()));
@@ -522,7 +522,7 @@ void StorageWindowView::alter(
         new_metadata.columns = target_table_metadata->columns;
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 
     startup();
@@ -558,11 +558,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         /// SELECT * FROM inner_table WHERE window_id_name == w_end
         /// (because we fire at the end of windows)
-        filter_function = makeASTOperator("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
+        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
     }
     else
     {
-        auto func_array = makeASTOperator("array");
+        auto func_array = makeASTFunction("array");
         auto w_end = watermark;
         while (w_start < w_end)
         {
@@ -609,8 +609,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         builder.getHeader().getColumnsWithTypeAndName(),
         new_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        getContext());
+        ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
         std::move(convert_actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const SharedHeader & stream_header)
@@ -707,10 +706,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
         StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
-        auto context = getContext();
         InterpreterInsertQuery interpreter(
             insert,
-            context,
+            getContext(),
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
@@ -723,8 +721,8 @@ inline void StorageWindowView::fire(UInt32 watermark)
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
-            context,
-            context->getSettingsRef()[Setting::insert_null_as_default]);
+            getContext(),
+            getContext()->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
@@ -734,11 +732,10 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            context);
+            ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings(context, CompileExpressions::yes));
+            ExpressionActionsSettings(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -1175,10 +1172,7 @@ void StorageWindowView::read(
         if (!blocksHaveEqualStructure(*wv_header, *target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
-                target_header->getColumnsWithTypeAndName(),
-                wv_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name,
-                local_context);
+                target_header->getColumnsWithTypeAndName(), wv_header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
@@ -1521,7 +1515,7 @@ void StorageWindowView::writeIntoWindowView(
 
     if (lateness_bound > 0) /// Add filter, which leaves rows with timestamp >= lateness_bound
     {
-        auto filter_function = makeASTOperator(
+        auto filter_function = makeASTFunction(
             "greaterOrEquals",
             std::make_shared<ASTIdentifier>(window_view.timestamp_column_name),
             std::make_shared<ASTLiteral>(lateness_bound));
@@ -1677,8 +1671,7 @@ void StorageWindowView::writeIntoWindowView(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             builder.getHeader().getColumnsWithTypeAndName(),
             output->getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            local_context);
+            ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 

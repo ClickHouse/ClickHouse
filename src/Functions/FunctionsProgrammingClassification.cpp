@@ -116,22 +116,7 @@ using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<Funct
 
 REGISTER_FUNCTION(DetectProgrammingLanguage)
 {
-    FunctionDocumentation::Description description = R"(
-Determines the programming language from a given source code snippet.
-)";
-    FunctionDocumentation::Syntax syntax = "detectProgrammingLanguage('source_code')";
-    FunctionDocumentation::Arguments arguments = {
-        {"source_code", "String representation of the source code to analyze.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns programming language", {"String"}};
-    FunctionDocumentation::Examples examples = {
-        {"C++ code detection", "SELECT detectProgrammingLanguage('#include <iostream>')", "C++"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionDetectProgrammingLanguage>(documentation);
+    factory.registerFunction<FunctionDetectProgrammingLanguage>();
 }
 
 }

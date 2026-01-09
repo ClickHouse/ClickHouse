@@ -163,7 +163,7 @@ public:
     ~MergeTreeIndexBloomFilterText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const ActionsDAG::Node * predicate, ContextPtr context) const override;

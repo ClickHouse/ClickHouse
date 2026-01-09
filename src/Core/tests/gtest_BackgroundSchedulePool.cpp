@@ -8,7 +8,7 @@ using namespace DB;
 
 TEST(BackgroundSchedulePool, Schedule)
 {
-    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+    auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
 
     std::atomic<size_t> counter;
     std::mutex mutex;
@@ -36,7 +36,7 @@ TEST(BackgroundSchedulePool, Schedule)
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
 {
-    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+    auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
 
     std::atomic<size_t> counter;
     std::mutex mutex;
@@ -54,8 +54,10 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    std::unique_lock lock(mutex);
-    condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    {
+        std::unique_lock lock(mutex);
+        condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    }
 
     ASSERT_EQ(counter, ITERATIONS);
 
@@ -69,7 +71,7 @@ TEST(BackgroundSchedulePool, ActivateAfterTerminitePool)
     BackgroundSchedulePoolTaskHolder delayed_task;
 
     {
-        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+        auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
 
         task = pool->createTask("test", [&] {});
         delayed_task = pool->createTask("delayed_test", [&] {});
@@ -89,7 +91,7 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
     BackgroundSchedulePoolTaskHolder delayed_task;
 
     {
-        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+        auto pool = BackgroundSchedulePool::create(4, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
 
         task = pool->createTask("test", [&] {});
         delayed_task = pool->createTask("delayed_test", [&] {});

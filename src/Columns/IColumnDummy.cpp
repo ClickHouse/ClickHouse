@@ -26,7 +26,7 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-DataTypePtr IColumnDummy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+std::pair<String, DataTypePtr> IColumnDummy::getValueNameAndType(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
 }
@@ -41,7 +41,7 @@ bool IColumnDummy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
 }
 
-StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const
+StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings *) const
 {
     /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
     char * res = arena.allocContinue(1, begin);
@@ -49,7 +49,7 @@ StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, cha
     return { res, 1 };
 }
 
-void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in)
+void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ++s;
     in.ignore(1);
@@ -84,7 +84,7 @@ ColumnPtr IColumnDummy::index(const IColumn & indexes, size_t limit) const
     if (indexes.size() < limit)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required.");
 
-    return cloneDummy(limit ? limit : indexes.size());
+    return cloneDummy(limit ? limit : s);
 }
 
 void IColumnDummy::getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
@@ -102,7 +102,7 @@ ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const
     return cloneDummy(offsets.back());
 }
 
-MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns IColumnDummy::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");

@@ -34,8 +34,7 @@ FULL OUTER JOIN
         3 AS id,
         'www'
 ) AS right USING (id)
-WHERE empty(arr)
-ORDER BY id;
+WHERE empty(arr);
 
 DROP TABLE t_func_to_subcolumns_join;
 

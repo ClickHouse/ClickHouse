@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
@@ -16,8 +15,6 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/qvm/vec_traits.hpp>
-#include <base/scope_guard.h>
-#include <fmt/ranges.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -234,12 +231,6 @@ void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_r
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read from granule more than index_granularity.");
 }
 
-void MergeTreeRangeReader::Stream::checkNoDelayedRows() const
-{
-    if (stream.numDelayedRows() != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected no delayed rows (got {}).", stream.numDelayedRows());
-}
-
 size_t MergeTreeRangeReader::Stream::readRows(Columns & columns, size_t num_rows)
 {
     size_t rows_read = stream.read(columns, current_mark, offset_after_current_mark, num_rows);
@@ -339,11 +330,9 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
 
     if (num_rows_to_subtract > rows_per_granule.back())
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows (num_read_rows = {}, rows_per_granule = [{}])",
-                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, fmt::join(rows_per_granule, ", "));
-    }
+                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
+                        rows_per_granule.back(), num_rows_to_subtract);
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -952,7 +941,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
 {
     ReadResult result(log);
-    result.columns.resize(merge_tree_reader->getResultColumnCount());
+    result.columns.resize(merge_tree_reader->getColumns().size());
 
     size_t current_task_last_mark = getLastMark(ranges);
 
@@ -962,10 +951,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     std::optional<size_t> current_mark;
     if (!stream.isFinished())
         current_mark = stream.current_mark;
-
-    /// There should be no delayed rows from the previous read request.
-    /// (If it's so then the previous read request didn't call stream.finalize().)
-    stream.checkNoDelayedRows();
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
@@ -985,13 +970,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 result.addRange(ranges.front());
                 ranges.pop_front();
                 current_mark = stream.current_mark;
-            }
-
-            if (merge_tree_reader->canSkipMark(currentMark(), stream.stream.currentTaskLastMark()))
-            {
-                result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
-                stream.toNextMark();
-                continue;
             }
 
             size_t current_space = space_left;
@@ -1026,24 +1004,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     result.num_rows = result.numReadRows();
 
     updatePerformanceCounters(result.numReadRows());
-
-    if (merge_tree_reader->producesFilterOnly())
-    {
-        chassert(result.columns.size() == 1);
-
-        /// Use the filter column provided by the index reader, if available.
-        if (result.columns.front() != nullptr)
-        {
-            auto current_filter = FilterWithCachedCount(result.columns.front());
-            result.columns.clear();
-            result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
-        }
-        else
-        {
-            result.columns.clear();
-        }
-    }
-
     result.addNumBytesRead(getTotalBytesInColumns(result.columns));
 
     return result;
@@ -1447,7 +1407,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules());
 
-    if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
+    if (!prewhere_info)
         return;
 
     const auto & header = read_sample_block;

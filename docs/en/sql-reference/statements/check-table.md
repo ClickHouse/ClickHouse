@@ -4,7 +4,6 @@ sidebar_label: 'CHECK TABLE'
 sidebar_position: 41
 slug: /sql-reference/statements/check-table
 title: 'CHECK TABLE Statement'
-doc_type: 'reference'
 ---
 
 The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a specific table or its partitions. It ensures the integrity of the data by verifying the checksums and other internal data structures.
@@ -12,7 +11,7 @@ The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a
 Particularly it compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
 
 :::warning
-The `CHECK TABLE` query may read all the data in the table and hold some resources, making it resource-intensive.
+The `CHECK TABLE`` query may read all the data in the table and hold some resources, making it resource-intensive.
 Consider the potential impact on performance and resource utilization before executing this query.
 This query will not improve performance of the system and you should not execute it if you are not sure of what you are doing.
 :::

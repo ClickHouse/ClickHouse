@@ -12,7 +12,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_STATISTICS;
 }
 
 /// Constants chosen based on rolling dices.
@@ -26,7 +27,7 @@ static constexpr auto num_buckets = 2718uz;
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(removeLowCardinalityAndNullable(data_type_))
+    , data_type(removeNullable(data_type_))
 {
 }
 
@@ -87,10 +88,13 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    DataTypePtr inner_data_type = removeLowCardinalityAndNullable(data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'countmin' does not support type {}", data_type->getName());
 }
 
 StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

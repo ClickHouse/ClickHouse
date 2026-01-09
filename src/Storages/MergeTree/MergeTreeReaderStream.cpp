@@ -1,13 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <utility>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -44,8 +41,6 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , marks_loader(std::move(marks_loader_))
 {
 }
-
-MergeTreeReaderStream::~MergeTreeReaderStream() = default;
 
 void MergeTreeReaderStream::loadMarks()
 {
@@ -85,7 +80,7 @@ void MergeTreeReaderStream::init()
                 return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes, std::nullopt);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -106,7 +101,8 @@ void MergeTreeReaderStream::init()
             data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+                estimated_sum_mark_range_bytes,
+                std::nullopt), settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

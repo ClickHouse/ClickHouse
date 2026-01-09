@@ -60,8 +60,6 @@ struct ExplainPlanOptions
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
-    /// Add input headers to step.
-    bool input_headers = false;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -104,7 +102,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0, size_t max_description_length = 0) const;
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -142,10 +140,7 @@ public:
     void replaceNodeWithPlan(Node * node, QueryPlanPtr plan);
 
     QueryPlan extractSubplan(Node * subplan_root);
-    void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
-
-    static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
     struct SerializationFlags;
@@ -192,7 +187,6 @@ struct QueryPlanAndSets
     std::list<SetFromSubquery> sets_from_subquery;
 };
 
-std::string debugExplainStep(IQueryPlanStep & step);
-std::string debugExplainPlan(const QueryPlan & plan);
+std::string debugExplainStep(const IQueryPlanStep & step);
 
 }

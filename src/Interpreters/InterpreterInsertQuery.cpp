@@ -416,13 +416,11 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         }
     }
 
-    auto context = getContext();
     auto actions_dag = ActionsDAG::makeConvertingActions(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            context);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::yes));
+            ActionsDAG::MatchColumnsMode::Position);
+    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
@@ -431,16 +429,17 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota());
-        counting->setProcessListElement(context->getProcessListElement());
-        counting->setProgressCallback(context->getProgressCallback());
+        auto context_ptr = getContext();
+        auto counting = std::make_shared<CountingTransform>(in_header, context_ptr->getQuota());
+        counting->setProcessListElement(context_ptr->getProcessListElement());
+        counting->setProgressCallback(context_ptr->getProgressCallback());
 
         return counting;
     });
 
     pipeline.resize(1);
 
-    bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert;
+    bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert;
     if (should_squash)
     {
         pipeline.addSimpleTransform(
@@ -473,12 +472,23 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
-        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
+        async_insert, /*skip_destination_table*/ no_destination,
+        getContext());
 
-    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    size_t sink_streams_size = table->supportsParallelInsert() ? max_insert_threads : 1;
 
-    pipeline.resize(insert_dependencies->getSinkStreamSize());
+    if (!settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved())
+    {
+        sink_streams_size = 1;
+    }
+
+    std::vector<Chain> sink_chains;
+    for (size_t i = 0; i < sink_streams_size; ++i)
+    {
+        sink_chains.push_back(insert_dependencies->createChainWithDependencies());
+    }
+
+    pipeline.resize(sink_streams_size);
 
     if (should_squash)
     {
@@ -623,8 +633,6 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
         /// TODO: replace with QueryTree analysis after switching to analyzer completely
         return (!select_query->distinct
             && !select_query->limit_with_ties
-            && !select_query->prewhere()
-            && !select_query->where()
             && !select_query->groupBy()
             && !select_query->having()
             && !select_query->orderBy()
@@ -682,17 +690,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
     auto insert_dependencies = InsertDependenciesBuilder::create(
-        table,
-        query_ptr,
-        query_sample_block,
-        async_insert,
-        /*skip_destination_table*/ no_destination,
-        /*max_insert_threads*/ 1,
+        table, query_ptr, query_sample_block,
+        async_insert, /*skip_destination_table*/ no_destination,
         getContext());
 
-    auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
-    chassert(chains.size() == 1);
-    auto chain = std::move(chains.front());
+    Chain chain = insert_dependencies->createChainWithDependencies();
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
     {
@@ -743,14 +745,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 }
 
 
-std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
-    const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline>
+InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+    if (!dst_storage->isMergeTree() || !dst_storage->supportsReplication())
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
@@ -805,9 +807,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
 
-    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
-    auto extension = src_storage_cluster->getTaskIteratorExtension(
-        nullptr, nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr());
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, src_cluster);
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
@@ -851,23 +851,14 @@ BlockIO InterpreterInsertQuery::execute()
     const Settings & settings = context->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
-    StoragePtr table = getTable(query);
-
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        /// Allow inserts into external table engines (object storage, message queues, external databases)
-        /// as they don't create merge tasks on the server replica
-        bool is_external_storage =
-            table->isObjectStorage() ||     /// S3, Azure, GCS, HDFS, etc.
-            table->isDataLake() ||           /// Iceberg, DeltaLake, Hudi
-            table->isMessageQueue() ||       /// Kafka, RabbitMQ, NATS
-            table->isExternalDatabase();     /// MySQL, PostgreSQL, MongoDB, Hive, YTsaurus
-
-        if (!is_external_storage)
-            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
+
+    StoragePtr table = getTable(query);
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
@@ -903,7 +894,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())

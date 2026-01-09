@@ -4,7 +4,6 @@ sidebar_label: 'Query cache'
 sidebar_position: 65
 slug: /operations/query-cache
 title: 'Query cache'
-doc_type: 'guide'
 ---
 
 # Query cache
@@ -91,8 +90,7 @@ changed (see below) but doing so is not recommended for security reasons.
 
 Query results are referenced in the query cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of
 their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query. To
-make the matching more natural, all query-level settings related to the query cache and [output formatting](settings/settings-formats.md))
-are removed from the AST.
+make the matching more natural, all query-level settings related to the query cache are removed from the AST.
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
@@ -196,7 +194,7 @@ Also, results of queries with non-deterministic functions are not cached by defa
   [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
   [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
-  [`queryID()`](/sql-reference/functions/other-functions#queryID),
+  [`queryID()`](/sql-reference/functions/other-functions#queryid),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
 
 To force caching of results of queries with non-deterministic functions regardless, use setting

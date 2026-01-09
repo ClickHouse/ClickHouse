@@ -529,7 +529,7 @@ class CI:
         ),
         JobNames.DOCS_CHECK: JobConfig(
             digest=DigestConfig(
-                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py", "src/Core/ServerSettings.cpp"],
+                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
                 docker=["clickhouse/docs-builder"],
             ),
             run_command="docs_check.py",

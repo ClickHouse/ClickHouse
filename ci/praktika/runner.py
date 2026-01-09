@@ -1,4 +1,3 @@
-import dataclasses
 import glob
 import json
 import os
@@ -52,38 +51,10 @@ class Runner:
         pr = pr or -1
         if branch:
             pr = 0
-        digest_dockers = {}
-        for docker in workflow.dockers:
-            digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, workflow.dockers
-            )
-        workflow_config = RunConfig(
-            name=workflow.name,
-            digest_jobs={},
-            digest_dockers=digest_dockers,
-            sha="",
-            cache_success=[],
-            cache_success_base64=[],
-            cache_artifacts={},
-            cache_jobs={},
-            filtered_jobs={},
-            custom_data={},
-        )
-        # Extract repository name from git remote (format: owner/repo)
-        repo_url = Shell.get_output("git config --get remote.origin.url")
-        repo_name = ""
-        if repo_url:
-            # Handle both HTTPS and SSH formats
-            # HTTPS: https://github.com/owner/repo.git
-            # SSH: git@github.com:owner/repo.git
-            match = re.search(r"[:/]([^/]+/[^/]+?)(\.git)?$", repo_url)
-            if match:
-                repo_name = match.group(1)
-
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
-            REPOSITORY=repo_name,
+            REPOSITORY="",
             BRANCH=branch,
             SHA=sha or Shell.get_output("git rev-parse HEAD"),
             PR_NUMBER=pr if not branch else 0,
@@ -105,16 +76,25 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={
-                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                    "outputs": {
-                        "data": json.dumps(
-                            {"workflow_config": dataclasses.asdict(workflow_config)}
-                        )
-                    }
-                }
-            },
         ).dump()
+        workflow_config = RunConfig(
+            name=workflow.name,
+            digest_jobs={},
+            digest_dockers={},
+            sha="",
+            cache_success=[],
+            cache_success_base64=[],
+            cache_artifacts={},
+            cache_jobs={},
+            filtered_jobs={},
+            custom_data={},
+        )
+        for docker in workflow.dockers:
+            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, workflow.dockers
+            )
+
+        workflow_config.dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -227,10 +207,6 @@ class Runner:
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
-                        # Job report (phony artifact) is required only for a few jobs, introduced for seamless migration from legacy CI.
-                        # Copying it may fail if the dependency job was skipped due to a user's workflow filter hook.
-                        # We choose to ignore these errors, but a better solution would be to remove these types of artifacts or implement a consistent way of working with them. TODO.
-                        no_strict=artifact.is_phony(),
                     )
 
                     if artifact.compress_zst:
@@ -238,34 +214,18 @@ class Runner:
 
         return 0
 
-    def _run(
-        self,
-        workflow,
-        job,
-        docker="",
-        no_docker=False,
-        param=None,
-        test="",
-        count=None,
-        debug=False,
-        path="",
-        path_1="",
-        workers=None,
-    ):
+    def _run(self, workflow, job, docker="", no_docker=False, param=None, test=""):
         # re-set envs for local run
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
-        preserve_stdio = sys.stdout.isatty() and sys.stdin.isatty()
-        if preserve_stdio:
-            print("WARNING: Preserving stdio")
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_workflow_data().digest_dockers
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -276,9 +236,6 @@ class Runner:
                 Utils.raise_with_error(
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
-
-        if job.enable_gh_auth:
-            _GH_Auth(workflow=workflow)
 
         if job.run_in_docker and not no_docker:
             job.run_in_docker, docker_settings = (
@@ -295,7 +252,7 @@ class Runner:
             else:
                 docker_name, docker_tag = (
                     job.run_in_docker,
-                    RunConfig.from_workflow_data().digest_dockers[job.run_in_docker],
+                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
                 if Utils.is_arm():
                     docker_tag += "_arm"
@@ -318,22 +275,7 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
-            if job.enable_gh_auth:
-                # pass gh auth seamlessly into the docker container
-                gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
-            else:
-                gh_mount = ""
-            # enable tty mode & interactive for docker if we have real tty
-            tty = ""
-            if preserve_stdio:
-                tty = "-it"
-
-            # mount extra paths provided via --path_X  if they are outside current directory
-            extra_mounts = ""
-            for p_ in [path, path_1]:
-                if p_ and Path(p_).exists() and p_.startswith("/"):
-                    extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -345,31 +287,10 @@ class Runner:
         if test:
             print(f"Custom --test [{test}] will be passed to job's script")
             cmd += f" --test {test}"
-        if count is not None:
-            print(f"Custom --count [{count}] will be passed to job's script")
-            cmd += f" --count {count}"
-        if debug:
-            print(f"Custom --debug will be passed to job's script")
-            cmd += f" --debug"
-        if path:
-            print(f"Custom --path [{path}] will be passed to job's script")
-            cmd += f" --path {path}"
-        if path_1:
-            print(f"Custom --path_1 [{path_1}] will be passed to job's script")
-            cmd += f" --path_1 {path_1}"
-        if workers is not None:
-            print(f"Custom --workers [{workers}] will be passed to job's script")
-            cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(
-            cmd,
-            timeout=job.timeout,
-            preserve_stdio=preserve_stdio,
-            timeout_shell_cleanup=job.timeout_shell_cleanup,
-        ) as process:
+        with TeePopen(cmd, timeout=job.timeout) as process:
             start_time = Utils.timestamp()
-
             if Path((Result.experimental_file_name_static())).exists():
                 # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
                 Path(Result.experimental_file_name_static()).unlink()
@@ -475,14 +396,6 @@ class Runner:
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
-
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
             results_ = []
@@ -561,50 +474,18 @@ class Runner:
         if workflow.enable_cidb:
             print("Insert results to CIDB")
             try:
-                url_secret = workflow.get_secret(Settings.SECRET_CI_DB_URL)
-                user_secret = workflow.get_secret(Settings.SECRET_CI_DB_USER)
-                passwd_secret = workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD)
-                assert url_secret and user_secret and passwd_secret
-                # request all secret at once to avoid rate limiting
-                url, user, pwd = (
-                    url_secret.join_with(user_secret)
-                    .join_with(passwd_secret)
-                    .get_value()
-                )
                 ci_db = CIDB(
-                    url=url,
-                    user=user,
-                    passwd=pwd,
+                    url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
+                    user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
+                    passwd=workflow.get_secret(
+                        Settings.SECRET_CI_DB_PASSWORD
+                    ).get_value(),
                 ).insert(result, result_name_for_cidb=job.result_name_for_cidb)
             except Exception as ex:
                 traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
                 print(error)
                 info_errors.append(error)
-
-            try:
-                test_cases_result = result.get_sub_result_by_name(
-                    name=job.result_name_for_cidb
-                )
-                if test_cases_result and not test_cases_result.is_ok() and ci_db:
-                    for test_case_result in test_cases_result.results:
-                        if not test_case_result.is_ok():
-                            test_case_result.set_clickable_label(
-                                "cidb",
-                                ci_db.get_link_to_test_case_statistics(
-                                    test_case_result.name,
-                                    url=Settings.CI_DB_READ_URL,
-                                    user=Settings.CI_DB_READ_USER,
-                                    job_name=job.name,
-                                ),
-                            )
-                    result.dump()
-            except Exception as ex:
-                if not info_errors:
-                    traceback.print_exc()
-                    error = f"ERROR: Failed to set clickable label for test cases, exception [{ex}]"
-                    print(error)
-                    info_errors.append(error)
 
         if env.TRACEBACKS:
             result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
@@ -696,20 +577,6 @@ class Runner:
                 print(f"ERROR: Failed to merge the PR: [{e}]")
                 traceback.print_exc()
 
-        # finally, set the status flag for GH Actions
-        pipeline_status = Result.Status.SUCCESS
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = Result.Status.FAILED
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"pipeline_status={pipeline_status}",
-                file=f,
-            )
-
         return is_ok
 
     def run(
@@ -724,11 +591,6 @@ class Runner:
         pr=None,
         sha=None,
         branch=None,
-        count=None,
-        debug=False,
-        path="",
-        path_1="",
-        workers=None,
     ):
         res = True
         setup_env_code = -10
@@ -757,7 +619,7 @@ class Runner:
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
 
-        if res and (not local_run or ((pr or branch) and sha)):
+        if res and (not local_run or pr or sha or branch):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:
@@ -782,11 +644,6 @@ class Runner:
                     no_docker=no_docker,
                     param=param,
                     test=test,
-                    count=count,
-                    debug=debug,
-                    path=path,
-                    path_1=path_1,
-                    workers=workers,
                 )
                 res = run_code == 0
                 if not res:

@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -96,9 +95,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
 {
-    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
+    return values->getValueNameAndType(getValueIndex(n));
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -159,34 +158,24 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->getSerializedValueSize(getValueIndex(n), settings);
 }
 
-std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return values->getSerializedValueSize(getValueIndex(n));
-}
-
-void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in); });
-}
-
-void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertAggregationStateValueFromArena(in); });
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
 void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
@@ -906,9 +895,6 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     if (!column)
         return column;
 
-    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
-        return ColumnReplicated::create(recursiveRemoveSparse(column_replicated->getNestedColumn()), column_replicated->getIndexesColumn());
-
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
         auto columns = column_tuple->getColumns();
@@ -922,15 +908,6 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     }
 
     return column->convertToFullColumnIfSparse();
-}
-
-ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
-{
-    if (!column)
-        return column;
-
-    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
 }
 
 }

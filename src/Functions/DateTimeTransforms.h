@@ -93,20 +93,19 @@ struct ToDateImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        auto day_num = time_zone.toDayNum(t);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (day_num < 0)
-                day_num = 0;
-            else if (day_num > DATE_LUT_MAX_DAY_NUM)
-                day_num = DATE_LUT_MAX_DAY_NUM;
+            if (t < 0)
+                t = 0;
+            else if (t > MAX_DATE_TIMESTAMP)
+                t = MAX_DATE_TIMESTAMP;
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
+            if (t < 0 || t > MAX_DATE_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
         }
-        return static_cast<UInt16>(day_num);
+        return static_cast<UInt16>(time_zone.toDayNum(t));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2448,7 +2447,7 @@ struct Transformer
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                static_cast<double>(vec_from[i]), TypeName<ValueType>);
+                                vec_from[i], TypeName<ValueType>);
                         }
                     }
                 }
@@ -2486,24 +2485,10 @@ struct DateTimeTransformImpl
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
             WhichDataType result_data_type(result_type);
-            if (result_data_type.isDateTime() || result_data_type.isDateTime64())
+            if (result_data_type.isDateTime() || result_data_type.isDateTime64() || result_data_type.isTime() || result_data_type.isTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
-            }
-            else if (result_data_type.isTime() || result_data_type.isTime64())
-            {
-                const IDataType * from_type = arguments[0].type.get();
-                WhichDataType from_data_type(from_type);
-                const DateLUTImpl * tz_ptr = &DateLUT::instance();
-                if (from_data_type.isDateTime() || from_data_type.isDateTime64())
-                {
-                    const auto & tz_mixin = dynamic_cast<const TimezoneMixin &>(*from_type);
-                    if (tz_mixin.hasExplicitTimeZone())
-                        tz_ptr = &tz_mixin.getTimeZone();
-                }
-                const DateLUTImpl & tz = *tz_ptr;
-                Op::vector(sources->getData(), col_to->getData(), tz, transform, vec_null_map_to, input_rows_count);
             }
             else
             {

@@ -1,4 +1,10 @@
-<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>praktika report</title>
+    <style>
 
         /* Default (Day Theme) */
         :root {
@@ -335,38 +341,23 @@
             color: grey;
             font-weight: bold;
         }
-    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=theme-toggle>🔆️</span></div></footer><script>
-    // Track all interval timers for cleanup
-    const activeTimers = {
-        intervals: [],
-        addInterval: function(timer) {
-            this.intervals.push(timer);
-            return timer;
-        },
-        clearAll: function() {
-            this.intervals.forEach(clearInterval);
-            this.intervals = [];
-        }
-    };
+    </style>
+</head>
+<body>
+<div id="status-container"></div>
+<div id="result-container"></div>
+<button id="toggle-status-bar" onclick="toggleStatusBar()">‖</button>
 
-    // Track event listeners for cleanup
-    const activeListeners = {
-        listeners: [],
-        add: function(element, type, listener) {
-            element.addEventListener(type, listener);
-            this.listeners.push({ element, type, listener });
-            return listener;
-        },
-        removeAll: function() {
-            this.listeners.forEach(({ element, type, listener }) => {
-                if (element && element.removeEventListener) {
-                    element.removeEventListener(type, listener);
-                }
-            });
-            this.listeners = [];
-        }
-    };
+<footer id="footer">
+    <div class="left"></div>
+    <div class="right"></div>
+    <div class="settings">
+        <span id="status-filter-toggle"></span>
+        <span id="theme-toggle">🔆️</span>
+    </div>
+</footer>
 
+<script>
     function toggleTheme() {
         document.body.classList.toggle('night-theme');
         if (document.body.classList.contains('night-theme')) {
@@ -437,9 +428,9 @@
         localStorage.setItem('filter', newFilter);
         const toggle = document.getElementById('status-filter-toggle');
         if (toggle) {
-            const greenTick = `<img alt="all" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
-            const redCross = `<img alt="failures" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
-            const yellowExclamationMark = `<img alt="warnings" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
+            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
             toggle.innerHTML =
                 newFilter === 'failures' ? redCross :
                     newFilter === 'warnings' ? yellowExclamationMark :
@@ -1013,18 +1004,14 @@
         canvas.style.display = "block";
         widget.appendChild(canvas);
         
-        // Move taskRects to outer scope so event handlers can access it
-        let taskRects = [];
-
         function resizeCanvas() {
             canvas.width = widget.clientWidth;
             canvas.height = totalHeight;
             drawTimeline();
         }
         resizeCanvas();
-        // Use our event tracker instead of direct attachment
-        activeListeners.add(window, "resize", resizeCanvas);
-
+        window.addEventListener("resize", resizeCanvas);
+        
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
@@ -1036,7 +1023,7 @@
 
         function drawTimeline() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            taskRects = []; // Reset the array instead of declaring a new one
+            let taskRects = [];
             const failedMarkers = [];
 
             const minStartTime = runtimeCache.json0.start_time;
@@ -1080,9 +1067,9 @@
                 ctx.font = "8px sans-serif";
                 ctx.fillText("❌", Math.max(x - 14, 0), y + 4);
             });
-        }
 
-        activeListeners.add(canvas, "mousemove", (event) => {
+            // Event listeners
+        canvas.addEventListener("mousemove", (event) => {
             const rect = canvas.getBoundingClientRect();
             const mouseY = event.clientY - rect.top;
 
@@ -1094,17 +1081,17 @@
                 }
             }
 
-            if (hoveredTask && statusWidget?.update) {
-                statusWidget.update(
-                    hoveredTask.name,
-                    hoveredTask.status,
-                    hoveredTask.start_time,
-                    hoveredTask.duration
-                );
+                if (hoveredTask && statusWidget?.update) {
+                    statusWidget.update(
+                        hoveredTask.name,
+                        hoveredTask.status,
+                        hoveredTask.start_time,
+                        hoveredTask.duration
+                    );
             }
         });
 
-        activeListeners.add(canvas, "mouseleave", () => {
+        canvas.addEventListener("mouseleave", () => {
             if (statusWidget?.update && originalTask) {
                 statusWidget.update(
                     originalTask.name,
@@ -1114,10 +1101,10 @@
                 );
             }
         });
+        }
 
         drawTimeline();
-
-        activeTimers.addInterval(setInterval(drawTimeline, 5000));
+        setInterval(drawTimeline, 5000);
     }
 
     function addStatusWidget(name, status, start_time, duration, container = null) {
@@ -1125,6 +1112,7 @@
 
         // Widget container
         const widget = document.createElement('div');
+        const color = getComputedStyle(document.body).getPropertyValue('--table-border-color').trim();
         widget.className = 'status-widget'
 
         // Helper to create a line
@@ -1159,11 +1147,10 @@
                 const durationLine = document.createElement('div');
                 let seconds = Math.floor(Date.now() / 1000 - start_time);
                 durationLine.textContent = formatDuration(seconds, true);
-
-                activeTimers.addInterval(setInterval(() => {
+                setInterval(() => {
                     seconds++;
                     durationLine.textContent = formatDuration(seconds, true);
-                }, 1000));
+                }, 1000);
 
                 widget.appendChild(durationLine);
             } else {
@@ -1182,8 +1169,8 @@
     const columnSymbols = {
         // name: '🗂️',
         // status: '✅',
-        start_time: 'start time',
-        duration: 'duration',
+        start_time: 'start',
+        duration: 'dur',
         // info: '📝',
         files: '📎'
     };
@@ -1194,31 +1181,21 @@
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
 
-            let existing_columns = {};
-            columns.forEach(column => {
-                existing_columns[column] = results.some(result => result[column]);
-            });
-
-            // Build an ordered list of columns that actually exist
-            const existingColumnsList = columns.filter(column => existing_columns[column]);
-            const lastColumn = existingColumnsList[existingColumnsList.length - 1];
-
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
-            existingColumnsList.forEach(column => {
+            columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer';
                 th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                if (column === lastColumn) th.classList.add('time-column');
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existingColumnsList));
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, nest_level, existingColumnsList);
+            populateTableRows(tbody, results, nest_level);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -1228,25 +1205,20 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, nest_level, existingColumnsList) {
+    function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);
         // Clear existing rows
         tbody.innerHTML = '';
         const filter = localStorage.getItem('filter');
-        const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
             const labels = result?.ext?.labels;
-            const linklabels = result?.ext?.hlabels;
 
-            existingColumnsList.forEach(column => {
+            columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-
-                // Make the last column the expanding one regardless of its name
-                if (column === lastColumn) td.classList.add('time-column');
-
+                    
                 if (column === 'status') {
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
@@ -1283,12 +1255,6 @@
                         td.appendChild(link);
                     }
 
-                    // Create a container for labels and linklabels
-                    const labelsContainer = document.createElement('span');
-                    labelsContainer.className = 'labels-container';
-                    labelsContainer.style.userSelect = 'none'; // Prevent selection
-                    labelsContainer.style.marginLeft = '4px';
-
                     if (Array.isArray(labels)) {
                         labels.forEach(labelStr => {
                             const label = document.createElement('span');
@@ -1302,60 +1268,12 @@
                             label.style.fontWeight = 'bold';
                             label.style.display = 'inline-block';
                             label.style.verticalAlign = 'middle';
-                            labelsContainer.appendChild(label);
+                            td.appendChild(label);
                         });
-                    }
-
-                    if (Array.isArray(linklabels)) {
-                        linklabels.forEach(item => {
-                            let text, href;
-                            if (Array.isArray(item)) {
-                                [text, href] = item;
-                            } else if (item && typeof item === 'object') {
-                                text = item.text || item.label || '';
-                                href = item.href || item.url || '';
-                            } else if (typeof item === 'string') {
-                                text = item;
-                                href = '';
-                            }
-                            if (!text) return;
-                            if (href) {
-                                const a = document.createElement('a');
-                                a.textContent = text;
-                                a.href = href;
-                                a.target = '_blank';
-                                a.rel = 'noopener noreferrer';
-                                a.style.marginLeft = '6px';
-                                a.style.padding = '2px 8px';
-                                a.style.backgroundColor = stringToColor(text, true);
-                                a.style.color = 'white';
-                                a.style.fontSize = '12px';
-                                a.style.borderRadius = '8px';
-                                a.style.fontWeight = 'bold';
-                                a.style.display = 'inline-block';
-                                labelsContainer.appendChild(a);
-                            } else {
-                                const label = document.createElement('span');
-                                label.textContent = text;
-                                label.style.marginLeft = '6px';
-                                label.style.padding = '2px 8px';
-                                label.style.backgroundColor = stringToColor(text, true);
-                                label.style.color = 'white';
-                                label.style.fontSize = '12px';
-                                label.style.borderRadius = '8px';
-                                label.style.fontWeight = 'bold';
-                                label.style.display = 'inline-block';
-                                labelsContainer.appendChild(label);
-                            }
-                        });
-                    }
-
-                    // Only append if there are labels
-                    if (labelsContainer.childNodes.length > 0) {
-                        td.appendChild(labelsContainer);
                     }
 
                 } else if (column === 'start_time') {
+                    td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
 
                 } else if (column === 'duration') {
@@ -1445,7 +1363,7 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level, existingColumnsList) {
+    function sortTable(results, column, key, tbody, nest_level) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
@@ -1468,7 +1386,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, nest_level, existingColumnsList);
+        populateTableRows(tbody, results, nest_level);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {
@@ -1714,7 +1632,7 @@
         }
     }
 
-    async function fetchData(PR, REF, sha, nameParams, base_url) {
+    async function fetchData(PR, REF, sha, nameParams) {
         function normalizeTaskName(name) {
             return name.toLowerCase()
                 .replace(/[^a-z0-9]/g, '_')
@@ -1722,11 +1640,7 @@
                 .replace(/_+$/, '');
         }
 
-        // Use base_url from param if provided, else fallback to old logic
-        let baseUrl = base_url;
-        if (!baseUrl) {
-            baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
-        }
+        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
         let suffix = '';
 
         if (PR) {
@@ -1783,76 +1697,39 @@
     let openedInfoCnt = 0;
     let closedInfoCnt = 0;
     
-    async function renderResultsAuto(PR, REF, sha, nameParams, base_url) {
-        let autoRefreshTimer = null; // Store the main refresh interval timer
+    async function renderResultsAuto(PR, REF, sha, nameParams) {
 
         function clearPage() {
-            // First, clean up any existing timers and event listeners
-            activeTimers.clearAll();
-            activeListeners.removeAll();
-
-            // Then clear the DOM content
+            // Clear the main content areas
+            // document.getElementById('content').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
 
         async function checkForUpdatesAndRender(force = false) {
-            // Stop autoreload if info panels are open
-            if (openedInfoCnt - closedInfoCnt > 0) {
-                return;
-            }
-
-            // If not forced, only continue autoreload when status is "running" or "pending"
-            if (!force) {
-                let shouldContinue = false;
-
-                if (nameParams?.length === 1) {
-                    // For single-level results, check json0 status
-                    shouldContinue = ["running", "pending"].includes(runtimeCache?.json0?.status);
-                } else if (nameParams?.length === 2) {
-                    // For two-level results, check json1 status (or json0 if json1 is null)
-                    if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes(runtimeCache?.json1?.status);
-                    } else {
-                        // If json1 is null, we might still be loading, so continue
-                        shouldContinue = true;
-                    }
-                }
-
-                if (!shouldContinue) {
-                    console.log(`Auto-reload stopped: status is ${runtimeCache?.json0?.status || runtimeCache?.json1?.status || 'unknown'}`);
-                    return;
-                }
+            if (
+                !(nameParams?.length === 1 && ["running", "pending"].includes(runtimeCache?.json0?.status))
+                && !(nameParams?.length === 2 && ["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null)
+                && !force
+                || openedInfoCnt - closedInfoCnt > 0
+            ) {
+                return
             }
 
             const statusContainer = document.getElementById('status-container');
-            const scrollTop = statusContainer ? statusContainer.scrollTop : 0;
+            const scrollTop = statusContainer.scrollTop;
 
-            if (await fetchData(PR, REF, sha, nameParams, base_url)) {
-                // Clear timers, event listeners, and DOM before refreshing content
+            if (await fetchData(PR, REF, sha, nameParams)) {
                 clearPage();
-
-                // Rebuild the page with new data
                 await renderResults(PR, sha, nameParams);
 
-                // Restore scroll position
-                if (statusContainer) {
-                    statusContainer.scrollTop = scrollTop;
-                }
-
-                console.log(`Data refreshed at ${new Date().toLocaleTimeString()}`);
+                statusContainer.scrollTop = scrollTop;
             }
         }
 
-        // Initial render
-        await checkForUpdatesAndRender(true);
-
-        // Setup periodic refresh using our timer management
-        autoRefreshTimer = activeTimers.addInterval(setInterval(() => {
-            checkForUpdatesAndRender(false);
-        }, 30000));
-
+        await checkForUpdatesAndRender(true)
         console.log("Auto-reload started");
+        setInterval(checkForUpdatesAndRender, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1876,15 +1753,16 @@
         const PR = urlParams.get('PR');
         const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
-        const base_url = urlParams.get('base_url');
         const nameParams = [];
+
         urlParams.forEach((value, key) => {
             if (key.startsWith('name_')) {
                 const index = parseInt(key.split('_')[1], 10);
                 nameParams[index] = value;
             }
         });
-        await renderResultsAuto(PR, REF, sha, nameParams, base_url);
+
+        await renderResultsAuto(PR, REF, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
@@ -1943,4 +1821,6 @@
         link.href = faviconURL;
     }
     createFavicon();
-</script></body></html>
+</script>
+</body>
+</html>

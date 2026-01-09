@@ -11,7 +11,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <base/types.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -400,21 +399,17 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
 }
 
-/// This is ideologically wrong. We should only get it from the query plan optimization.
+/// This is idealogically wrong. We should only get it from the query plan optimization.
 std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
 {
     if (!query_info.query)
         return {};
 
-    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
-
-    if (lim_info.is_limit_length_negative || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
+    auto limit_length_and_offset = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+    if (!shouldPushdownLimit(query_info, limit_length_and_offset.first))
         return {};
 
-    if (!shouldPushdownLimit(query_info, lim_info.limit_length))
-        return {};
-
-    return lim_info.limit_length + lim_info.limit_offset;
+    return limit_length_and_offset.first + limit_length_and_offset.second;
 }
 
 }

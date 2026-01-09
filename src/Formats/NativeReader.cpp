@@ -90,29 +90,14 @@ void NativeReader::readData(
     ReadBuffer & istr,
     const FormatSettings * format_settings,
     size_t rows,
-    const NameAndTypePair * name_and_type,
-    ValueSizeMap * avg_value_size_hints_)
+    double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
     settings.format_settings = format_settings;
-
-    if (name_and_type != nullptr && avg_value_size_hints_ != nullptr)
-    {
-        settings.get_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path) -> double
-        {
-            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
-            return (*avg_value_size_hints_)[stream_name];
-        };
-
-        settings.update_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
-        {
-            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
-            IDataType::updateAvgValueSizeHint(column_, (*avg_value_size_hints_)[stream_name]);
-        };
-    }
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
@@ -152,7 +137,7 @@ Block NativeReader::read()
 
     /// Additional information about the block.
     if (server_revision > 0)
-        res.info.read(istr, server_revision);
+        res.info.read(istr);
 
     /// Dimensions
     size_t columns = 0;
@@ -263,9 +248,9 @@ Block NativeReader::read()
         /// If no rows, nothing to read.
         if (!skip_reading && rows)
         {
+            double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
             const auto * format = format_settings ? &*format_settings : nullptr;
-            NameAndTypePair name_and_type = {column.name, column.type};
-            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
+            readData(*serialization, read_column, istr, format, rows, avg_value_size_hint);
         }
 
         column.column = std::move(read_column);
@@ -370,6 +355,21 @@ Block NativeReader::read()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
+}
+
+void NativeReader::updateAvgValueSizeHints(const Block & block)
+{
+    auto rows = block.rows();
+    if (rows < 10)
+        return;
+
+    avg_value_size_hints.resize_fill(block.columns(), 0);
+
+    for (auto idx : collections::range(0, block.columns()))
+    {
+        auto & avg_value_size_hint = avg_value_size_hints[idx];
+        IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
+    }
 }
 
 }

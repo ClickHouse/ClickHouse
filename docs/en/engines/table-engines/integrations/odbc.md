@@ -3,13 +3,12 @@ description: 'Allows ClickHouse to connect to external databases via ODBC.'
 sidebar_label: 'ODBC'
 sidebar_position: 150
 slug: /engines/table-engines/integrations/odbc
-title: 'ODBC table engine'
-doc_type: 'reference'
+title: 'ODBC'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# ODBC table engine
+# ODBC
 
 <CloudNotSupportedBadge/>
 

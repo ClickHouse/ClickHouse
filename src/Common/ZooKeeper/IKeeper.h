@@ -1,13 +1,8 @@
 #pragma once
 
-#include <base/defines.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
-#include <map>
-#include <mutex>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <memory>
 #include <cstdint>
@@ -15,7 +10,6 @@
 #include <functional>
 
 #include <fmt/format.h>
-#include <Poco/Event.h>
 
 /** Generic interface for ZooKeeper-like services.
   * Possible examples are:
@@ -168,65 +162,10 @@ struct WatchResponse : virtual Response
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
+/// Passing watch callback as a shared_ptr allows to
+///  - avoid copying of the callback
+///  - registering the same callback only once per path
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
-using EventPtr = std::shared_ptr<Poco::Event>;
-struct TestKeeperRequest;
-struct WatchCallbackPtrOrEventPtr
-{
-private:
-    friend class IKeeper;
-    friend class ZooKeeper;
-    friend class TestKeeper;
-    friend struct TestKeeperRequest;
-
-    WatchCallbackPtr callback;
-    EventPtr event;
-
-    void operator()(WatchResponse response) const
-    {
-        if (callback)
-            (*callback)(response);
-        else if (event)
-            event->set();
-    }
-
-public:
-    WatchCallbackPtrOrEventPtr() = default;
-
-    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
-    WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
-
-    WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
-    WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
-    WatchCallbackPtrOrEventPtr & operator=(WatchCallbackPtrOrEventPtr &&) = default;
-    WatchCallbackPtrOrEventPtr & operator=(const WatchCallbackPtrOrEventPtr &) = default;
-
-    explicit operator bool() const
-    {
-        return static_cast<bool>(event) || static_cast<bool>(callback);
-    }
-
-    bool operator==(const WatchCallbackPtrOrEventPtr & rhs) const
-    {
-        return std::tie(callback, event) == std::tie(rhs.callback, rhs.event);
-    }
-
-    size_t hash() const
-    {
-        if (callback)
-        {
-            std::hash<Coordination::WatchCallbackPtr> hasher;
-            return hasher(callback);
-        }
-        if (event)
-        {
-            std::hash<Coordination::EventPtr> hasher;
-            return hasher(event);
-        }
-        return 0;
-    }
-};
-
 
 struct SetACLRequest : virtual Request
 {
@@ -269,7 +208,6 @@ struct CreateRequest : virtual Request
     bool is_ephemeral = false;
     bool is_sequential = false;
     ACLs acls;
-    bool include_stats = false;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -414,9 +352,6 @@ struct CheckRequest : virtual Request
 
     /// should it check if a node DOES NOT exist
     bool not_exists = false;
-
-    /// should it check node stat
-    std::optional<Stat> stat_to_check;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -591,9 +526,6 @@ public:
 
     virtual String tryGetAvailabilityZone() { return ""; }
 
-    using WatchCallbackCreator = std::function<WatchCallback()>;
-    WatchCallbackPtrOrEventPtr createWatchFromRawCallback(const String & id, const WatchCallbackCreator & creator);
-
     /// If the method will throw an exception, callbacks won't be called.
     ///
     /// After the method is executed successfully, you must wait for callbacks
@@ -628,12 +560,12 @@ public:
     virtual void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtrOrEventPtr watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtrOrEventPtr watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void set(
         const String & path,
@@ -645,7 +577,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void check(
         const String & path,
@@ -679,13 +611,6 @@ public:
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
-
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
-protected:
-    std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
 };
 
 }
@@ -697,12 +622,3 @@ template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::str
         return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
     }
 };
-
-template <> struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
-{
-    size_t operator()(const Coordination::WatchCallbackPtrOrEventPtr & self) const
-    {
-        return self.hash();
-    }
-};
-

@@ -63,15 +63,6 @@ void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num,
     }
 }
 
-void SerializationTuple::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    for (size_t element_index = 0; element_index < elems.size(); ++element_index)
-    {
-        const auto & serialization = elems[element_index];
-        serialization->serializeForHashCalculation(extractElementColumn(column, element_index), row_num, ostr);
-    }
-}
-
 
 template <typename ReturnType, typename F>
 static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
@@ -806,11 +797,9 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     auto mutable_column = column->assumeMutable();
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
+    settings.avg_value_size_hint = 0;
     for (size_t i = 0; i < elems.size(); ++i)
-    {
-        elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
-    }
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
 
     typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
 }

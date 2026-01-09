@@ -310,7 +310,8 @@ public:
         else
         {
             const char * begin = nullptr;
-            StringRef str_serialized = columns[0]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else
@@ -497,7 +498,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         }
 
-        if (!is_approx_top_k || params.size() == 1)
+        if (!is_approx_top_k)
         {
             reserved = threshold * load_factor;
         }

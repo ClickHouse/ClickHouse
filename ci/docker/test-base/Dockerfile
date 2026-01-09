@@ -56,7 +56,6 @@ RUN apt-get update \
         git \
         gperf \
         moreutils \
-        less \
         nasm \
         pigz \
         rename \

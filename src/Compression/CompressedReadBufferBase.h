@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Compression/LZ4_decompress_faster.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
 

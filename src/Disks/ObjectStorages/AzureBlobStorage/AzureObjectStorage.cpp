@@ -1,6 +1,5 @@
 #include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Common/setThreadName.h>
 #include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -12,9 +11,6 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
-
-#include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
@@ -62,7 +58,7 @@ public:
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
             CurrentMetrics::ObjectStorageAzureThreadsScheduled,
-            ThreadName::AZURE_LIST_POOL)
+            "ListObjectAzure")
         , client(client_)
     {
         options.Prefix = path_prefix;
@@ -97,7 +93,6 @@ private:
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     blob.Details.ETag.ToString(),
-                    {},
                     {}}));
         }
 
@@ -164,7 +159,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     }
 }
 
-ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
@@ -189,7 +184,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        blob_list_response = client_ptr->ListBlobs(options);
         const auto & blobs_list = blob_list_response.Blobs;
 
         for (const auto & blob : blobs_list)
@@ -202,23 +196,18 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     blob.Details.ETag.ToString(),
-                    {},
                     {}}));
         }
 
-        if (max_keys)
-        {
-            ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
-            if (keys_left <= 0)
-                break;
-            options.PageSizeHint = keys_left;
-        }
+        if (max_keys && children.size() >= max_keys)
+            break;
     }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
@@ -233,23 +222,6 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         read_settings.remote_read_buffer_restrict_seek,
         /* read_until_position */0);
 }
-
-SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    size_t max_size_bytes,
-    std::optional<size_t> read_hint) const
-{
-    auto buffer = readObject(object, read_settings, read_hint);
-    SmallObjectDataWithMetadata result;
-    WriteBufferFromString out(result.data);
-    copyDataMaxBytes(*buffer, out, max_size_bytes);
-    out.finalize();
-
-    result.metadata = dynamic_cast<ReadBufferFromAzureBlobStorage *>(buffer.get())->getObjectMetadataFromTheLastRequest();
-    return result;
-}
-
 
 /// Open the file for write and return WriteBufferFromFileBase object.
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
@@ -266,7 +238,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.azure_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
 
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
@@ -325,7 +297,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     }
 }
 
-ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
+ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
@@ -347,18 +319,6 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
     return result;
 }
 
-std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
-try
-{
-    return getObjectMetadata(path, with_tags);
-}
-catch (const Azure::Storage::StorageException & e)
-{
-    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-        return {};
-    throw;
-}
-
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
@@ -368,14 +328,14 @@ void AzureObjectStorage::copyObject( /// NOLINT
 {
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
-    auto object_metadata = getObjectMetadata(object_from.remote_path, false);
+    auto object_metadata = getObjectMetadata(object_from.remote_path);
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
     LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
+    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "AzureObjCopy");
 
     copyAzureBlobStorageFile(
         client_ptr,
@@ -417,6 +377,11 @@ void AzureObjectStorage::applyNewSettings(
     client.set(std::move(new_client));
 }
 
+
+ObjectStorageConnectionInfoPtr AzureObjectStorage::getConnectionInfo() const
+{
+    return DB::getAzureObjectStorageConnectionInfo(connection_params);
+}
 
 }
 

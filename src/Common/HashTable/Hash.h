@@ -541,6 +541,3 @@ struct IntHash32
 
 template <>
 struct DefaultHash<StringRef> : public StringRefHash {};
-
-template <>
-struct DefaultHash<std::string_view> : public StringViewHash {};

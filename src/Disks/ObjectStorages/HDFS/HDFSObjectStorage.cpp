@@ -75,6 +75,7 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
+    std::optional<size_t>,
     std::optional<size_t>) const
 {
     initializeHDFSFS();
@@ -150,27 +151,13 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const
-{
-    auto metadata = tryGetObjectMetadata(path, /*with_tags=*/ false);
-    if (!metadata.has_value())
-        throw Exception(ErrorCodes::HDFS_ERROR,
-                        "{} does not exist. Error: {}", path, hdfsGetLastError());
-    return metadata.value();
-}
-
-std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
     initializeHDFSFS();
     auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
     if (!file_info)
-    {
-        if (errno == ENOENT)
-            return {};
-
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
-    }
 
     ObjectMetadata metadata;
     metadata.size_bytes = static_cast<size_t>(file_info->mSize);
@@ -222,7 +209,6 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                     static_cast<uint64_t>(ls.file_info[i].mSize),
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
                     "",
-                    {},
                     {}}));
         }
 

@@ -15,7 +15,7 @@ IObjectStorageIteratorAsync::IObjectStorageIteratorAsync(
     CurrentMetrics::Metric threads_metric,
     CurrentMetrics::Metric threads_active_metric,
     CurrentMetrics::Metric threads_scheduled_metric,
-    ThreadName thread_name)
+    const std::string & thread_name)
     : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
     , list_objects_scheduler(threadPoolCallbackRunnerUnsafe<BatchAndHasNext>(list_objects_pool, thread_name))
 {

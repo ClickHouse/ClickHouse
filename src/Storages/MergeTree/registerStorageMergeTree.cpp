@@ -17,7 +17,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StatisticsDescription.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -56,7 +55,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
-    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace ServerSetting
@@ -220,7 +218,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 {
     chassert(isReplicated(engine_name));
 
-    bool is_extended_storage_def = engine_args.empty() || isExtendedStorageDef(query);
+    bool is_extended_storage_def = isExtendedStorageDef(query);
 
     if (is_extended_storage_def)
     {
@@ -248,6 +246,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     {
         bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+
 
         /// Get path and name from engine arguments
         auto * ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
@@ -391,7 +390,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 
-    bool is_extended_storage_def = args.engine_args.empty() || isExtendedStorageDef(args.query);
+    bool is_extended_storage_def = isExtendedStorageDef(args.query);
 
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
 
@@ -647,7 +646,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
-
+// tostartOfInterval disabling for primary key
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -656,7 +655,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             if (local_settings[Setting::create_table_empty_primary_key_by_default])
             {
-                args.storage_def->set(args.storage_def->order_by, makeASTOperator("tuple"));
+                args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
             }
             else
             {
@@ -694,8 +693,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
+        auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, context));
+            columns, partition_key, minmax_columns, primary_key_asts, context));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
@@ -760,21 +760,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
-
-        if (!statistics_types_str.empty())
-        {
-            addImplicitStatistics(metadata.columns, statistics_types_str);
-        }
-
         if (args.query.columns_list && args.query.columns_list->projections)
-        {
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
                 metadata.projections.add(std::move(projection));
             }
-        }
+
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
@@ -830,8 +822,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
+        auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, context));
+            columns, partition_key, minmax_columns, primary_key_asts, context));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)

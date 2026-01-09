@@ -47,7 +47,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
-    std::vector<MutableColumnPtr> scatter(size_t num_columns,
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns,
                                           const IColumn::Selector & selector) const override;
 
     void getExtremes(Field &, Field &) const override {}
@@ -63,7 +63,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     StringRef getDataAt(size_t) const override
     {
@@ -106,12 +106,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer &) override
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }

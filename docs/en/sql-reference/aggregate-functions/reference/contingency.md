@@ -6,7 +6,6 @@ description: 'The `contingency` function calculates the contingency coefficient,
 sidebar_position: 116
 slug: /sql-reference/aggregate-functions/reference/contingency
 title: 'contingency'
-doc_type: 'reference'
 ---
 
 # contingency
@@ -50,7 +49,7 @@ FROM
 Result:
 
 ```response
-┌─────cramersV(a, b)─┬──contingency(a, b)─┐
-│ 0.5798088336225178 │ 0.0817230766271248 │
-└────────────────────┴────────────────────┘
+┌──────cramersV(a, b)─┬───contingency(a, b)─┐
+│ 0.41171788506213564 │ 0.05812725261759165 │
+└─────────────────────┴─────────────────────┘
 ```

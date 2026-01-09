@@ -260,7 +260,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d) + daynum_offset_epoch);
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -314,7 +314,7 @@ public:
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
-    static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
+    static auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 

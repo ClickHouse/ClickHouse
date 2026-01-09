@@ -58,7 +58,52 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
     bool isReadOnly() const override { return true; }
+};
+
+class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
+{
+private:
+    DiskPtr disk;
+    const MetadataStorageFromStaticFilesWebServer & metadata_storage;
+
+public:
+    explicit MetadataStorageFromStaticFilesWebServerTransaction(
+        const MetadataStorageFromStaticFilesWebServer & metadata_storage_)
+        : metadata_storage(metadata_storage_)
+    {}
+
+    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
+
+    void createEmptyMetadataFile(const std::string & /* path */) override
+    {
+        /// No metadata, no need to create anything.
+    }
+
+    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
+    {
+        /// Noop
+    }
+
+    void createDirectory(const std::string & path) override;
+
+    void createDirectoryRecursive(const std::string & path) override;
+
+    void commit(const TransactionCommitOptionsVariant &) override
+    {
+        /// Nothing to commit.
+    }
+
+    bool supportsChmod() const override { return false; }
+
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
+    {
+        if (metadata_storage.existsFileOrDirectory(path))
+            return metadata_storage.getStorageObjects(path);
+        return std::nullopt;
+    }
 };
 
 }

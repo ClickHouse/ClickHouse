@@ -9,7 +9,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -62,7 +61,6 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
 
     return key_values;
 }
-
 NamesAndTypesList extractHivePartitionColumnsFromPath(
     const ColumnsDescription & storage_columns,
     const std::string & sample_path,
@@ -85,10 +83,9 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
-            if (const auto type = tryInferDataTypeByEscapingRule(
-                    value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
+            if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
             {
-                if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
+                if (type->canBeInsideLowCardinality())
                 {
                     hive_partition_columns_to_read_from_file_path.emplace_back(key, std::make_shared<DataTypeLowCardinality>(type));
                 }
@@ -134,23 +131,17 @@ void addPartitionColumnsToChunk(
     }
 }
 
-void sanityCheckSchemaAndHivePartitionColumns(
-    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
-    const ColumnsDescription & storage_columns,
-    bool check_contained_in_schema)
+void sanityCheckSchemaAndHivePartitionColumns(const NamesAndTypesList & hive_partition_columns_to_read_from_file_path, const ColumnsDescription & storage_columns)
 {
-    if (check_contained_in_schema)
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
     {
-        for (const auto & column : hive_partition_columns_to_read_from_file_path)
+        if (!storage_columns.has(column.name))
         {
-            if (!storage_columns.has(column.name))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "All hive partitioning columns must be present in the schema. Missing column: {}. "
-                    "If you do not want to use hive partitioning, try `use_hive_partitioning=0` and/or `partition_strategy != hive`",
-                    column.name);
-            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "All hive partitioning columns must be present in the schema. Missing column: {}. "
+                "If you do not want to use hive partitioning, try `use_hive_partitioning=0` and/or `partition_strategy != hive`",
+                column.name);
         }
     }
 
@@ -205,13 +196,12 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
      * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
      * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
      */
-    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-        sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */true);
-    }
-    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
-    {
+     if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+     {
+         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+     }
+     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
+     {
         extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
             hive_partition_columns_to_read_from_file_path,
@@ -219,32 +209,33 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
             inferred_schema,
             format_settings,
             context);
-        sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);
-    }
+     }
 
-    if (configuration->partition_columns_in_data_file)
-    {
-        file_columns = columns.getAllPhysical();
-    }
-    else
-    {
-        std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
+     sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
 
-        for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
-        {
-            hive_partition_columns_to_read_from_file_path_set.insert(name);
-        }
+     if (configuration->partition_columns_in_data_file)
+     {
+         file_columns = columns.getAllPhysical();
+     }
+     else
+     {
+         std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
 
-        for (const auto & [name, type] : columns.getAllPhysical())
-        {
-            if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
-            {
-               file_columns.emplace_back(name, type);
-            }
-        }
-    }
+         for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
+         {
+             hive_partition_columns_to_read_from_file_path_set.insert(name);
+         }
 
-    return {hive_partition_columns_to_read_from_file_path, file_columns};
+         for (const auto & [name, type] : columns.getAllPhysical())
+         {
+             if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
+             {
+                file_columns.emplace_back(name, type);
+             }
+         }
+     }
+
+     return {hive_partition_columns_to_read_from_file_path, file_columns};
 }
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStorage(
@@ -268,7 +259,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
             context);
     }
 
-    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);
+    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
 
     /// Partition strategy is not implemented for File/URL storages,
     /// so there is no option to set whether hive partition columns are in the data file or not.

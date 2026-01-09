@@ -95,7 +95,7 @@ struct ReadSettings
     bool enable_hdfs_pread = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
-    ReadSettings withNestedBuffer(bool seekable = false) const;
+    ReadSettings withNestedBuffer() const;
 };
 
 ReadSettings getReadSettings();

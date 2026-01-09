@@ -328,11 +328,8 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
         switch (choice.merge_type)
         {
             case MergeType::Regular:
-            case MergeType::TTLDrop:
-            {
-                /// Do not update anything for regular and drop merges.
+                /// Do not update anything for regular merge.
                 return;
-            }
             case MergeType::TTLDelete:
             {
                 next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
@@ -347,10 +344,8 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
                 return;
             }
             case MergeType::TTLRecompress:
-            {
                 next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
                 return;
-            }
         }
     }
 }

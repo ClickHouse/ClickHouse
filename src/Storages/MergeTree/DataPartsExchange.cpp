@@ -379,7 +379,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     static const UInt32 wait_timeout_ms = 1000;
     auto pred = [&] ()
     {
-        auto lock = data.readLockParts();
+        auto lock = data.lockParts();
         return part->getState() != MergeTreeDataPartState::PreActive;
     };
 
@@ -469,14 +469,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 if (data_disk->supportZeroCopyReplication())
                 {
                     LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), data_disk->getDataSourceDescription().toString());
-                    capability.push_back(data_disk->getDataSourceDescription().name());
+                    capability.push_back(data_disk->getDataSourceDescription().toString());
                 }
             }
         }
         else if (disk->supportZeroCopyReplication())
         {
             LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
-            capability.push_back(disk->getDataSourceDescription().name());
+            capability.push_back(disk->getDataSourceDescription().toString());
         }
     }
 
@@ -523,7 +523,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            if (disk_candidate->getDataSourceDescription().name() == remote_fs_metadata)
+            if (disk_candidate->getDataSourceDescription().toString() == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;

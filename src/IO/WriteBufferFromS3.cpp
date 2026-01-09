@@ -630,12 +630,6 @@ void WriteBufferFromS3::completeMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
 
-    if (!write_settings.object_storage_write_if_none_match.empty())
-        req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
-
-    if (!write_settings.object_storage_write_if_match.empty())
-        req.SetIfMatch(write_settings.object_storage_write_if_match);
-
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
@@ -708,12 +702,6 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
         req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
-
-    if (!write_settings.object_storage_write_if_none_match.empty())
-        req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
-
-    if (!write_settings.object_storage_write_if_match.empty())
-        req.SetIfMatch(write_settings.object_storage_write_if_match);
 
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");

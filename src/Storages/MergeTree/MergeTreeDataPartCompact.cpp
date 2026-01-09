@@ -36,7 +36,6 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -48,7 +47,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
 {
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
-        storage_snapshot, storage_settings, uncompressed_cache,
+        storage_snapshot, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
@@ -113,7 +112,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
 
-    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {});
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {}, {});
     if (!buffer)
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,

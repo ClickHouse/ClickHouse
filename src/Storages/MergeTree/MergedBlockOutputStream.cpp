@@ -147,6 +147,20 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
             file->sync();
     }
 
+    /// TODO: this code looks really stupid. It's because DiskTransaction is
+    /// unable to see own write operations. When we merge part with column TTL
+    /// and column completely outdated we first write empty column and after
+    /// remove it. In case of single DiskTransaction it's impossible because
+    /// remove operation will not see just written files. That is why we finish
+    /// one transaction and start new...
+    ///
+    /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
+    if (!files_to_remove_after_finish.empty())
+    {
+        part->getDataPartStorage().commitTransaction();
+        part->getDataPartStorage().beginTransaction();
+    }
+
     for (const auto & file_name : files_to_remove_after_finish)
         part->getDataPartStorage().removeFile(file_name);
 }
@@ -217,7 +231,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto serialization_infos = new_part->getSerializationInfos();
 
         serialization_infos.replaceData(new_serialization_infos);
-        files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
+        files_to_remove_after_sync
+            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
@@ -339,7 +354,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
-    if (serialization_infos.needsPersistence())
+    if (!serialization_infos.empty())
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {

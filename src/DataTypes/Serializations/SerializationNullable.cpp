@@ -179,16 +179,6 @@ void SerializationNullable::serializeBinary(const IColumn & column, size_t row_n
         nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void SerializationNullable::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-
-    bool is_null = col.isNullAt(row_num);
-    writeBinary(is_null, ostr);
-    if (!is_null)
-        nested->serializeForHashCalculation(col.getNestedColumn(), row_num, ostr);
-}
-
 template <typename ReturnType>
 ReturnType safeAppendToNullMap(ColumnNullable & column, bool is_null)
 {
@@ -830,16 +820,6 @@ void SerializationNullable::serializeTextJSON(const IColumn & column, size_t row
         serializeNullJSON(ostr);
     else
         nested->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
-}
-
-void SerializationNullable::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-
-    if (col.isNullAt(row_num))
-        serializeNullJSON(ostr);
-    else
-        nested->serializeTextJSONPretty(col.getNestedColumn(), row_num, ostr, settings, indent);
 }
 
 void SerializationNullable::serializeNullJSON(DB::WriteBuffer & ostr)

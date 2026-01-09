@@ -1,32 +1,29 @@
 
 #include <memory>
 #include <sstream>
-#include <config.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Settings.h>
-#include <Core/TypeId.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <IO/CompressionMethod.h>
-#include <Interpreters/Context_fwd.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <base/getThreadId.h>
-#include <base/types.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Parsers/ASTFunction.h>
+#include <Core/Settings.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/CompressionMethod.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/ColumnsDescription.h>
+#include <base/types.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <config.h>
 
 #if USE_AVRO
 
@@ -37,7 +34,7 @@
 #include <filesystem>
 
 #include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -50,6 +47,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
+
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -74,162 +72,42 @@ namespace DB::Setting
     extern const SettingsUInt64 output_format_compression_level;
 }
 
-/// Hard to imagine a hint file larger than 10 MB
-static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
-static constexpr auto MAX_TRANSACTION_RETRIES = 100;
-
 namespace DB::Iceberg
 {
 
 using namespace DB;
-static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
-{
-    constexpr std::string_view metadata_suffix = ".metadata.json";
-
-    auto compression_method = chooseCompressionMethod(path, "auto");
-
-    /// NOTE you will be surprised, but some metadata files store compression not in the end of the file name,
-    /// but somewhere in the middle of the file name, before metadata.json suffix.
-    /// Maybe history of Iceberg metadata files is not so long, but it is already full of surprises.
-    /// Example of weird engineering decisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
-    if (compression_method == CompressionMethod::None && path.ends_with(metadata_suffix))
-        compression_method = chooseCompressionMethod(path.substr(0, path.size() - metadata_suffix.size()), "auto");
-
-    return compression_method;
-}
-
-
-static bool isTemporaryMetadataFile(const String & file_name)
-{
-    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
-    return Poco::UUID{}.tryParse(substring);
-}
-
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
-{
-    String file_name = std::filesystem::path(path).filename();
-    if (isTemporaryMetadataFile(file_name))
-    {
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
-            path);
-    }
-    String version_str;
-    /// v<V>.metadata.json
-    if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
-    /// <V>-<random-uuid>.metadata.json
-    else
-        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
-
-    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
-
-    return MetadataFileWithInfo{
-        .version = std::stoi(version_str),
-        .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path)};
-}
-
 
 void writeMessageToFile(
     const String & data,
     const String & filename,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    const std::string & write_if_none_match,
-    const std::string & write_if_match,
+    std::function<void()> cleanup,
     CompressionMethod compression_method)
-{
-    auto write_settings = context->getWriteSettings();
-    write_settings.object_storage_write_if_none_match = write_if_none_match;
-    write_settings.object_storage_write_if_match = write_if_match;
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
-    if (compression_method != CompressionMethod::None)
-    {
-        auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
-        compressed_buffer_metadata->write(data.data(), data.size());
-        compressed_buffer_metadata->finalize();
-    }
-    else
-    {
-        buffer_metadata->write(data.data(), data.size());
-        buffer_metadata->finalize();
-    }
-}
-
-bool writeMetadataFileAndVersionHint(
-    const std::string & metadata_file_path,
-    const std::string & metadata_file_content,
-    const std::string & version_hint_path,
-    std::string version_hint_content,
-    DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context,
-    DB::CompressionMethod compression_method,
-    bool try_write_version_hint)
 {
     try
     {
-        if (object_storage->exists(StoredObject(metadata_file_path)))
-            return false;
-
-        Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", "", compression_method);
+        auto buffer_metadata = object_storage->writeObject(
+            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+        if (compression_method != CompressionMethod::None)
+        {
+            auto settings = context->getSettingsRef();
+            auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+            compressed_buffer_metadata->write(data.data(), data.size());
+            compressed_buffer_metadata->finalize();
+        }
+        else
+        {
+            buffer_metadata->write(data.data(), data.size());
+            buffer_metadata->finalize();
+        }
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        cleanup();
+        throw;
     }
-
-    if (try_write_version_hint)
-    {
-        if (version_hint_content.starts_with('/'))
-            version_hint_content = version_hint_content.substr(1);
-
-        size_t i = 0;
-        while (i < MAX_TRANSACTION_RETRIES)
-        {
-            StoredObject object_info(version_hint_path);
-            std::string version_hint_value;
-            std::string etag;
-            std::string write_if_none_match = "*";
-            if (object_storage->exists(object_info))
-            {
-                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
-                version_hint_value = object_data;
-                etag = object_metadata.etag;
-                write_if_none_match.clear();
-            }
-
-            auto [old_version, _1, _2] = getMetadataFileAndVersion(version_hint_value);
-            auto [new_version, _3, _4] = getMetadataFileAndVersion(version_hint_content);
-            if (old_version < new_version)
-            {
-                try
-                {
-                    Iceberg::writeMessageToFile(version_hint_content, version_hint_path, object_storage, context, write_if_none_match, /* write-if-match */ etag);
-                    break;
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-            }
-            else
-            {
-                break;
-            }
-            ++i;
-        }
-    }
-
-    return true;
 }
-
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
 {
@@ -402,7 +280,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -426,6 +304,43 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
+{
+    constexpr std::string_view metadata_suffix = ".metadata.json";
+
+    auto compression_method = chooseCompressionMethod(path, "auto");
+
+    /// NOTE you will be surprised, but some metadata files store compression not in the end of the file name,
+    /// but somewhere in the middle of the file name, before metadata.json suffix.
+    /// Maybe history of Iceberg metadata files is not so long, but it is already full of surprises.
+    /// Example of weird engineering decisions: 00000-85befd5a-69c7-46d4-bca6-cfbd67f0f7e6.gz.metadata.json
+    if (compression_method == CompressionMethod::None && path.ends_with(metadata_suffix))
+        compression_method = chooseCompressionMethod(path.substr(0, path.size() - metadata_suffix.size()), "auto");
+
+    return compression_method;
+}
+
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+{
+    String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    String version_str;
+    /// v<V>.metadata.json
+    if (file_name.starts_with('v'))
+        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    /// <V>-<random-uuid>.metadata.json
+    else
+        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+
+    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+
+    return MetadataFileWithInfo{
+        .version = std::stoi(version_str),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
+}
+
 /// Returns type and required
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
@@ -441,7 +356,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"float", true};
         case TypeIndex::Float64:
             return {"double", true};
-        case TypeIndex::Date:
         case TypeIndex::Date32:
             return {"date", true};
         case TypeIndex::DateTime:
@@ -514,38 +428,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type)
-{
-    switch (type->getTypeId())
-    {
-        case TypeIndex::UInt32:
-        case TypeIndex::Int32:
-        case TypeIndex::Date:
-        case TypeIndex::Date32:
-        case TypeIndex::Time:
-            return "int";
-        case TypeIndex::UInt64:
-        case TypeIndex::Int64:
-        case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
-            return "long";
-        case TypeIndex::Float32:
-            return "float";
-        case TypeIndex::Float64:
-            return "double";
-        case TypeIndex::String:
-        case TypeIndex::UUID:
-            return "string";
-        case TypeIndex::Nullable:
-        {
-            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return getAvroType(type_nullable->getNestedType());
-        }
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
-    }
-}
-
 Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
@@ -553,38 +435,20 @@ Poco::JSON::Object::Ptr getPartitionField(
 {
     const auto * partition_function = partition_by_element->as<ASTFunction>();
     if (!partition_function)
-    {
-        const auto * ast_identifier = partition_by_element->as<ASTIdentifier>();
-        if (!ast_identifier)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning: {}", partition_by_element->formatForLogging());
-
-        Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
-        auto field = ast_identifier->name();
-        auto it = column_name_to_source_id.find(field);
-        if (it == column_name_to_source_id.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", field);
-        result->set(Iceberg::f_name, field);
-        result->set(Iceberg::f_source_id, it->second);
-        result->set(Iceberg::f_field_id, ++partition_iter);
-        result->set(Iceberg::f_transform, "identity");
-        return result;
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function in partition. Please use functions for iceberg partitioning, for example (identity(x), TRUNCATE(3, y))");
 
     std::optional<String> field;
     std::optional<Int64> param;
     for (const auto & child : partition_function->children)
     {
         const auto * expression_list = child->as<ASTExpressionList>();
-        if (!expression_list)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partitioning for Iceberg table.");
-
         for (const auto & expression_list_child : expression_list->children)
         {
             const auto * identifier = expression_list_child->as<ASTIdentifier>();
             if (identifier)
             {
                 if (field.has_value())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with multiple arguments are not supported in Iceberg.");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
                 field = identifier->name();
             }
             const auto * literal = expression_list_child->as<ASTLiteral>();
@@ -595,7 +459,7 @@ Poco::JSON::Object::Ptr getPartitionField(
         }
     }
     if (!field)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with no arguments are not supported in Iceberg.");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
 
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_name, field.value());
@@ -659,7 +523,11 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Int32 partition_iter = 1000;
     if (partition_by)
     {
-        if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
+        const auto * partition_function = partition_by->as<ASTFunction>();
+        if (!partition_function)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function in partitioning");
+
+        if (partition_function->name == "tuple")
         {
             for (const auto & child : partition_function->children)
             {
@@ -796,11 +664,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        String filename = std::filesystem::path(path).filename();
-        if (isTemporaryMetadataFile(filename))
-            continue;
         auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
-
         if (need_all_metadata_files_parsing)
         {
             auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
@@ -833,6 +697,22 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         {
             metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
         }
+    }
+
+    if (metadata_files_with_versions.empty())
+    {
+        if (table_uuid.has_value())
+        {
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                configuration_ptr->getPathForRead().path,
+                table_uuid.value());
+        }
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            configuration_ptr->getPathForRead().path);
     }
 
     /// Get the latest version of metadata file: v<V>.metadata.json
@@ -909,8 +789,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-
-        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / fs::path(metadata_file).filename());
+        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
     }
     else
     {

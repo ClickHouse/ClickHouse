@@ -11,8 +11,10 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/defines.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
@@ -32,6 +34,12 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char column_aggregate_function_ensureOwnership_exception[];
 }
 
 
@@ -226,28 +234,43 @@ void ColumnAggregateFunction::ensureOwnership()
         size_t size_of_state = func->sizeOfData();
         size_t align_of_state = func->alignOfData();
 
+        bool inject_memory_limit_exceeded = false;
+        /// Avoid checking failpoint in a loop, since it uses atomic's
+        fiu_do_on(FailPoints::column_aggregate_function_ensureOwnership_exception,
+        {
+            inject_memory_limit_exceeded = true;
+        });
+
+        Container new_data;
+        new_data.resize_exact(size);
+
         size_t rollback_pos = 0;
         try
         {
             for (size_t i = 0; i < size; ++i)
             {
-                ConstAggregateDataPtr old_place = data[i];
-                data[i] = arena.alignedAlloc(size_of_state, align_of_state);
-                func->create(data[i]);
+                new_data[i] = arena.alignedAlloc(size_of_state, align_of_state);
+                func->create(new_data[i]);
                 ++rollback_pos;
-                func->merge(data[i], old_place, &arena);
+
+                if (unlikely(inject_memory_limit_exceeded))
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
+
+                func->merge(new_data[i], data[i], &arena);
             }
         }
         catch (...)
         {
             /// If we failed to take ownership, destroy all temporary data.
-
             if (!func->hasTrivialDestructor())
+            {
                 for (size_t i = 0; i < rollback_pos; ++i)
-                    func->destroy(data[i]);
-
+                    func->destroy(new_data[i]);
+            }
             throw;
         }
+
+        data = std::move(new_data);
 
         /// Now we own all data.
         src.reset();
@@ -475,16 +498,17 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
 {
-    if (options.notFull(name_buf))
+    String state;
     {
         WriteBufferFromOwnString buffer;
         func->serialize(data[n], buffer, version);
-        writeQuoted(buffer.str(), name_buf);
+        WriteBufferFromString wb(state);
+        writeQuoted(buffer.str(), wb);
     }
 
-    return DataTypeFactory::instance().get(type_string);
+    return {state, DataTypeFactory::instance().get(type_string)};
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
@@ -600,7 +624,8 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(
+    size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);
@@ -608,7 +633,7 @@ StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & are
     return out.complete();
 }
 
-void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ensureOwnership();
 
@@ -663,7 +688,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
     MutableColumns columns(num_columns);

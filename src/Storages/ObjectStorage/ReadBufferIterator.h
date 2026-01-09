@@ -10,6 +10,8 @@ namespace DB
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
 public:
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
@@ -24,8 +26,6 @@ public:
     void setNumRowsToLastFile(size_t num_rows) override;
 
     void setSchemaToLastFile(const ColumnsDescription & columns) override;
-
-    void setResultingSchema(const ColumnsDescription & columns) override;
 
     String getLastFilePath() const override;
 

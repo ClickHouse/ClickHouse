@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
@@ -149,7 +149,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
     read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations

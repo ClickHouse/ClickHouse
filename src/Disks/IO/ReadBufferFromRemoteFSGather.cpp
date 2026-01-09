@@ -158,7 +158,7 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
             /// new read until position is before the current position in the working buffer
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Attempt to set read until position before already read data ({} < {})",
+                "Attempt to set read until position before already read data ({} > {})",
                 position,
                 getPosition());
         }

@@ -71,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        return data->getValueNameAndType(0);
     }
 
     StringRef getDataAt(size_t) const override
@@ -174,26 +174,20 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef
+    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoArena(0, arena, begin);
+        return data->serializeValueIntoArena(0, arena, begin, settings);
     }
 
-    char * serializeValueIntoMemory(size_t, char * memory) const override
+    char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override
     {
-        return data->serializeValueIntoMemory(0, memory);
+        return data->serializeValueIntoMemory(0, memory, settings);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
-        data->deserializeAndInsertFromArena(in);
-        data->popBack(1);
-        ++s;
-    }
-
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override
-    {
-        data->deserializeAndInsertAggregationStateValueFromArena(in);
+        data->deserializeAndInsertFromArena(in, settings);
         data->popBack(1);
         ++s;
     }
@@ -256,7 +250,7 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 

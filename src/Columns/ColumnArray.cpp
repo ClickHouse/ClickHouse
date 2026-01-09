@@ -9,7 +9,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-#include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -17,8 +16,8 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <IO/Operators.h>
 #include <cstring> // memcpy
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -149,27 +148,26 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
-    if (options.notFull(name_buf))
-        name_buf << "[";
+    String value_name {"["};
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        const auto & [value, type] = getData().getValueNameAndType(offset + i);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << "]";
+    value_name += "]";
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
 }
 
 StringRef ColumnArray::getDataAt(size_t n) const
@@ -225,7 +223,8 @@ void ColumnArray::insertData(const char * pos, size_t length)
 }
 
 
-StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef
+ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -237,7 +236,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 
     for (size_t i = 0; i < array_size; ++i)
     {
-        auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin);
+        auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin, settings);
         res.data = value_ref.data - res.size;
         res.size += value_ref.size;
     }
@@ -245,29 +244,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
     return res;
 }
 
-
-StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    size_t array_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-
-    char * pos = arena.allocContinue(sizeof(array_size), begin);
-    memcpy(pos, &array_size, sizeof(array_size));
-
-    StringRef res(pos, sizeof(array_size));
-
-    for (size_t i = 0; i < array_size; ++i)
-    {
-        auto value_ref = getData().serializeAggregationStateValueIntoArena(offset + i, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
-    }
-
-    return res;
-}
-
-
-char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -275,11 +252,11 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
     memcpy(memory, &array_size, sizeof(array_size));
     memory += sizeof(array_size);
     for (size_t i = 0; i < array_size; ++i)
-        memory = getData().serializeValueIntoMemory(offset + i, memory);
+        memory = getData().serializeValueIntoMemory(offset + i, memory, settings);
     return memory;
 }
 
-std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
+std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     const auto & offsets_data = getOffsets();
 
@@ -289,7 +266,7 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
     size_t res = sizeof(offsets_data[0]);
     for (; pos < end; ++pos)
     {
-        auto element_size = getData().getSerializedValueSize(pos);
+        auto element_size = getData().getSerializedValueSize(pos, settings);
         if (!element_size)
             return std::nullopt;
         res += *element_size;
@@ -299,24 +276,13 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
 }
 
 
-void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     size_t array_size;
     readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        getData().deserializeAndInsertFromArena(in);
-
-    getOffsets().push_back(getOffsets().back() + array_size);
-}
-
-void ColumnArray::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    size_t array_size;
-    readBinaryLittleEndian<size_t>(array_size, in);
-
-    for (size_t i = 0; i < array_size; ++i)
-        getData().deserializeAndInsertAggregationStateValueFromArena(in);
+        getData().deserializeAndInsertFromArena(in, settings);
 
     getOffsets().push_back(getOffsets().back() + array_size);
 }

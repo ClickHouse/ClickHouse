@@ -43,7 +43,6 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
-#include <iostream>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
@@ -1239,10 +1238,10 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.contains("help")
-        || !options.contains("seed")
-        || !options.contains("input-format")
-        || !options.contains("output-format"))
+    if (options.count("help")
+        || !options.count("seed")
+        || !options.count("input-format")
+        || !options.count("output-format"))
     {
         std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
@@ -1252,7 +1251,7 @@ try
         return 0;
     }
 
-    if (options.contains("save") && options.contains("load"))
+    if (options.count("save") && options.count("load"))
     {
         std::cerr << "The options --save and --load cannot be used together.\n";
         return 1;
@@ -1262,7 +1261,7 @@ try
 
     std::string structure;
 
-    if (options.contains("structure"))
+    if (options.count("structure"))
         structure = options["structure"].as<std::string>();
 
     std::string input_format = options["input-format"].as<std::string>();
@@ -1271,13 +1270,13 @@ try
     std::string load_from_file;
     std::string save_into_file;
 
-    if (options.contains("load"))
+    if (options.count("load"))
         load_from_file = options["load"].as<std::string>();
-    else if (options.contains("save"))
+    else if (options.count("save"))
         save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
-    if (options.contains("limit"))
+    if (options.count("limit"))
         limit = options["limit"].as<UInt64>();
 
     bool silent = options["silent"].as<bool>();
@@ -1431,7 +1430,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!options.contains("limit"))
+    if (!options.count("limit"))
         limit = source_rows;
 
     /// Generation step

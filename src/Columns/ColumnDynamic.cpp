@@ -301,7 +301,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
         return;
     }
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -309,21 +309,21 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
-DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
 {
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
-        return variant_col.getValueNameAndTypeImpl(name_buf, n, options);
+        return variant_col.getValueNameAndType(n);
 
-    /// We should deserialize value from shared variant.
+    /// We should deeserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
     auto type = decodeDataType(buf);
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
-    return col->getValueNameAndTypeImpl(name_buf, 0, options);
+    return col->getValueNameAndType(0);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -727,7 +727,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     shared_variant.getOffsets().push_back(chars.size());
 }
 
-StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
@@ -771,7 +771,7 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const 
     return res;
 }
 
-void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     auto & variant_col = getVariantColumn();
     UInt8 null_bit;
@@ -1379,7 +1379,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inserts into this column during merges.
+    /// to extend selected variants on inerts into this column during merges.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 
@@ -1427,6 +1427,15 @@ void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_colu
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant_column.getVariantPtrByGlobalDiscriminator(i));
+}
+
+void ColumnDynamic::fixDynamicStructure()
+{
+    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
+    /// to extend selected variants on inserts into this column.
+    /// -1 because we don't count shared variant in the limit.
+    max_dynamic_types = variant_info.variant_names.size() - 1;
+    getVariantColumn().fixDynamicStructure();
 }
 
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

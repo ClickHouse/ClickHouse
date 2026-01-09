@@ -730,7 +730,7 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback, PullLogsReason reason)
+std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
@@ -906,21 +906,20 @@ namespace
 /// We use this representation to understand which parts mutation actually have to mutate.
 struct QueueEntryRepresentation
 {
-    std::vector<MergeTreePartInfo> produced_parts;
-    std::vector<MergeTreePartInfo> dropped_parts;
+    std::vector<std::string> produced_parts;
+    std::vector<std::string> dropped_parts;
 };
 
-using PartitionQueueRepresentation = std::unordered_map<std::string, QueueEntryRepresentation>;
+using QueueRepresentation = std::map<std::string, QueueEntryRepresentation>;
 
 /// Produce a map from queue znode name to simplified entry representation.
-PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLogEntryPtr> & entries, MergeTreeDataFormatVersion format_version)
+QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLogEntryPtr> & entries, MergeTreeDataFormatVersion format_version)
 {
     using LogEntryType = ReplicatedMergeTreeLogEntryData::Type;
-    std::unordered_map<std::string, QueueEntryRepresentation> representations_by_znode;
-
+    QueueRepresentation result;
     for (const auto & entry : entries)
     {
-        const auto & znode_name = entry->znode_name;
+        const auto & key = entry->znode_name;
         switch (entry->type)
         {
             /// explicitly specify all types of entries without default, so if
@@ -930,32 +929,28 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
             case LogEntryType::MERGE_PARTS:
             case LogEntryType::MUTATE_PART:
             {
-                representations_by_znode[znode_name].produced_parts.push_back(MergeTreePartInfo::fromPartName(entry->new_part_name, format_version));
+                result[key].produced_parts.push_back(entry->new_part_name);
                 break;
             }
             case LogEntryType::REPLACE_RANGE:
             {
                 /// Quite tricky entry, it both produce and drop parts (in some cases)
                 const auto & new_parts = entry->replace_range_entry->new_part_names;
-                auto & produced_parts = representations_by_znode[znode_name].produced_parts;
-
-                produced_parts.reserve(produced_parts.size() + new_parts.size());
-                for (const auto & new_part : new_parts)
-                {
-                    produced_parts.push_back(MergeTreePartInfo::fromPartName(new_part, format_version));
-                }
+                auto & produced_parts = result[key].produced_parts;
+                produced_parts.insert(
+                    produced_parts.end(), new_parts.begin(), new_parts.end());
 
                 if (auto drop_range = entry->getDropRange(format_version))
                 {
-                    auto & dropped_parts = representations_by_znode[znode_name].dropped_parts;
-                    dropped_parts.push_back(MergeTreePartInfo::fromPartName(*drop_range, format_version));
+                    auto & dropped_parts = result[key].dropped_parts;
+                    dropped_parts.push_back(*drop_range);
                 }
                 break;
             }
             case LogEntryType::DROP_RANGE:
             case LogEntryType::DROP_PART:
             {
-                representations_by_znode[znode_name].dropped_parts.push_back(MergeTreePartInfo::fromPartName(entry->new_part_name, format_version));
+                result[key].dropped_parts.push_back(entry->new_part_name);
                 break;
             }
             /// These entries don't produce/drop any parts
@@ -970,23 +965,7 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
             }
         }
     }
-
-    PartitionQueueRepresentation representations_by_partition;
-    for (auto & [_, entry_representation] : representations_by_znode)
-    {
-        for (auto & part_to_drop_info : entry_representation.dropped_parts)
-        {
-            const auto partiton_id = part_to_drop_info.getPartitionId();
-            representations_by_partition[partiton_id].dropped_parts.push_back(std::move(part_to_drop_info));
-        }
-
-        for (auto & part_to_add_info : entry_representation.produced_parts)
-        {
-            const auto partiton_id = part_to_add_info.getPartitionId();
-            representations_by_partition[partiton_id].produced_parts.push_back(std::move(part_to_add_info));
-        }
-    }
-    return representations_by_partition;
+    return result;
 }
 
 /// Try to understand which part we need to mutate to finish mutation. In ReplicatedQueue we have two sets of parts:
@@ -1006,7 +985,7 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
 /// After that we just update parts_to_do for each mutation when pulling entries into our queue (addPartToMutations, removePartFromMutations).
 ActiveDataPartSet getPartNamesToMutate(
     const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & current_parts,
-    const PartitionQueueRepresentation & queue_representation, MergeTreeDataFormatVersion format_version)
+    const QueueRepresentation & queue_representation, MergeTreeDataFormatVersion format_version)
 {
     ActiveDataPartSet result(format_version);
     /// Traverse mutation by partition
@@ -1026,21 +1005,22 @@ ActiveDataPartSet getPartNamesToMutate(
         }
 
         /// Traverse queue and update affected current_parts
-        if (!queue_representation.contains(partition_id))
-            continue;
-
-        /// First we have to drop something if entry drop parts
-        for (const auto & part_to_drop_info : queue_representation.at(partition_id).dropped_parts)
+        for (const auto & [_, entry_representation] : queue_representation)
         {
-            result.removePartAndCoveredParts(part_to_drop_info);
-        }
-
-        /// After we have to add parts if entry adds them
-        for (const auto & part_to_add_info : queue_representation.at(partition_id).produced_parts)
-        {
-            if (part_to_add_info.getDataVersion() < block_num)
+            /// First we have to drop something if entry drop parts
+            for (const auto & part_to_drop : entry_representation.dropped_parts)
             {
-                result.add(part_to_add_info);
+                auto part_to_drop_info = MergeTreePartInfo::fromPartName(part_to_drop, format_version);
+                if (part_to_drop_info.getPartitionId() == partition_id)
+                    result.removePartAndCoveredParts(part_to_drop);
+            }
+
+            /// After we have to add parts if entry adds them
+            for (const auto & part_to_add : entry_representation.produced_parts)
+            {
+                auto part_to_add_info = MergeTreePartInfo::fromPartName(part_to_add, format_version);
+                if (part_to_add_info.getPartitionId() == partition_id && part_to_add_info.getDataVersion() < block_num)
+                    result.add(part_to_add);
             }
         }
     }

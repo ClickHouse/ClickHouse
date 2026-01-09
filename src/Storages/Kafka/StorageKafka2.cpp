@@ -104,7 +104,6 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
-    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
@@ -452,7 +451,7 @@ KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     chassert((thread_per_consumer || num_consumers == 1) && "StorageKafka2 cannot handle multiple consumers on a single thread");
     auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
-    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics, getSchemaRegistrySkipBytes());
+    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
 }
 
 cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink)
@@ -500,11 +499,6 @@ size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
-}
-
-size_t StorageKafka2::getSchemaRegistrySkipBytes() const
-{
-    return (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
 }
 
 bool StorageKafka2::createTableIfNotExists()
@@ -916,23 +910,20 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 auto storage_id = getStorageID();
 
                 auto dead_letter_queue = getContext()->getDeadLetterQueue();
-                if (!dead_letter_queue)
-                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
-                else
-                    dead_letter_queue->add(
-                        DeadLetterQueueElement{
-                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database = storage_id.database_name,
-                            .table = storage_id.table_name,
-                            .raw_message = msg_info.currentPayload(),
-                            .error = exception_message.value(),
-                            .details = DeadLetterQueueElement::KafkaDetails{
-                                .topic_name = msg_info.currentTopic(),
-                                .partition = msg_info.currentPartition(),
-                                .offset = msg_info.currentPartition(),
-                                .key = msg_info.currentKey()}});
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database = storage_id.database_name,
+                        .table = storage_id.table_name,
+                        .raw_message = msg_info.currentPayload(),
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::KafkaDetails{
+                            .topic_name = msg_info.currentTopic(),
+                            .partition = msg_info.currentPartition(),
+                            .offset = msg_info.currentPartition(),
+                            .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -1206,8 +1197,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
     auto converting_dag = ActionsDAG::makeConvertingActions(
         blocks.front().cloneEmpty().getColumnsWithTypeAndName(),
         block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        modified_context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
 

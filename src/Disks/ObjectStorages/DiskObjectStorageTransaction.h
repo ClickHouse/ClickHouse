@@ -54,7 +54,7 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 ///
 /// If something wrong happen on step 1 or 2 reverts all applied operations.
 /// If finalize failed -- nothing is reverted, garbage is left in blob storage.
-struct DiskObjectStorageTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskObjectStorageTransaction>
+struct DiskObjectStorageTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 protected:
     IObjectStorage & object_storage;
@@ -77,12 +77,13 @@ public:
         IMetadataStorage & metadata_storage_);
 
     void commit(const TransactionCommitOptionsVariant & options) override;
-    void commit() override { commit(NoCommitOptions{}); }
-    void undo() noexcept override;
+    void undo() override;
 
     void createDirectory(const std::string & path) override;
 
     void createDirectories(const std::string & path) override;
+
+    void clearDirectory(const std::string & path) override;
 
     void moveDirectory(const std::string & from_path, const std::string & to_path) override;
 
@@ -100,16 +101,12 @@ public:
     /// Now it's almost noop because metadata added to transaction in finalize method
     /// of write buffer. Autocommit means that transaction will be immediately committed
     /// after returned buffer will be finalized.
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
-    std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
-        const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        const WriteSettings & settings = {},
+        bool autocommit = true) override;
 
     /// Write a file using a custom function to write an object to the disk's object storage.
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
@@ -130,13 +127,6 @@ public:
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
-private:
-    std::unique_ptr<WriteBufferFromFileBase> writeFileImpl( /// NOLINT
-        bool autocommit,
-        const std::string & path,
-        size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings);
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>

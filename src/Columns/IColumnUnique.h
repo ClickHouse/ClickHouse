@@ -68,7 +68,7 @@ public:
     virtual size_t getNestedTypeDefaultValueIndex() const = 0;  /// removeNullable()->getDefault() value index
     virtual bool canContainNulls() const = 0;
 
-    virtual size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in) = 0;
+    virtual size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) = 0;
     virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) = 0;
 
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
@@ -116,7 +116,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for ColumnUnique.");
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer &) override
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for ColumnUnique.");
     }
@@ -163,7 +163,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePermutation is not supported for ColumnUnique.");
     }
 
-    std::vector<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
     }

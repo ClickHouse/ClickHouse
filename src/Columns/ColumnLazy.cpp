@@ -72,7 +72,7 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
-DataTypePtr ColumnLazy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+std::pair<String, DataTypePtr> ColumnLazy::getValueNameAndType(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
 }
@@ -152,7 +152,7 @@ void ColumnLazy::popBack(size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for {}", getName());
 }
 
-void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &)
+void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }
@@ -258,7 +258,7 @@ ColumnPtr ColumnLazy::replicate(const Offsets &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for {}", getName());
 }
 
-MutableColumns ColumnLazy::scatter(size_t, const Selector &) const
+MutableColumns ColumnLazy::scatter(ColumnIndex, const Selector &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }

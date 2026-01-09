@@ -6,7 +6,6 @@ sidebar_label: 'AggregateFunction'
 sidebar_position: 46
 slug: /sql-reference/data-types/aggregatefunction
 title: 'AggregateFunction Type'
-doc_type: 'reference'
 ---
 
 # AggregateFunction Type

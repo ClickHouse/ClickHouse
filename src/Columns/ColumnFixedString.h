@@ -90,11 +90,11 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
     {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
-        return std::make_shared<DataTypeString>();
+        WriteBufferFromOwnString buf;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);
+        return {buf.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t index) const override
@@ -137,7 +137,7 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 

@@ -406,7 +406,6 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 
     register_format("JSONEachRow", false);
     register_format("JSONLines", false);
-    register_format("JSONL", false);
     register_format("NDJSON", false);
 
     factory.registerFileExtension("ndjson", "JSONEachRow");

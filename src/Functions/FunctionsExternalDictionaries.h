@@ -94,7 +94,7 @@ public:
         return getDictionary(dict_name_col->getValue<String>());
     }
 
-    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    static void checkDictionaryHierarchySupport(const std::shared_ptr<const IDictionary> & dictionary)
     {
         const auto & dictionary_structure = dictionary->getStructure();
         auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
@@ -103,6 +103,14 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Dictionary {} does not support hierarchy",
                 dictionary->getFullName());
+    }
+
+    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    {
+        checkDictionaryHierarchySupport(dictionary);
+
+        const auto & dictionary_structure = dictionary->getStructure();
+        auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
 
         size_t hierarchical_attribute_index = *hierarchical_attribute_index_optional;
         const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
@@ -1316,6 +1324,9 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
+
+        FunctionDictHelper::checkDictionaryHierarchySupport(dictionary);
+
         auto hierarchical_parent_to_child_index = dictionary->getHierarchicalIndex();
 
         size_t level = Strategy::default_level;

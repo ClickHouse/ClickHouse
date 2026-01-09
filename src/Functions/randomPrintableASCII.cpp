@@ -125,7 +125,7 @@ If you pass `length < 0`, the behavior of the function is undefined.
     FunctionDocumentation::Syntax syntax = "randomPrintableASCII(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "String length in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with a random set of ASCII printable characters.", {"String"}};
     FunctionDocumentation::Examples examples = {

@@ -5,7 +5,6 @@ description: 'The aggregate function `singleValueOrNull` is used to implement su
 sidebar_position: 184
 slug: /sql-reference/aggregate-functions/reference/singlevalueornull
 title: 'singleValueOrNull'
-doc_type: 'reference'
 ---
 
 # singleValueOrNull

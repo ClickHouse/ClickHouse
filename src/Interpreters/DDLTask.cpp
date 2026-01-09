@@ -1,6 +1,3 @@
-#include <Access/AccessControl.h>
-#include <Access/Role.h>
-#include <Access/User.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -38,11 +35,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -50,8 +42,6 @@ namespace ErrorCodes
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
     extern const int DNS_ERROR;
-    extern const int UNKNOWN_USER;
-    extern const int UNKNOWN_ROLE;
 }
 
 
@@ -65,21 +55,8 @@ HostID HostID::fromString(const String & host_port_str)
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
-    try
-    {
-        auto address = DNSResolver::instance().resolveAddress(host_name, port);
-        return DB::isLocalAddress(address, clickhouse_port);
-    }
-    catch (const DB::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
+    auto address = DNSResolver::instance().resolveAddress(host_name, port);
+    return DB::isLocalAddress(address, clickhouse_port);
 }
 
 bool HostID::isLoopbackHost() const
@@ -180,12 +157,6 @@ String DDLLogEntry::toString() const
         wb << "\n";
     }
 
-    if (version >= INITIATOR_USER_VERSION)
-    {
-        wb << "initiator_user: " << initiator_user << "\n";
-        wb << "initiator_roles: " << initiator_user_roles << "\n";
-    }
-
     return wb.str();
 }
 
@@ -258,12 +229,6 @@ void DDLLogEntry::parse(const String & data)
         rb >> "\n";
     }
 
-    if (version >= INITIATOR_USER_VERSION)
-    {
-        rb >> "initiator_user: " >> initiator_user >> "\n";
-        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
-    }
-
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -298,34 +263,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
-
-    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (preserve_user && !entry.initiator_user.empty())
-    {
-        const auto & access_control = from_context->getAccessControl();
-
-        /// Find the user by name
-        auto user_id = access_control.find<User>(entry.initiator_user);
-        if (!user_id)
-            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
-
-        /// Find all roles by name
-        std::vector<UUID> role_ids;
-        role_ids.reserve(entry.initiator_user_roles.size());
-        for (const auto & role_name : entry.initiator_user_roles)
-        {
-            auto role_id = access_control.find<Role>(role_name);
-            if (!role_id)
-                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
-            role_ids.push_back(*role_id);
-        }
-
-        query_context->setUser(*user_id, role_ids);
-    }
-
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
-
     return query_context;
 }
 
@@ -340,7 +279,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
     if (config_host_name)
     {
-        if (!IsSelfHostname(*config_host_name, maybe_secure_port, port))
+        if (!isSelfHostname(log, *config_host_name, maybe_secure_port, port))
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
@@ -365,7 +304,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            if (!IsSelfHostID(host, maybe_secure_port, port))
+            if (!isSelfHostID(log, host, maybe_secure_port, port))
                 continue;
 
             if (host.isLoopbackHost())
@@ -589,18 +528,47 @@ String DDLTask::getShardID() const
     return res;
 }
 
-bool DDLTask::IsSelfHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    // If the checking_host_id has a loopback address, it is not considered as the self host_id.
-    // Because all replicas will try to claim it as their own hosts.
-    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
-        || checking_host_id.isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+            || checking_host_id.isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
 }
 
-bool DDLTask::IsSelfHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostname(
+    LoggerPtr log, const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
-        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+            || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
 }
 
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)

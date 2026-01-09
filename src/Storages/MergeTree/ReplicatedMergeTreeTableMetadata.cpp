@@ -467,7 +467,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
-                auto tuple = makeASTOperator("tuple");
+                auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
                 order_by_ast = tuple;
             }

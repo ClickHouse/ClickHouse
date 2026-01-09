@@ -1,4 +1,4 @@
-from typing import List
+import concurrent
 
 import pytest
 

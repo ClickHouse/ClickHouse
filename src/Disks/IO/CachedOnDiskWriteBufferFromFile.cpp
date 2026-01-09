@@ -231,7 +231,7 @@ void FileSegmentRangeWriter::completeFileSegment()
     if (file_segment.isDetached() || file_segment.isCompleted())
         return;
 
-    file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/true);
+    file_segment.complete(false);
     appendFilesystemCacheLog(file_segment);
 }
 
@@ -245,8 +245,8 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
         if (position < current_write_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
 
-        file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/true);
-        file_segments = nullptr;
+        file_segment.complete(false);
+        file_segments.reset();
     }
     expected_write_offset = position;
 }

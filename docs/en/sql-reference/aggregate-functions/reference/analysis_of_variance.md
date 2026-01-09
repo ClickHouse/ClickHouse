@@ -5,7 +5,6 @@ description: 'Provides a statistical test for one-way analysis of variance (ANOV
 sidebar_position: 101
 slug: /sql-reference/aggregate-functions/reference/analysis_of_variance
 title: 'analysisOfVariance'
-doc_type: 'reference'
 ---
 
 # analysisOfVariance

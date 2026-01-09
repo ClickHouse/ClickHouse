@@ -14,8 +14,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Types.h>
-#include <Common/callOnce.h>
-#include <Common/setThreadName.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace DB
@@ -55,7 +53,7 @@ public:
     /// be error prone. We support only increasing number of threads at runtime.
     void increaseThreadsCount(size_t new_threads_count);
 
-    static BackgroundSchedulePoolPtr create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name);
+    static BackgroundSchedulePoolPtr create(size_t size, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, const char * thread_name);
     ~BackgroundSchedulePool();
 
     /// Shutdown the pool (set flag, destroy threads)
@@ -70,7 +68,7 @@ private:
     using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
     /// @param thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_);
+    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char * thread_name_);
 
     void threadFunction();
     void delayExecutionThreadFunction();
@@ -88,17 +86,7 @@ private:
     /// Tasks.
     std::condition_variable tasks_cond_var;
     std::mutex tasks_mutex;
-    LoggerPtr logger;
-
-    struct TasksGroup
-    {
-        size_t num_running = 0;
-        std::optional<size_t> runnable_list_pos;
-        std::deque<TaskInfoPtr> tasks;
-
-    };
-    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
-    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
+    std::deque<TaskInfoPtr> tasks TSA_GUARDED_BY(tasks_mutex);
     Threads threads;
 
     /// Delayed tasks.
@@ -112,9 +100,7 @@ private:
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
-    ThreadName thread_name;
-
-    size_t max_parallel_tasks_per_type;
+    std::string thread_name;
 };
 
 
@@ -139,8 +125,8 @@ public:
     /// Atomically activate task and schedule it for execution.
     bool activateAndSchedule();
 
-    /// Return **permanent** watch callback needed for notifications from ZooKeeper watches.
-    Coordination::WatchCallbackPtr getWatchCallback();
+    /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
+    Coordination::WatchCallback getWatchCallback();
 
     /// Returns lock that protects from concurrent task execution.
     /// This lock should not be held for a long time.
@@ -159,9 +145,6 @@ private:
     BackgroundSchedulePoolWeakPtr pool_ref;
     std::string log_name;
     BackgroundSchedulePool::TaskFunc function;
-
-    OnceFlag watch_callback_initialized;
-    Coordination::WatchCallbackPtr watch_callback;
 
     std::mutex exec_mutex;
     std::mutex schedule_mutex;

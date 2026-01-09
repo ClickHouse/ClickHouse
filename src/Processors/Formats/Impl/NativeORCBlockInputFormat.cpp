@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -33,9 +34,8 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <orc/MemoryPool.hh>
 #include <orc/Vector.hh>
-#include <Common/DateLUTImpl.h>
-#include <Common/setThreadName.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -45,6 +45,38 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #include <boost/algorithm/string.hpp>
+
+
+namespace
+{
+
+/// FIXME: Remove this since we have proper interceptors
+class MemoryPool : public orc::MemoryPool
+{
+public:
+    char * malloc(uint64_t size) override
+    {
+        void * ptr = __real_malloc(size);
+        if (ptr)
+        {
+            AllocationTrace trace;
+            size_t actual_size = Memory::trackMemory(size, trace);
+            trace.onAlloc(ptr, actual_size);
+        }
+
+        return static_cast<char *>(ptr);
+    }
+
+    void free(char * ptr) override
+    {
+        AllocationTrace trace;
+        size_t actual_size = Memory::untrackMemory(ptr, trace);
+        trace.onFree(ptr, actual_size);
+        __real_free(ptr);
+    }
+};
+
+}
 
 namespace DB
 {
@@ -63,7 +95,7 @@ ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool
     : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
     if (supports_read_at)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::ORC_FILE);
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
 }
 
 UInt64 ORCInputStream::getLength() const
@@ -550,7 +582,7 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
+            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
             const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
             if (!orc_type)
             {
@@ -777,6 +809,7 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
 static void getFileReader(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
+    orc::MemoryPool & pool,
     const FormatSettings & format_settings,
     bool use_prefetch,
     size_t min_bytes_for_seek,
@@ -786,6 +819,7 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
+    options.setMemoryPool(pool);
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = min_bytes_for_seek, .rangeSizeLimit = 10 * 1024 * 1024UL});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
@@ -934,6 +968,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     size_t min_bytes_for_seek_,
     FormatFilterInfoPtr format_filter_info_)
     : IInputFormat(std::move(header_), &in_)
+    , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
@@ -945,7 +980,7 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
+    getFileReader(*in, file_reader, *memory_pool, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
     if (is_stopped)
         return;
 
@@ -1143,7 +1178,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
-    getFileReader(in, file_reader, format_settings, false, 0, is_stopped);
+    MemoryPool memory_pool;
+    getFileReader(in, file_reader, memory_pool, format_settings, false, 0, is_stopped);
 
     const auto & schema = file_reader->getType();
     Block header;
@@ -1167,8 +1203,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             header.insert(ColumnWithTypeAndName{type, name});
     }
 
-    /// ORC doesn't have non-nullable data types.
-    if (format_settings.schema_inference_make_columns_nullable != 0)
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
 }

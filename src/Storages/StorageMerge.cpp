@@ -68,7 +68,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
@@ -551,24 +550,20 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
 
-    // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
-    // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
-    // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
-    // order must be preserved.
-    const bool should_not_narrow = query_info.input_order_info || (
-        context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
-    if (!should_not_narrow)
+    if (!query_info.input_order_info)
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
             tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
         size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
 
+        // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
+        // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
+        // because narrowPipe doesn't preserve order.
         pipeline.narrow(num_streams);
     }
 
-    pipeline.addResources(resources);
+    pipeline.addResources(std::move(resources));
 }
 
 void ReadFromMerge::filterTablesAndCreateChildrenPlans()
@@ -939,6 +934,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+            .withExtendedObjects()
             .withSubcolumns(storage_snapshot_->storage.supportsSubcolumns());
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
@@ -1155,7 +1151,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return nullptr;
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    /// All optimizations will be done at plans creation
+    /// All optimisations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1349,7 +1345,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -1440,7 +1436,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         for (const auto & db : databases)
         {
@@ -1486,7 +1482,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 }
@@ -1509,6 +1505,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         for (const auto & alias : aliases)
         {
+            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
+
             ActionsDAG actions_dag(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
@@ -1590,8 +1588,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         current_step_columns,
         converted_columns,
-        ActionsDAG::MatchColumnsMode::Position,
-        local_context);
+        ActionsDAG::MatchColumnsMode::Position);
 
     auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
     child.plan.addStep(std::move(expression_step));

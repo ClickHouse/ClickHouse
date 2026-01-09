@@ -56,8 +56,6 @@ public:
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=secretkey;...', ...)` should be replaced with
         /// `azureBlobStorage('DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];...', ...)`.
         std::string replacement;
-        /// Whether to wrap a result using full argument replacement in quotes.
-        bool quote_replacement = true;
 
         bool hasSecrets() const
         {
@@ -104,26 +102,24 @@ protected:
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
-                 (function->name() == "paimonS3"))
+                 (function->name() == "gcs") || (function->name() == "icebergS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
-                 (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
+                 (function ->name() == "deltaLakeCluster") || (function ->name() == "icebergS3Cluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
         else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
-                 (function->name() == "icebergAzure") || (function->name() == "paimonAzure"))
+                 (function->name() == "icebergAzure"))
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") || (function->name() == "deltaLakeAzureCluster"))
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -147,10 +143,6 @@ protected:
         else if (function->name() == "ytsaurus")
         {
             findYTsaurusStorageTableEngineSecretArguments();
-        }
-        else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
-        {
-            findArrowFlightSecretArguments();
         }
     }
 
@@ -217,20 +209,6 @@ protected:
             // Redis('host:port', 'db_index', 'password', 'pool_size')
             markSecretArgument(2, false);
             return;
-        }
-    }
-
-    void findArrowFlightSecretArguments()
-    {
-        if (isNamedCollectionName(0))
-        {
-            /// ArrowFlight(named_collection, ..., password = 'password')
-            findSecretNamedArgument("password", 1);
-        }
-        else
-        {
-            /// ArrowFlight('host:port', 'dataset', 'username', 'password')
-            markSecretArgument(3);
         }
     }
 
@@ -558,10 +536,6 @@ protected:
         {
             findYTsaurusStorageTableEngineSecretArguments();
         }
-        else if (engine_name == "ArrowFlight")
-        {
-            findArrowFlightSecretArguments();
-        }
     }
 
     void findExternalDistributedTableEngineSecretArguments()
@@ -678,10 +652,6 @@ protected:
         {
             findDataLakeCatalogSecretArguments();
         }
-        else if (engine_name == "Backup")
-        {
-            findBackupDatabaseSecretArguments();
-        }
     }
 
     void findMySQLDatabaseSecretArguments()
@@ -718,46 +688,6 @@ protected:
         /// we need a function to check if the url is S3 or Azure.
         /// right now we assume it's a S3 url
         findS3DatabaseSecretArguments();
-    }
-
-    void findBackupDatabaseSecretArguments()
-    {
-        auto storage_arg = function->arguments->at(1);
-        auto storage_function = storage_arg->getFunction();
-
-        /// Backup('', S3('url', 'access_key_id', 'secret_access_key'))
-        if (storage_function && storage_function->name() == "S3" && storage_function->arguments->size() >= 3)
-        {
-            std::string replacement = "S3(";
-
-            for (size_t i = 0; i < storage_function->arguments->size(); ++i)
-            {
-                if (i > 0)
-                {
-                    replacement += ", ";
-                }
-
-                if (i == 2) // Secret key position
-                {
-                    replacement += "'[HIDDEN]'";
-                }
-                else
-                {
-                    String arg_value;
-                    if (!storage_function->arguments->at(i)->tryGetString(&arg_value, true))
-                    {
-                        return;
-                    }
-                    replacement += "'" + arg_value + "'";
-                }
-            }
-            replacement += ")";
-
-            result.start = 1;
-            result.count = 1;
-            result.replacement = std::move(replacement);
-            result.quote_replacement = false;
-        }
     }
 
     void findBackupNameSecretArguments()

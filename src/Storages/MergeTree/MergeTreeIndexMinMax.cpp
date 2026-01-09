@@ -204,7 +204,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }
@@ -219,10 +219,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
     if (checksums.files.contains(relative_path_prefix + ".idx2"))
-        return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
+        return {2, ".idx2"};
     if (checksums.files.contains(relative_path_prefix + ".idx"))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-    return {0 /* unknown */, {}};
+        return {1, ".idx"};
+    return {0 /* unknown */, ""};
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

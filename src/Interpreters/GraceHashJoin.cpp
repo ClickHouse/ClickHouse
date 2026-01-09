@@ -7,7 +7,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
-#include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -15,6 +14,7 @@
 #include <Core/Settings.h>
 
 #include <numeric>
+#include <shared_mutex>
 #include <fmt/format.h>
 
 
@@ -259,7 +259,7 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
-    , tmp_data(tmp_data_->childScope(CurrentMetrics::TemporaryFilesForJoin, table_join->temporaryFilesBufferSize()))
+    , tmp_data(tmp_data_->childScope(CurrentMetrics::TemporaryFilesForJoin))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -439,10 +439,9 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
 
     block = std::move(blocks[current_bucket->idx]);
-    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
-    blocks.clear();
 
     auto res = hash_join->joinBlock(std::move(block));
+    flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
     return res;
 }
 
@@ -624,7 +623,7 @@ public:
     std::mutex extra_block_mutex;
     std::list<JoinResultPtr> not_processed_results TSA_GUARDED_BY(extra_block_mutex);
 
-    SharedMutex eof_mutex;
+    std::shared_mutex eof_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -661,8 +660,8 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         }
         hash_join->onBuildPhaseFinish();
 
-        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
-            bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
+        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
+            bucket_idx, hash_join->getTotalRowCount(), num_rows);
 
         return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }

@@ -4,8 +4,7 @@ description: 'The `Dictionary` engine displays the dictionary data as a ClickHou
 sidebar_label: 'Dictionary'
 sidebar_position: 20
 slug: /engines/table-engines/special/dictionary
-title: 'Dictionary table engine'
-doc_type: 'reference'
+title: 'Dictionary Table Engine'
 ---
 
 # Dictionary table engine

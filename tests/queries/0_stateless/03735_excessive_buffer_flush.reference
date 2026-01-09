@@ -1,0 +1,5 @@
+buffer_flush_by_flush_time	10
+buffer_flush_by_max	10
+buffer_flush_by_min	10
+empty_buffer	10
+empty_buffer_zero_time	10
