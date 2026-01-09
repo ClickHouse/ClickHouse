@@ -1,3 +1,5 @@
+SET enable_analyzer=0;
+
 DROP TABLE IF EXISTS t_missed_subcolumns;
 
 SET allow_experimental_object_type = 1;
