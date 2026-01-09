@@ -189,6 +189,12 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     return current_zookeeper;
 }
 
+void DDLWorker::requestToResetState()
+{
+    LOG_INFO(log, "Request to reinitialize DDLWorker");
+    reset_state_requested = true;
+    queue_updated_event->set();
+}
 
 DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
 {
@@ -1203,6 +1209,12 @@ void DDLWorker::runMainThread()
     {
         try
         {
+            if (reset_state_requested.exchange(false))
+            {
+                LOG_INFO(log, "Resetting state as requested");
+                reset_state();
+            }
+
             bool reinitialized = !initialized;
 
             /// Reinitialize DDLWorker state (including ZooKeeper connection) if required

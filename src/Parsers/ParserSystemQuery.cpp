@@ -877,7 +877,16 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 #endif
-
+        case Type::RESET_DDL_WORKER: {
+            Pos prev_token = pos;
+            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+            {
+                pos = prev_token;
+                if (!parseQueryWithOnCluster(res, pos, expected))
+                    return false;
+            }
+            break;
+        }
         default:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
