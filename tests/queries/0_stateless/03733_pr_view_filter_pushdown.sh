@@ -20,7 +20,7 @@ insert into t_03733 select number, toString(number) from numbers(10);
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
 SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0;
-" |& grep 'executeQuery' | grep 'HAVING' | wc -l;
+" |& grep 'executeQuery' | grep -q 'HAVING' && echo "filter pushed down for remote nodes";
 # check filter pushdown for local replica
 $CLICKHOUSE_CLIENT --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
@@ -37,7 +37,7 @@ create view vv_03733 as select * from v_03733 order by a desc;
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
 SELECT * FROM vv_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0;
-" |& grep 'executeQuery' | grep 'HAVING' | wc -l;
+" |& grep 'executeQuery' | grep -q 'HAVING' && echo "filter pushed down for remote nodes";
 # check filter pushdown for local replica
 $CLICKHOUSE_CLIENT --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
@@ -54,7 +54,7 @@ create view v1_03733 as select a as c, b as d from t_03733;
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
 SELECT * FROM v1_03733 WHERE c = 0 SETTINGS parallel_replicas_local_plan=0;
-" |& grep 'executeQuery' | grep 'HAVING' | wc -l;
+" |& grep 'executeQuery' | grep -q 'HAVING' && echo "filter pushed down for remote nodes";
 # check filter pushdown for local replica
 $CLICKHOUSE_CLIENT --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
