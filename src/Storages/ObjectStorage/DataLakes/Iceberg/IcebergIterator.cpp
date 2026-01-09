@@ -114,18 +114,20 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
     {
         auto previous_it = end_it;
         --previous_it;
+        assert(*beg_it);
+        assert(*previous_it);
         LOG_DEBUG(
             logger,
             "Got {} {} delete elements for data file {}, first taken object info is {}, last taken object info is {}",
             static_cast<size_t>(end_it - beg_it),
             is_equality_delete ? "equality" : "position",
-            data_object_.file_path,
-            beg_it->dumpDeletesMatchingInfo(),
-            end_it->dumpDeletesMatchingInfo());
+            data_object_->file_path,
+            (*beg_it)->dumpDeletesMatchingInfo(),
+            (*previous_it)->dumpDeletesMatchingInfo());
     }
     else
     {
-        LOG_DEBUG(logger, "No {} delete elements for data file {}", is_equality_delete ? "equality" : "position", data_object_.file_path);
+        LOG_DEBUG(logger, "No {} delete elements for data file {}", is_equality_delete ? "equality" : "position", data_object_->file_path);
     }
     return {beg_it, end_it};
 }

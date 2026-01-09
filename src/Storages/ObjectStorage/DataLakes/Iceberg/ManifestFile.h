@@ -54,10 +54,6 @@ struct PartitionSpecsEntry
 };
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
-String dumpPartitionSpecification(const PartitionSpecification & partition_specification);
-
-String dumpPartitionKeyValue(const DB::Row & partition_key_value);
-
 /// Description of Data file in manifest file
 struct ManifestFileEntry : public boost::noncopyable
 {
