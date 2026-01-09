@@ -1,8 +1,6 @@
 #include <Server/WebUIRequestHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
-#include <incbin.h>
-
 #include <Common/re2.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
@@ -15,12 +13,30 @@
 
 
 /// Embedded HTML pages
-INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
-INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
-INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
-INCBIN(resource_lz_string_js, SOURCE_DIR "/programs/server/js/lz-string.js");
-INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
-INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
+constexpr unsigned char resource_play_html[] =
+{
+#embed "../../programs/server/play.html"
+};
+constexpr unsigned char resource_dashboard_html[] =
+{
+#embed "../../programs/server/dashboard.html"
+};
+constexpr unsigned char resource_uplot_js[] =
+{
+#embed "../../programs/server/js/uplot.js"
+};
+constexpr unsigned char resource_lz_string_js[] =
+{
+#embed "../../programs/server/js/lz-string.js"
+};
+constexpr unsigned char resource_binary_html[] =
+{
+#embed "../../programs/server/binary.html"
+};
+constexpr unsigned char resource_merges_html[] =
+{
+#embed "../../programs/server/merges.html"
+};
 
 
 namespace DB
@@ -43,12 +59,12 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize}, http_response_headers_override);
+    handle(request, response, {reinterpret_cast<const char *>(resource_play_html), std::size(resource_play_html)}, http_response_headers_override);
 }
 
 void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    std::string html(reinterpret_cast<const char *>(gresource_dashboard_htmlData), gresource_dashboard_htmlSize);
+    std::string html(reinterpret_cast<const char *>(resource_dashboard_html), std::size(resource_dashboard_html));
 
     /// Replace a link to external JavaScript file to embedded file.
     /// This allows to open the HTML without running a server and to host it on server.
@@ -66,23 +82,23 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize}, http_response_headers_override);
+    handle(request, response, {reinterpret_cast<const char *>(resource_binary_html), std::size(resource_binary_html)}, http_response_headers_override);
 }
 
 void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize}, http_response_headers_override);
+    handle(request, response, {reinterpret_cast<const char *>(resource_merges_html), std::size(resource_merges_html)}, http_response_headers_override);
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize}, http_response_headers_override);
+        handle(request, response, {reinterpret_cast<const char *>(resource_uplot_js), std::size(resource_uplot_js)}, http_response_headers_override);
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize}, http_response_headers_override);
+        handle(request, response, {reinterpret_cast<const char *>(resource_lz_string_js), std::size(resource_lz_string_js)}, http_response_headers_override);
     }
     else
     {
