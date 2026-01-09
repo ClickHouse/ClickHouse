@@ -170,8 +170,8 @@ struct BlockCodecImpl<false>
         {
             if (max_bits > 32)
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-            auto * m128i_in = reinterpret_cast<const m128i *>(in.data());
-            auto * m128i_in_end = unpackingLength(m128i_in, n, out.data(), max_bits);
+            const auto * m128i_in = reinterpret_cast<const m128i *>(in.data());
+            const auto * m128i_in_end = unpackingLength(m128i_in, n, out.data(), max_bits);
             auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(m128i);
             in = in.subspan(used);
             return used;
