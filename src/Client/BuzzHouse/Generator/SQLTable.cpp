@@ -437,7 +437,7 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
 }
 
 void StatementGenerator::generateTableExpression(
-    RandomGenerator & rg, std::optional<SQLRelation> & rel, const bool use_global_agg, Expr * expr)
+    RandomGenerator & rg, std::optional<SQLRelation> & rel, const bool use_global_agg, const bool pred, Expr * expr)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
@@ -464,7 +464,14 @@ void StatementGenerator::generateTableExpression(
     {
         this->levels[this->current_level].rels.push_back(rel.value());
     }
-    generateExpression(rg, expr);
+    if (pred)
+    {
+        generatePredicate(rg, expr);
+    }
+    else
+    {
+        generateExpression(rg, expr);
+    }
     this->allow_in_expression_alias = prev_allow_in_expression_alias;
     this->allow_subqueries = prev_allow_subqueries;
     this->levels.clear();
@@ -522,7 +529,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         std::optional<SQLRelation> rel
             = t.has_value() ? std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t.value())) : std::nullopt;
 
-        generateTableExpression(rg, rel, false, ttl_expr);
+        generateTableExpression(rg, rel, false, rg.nextMediumNumber() < 16, ttl_expr);
     }
 }
 
@@ -602,7 +609,7 @@ void StatementGenerator::generateNextTTL(
                 std::optional<SQLRelation> rel
                     = t.has_value() ? std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t.value())) : std::nullopt;
                 /// Use global aggregate most of the time
-                generateTableExpression(rg, rel, true, tset->mutable_expr());
+                generateTableExpression(rg, rel, true, rg.nextMediumNumber() < 16, tset->mutable_expr());
             }
         }
     }
@@ -799,7 +806,7 @@ void StatementGenerator::colRefOrExpression(
         /// Use a random expression
         std::optional<SQLRelation> opt_rel = std::make_optional<SQLRelation>(rel);
 
-        generateTableExpression(rg, opt_rel, false, expr);
+        generateTableExpression(rg, opt_rel, false, rg.nextMediumNumber() < 16, expr);
     }
     else if (rand_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + 1))
     {
@@ -844,7 +851,7 @@ void StatementGenerator::generateTableKey(
                 TableKeyExpr * tke = tkey->add_exprs();
                 std::optional<SQLRelation> opt_rel = std::make_optional<SQLRelation>(rel);
 
-                generateTableExpression(rg, opt_rel, false, tke->mutable_expr());
+                generateTableExpression(rg, opt_rel, false, rg.nextMediumNumber() < 16, tke->mutable_expr());
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
                     tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -965,7 +972,7 @@ void StatementGenerator::randomEngineParams(RandomGenerator & rg, std::optional<
     te->clear_params();
     for (uint32_t i = 0; i < nparams; i++)
     {
-        generateTableExpression(rg, rel, false, te->add_params()->mutable_expr());
+        generateTableExpression(rg, rel, false, rg.nextMediumNumber() < 16, te->add_params()->mutable_expr());
         this->width++;
     }
     this->width -= nparams;
@@ -1662,7 +1669,7 @@ void StatementGenerator::addTableColumnInternal(
             {
                 std::optional<SQLRelation> rel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
 
-                generateTableExpression(rg, rel, false, def_value->mutable_expr());
+                generateTableExpression(rg, rel, false, rg.nextMediumNumber() < 16, def_value->mutable_expr());
             }
         }
         if ((t.isMergeTreeFamily() || rg.nextLargeNumber() < 4))

@@ -1179,15 +1179,18 @@ bool StatementGenerator::joinedTableOrFunction(
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
         tt.setName(mtudf->mutable_est(), true);
-        if (rg.nextBool())
+        if (rg.nextSmallNumber() < 8)
         {
-            flatTableColumnPath(
-                to_remote_entries | flat_tuple | flat_nested | flat_json | collect_generated,
-                tt.cols,
-                [](const SQLColumn &) { return true; });
-            const ColumnPathChain entry = rg.pickRandomly(this->remote_entries);
-            this->remote_entries.clear();
-            colRefOrExpression(rg, createTableRelation(rg, true, "", tt), tt, entry, mtudf->mutable_pred());
+            /// Add predicate
+            const String dname = tt.getDatabaseName();
+            const String tname = tt.getTableName();
+            std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", tt));
+
+            generateTableExpression(rg, trel, false, rg.nextMediumNumber() < 81, mtudf->mutable_pred());
+            if (rg.nextSmallNumber() < 4 && fc.tableHasPartitions(false, dname, tname))
+            {
+                mtudf->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
+            }
         }
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"ranges"}));
