@@ -2,8 +2,6 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
@@ -52,7 +50,7 @@ public:
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
-    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
+    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) = 0;
     virtual void onException() {}
 
 protected:
@@ -61,7 +59,7 @@ protected:
     const PrometheusRequestHandlerConfig & config() { return parent().config; }
     PrometheusMetricsWriter & metrics_writer() { return *parent().metrics_writer; }
     LoggerPtr log() { return parent().log; }
-    WriteBuffer & getOutputStream(HTTPServerResponse & response) { return parent().getOutputStream(response); }
+    WriteBuffer & getOutputStream(HTTPServerResponseBase & response) { return parent().getOutputStream(response); }
 
 private:
     PrometheusRequestHandler & parent_ref;
@@ -80,7 +78,7 @@ public:
         chassert(config().type == PrometheusRequestHandlerConfig::Type::ExposeMetrics);
     }
 
-    void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponseBase & response) override
     {
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
         auto & out = getOutputStream(response);
@@ -115,10 +113,10 @@ class PrometheusRequestHandler::ImplWithContext : public Impl
 public:
     explicit ImplWithContext(PrometheusRequestHandler & parent) : Impl(parent), default_settings(server().context()->getSettingsRef()) { }
 
-    virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
+    virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponseBase & response) = 0;
 
 protected:
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override
     {
         SCOPE_EXIT({
             request_credentials.reset();
@@ -142,7 +140,7 @@ protected:
         handlingRequestWithContext(request, response);
     }
 
-    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
+    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponseBase & response)
     {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
@@ -153,7 +151,7 @@ protected:
         return true;
     }
 
-    bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
+    bool authenticateUser(HTTPServerRequest & request, HTTPServerResponseBase & response)
     {
         return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
     }
@@ -224,7 +222,7 @@ public:
         chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteWrite);
     }
 
-    void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
+    void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponseBase & response) override
     {
 #if USE_PROMETHEUS_PROTOBUFS
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
@@ -271,7 +269,7 @@ public:
         chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteRead);
     }
 
-    void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
+    void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponseBase & response) override
     {
 #if USE_PROMETHEUS_PROTOBUFS
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
@@ -346,7 +344,7 @@ public:
         return !reserved_param_names.contains(name);
     }
 
-    void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
+    void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponseBase & response) override
     {
         auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
         PrometheusHTTPProtocolAPI protocol{table, context};
@@ -510,14 +508,13 @@ void PrometheusRequestHandler::createImpl()
     UNREACHABLE();
 }
 
-void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_)
+void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
     try
     {
-        write_event = write_event_;
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
 
@@ -525,7 +522,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        setResponseDefaultHeaders(response);
+        response.setResponseDefaultHeaders();
 
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
@@ -537,19 +534,18 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
-        getOutputStream(response).cancelWithException(request, status.code, status.message, nullptr);
+        getOutputStream(response).cancelWithException(status.code, status.message, nullptr);
 
         tryCallOnException();
     }
 }
 
-WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)
+WriteBufferFromHTTPServerResponseBase & PrometheusRequestHandler::getOutputStream(HTTPServerResponseBase & response)
 {
     if (write_buffer_from_response)
         return *write_buffer_from_response;
 
-    write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
-        response, http_method == HTTPRequest::HTTP_HEAD, write_event);
+    write_buffer_from_response = response.makeUniqueStream();
 
     return *write_buffer_from_response;
 }

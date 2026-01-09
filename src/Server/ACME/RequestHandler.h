@@ -18,7 +18,7 @@ class ACMERequestHandler : public HTTPRequestHandler
 
 public:
     explicit ACMERequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 }

@@ -4,7 +4,6 @@
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <Poco/Net/HTTPServerResponse.h>
 
 #include <IO/HTTPCommon.h>
 #include <IO/LimitReadBuffer.h>
@@ -80,7 +79,7 @@ std::string getRawBytesFromRequest(HTTPServerRequest & request, const size_t max
     return request_data;
 }
 
-bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerResponse & response)
+bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerResponseBase & response)
 {
     switch (error)
     {
@@ -88,19 +87,21 @@ bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerRespon
             return false;
         case Coordination::Error::ZNONODE:
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "Node not found.");
-            *response.send() << "Requested node not found.\n";
+            response.makeStream()->sendBufferAndFinalize("Requested node not found.\n");
             return true;
         case Coordination::Error::ZNODEEXISTS:
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_CONFLICT, "Node already exists.");
-            *response.send() << "Node already exists.\n";
+            response.makeStream()->sendBufferAndFinalize("Node already exists.\n");
             return true;
         case Coordination::Error::ZBADVERSION:
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_CONFLICT, "Version conflict.");
-            *response.send() << "Version conflict. Check the current version and try again.\n";
+            response.makeStream()->sendBufferAndFinalize("Version conflict. Check the current version and try again.\n");
             return true;
         default:
             response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-            *response.send() << "Keeper request finished with error: " << errorMessage(error) << ".\n";
+            auto wb = response.makeStream();
+            *wb << "Keeper request finished with error: " << errorMessage(error) << ".\n";
+            wb->finalize();
             return true;
     }
 }
@@ -116,7 +117,7 @@ KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRequest(
-    Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
+    Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponseBase & response) const
 {
     switch (opnum)
     {
@@ -143,7 +144,7 @@ void KeeperHTTPStorageHandler::performZooKeeperRequest(
     }
 }
 
-void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response) const
+void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponseBase & response) const
 {
     Coordination::Stat stat;
 
@@ -162,11 +163,10 @@ void KeeperHTTPStorageHandler::performZooKeeperExistsRequest(const std::string &
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
     response.setContentType("application/json");
-
-    *response.send() << oss.str();
+    response.makeStream()->sendBufferAndFinalize(oss.str());
 }
 
-void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponse & response) const
+void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponseBase & response) const
 {
     Coordination::Stat stat;
     Strings result;
@@ -185,11 +185,10 @@ void KeeperHTTPStorageHandler::performZooKeeperListRequest(const std::string & s
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
     response.setContentType("application/json");
-
-    *response.send() << oss.str();
+    response.makeStream()->sendBufferAndFinalize(oss.str());
 }
 
-void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponse & response) const
+void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & storage_path, HTTPServerResponseBase & response) const
 {
     String result;
     if (!keeper_client->get()->tryGet(storage_path, result))
@@ -201,20 +200,17 @@ void KeeperHTTPStorageHandler::performZooKeeperGetRequest(const std::string & st
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
     response.setContentType("application/octet-stream");
     response.setContentLength(result.size());
-
-    auto buffer = response.send();
-    buffer->write(result.c_str(), result.size());
-    buffer->next();
+    response.makeStream()->sendBufferAndFinalize(result.c_str(), result.size());
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
-    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
+    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponseBase & response) const
 {
     const auto maybe_request_version = getVersionFromRequest(request);
     if (!maybe_request_version.has_value())
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Version parameter is not set or invalid.");
-        *response.send() << "Version parameter is not set or invalid for set request.\n";
+        response.makeStream()->sendBufferAndFinalize("Version parameter is not set or invalid for set request.\n");
         return;
     }
 
@@ -225,11 +221,11 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
     response.setContentType("text/plain");
-    *response.send() << "OK\n";
+    response.makeStream()->sendBufferAndFinalize("OK\n");
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
-    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
+    const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponseBase & response) const
 {
     const auto error = keeper_client->get()->tryCreate(storage_path, getRawBytesFromRequest(request, max_request_size), zkutil::CreateMode::Persistent);
 
@@ -239,17 +235,17 @@ void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_CREATED, "Created");
     response.setContentType("text/plain");
     response.set("Location", storage_path);
-    *response.send() << "Created\n";
+    response.makeStream()->sendBufferAndFinalize("Created\n");
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
-    const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponse & response) const
+    const std::string & storage_path, const HTTPServerRequest & request, HTTPServerResponseBase & response) const
 {
     const auto maybe_request_version = getVersionFromRequest(request);
     if (!maybe_request_version.has_value())
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Version parameter is not set or invalid.");
-        *response.send() << "Version parameter is not set or invalid for DELETE request.\n";
+        response.makeStream()->sendBufferAndFinalize("Version parameter is not set or invalid for DELETE request.\n");
         return;
     }
 
@@ -259,11 +255,11 @@ void KeeperHTTPStorageHandler::performZooKeeperRemoveRequest(
         return;
 
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NO_CONTENT, "No Content");
-    response.send();
+    response.makeStream()->finalize();
 }
 
 std::optional<Coordination::OpNum> KeeperHTTPStorageHandler::getOperationFromRequest(
-    const HTTPServerRequest & request, HTTPServerResponse & response)
+    const HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     const auto & method = request.getMethod();
 
@@ -290,13 +286,14 @@ std::optional<Coordination::OpNum> KeeperHTTPStorageHandler::getOperationFromReq
         return Coordination::OpNum::Remove;
 
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED, "Method not allowed.");
-    *response.send() << "HTTP method '" << method << "' is not supported. "
-                     << "Use GET, HEAD, POST, PUT, or DELETE.\n";
+    auto wb = response.makeStream();
+    *wb << "HTTP method '" << method << "' is not supported. "
+        << "Use GET, HEAD, POST, PUT, or DELETE.\n";
+    wb->finalize();
     return std::nullopt;
 }
 
-void KeeperHTTPStorageHandler::handleRequest(
-    HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void KeeperHTTPStorageHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 try
 {
     static constexpr auto uri_segments_prefix_length = 3;  /// /api/v1/storage
@@ -310,7 +307,7 @@ try
     catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
-        *response.send() << "Could not parse request path. Check if special symbols are used.\n";
+        response.makeStream()->sendBufferAndFinalize("Could not parse request path. Check if special symbols are used.\n");
         return;
     }
 
@@ -326,7 +323,7 @@ try
     if (storage_path.empty())
         storage_path = "/";
 
-    setResponseDefaultHeaders(response);
+    response.setResponseDefaultHeaders();
 
     try
     {
@@ -336,7 +333,9 @@ try
     {
         tryLogCurrentException(log, "Error when executing Keeper storage operation");
         response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-        *response.send() << getCurrentExceptionMessage(false) << '\n';
+        auto wb = response.makeStream();
+        *wb << getCurrentExceptionMessage(false) << '\n';
+        wb->finalize();
     }
 }
 catch (...)
@@ -347,10 +346,12 @@ catch (...)
     {
         response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
-        if (!response.sent())
+        if (!response.sendStarted())
         {
             /// We have not sent anything yet and we don't even know if we need to compress response.
-            *response.send() << getCurrentExceptionMessage(false) << '\n';
+            auto wb = response.makeStream();
+            *wb << getCurrentExceptionMessage(false) << '\n';
+            wb->finalize();
         }
     }
     catch (...)

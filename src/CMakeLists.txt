@@ -313,6 +313,8 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_http1 Server/HTTP/HTTP1)
+add_object_library(clickhouse_server_http2 Server/HTTP/HTTP2)
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
 endif()
@@ -711,6 +713,10 @@ endif()
 
 if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
+endif()
+
+if (TARGET ch_contrib::nghttp2)
+    target_link_libraries(dbms PRIVATE ch_contrib::nghttp2)
 endif()
 
 if (ENABLE_BUZZHOUSE)

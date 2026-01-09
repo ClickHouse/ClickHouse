@@ -179,6 +179,10 @@ namespace Net
         Context::Ptr context() const;
         /// Returns the SSL context used by this socket.
 
+        std::string getAlpnSelected() const;
+        /// Returns the name of the protocol that was negotiated via ALPN
+        /// If no protocol was negotiated then an empty string is returned
+
         void setLazyHandshake(bool flag = true);
         /// Enable lazy SSL handshake. If enabled, the SSL handshake
         /// will be performed the first time date is sent or
@@ -282,6 +286,10 @@ namespace Net
         return _impl.context();
     }
 
+    inline std::string SecureStreamSocketImpl::getAlpnSelected() const
+    {
+        return _impl.getAlpnSelected();
+    }
 
     inline Session::Ptr SecureStreamSocketImpl::currentSession()
     {

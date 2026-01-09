@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Server/HTTP/HTTP2/HTTP2ServerParams.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPServer.h>
@@ -20,7 +21,8 @@ public:
         HTTPRequestHandlerFactoryPtr factory,
         Poco::ThreadPool & thread_pool,
         Poco::Net::ServerSocket & socket,
-        Poco::Net::HTTPServerParams::Ptr params,
+        Poco::Net::HTTPServerParams::Ptr http1_params,
+        HTTP2ServerParams::Ptr http2_params,
         const TCPServerConnectionFilter::Ptr & filter = nullptr,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());

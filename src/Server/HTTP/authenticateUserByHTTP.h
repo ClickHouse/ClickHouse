@@ -8,7 +8,7 @@ namespace DB
 {
 class HTTPServerRequest;
 class HTMLForm;
-class HTTPServerResponse;
+class HTTPServerResponseBase;
 class Session;
 class Credentials;
 class BasicCredentials;
@@ -31,7 +31,7 @@ struct HTTPHandlerConnectionConfig;
 bool authenticateUserByHTTP(
     const HTTPServerRequest & request,
     const HTMLForm & params,
-    HTTPServerResponse & response,
+    HTTPServerResponseBase & response,
     Session & session,
     std::unique_ptr<Credentials> & request_credentials,
     const HTTPHandlerConnectionConfig & connection_config,

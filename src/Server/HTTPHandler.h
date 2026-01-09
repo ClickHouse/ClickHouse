@@ -6,7 +6,6 @@
 #include <Core/Names.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <IO/CascadeWriteBuffer.h>
@@ -29,7 +28,6 @@ namespace DB
 class Session;
 class IServer;
 struct Settings;
-class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
@@ -51,7 +49,7 @@ public:
     HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
     ~HTTPHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
@@ -72,11 +70,11 @@ private:
          * ↓ (forwards data if an overflow occurs or explicitly via pushDelayedResults)
          * CompressedWriteBuffer out_maybe_compressed (optional)
          * ↓
-         * WriteBufferFromHTTPServerResponse out
+         * WriteBufferFromHTTPServerResponseBase out
          */
 
         /// Holds original response buffer
-        std::shared_ptr<WriteBufferFromHTTPServerResponse> out_holder;
+        std::shared_ptr<WriteBufferFromHTTPServerResponseBase> out_holder;
         /// If HTTP compression is enabled holds compression wrapper over original response buffer
         std::shared_ptr<WriteBuffer> wrap_compressed_holder;
         /// Points either to out_holder or to wrap_compressed_holder
@@ -147,16 +145,14 @@ private:
     void processQuery(
         HTTPServerRequest & request,
         HTMLForm & params,
-        HTTPServerResponse & response,
+        HTTPServerResponseBase & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope,
-        const ProfileEvents::Event & write_event);
+        std::optional<CurrentThread::QueryScope> & query_scope);
 
     bool trySendExceptionToClient(
         int exception_code,
         const std::string & message,
-        HTTPServerRequest & request,
-        HTTPServerResponse & response,
+        HTTPServerResponseBase & response,
         Output & used_output);
 
     void releaseOrCloseSession(const String & session_id, bool close_session);
@@ -168,7 +164,7 @@ protected:
     virtual bool authenticateUser(
         HTTPServerRequest & request,
         HTMLForm & params,
-        HTTPServerResponse & response);
+        HTTPServerResponseBase & response);
 };
 
 class DynamicQueryHandler : public HTTPHandler

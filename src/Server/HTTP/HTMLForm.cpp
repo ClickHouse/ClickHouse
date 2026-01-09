@@ -3,7 +3,7 @@
 #include <Core/Settings.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <Server/HTTP/ReadHeaders.h>
+#include <Server/HTTP/HTTP1/ReadHeaders.h>
 
 #include <Poco/CountingStream.h>
 #include <Poco/Net/MultipartReader.h>

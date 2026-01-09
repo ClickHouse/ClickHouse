@@ -15,7 +15,7 @@ class KeeperDashboardWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit KeeperDashboardWebUIRequestHandler() = default;
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 /// Response with json containing dashboard information to be displayed
@@ -29,7 +29,7 @@ public:
         : keeper_dispatcher(keeper_dispatcher_)
     {
     }
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 }

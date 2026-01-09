@@ -9,7 +9,7 @@ namespace DB
 class AsynchronousMetrics;
 class IServer;
 class PrometheusMetricsWriter;
-class WriteBufferFromHTTPServerResponse;
+class WriteBufferFromHTTPServerResponseBase;
 
 /// Handles requests for prometheus protocols (expose_metrics, remote_write, remote-read).
 class PrometheusRequestHandler : public HTTPRequestHandler
@@ -23,14 +23,14 @@ public:
         std::unordered_map<String, String> response_headers_ = {});
     ~PrometheusRequestHandler() override;
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 
 private:
     /// Creates an internal implementation based on which PrometheusRequestHandlerConfig::Type is used.
     void createImpl();
 
     /// Returns the write buffer used for the current HTTP response.
-    WriteBufferFromHTTPServerResponse & getOutputStream(HTTPServerResponse & response);
+    WriteBufferFromHTTPServerResponseBase & getOutputStream(HTTPServerResponseBase & response);
 
     /// Calls onException() in a try-catch block.
     void tryCallOnException();
@@ -50,8 +50,7 @@ private:
     std::unique_ptr<Impl> impl;
 
     String http_method;
-    std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
-    ProfileEvents::Event write_event;
+    std::unique_ptr<WriteBufferFromHTTPServerResponseBase> write_buffer_from_response;
     bool send_stacktrace = false;
     std::unordered_map<String, String> response_headers;
 };

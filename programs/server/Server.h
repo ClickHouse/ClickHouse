@@ -3,10 +3,12 @@
 #include <Server/IServer.h>
 
 #include <Daemon/BaseDaemon.h>
+#include <Server/HTTP/HTTP2/HTTP2ServerParams.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPProtocolStackFactory.h>
 #include <Server/ServerType.h>
 #include <Poco/Net/HTTPServerParams.h>
+#include <Poco/ThreadPool.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -86,7 +88,9 @@ private:
     std::unique_ptr<TCPProtocolStackFactory> buildProtocolStackFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & protocol,
-        Poco::Net::HTTPServerParams::Ptr http_params,
+        Poco::Net::HTTPServerParams::Ptr http1_params,
+        HTTP2ServerParams::Ptr http2_params,
+        Poco::ThreadPool & thread_pool,
         AsynchronousMetrics & async_metrics,
         bool & is_secure);
 

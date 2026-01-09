@@ -192,6 +192,9 @@ namespace Net
         /// This method will only work if the blocking modes of
         /// the socket are changed via the setBlocking method!
 
+        std::string getAlpnSelected() const;
+        /// Returns the name of the protocol that was negotiated via ALPN
+        /// If no protocol was negotiated then an empty string is returned
 
     protected:
         void acceptSSL();

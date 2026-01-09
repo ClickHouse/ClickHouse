@@ -8,7 +8,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -26,7 +25,7 @@ INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 namespace DB
 {
 
-static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
+static void handle(HTTPServerRequest & request, HTTPServerResponseBase & response, std::string_view html,
                    std::unordered_map<String, String> http_response_headers_override = {})
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
@@ -34,19 +33,19 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response);
+    response.setResponseDefaultHeaders();
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto wb = response.makeStream();
+    wb->write(html.data(), html.size());
+    wb->finalize();
 }
 
-void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize}, http_response_headers_override);
 }
 
-void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     std::string html(reinterpret_cast<const char *>(gresource_dashboard_htmlData), gresource_dashboard_htmlSize);
 
@@ -64,17 +63,17 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     handle(request, response, html, http_response_headers_override);
 }
 
-void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize}, http_response_headers_override);
 }
 
-void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize}, http_response_headers_override);
 }
 
-void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     if (request.getURI() == "/js/uplot.js")
     {
@@ -87,7 +86,9 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
     else
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
+        auto wb = response.makeStream();
+        *wb << "Not found.\n";
+        wb->finalize();
     }
 }
 
