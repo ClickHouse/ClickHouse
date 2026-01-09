@@ -1179,7 +1179,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
         tt.setName(mtudf->mutable_est(), true);
-        if (rg.nextSmallNumber() < 8)
+        if (can_recurse && rg.nextSmallNumber() < 8)
         {
             /// Add predicate
             const String dname = tt.getDatabaseName();
