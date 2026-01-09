@@ -1,9 +1,10 @@
 #pragma once
 
-
 #include <queue>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+
+
 namespace DB
 {
 
@@ -54,11 +55,13 @@ private:
         HasData,
         Finished,
     };
+
     struct InputPortWithStatus
     {
         InputPort * port;
         InputStatus status;
     };
+
     struct OutputPortWithStatus
     {
         OutputPort * port;

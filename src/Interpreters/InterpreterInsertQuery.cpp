@@ -491,12 +491,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     });
 
     /// memory throttle for INSERTs
-    if (settings[Setting::enable_memory_based_pipeline_throttling])
+    if (context->getSettingsRef()[Setting::enable_memory_based_pipeline_throttling])
     {
         InsertMemoryThrottle::Settings throttle_settings;
         throttle_settings.enabled = true;
-        throttle_settings.high_threshold = settings[Setting::insert_memory_throttle_high_watermark];
-        throttle_settings.low_threshold = settings[Setting::insert_memory_throttle_low_watermark];
+        throttle_settings.high_threshold = context->getSettingsRef()[Setting::insert_memory_throttle_high_watermark];
+        throttle_settings.low_threshold = context->getSettingsRef()[Setting::insert_memory_throttle_low_watermark];
 
         auto mem_provider = std::make_shared<QueryMemoryProvider>(nullptr);
         auto insert_memory_throttle = std::make_shared<InsertMemoryThrottle>(throttle_settings, mem_provider);

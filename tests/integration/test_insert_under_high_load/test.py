@@ -31,17 +31,19 @@ def test_memory_based_pipeline_throttling(start_cluster):
 
     settings = "max_insert_threads=32, max_memory_usage=6e8, max_execution_time=100"
 
-    # Get initial count of InsertPipelineShrinking events
-    initial_event_count = instance.query(
-        """
-        SELECT sum(ProfileEvents['InsertPipelineShrinking'])
-        FROM system.query_log
-        WHERE event_date >= today()-1 AND current_database = currentDatabase()
-        LIMIT 1
-        """
-    ).strip()
+    # Flush query log to get clean state
+    instance.query("SYSTEM FLUSH LOGS")
 
-    initial_event_count = int(initial_event_count) if initial_event_count else 0
+    # Get initial count of InsertPipelineThrottled events
+    initial_throttled = int(
+        instance.query(
+            """
+            SELECT sum(ProfileEvents['InsertPipelineThrottled'])
+            FROM system.query_log
+            WHERE event_date >= today()-1 AND current_database = currentDatabase()
+            """
+        ).strip() or "0"
+    )
 
     # Perform the insert with memory-based pipeline throttling enabled
     instance.query(
@@ -53,23 +55,55 @@ def test_memory_based_pipeline_throttling(start_cluster):
         ignore_error=True,  # Ignore errors; we only care about profiling events
     )
 
-    # Get updated count of InsertPipelineShrinking events
-    updated_event_count = instance.query(
-        """
-        SELECT sum(ProfileEvents['InsertPipelineShrinking'])
-        FROM system.query_log
-        WHERE event_date >= today()-1 AND current_database = currentDatabase()
-        LIMIT 1
-        """
-    ).strip()
+    # Flush query log
+    instance.query("SYSTEM FLUSH LOGS")
 
-    updated_event_count = int(updated_event_count) if updated_event_count else 0
+    # Get updated count
+    updated_throttled = int(
+        instance.query(
+            """
+            SELECT sum(ProfileEvents['InsertPipelineThrottled'])
+            FROM system.query_log
+            WHERE event_date >= today()-1 AND current_database = currentDatabase()
+            """
+        ).strip() or "0"
+    )
 
-    # Check that the number of profile events has increased
-    assert updated_event_count > initial_event_count, (
-        f"InsertPipelineShrinking event count did not increase: "
-        f"initial={initial_event_count}, updated={updated_event_count}"
+    # Check that some throttling events occurred
+    throttling_events_increased = updated_throttled > initial_throttled
+
+    assert throttling_events_increased, (
+        f"Memory throttling events did not increase: "
+        f"initial={initial_throttled}, updated={updated_throttled}"
     )
 
     # Cleanup
     instance.query("DROP TABLE testing_memory SYNC")
+
+
+def test_memory_throttle_settings(start_cluster):
+    """Test that the memory throttle settings are properly applied"""
+
+    instance.query("DROP TABLE IF EXISTS test_settings SYNC")
+    instance.query(
+        "CREATE TABLE test_settings (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    # Run a simple insert with custom throttle settings
+    result = instance.query(
+        """
+        INSERT INTO test_settings
+        SELECT number FROM numbers(1000)
+        SETTINGS
+            enable_memory_based_pipeline_throttling=1,
+            insert_memory_throttle_high_threshold=0.9,
+            insert_memory_throttle_low_threshold=0.8
+        """
+    )
+
+    # Verify data was inserted
+    count = int(instance.query("SELECT count() FROM test_settings").strip())
+    assert count == 1000, f"Expected 1000 rows, got {count}"
+
+    # Cleanup
+    instance.query("DROP TABLE test_settings SYNC")

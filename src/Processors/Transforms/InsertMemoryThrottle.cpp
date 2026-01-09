@@ -21,8 +21,11 @@ MemorySnapshot QueryMemoryProvider::get() const
     {
         if (auto * current_tracker = CurrentThread::getMemoryTracker())
         {
-            while (auto * parent = current_tracker->getParent())
+            while (current_tracker->getHardLimit() <= 0)
             {
+                auto * parent = current_tracker->getParent();
+                if (!parent)
+                    break;
                 current_tracker = parent;
             }
             result.used_bytes = current_tracker->get();
