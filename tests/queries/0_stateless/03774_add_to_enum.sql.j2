@@ -28,18 +28,11 @@ DROP TABLE enum;
 {% endfor -%}
 
 
-CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
-CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNEXPECTED_AST_STRUCTURE }
-
--- Would be nice to prohibit
-CREATE TABLE addtoenum (x addToEnum('One' = 1, 'Two' = 2)) ENGINE = Memory;
-
--- Would be nice to prohibit
-ALTER TABLE addtoenum ADD COLUMN z addToEnum('A' = 1);
-
-DROP TABLE addtoenum;
+CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNKNOWN_TYPE }
+CREATE TABLE addtoenum (x addToEnum8('One' = 1, 'Two', 'Three')) ENGINE = Memory; -- { serverError UNKNOWN_TYPE }
+CREATE TABLE addtoenum (x addToEnum('One' = 1, 'Two' = 2)) ENGINE = Memory; -- { serverError UNKNOWN_TYPE }
 
 CREATE TABLE nonenum (x Int8) ENGINE = Memory;
 ALTER TABLE nonenum MODIFY COLUMN x addToEnum('A' = 1); -- { serverError ILLEGAL_COLUMN }
-
+ALTER TABLE nonenum ADD COLUMN z addToEnum('A' = 1); -- { serverError BAD_ARGUMENTS }
 DROP TABLE nonenum;

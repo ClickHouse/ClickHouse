@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -83,6 +84,8 @@ public:
 
 template <typename TypeBase, typename TypeAdd>
 DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add);
+
+DataTypePtr createAddToEnumType(const String & family_name, const ASTPtr & arguments);
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;

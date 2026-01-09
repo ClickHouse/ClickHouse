@@ -26,6 +26,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -92,6 +93,21 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
+std::optional<DataTypePtr> tryCreateAddToEnumType(const ASTPtr & type_ast)
+{
+    const auto * data_type_ast = type_ast ? type_ast->as<ASTDataType>() : nullptr;
+    if (!data_type_ast)
+        return {};
+
+    const auto & name = data_type_ast->name;
+
+    static const std::unordered_set<std::string> known_enum_types{"addToEnum", "addToEnum8", "addToEnum16"};
+    if (known_enum_types.contains(name))
+        return createAddToEnumType(name, data_type_ast->arguments);
+    else
+        return {};
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -109,6 +125,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.type)
         {
+            if (tryCreateAddToEnumType(ast_col_decl.type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "addToEnum can only be used in ALTER TABLE MODIFY COLUMN");
             command.data_type = data_type_factory.get(ast_col_decl.type);
         }
         if (ast_col_decl.default_expression)
@@ -166,7 +184,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.type)
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            if (auto add_enum = tryCreateAddToEnumType(ast_col_decl.type))
+                command.data_type = *add_enum;
+            else
+                command.data_type = data_type_factory.get(ast_col_decl.type);
         }
 
         if (ast_col_decl.default_expression)

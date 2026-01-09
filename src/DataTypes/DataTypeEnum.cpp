@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename FieldType> struct EnumName;
@@ -400,14 +401,23 @@ template DataTypePtr mergeEnumTypes(const DataTypeEnum8 & base, const DataTypeEn
 template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeEnum16 & add);
 template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeEnum8 & add);
 
+DataTypePtr createAddToEnumType(const String & family_name, const ASTPtr & arguments)
+{
+    if (family_name == "addToEnum8")
+        return createExact<DataTypeEnum8, true /*is_add*/>(arguments);
+    if (family_name == "addToEnum16")
+        return createExact<DataTypeEnum16, true>(arguments);
+    if (family_name == "addToEnum")
+        return create<true>(arguments);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Enum type '{}'", family_name);
+}
+
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
     factory.registerDataType("Enum8", createExact<DataTypeEnum8, false /*is_add */>);
     factory.registerDataType("Enum16", createExact<DataTypeEnum16, false>);
     factory.registerDataType("Enum", create<false>);
-    factory.registerDataType("addToEnum8", createExact<DataTypeEnum8, true /*is_add */>);
-    factory.registerDataType("addToEnum16", createExact<DataTypeEnum16, true>);
-    factory.registerDataType("addToEnum", create<true>);
 
     /// MySQL
     factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);
