@@ -2222,10 +2222,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & part_ranges : res_parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
 
-            LocalIndexAnalysisCallback local_index_analysis_callback = [&](const std::vector<std::string_view> & parts_) -> IndexAnalysisPartsRanges
+            LocalIndexAnalysisCallback local_index_analysis_callback = [&](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
+                /// Resolve part names to RangesInDataParts
                 RangesInDataParts parts_ranges_to_analyze;
-                for (const auto & part : parts_)
+                for (const auto & part : parts_to_analyze)
                     parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
 
                 IndexStats ignore_stats;
@@ -2233,19 +2234,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
                 std::unordered_set<std::string_view> processed_parts;
 
+                /// Convert RangesInDataParts to IndexAnalysisPartsRanges
                 IndexAnalysisPartsRanges res;
                 for (const auto & part_ranges : parts_ranges_res)
                 {
                     const auto & part_name = part_ranges.data_part->name;
                     res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
-                    processed_parts.insert(part_name);
                 }
 
-                for (const auto & part_name : parts_)
+                /// Add empty parts back, to take it into account in "Parts send"
+                for (const auto & part_name : parts_to_analyze)
                 {
                     if (processed_parts.contains(part_name))
                         continue;
-
                     res.emplace(part_name, MarkRanges{});
                 }
 
