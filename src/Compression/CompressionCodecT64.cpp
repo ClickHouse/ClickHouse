@@ -541,8 +541,8 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
 
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
-    
-    UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
+
+    const char * const original_dst = dst;
 
     if (bytes_size < header_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
