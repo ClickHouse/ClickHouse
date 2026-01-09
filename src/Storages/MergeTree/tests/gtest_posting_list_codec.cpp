@@ -51,7 +51,7 @@ TEST(PostingListCodecTest, Empty)
     RoundTripCheck(data);
 }
 
-TEST(PostingListCodecTest, Bit32_TightTail_NoPadding)
+TEST(PostingListCodecTest, Bit32TightTailNoPadding)
 {
     {
         std::vector<uint32_t> data = {0x80000000u};
@@ -73,9 +73,9 @@ TEST(PostingListCodecTest, Bit32_TightTail_NoPadding)
     }
 }
 
-TEST(PostingListCodecTest, SmallBits_RandomMonotonic_ManySizes)
+TEST(PostingListCodecTest, SmallBitsRandomMonotonicManySizes)
 {
-    std::mt19937 rng(12345);
+    std::mt19937 rng(12345); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> delta_dist(0, 15);
 
     auto gen = [&](size_t n)
@@ -98,9 +98,9 @@ TEST(PostingListCodecTest, SmallBits_RandomMonotonic_ManySizes)
     }
 }
 
-TEST(PostingListCodecTest, Mixed_RandomMonotonic_Larger)
+TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
 {
-    std::mt19937 rng(20240601);
+    std::mt19937 rng(20240601); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> delta_dist(0, 100000);
 
     for (int t = 0; t < 20; ++t)
@@ -111,7 +111,7 @@ TEST(PostingListCodecTest, Mixed_RandomMonotonic_Larger)
         for (size_t i = 0; i < n; ++i)
         {
             x += delta_dist(rng);
-            if (x > 0xFFFFFFFFull) x = 0xFFFFFFFFull;
+            x = std::min<uint64_t>(x, 0xFFFFFFFFull);
             data[i] = static_cast<uint32_t>(x);
         }
         RoundTripCheck(std::move(data));
@@ -245,7 +245,7 @@ static size_t DecodeSIMDComp(const std::vector<std::byte> & in, size_t n, uint32
 // -----------------------------------------------------------------------------
 //  Byte-for-byte equality of the encoded payload
 // -----------------------------------------------------------------------------
-TEST(PostingListCodecTest, EncodeBytes_Match_SSE_vs_Portable)
+TEST(PostingListCodecTest, EncodeBytesMatchSSEvsPortable)
 {
 #if USE_SIMDCOMP
     const std::vector<size_t> lengths = {0,1,2,3,4,5,31,32,33,127,128,129,255,256,257};
@@ -281,7 +281,7 @@ TEST(PostingListCodecTest, EncodeBytes_Match_SSE_vs_Portable)
 // -----------------------------------------------------------------------------
 //  Cross-decoding (SSE->Portable and Portable->SSE)
 // -----------------------------------------------------------------------------
-TEST(PostingListCodecTest, CrossDecode_SSE_to_Portable_and_Back)
+TEST(PostingListCodecTest, CrossDecodeSSEtoPortableandBack)
 {
 #if USE_SIMDCOMP
     const std::vector<size_t> lengths = {1,2,3,4,5,127,128,129,257};
@@ -367,7 +367,7 @@ TEST(PostingListCodecTest, SpecialPatterns)
 #endif
 }
 
-TEST(PostingListCodecTest, PortableEncode_DecodedBySSE_And_SSEEncode_DecodedByPortable)
+TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortable)
 {
 #if USE_SIMDCOMP
     // Sizes chosen to exercise:
