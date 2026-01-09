@@ -599,7 +599,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
                         uncompressed_size, sizeof(T));
 
     if (uncompressed_size == 0)
-        return dst - original_dst;
+        return static_cast<UInt32>(dst - original_dst);
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
@@ -619,7 +619,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         T min_value = static_cast<T>(min);
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
             unalignedStore<T>(dst, min_value);
-        return dst - original_dst;
+        return static_cast<UInt32>(dst - original_dst);
     }
 
     UInt32 src_shift = sizeof(UInt64) * num_bits;
@@ -673,7 +673,7 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         dst += tail * sizeof(T);
     }
 
-    return dst - original_dst;
+    return static_cast<UInt32>(dst - original_dst);
 }
 
 template <typename T>

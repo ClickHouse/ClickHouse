@@ -8,9 +8,12 @@
 #include <cstring>
 #include <memory>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
 #include <cctz/zone_info_source.h>
+#pragma clang diagnostic pop
 
 
 namespace DB

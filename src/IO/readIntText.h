@@ -171,7 +171,7 @@ handle_digit:
                                 return ReturnType(false);
                         }
 
-                        res = static_cast<UnsignedT>(-signed_res);
+                        res = static_cast<UnsignedT>(-static_cast<UnsignedT>(signed_res));
                     }
                     else
                     {

@@ -344,7 +344,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         prev_value = curr_value;
     }
 
-    return dest - original_dest;
+    return static_cast<UInt32>(dest - original_dest);
 }
 
 UInt8 getDataBytesSize(const IDataType * column_type)

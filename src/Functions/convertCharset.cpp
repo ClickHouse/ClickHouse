@@ -118,8 +118,10 @@ private:
                 UErrorCode status = U_ZERO_ERROR;
                 int32_t res = ucnv_toUChars(
                     converter_from->impl,
-                    uchars.data(), uchars.size(), /// NOLINT (clang-diagnostic-shorten-64-to-32)
-                    reinterpret_cast<const char *>(&from_chars[current_from_offset]), from_string_size, /// NOLINT (clang-diagnostic-shorten-64-to-32)
+                    uchars.data(),
+                    static_cast<int32_t>(uchars.size()),
+                    reinterpret_cast<const char *>(&from_chars[current_from_offset]),
+                    static_cast<int32_t>(from_string_size),
                     &status);
 
                 if (!U_SUCCESS(status))

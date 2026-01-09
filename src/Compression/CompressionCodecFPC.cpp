@@ -274,7 +274,7 @@ public:
             exportChunk(chunk_view);
         }
 
-        return result.data() - result_initial_pointer;
+        return static_cast<UInt32>(result.data() - result_initial_pointer);
     }
 
 private:
