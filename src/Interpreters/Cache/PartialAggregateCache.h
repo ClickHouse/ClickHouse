@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// Cache for partial aggregation results at the MergeTree part level.
-/// 
+///
 /// This cache stores intermediate aggregation results (partial aggregates) keyed by
 /// (query_hash, part_name, part_mutation_version). Since MergeTree parts are immutable,
 /// cached partial aggregates remain valid until the part is merged or mutated.
