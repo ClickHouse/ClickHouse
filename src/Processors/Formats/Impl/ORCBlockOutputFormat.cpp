@@ -452,7 +452,7 @@ void ORCBlockOutputFormat::writeColumn(
                     column,
                     type,
                     null_bytemap,
-                    [](Int128 value){ return orc::Int128(value >> 64, (value << 64) >> 64); });
+                    [](Int128 value){ return orc::Int128(static_cast<Int64>(value >> 64), static_cast<UInt64>((value << 64) >> 64)); });
             break;
         }
         case TypeIndex::Decimal256:
