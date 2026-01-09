@@ -49,7 +49,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
-    addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
+    addConvertingActions(*query_plan, header, context);
     return query_plan;
 }
 
