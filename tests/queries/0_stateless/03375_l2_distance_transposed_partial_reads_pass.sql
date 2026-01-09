@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/88362
 
-SET allow_qbit_type = 1;
+SET enable_qbit_type = 1;
 
 CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 1)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [toBFloat16(1)]);

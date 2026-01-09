@@ -1,4 +1,4 @@
-SET allow_qbit_type = 1;
+SET enable_qbit_type = 1;
 
 SELECT 'Test Array → QBit CAST AS: Float64';
 

@@ -17,7 +17,7 @@ This stores vectors at full precision while letting you choose the fine-grained 
 
 :::note
 `QBit` data type and distance functions associated with it are Beta features.
-To enable them, please first run `SET allow_beta_qbit_type = 1`.
+To enable them, please first run `SET enable_qbit_type = 1`.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
