@@ -2158,6 +2158,27 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
     bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
 
+    auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
+    if (!allow_query_condition_cache_)
+        reader_settings.use_query_condition_cache = false;
+
+    MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
+    {
+        .metadata_snapshot = metadata_snapshot,
+        .mutations_snapshot = mutations_snapshot,
+        .query_info = query_info_,
+        .context = context_,
+        .indexes = *indexes,
+        .top_k_filter_info = top_k_filter_info,
+        .reader_settings = reader_settings,
+        .log = log,
+        .num_streams = num_streams,
+        .find_exact_ranges = find_exact_ranges,
+        .is_parallel_reading_from_replicas = is_parallel_reading_from_replicas_,
+        .has_projections = has_projections,
+        .result = result,
+    };
+
     if (context_->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
@@ -2171,43 +2192,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
-        if (!allow_query_condition_cache_)
-            reader_settings.use_query_condition_cache = false;
-        auto analyze_index = [&](RangesInDataParts parts_to_analyze, IndexStats & index_stats) -> RangesInDataParts
-        {
-            return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-                std::move(parts_to_analyze),
-                metadata_snapshot,
-                mutations_snapshot,
-                query_info_,
-                context_,
-                indexes->key_condition,
-                indexes->part_offset_condition,
-                indexes->total_offset_condition,
-                indexes->key_condition_rpn_template,
-                indexes->skip_indexes,
-                top_k_filter_info,
-                reader_settings,
-                log,
-                num_streams,
-                index_stats,
-                indexes->use_skip_indexes,
-                indexes->use_skip_indexes_for_disjunctions,
-                find_exact_ranges,
-                query_info_.isFinal(),
-                is_parallel_reading_from_replicas_,
-                has_projections,
-                result);
-        };
-
         bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
         bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis] && !final_second_pass;
 
         if (!distributed_index_analysis_enabled)
         {
-            result.parts_with_ranges = analyze_index(res_parts, result.index_stats);
+            result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, res_parts, result.index_stats);
 
             if (final_second_pass)
             {
@@ -2230,7 +2221,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
 
                 IndexStats ignore_stats;
-                auto parts_ranges_res = analyze_index(parts_ranges_to_analyze, ignore_stats);
+                auto parts_ranges_res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_to_analyze, ignore_stats);
 
                 std::unordered_set<std::string_view> processed_parts;
 

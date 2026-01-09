@@ -191,29 +191,23 @@ protected:
         /// TODO: we may also want to support query condition cache here as well
 
         ReadFromMergeTree::AnalysisResult analysis_result;
-        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            parts_ranges,
-            metadata_snapshot,
-            snapshot_data.mutations_snapshot,
-            query_info,
-            new_context,
-            indexes->key_condition,
-            indexes->part_offset_condition,
-            indexes->total_offset_condition,
-            indexes->key_condition_rpn_template,
-            indexes->skip_indexes,
-            /* top_k_filter_info= */ std::nullopt,
-            reader_settings,
-            getLogger("MergeTreeAnalyzeIndexSource"),
-            num_streams,
-            analysis_result.index_stats,
-            indexes->use_skip_indexes,
-            indexes->use_skip_indexes_for_disjunctions,
-            /* find_exact_ranges= */ false,
-            /* is_final_query= */ false,
-            /* is_parallel_reading_from_replicas= */ false,
-            /* has_projections= */ false,
-            analysis_result);
+        MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
+        {
+            .metadata_snapshot = metadata_snapshot,
+            .mutations_snapshot = snapshot_data.mutations_snapshot,
+            .query_info = query_info,
+            .context = new_context,
+            .indexes = *indexes,
+            .top_k_filter_info = std::nullopt,
+            .reader_settings = reader_settings,
+            .log = getLogger("MergeTreeAnalyzeIndexSource"),
+            .num_streams = num_streams,
+            .find_exact_ranges = false,
+            .is_parallel_reading_from_replicas = false,
+            .has_projections = false,
+            .result = analysis_result,
+        };
+        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
     }
 
 private:
