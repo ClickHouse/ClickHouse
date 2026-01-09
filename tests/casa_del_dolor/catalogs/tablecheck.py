@@ -85,7 +85,7 @@ class SparkAndClickHouseCheck:
                 len(timestamps) == 0 or random.randint(1, 2) == 1
             ):
                 next_snapshot = random.choice(snapshots)
-                clickhouse_predicate = f" SETTINGS {"iceberg_snapshot_id" if table.lake_format == LakeFormat.Iceberg else "delta_lake_snapshot_version"} = {next_snapshot}"
+                clickhouse_predicate = f" SETTINGS {'iceberg_snapshot_id' if table.lake_format == LakeFormat.Iceberg else 'delta_lake_snapshot_version'} = {next_snapshot}"
                 spark_predicate = f" VERSION AS OF {next_snapshot}"
                 extra_predicate = f" on snapshot {next_snapshot}"
             elif len(timestamps) > 0:

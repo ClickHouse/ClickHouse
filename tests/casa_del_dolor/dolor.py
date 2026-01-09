@@ -15,7 +15,6 @@ import sys
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
 from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
     get_unique_free_ports,
@@ -430,6 +429,7 @@ if args.with_minio:
 
 cluster = ClickHouseCluster(
     __file__,
+    name="dolor",
     custom_keeper_configs=keeper_configs,
     azurite_default_port=10000,
     server_bin_path=first_server,

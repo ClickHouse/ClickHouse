@@ -54,6 +54,7 @@ function fuzz
     echo "Server seed to use: $server_seed"
     server_logfile="$PWD/dolor.log"
 
+    export PYTHONPATH=$repo_dir/tests:$PYTHONPATH
     server_cmd=(
         python3
         "$repo_dir"/tests/casa_del_dolor/dolor.py
