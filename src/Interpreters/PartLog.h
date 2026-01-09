@@ -93,6 +93,9 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
+    /// Mutation IDs for MUTATE_PART events (can be a range like "0000001..0000005")
+    String mutation_ids;
+
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
     static std::string name() { return "PartLog"; }
