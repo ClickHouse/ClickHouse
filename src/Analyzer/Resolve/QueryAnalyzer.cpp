@@ -3444,14 +3444,6 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
         {
             if (const auto * function_node = projection_nodes[i]->as<FunctionNode>(); !function_node || function_node->getFunctionName() != "__interpolate")
             {
-                /// Clone if shared to avoid corrupting cached entries
-                if (projection_nodes[i].use_count() > 1)
-                {
-                    projection_nodes[i] = projection_nodes[i]->clone();
-                    /// Remove alias from cloned inner node - the __interpolate wrapper becomes the projection
-                    projection_nodes[i]->removeAlias();
-                }
-
                 auto f = std::make_shared<FunctionNode>("__interpolate");
                 f->getArguments().getNodes().push_back(projection_nodes[i]);
                 f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
