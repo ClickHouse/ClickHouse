@@ -27,7 +27,7 @@ class PartialAggregateCachingTransform : public IAccumulatingTransform
 {
 public:
     PartialAggregateCachingTransform(
-        const Block & header_,
+        SharedHeader header_,
         Aggregator::Params params_,
         IASTHash query_hash_,
         PartialAggregateCachePtr cache_,
@@ -40,6 +40,7 @@ protected:
     Chunk generate() override;
 
 private:
+    SharedHeader input_header;
     Aggregator::Params params;
     IASTHash query_hash;
     PartialAggregateCachePtr cache;
