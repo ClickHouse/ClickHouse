@@ -51,6 +51,10 @@ public:
     /// Updates Bloom filter from exact-match string filter value
     virtual void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
+    /// Filters out tokens excessive for search.
+    /// This method is inefficient and should be used only for constants.
+    virtual std::vector<String> compactTokens(const std::vector<String> & tokens) const = 0;
+
     /// Updates Bloom filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
     /// tokens depending on whether the substring is a prefix or a suffix.
@@ -156,6 +160,12 @@ private:
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, cur, token))
             tokens.push_back(token);
     }
+
+    std::vector<String> compactTokens(const std::vector<String> & tokens) const override
+    {
+        std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+        return std::vector<String>(unique_tokens.begin(), unique_tokens.end());
+    }
 };
 
 class TokenizerFactory : public boost::noncopyable
@@ -253,6 +263,7 @@ struct SparseGramsTokenExtractor final : public ITokenExtractorHelper<SparseGram
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    std::vector<String> compactTokens(const std::vector<String> & tokens) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
