@@ -561,7 +561,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUInt8 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUInt8 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUInt8 = {description_reinterpretAsUInt8, syntax_reinterpretAsUInt8, arguments_reinterpretAsUInt8, returned_value_reinterpretAsUInt8, examples_reinterpretAsUInt8, introduced_in_reinterpretAsUInt8, category_reinterpretAsUInt8};
+    FunctionDocumentation documentation_reinterpretAsUInt8 = {description_reinterpretAsUInt8, syntax_reinterpretAsUInt8, arguments_reinterpretAsUInt8, {}, returned_value_reinterpretAsUInt8, examples_reinterpretAsUInt8, introduced_in_reinterpretAsUInt8, category_reinterpretAsUInt8};
 
     factory.registerFunction<FunctionReinterpretAsUInt8>(documentation_reinterpretAsUInt8);
 
@@ -593,7 +593,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUInt16 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUInt16 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUInt16 = {description_reinterpretAsUInt16, syntax_reinterpretAsUInt16, arguments_reinterpretAsUInt16, returned_value_reinterpretAsUInt16, examples_reinterpretAsUInt16, introduced_in_reinterpretAsUInt16, category_reinterpretAsUInt16};
+    FunctionDocumentation documentation_reinterpretAsUInt16 = {description_reinterpretAsUInt16, syntax_reinterpretAsUInt16, arguments_reinterpretAsUInt16, {}, returned_value_reinterpretAsUInt16, examples_reinterpretAsUInt16, introduced_in_reinterpretAsUInt16, category_reinterpretAsUInt16};
 
     factory.registerFunction<FunctionReinterpretAsUInt16>(documentation_reinterpretAsUInt16);
 
@@ -625,7 +625,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUInt32 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUInt32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUInt32 = {description_reinterpretAsUInt32, syntax_reinterpretAsUInt32, arguments_reinterpretAsUInt32, returned_value_reinterpretAsUInt32, examples_reinterpretAsUInt32, introduced_in_reinterpretAsUInt32, category_reinterpretAsUInt32};
+    FunctionDocumentation documentation_reinterpretAsUInt32 = {description_reinterpretAsUInt32, syntax_reinterpretAsUInt32, arguments_reinterpretAsUInt32, {}, returned_value_reinterpretAsUInt32, examples_reinterpretAsUInt32, introduced_in_reinterpretAsUInt32, category_reinterpretAsUInt32};
 
     factory.registerFunction<FunctionReinterpretAsUInt32>(documentation_reinterpretAsUInt32);
 
@@ -657,7 +657,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUInt64 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUInt64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUInt64 = {description_reinterpretAsUInt64, syntax_reinterpretAsUInt64, arguments_reinterpretAsUInt64, returned_value_reinterpretAsUInt64, examples_reinterpretAsUInt64, introduced_in_reinterpretAsUInt64, category_reinterpretAsUInt64};
+    FunctionDocumentation documentation_reinterpretAsUInt64 = {description_reinterpretAsUInt64, syntax_reinterpretAsUInt64, arguments_reinterpretAsUInt64, {}, returned_value_reinterpretAsUInt64, examples_reinterpretAsUInt64, introduced_in_reinterpretAsUInt64, category_reinterpretAsUInt64};
 
     factory.registerFunction<FunctionReinterpretAsUInt64>(documentation_reinterpretAsUInt64);
 
@@ -689,7 +689,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUInt128 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUInt128 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUInt128 = {description_reinterpretAsUInt128, syntax_reinterpretAsUInt128, arguments_reinterpretAsUInt128, returned_value_reinterpretAsUInt128, examples_reinterpretAsUInt128, introduced_in_reinterpretAsUInt128, category_reinterpretAsUInt128};
+    FunctionDocumentation documentation_reinterpretAsUInt128 = {description_reinterpretAsUInt128, syntax_reinterpretAsUInt128, arguments_reinterpretAsUInt128, {}, returned_value_reinterpretAsUInt128, examples_reinterpretAsUInt128, introduced_in_reinterpretAsUInt128, category_reinterpretAsUInt128};
 
     factory.registerFunction<FunctionReinterpretAsUInt128>(documentation_reinterpretAsUInt128);
 
@@ -721,7 +721,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUInt256 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUInt256 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUInt256 = {description_reinterpretAsUInt256, syntax_reinterpretAsUInt256, arguments_reinterpretAsUInt256, returned_value_reinterpretAsUInt256, examples_reinterpretAsUInt256, introduced_in_reinterpretAsUInt256, category_reinterpretAsUInt256};
+    FunctionDocumentation documentation_reinterpretAsUInt256 = {description_reinterpretAsUInt256, syntax_reinterpretAsUInt256, arguments_reinterpretAsUInt256, {}, returned_value_reinterpretAsUInt256, examples_reinterpretAsUInt256, introduced_in_reinterpretAsUInt256, category_reinterpretAsUInt256};
 
     factory.registerFunction<FunctionReinterpretAsUInt256>(documentation_reinterpretAsUInt256);
 
@@ -753,7 +753,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsInt8 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsInt8 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsInt8 = {description_reinterpretAsInt8, syntax_reinterpretAsInt8, arguments_reinterpretAsInt8, returned_value_reinterpretAsInt8, examples_reinterpretAsInt8, introduced_in_reinterpretAsInt8, category_reinterpretAsInt8};
+    FunctionDocumentation documentation_reinterpretAsInt8 = {description_reinterpretAsInt8, syntax_reinterpretAsInt8, arguments_reinterpretAsInt8, {}, returned_value_reinterpretAsInt8, examples_reinterpretAsInt8, introduced_in_reinterpretAsInt8, category_reinterpretAsInt8};
 
     factory.registerFunction<FunctionReinterpretAsInt8>(documentation_reinterpretAsInt8);
 
@@ -785,7 +785,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsInt16 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsInt16 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsInt16 = {description_reinterpretAsInt16, syntax_reinterpretAsInt16, arguments_reinterpretAsInt16, returned_value_reinterpretAsInt16, examples_reinterpretAsInt16, introduced_in_reinterpretAsInt16, category_reinterpretAsInt16};
+    FunctionDocumentation documentation_reinterpretAsInt16 = {description_reinterpretAsInt16, syntax_reinterpretAsInt16, arguments_reinterpretAsInt16, {}, returned_value_reinterpretAsInt16, examples_reinterpretAsInt16, introduced_in_reinterpretAsInt16, category_reinterpretAsInt16};
 
     factory.registerFunction<FunctionReinterpretAsInt16>(documentation_reinterpretAsInt16);
 
@@ -817,7 +817,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsInt32 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsInt32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsInt32 = {description_reinterpretAsInt32, syntax_reinterpretAsInt32, arguments_reinterpretAsInt32, returned_value_reinterpretAsInt32, examples_reinterpretAsInt32, introduced_in_reinterpretAsInt32, category_reinterpretAsInt32};
+    FunctionDocumentation documentation_reinterpretAsInt32 = {description_reinterpretAsInt32, syntax_reinterpretAsInt32, arguments_reinterpretAsInt32, {}, returned_value_reinterpretAsInt32, examples_reinterpretAsInt32, introduced_in_reinterpretAsInt32, category_reinterpretAsInt32};
 
     factory.registerFunction<FunctionReinterpretAsInt32>(documentation_reinterpretAsInt32);
 
@@ -849,7 +849,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsInt64 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsInt64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsInt64 = {description_reinterpretAsInt64, syntax_reinterpretAsInt64, arguments_reinterpretAsInt64, returned_value_reinterpretAsInt64, examples_reinterpretAsInt64, introduced_in_reinterpretAsInt64, category_reinterpretAsInt64};
+    FunctionDocumentation documentation_reinterpretAsInt64 = {description_reinterpretAsInt64, syntax_reinterpretAsInt64, arguments_reinterpretAsInt64, {}, returned_value_reinterpretAsInt64, examples_reinterpretAsInt64, introduced_in_reinterpretAsInt64, category_reinterpretAsInt64};
 
     factory.registerFunction<FunctionReinterpretAsInt64>(documentation_reinterpretAsInt64);
 
@@ -881,7 +881,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsInt128 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsInt128 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsInt128 = {description_reinterpretAsInt128, syntax_reinterpretAsInt128, arguments_reinterpretAsInt128, returned_value_reinterpretAsInt128, examples_reinterpretAsInt128, introduced_in_reinterpretAsInt128, category_reinterpretAsInt128};
+    FunctionDocumentation documentation_reinterpretAsInt128 = {description_reinterpretAsInt128, syntax_reinterpretAsInt128, arguments_reinterpretAsInt128, {}, returned_value_reinterpretAsInt128, examples_reinterpretAsInt128, introduced_in_reinterpretAsInt128, category_reinterpretAsInt128};
 
     factory.registerFunction<FunctionReinterpretAsInt128>(documentation_reinterpretAsInt128);
 
@@ -913,7 +913,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsInt256 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsInt256 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsInt256 = {description_reinterpretAsInt256, syntax_reinterpretAsInt256, arguments_reinterpretAsInt256, returned_value_reinterpretAsInt256, examples_reinterpretAsInt256, introduced_in_reinterpretAsInt256, category_reinterpretAsInt256};
+    FunctionDocumentation documentation_reinterpretAsInt256 = {description_reinterpretAsInt256, syntax_reinterpretAsInt256, arguments_reinterpretAsInt256, {}, returned_value_reinterpretAsInt256, examples_reinterpretAsInt256, introduced_in_reinterpretAsInt256, category_reinterpretAsInt256};
 
     factory.registerFunction<FunctionReinterpretAsInt256>(documentation_reinterpretAsInt256);
 
@@ -941,7 +941,7 @@ SELECT reinterpretAsUInt32(toFloat32(0.2)) AS x, reinterpretAsFloat32(x)
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsFloat32 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsFloat32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsFloat32 = {description_reinterpretAsFloat32, syntax_reinterpretAsFloat32, arguments_reinterpretAsFloat32, returned_value_reinterpretAsFloat32, examples_reinterpretAsFloat32, introduced_in_reinterpretAsFloat32, category_reinterpretAsFloat32};
+    FunctionDocumentation documentation_reinterpretAsFloat32 = {description_reinterpretAsFloat32, syntax_reinterpretAsFloat32, arguments_reinterpretAsFloat32, {}, returned_value_reinterpretAsFloat32, examples_reinterpretAsFloat32, introduced_in_reinterpretAsFloat32, category_reinterpretAsFloat32};
 
     factory.registerFunction<FunctionReinterpretAsFloat32>(documentation_reinterpretAsFloat32);
 
@@ -969,7 +969,7 @@ SELECT reinterpretAsUInt64(toFloat64(0.2)) AS x, reinterpretAsFloat64(x)
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsFloat64 = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsFloat64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsFloat64 = {description_reinterpretAsFloat64, syntax_reinterpretAsFloat64, arguments_reinterpretAsFloat64, returned_value_reinterpretAsFloat64, examples_reinterpretAsFloat64, introduced_in_reinterpretAsFloat64, category_reinterpretAsFloat64};
+    FunctionDocumentation documentation_reinterpretAsFloat64 = {description_reinterpretAsFloat64, syntax_reinterpretAsFloat64, arguments_reinterpretAsFloat64, {}, returned_value_reinterpretAsFloat64, examples_reinterpretAsFloat64, introduced_in_reinterpretAsFloat64, category_reinterpretAsFloat64};
 
     factory.registerFunction<FunctionReinterpretAsFloat64>(documentation_reinterpretAsFloat64);
 
@@ -996,7 +996,7 @@ SELECT reinterpretAsDate(65), reinterpretAsDate('A')
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsDate = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsDate = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsDate = {description_reinterpretAsDate, syntax_reinterpretAsDate, arguments_reinterpretAsDate, returned_value_reinterpretAsDate, examples_reinterpretAsDate, introduced_in_reinterpretAsDate, category_reinterpretAsDate};
+    FunctionDocumentation documentation_reinterpretAsDate = {description_reinterpretAsDate, syntax_reinterpretAsDate, arguments_reinterpretAsDate, {}, returned_value_reinterpretAsDate, examples_reinterpretAsDate, introduced_in_reinterpretAsDate, category_reinterpretAsDate};
 
     factory.registerFunction<FunctionReinterpretAsDate>(documentation_reinterpretAsDate);
 
@@ -1023,7 +1023,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsDateTime = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsDateTime = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsDateTime = {description_reinterpretAsDateTime, syntax_reinterpretAsDateTime, arguments_reinterpretAsDateTime, returned_value_reinterpretAsDateTime, examples_reinterpretAsDateTime, introduced_in_reinterpretAsDateTime, category_reinterpretAsDateTime};
+    FunctionDocumentation documentation_reinterpretAsDateTime = {description_reinterpretAsDateTime, syntax_reinterpretAsDateTime, arguments_reinterpretAsDateTime, {}, returned_value_reinterpretAsDateTime, examples_reinterpretAsDateTime, introduced_in_reinterpretAsDateTime, category_reinterpretAsDateTime};
 
     factory.registerFunction<FunctionReinterpretAsDateTime>(documentation_reinterpretAsDateTime);
 
@@ -1050,7 +1050,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsUUID = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsUUID = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsUUID = {description_reinterpretAsUUID, syntax_reinterpretAsUUID, arguments_reinterpretAsUUID, returned_value_reinterpretAsUUID, examples_reinterpretAsUUID, introduced_in_reinterpretAsUUID, category_reinterpretAsUUID};
+    FunctionDocumentation documentation_reinterpretAsUUID = {description_reinterpretAsUUID, syntax_reinterpretAsUUID, arguments_reinterpretAsUUID, {}, returned_value_reinterpretAsUUID, examples_reinterpretAsUUID, introduced_in_reinterpretAsUUID, category_reinterpretAsUUID};
 
     factory.registerFunction<FunctionReinterpretAsUUID>(documentation_reinterpretAsUUID);
 
@@ -1080,7 +1080,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsString = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsString = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsString = {description_reinterpretAsString, syntax_reinterpretAsString, arguments_reinterpretAsString, returned_value_reinterpretAsString, examples_reinterpretAsString, introduced_in_reinterpretAsString, category_reinterpretAsString};
+    FunctionDocumentation documentation_reinterpretAsString = {description_reinterpretAsString, syntax_reinterpretAsString, arguments_reinterpretAsString, {}, returned_value_reinterpretAsString, examples_reinterpretAsString, introduced_in_reinterpretAsString, category_reinterpretAsString};
 
     factory.registerFunction<FunctionReinterpretAsString>(documentation_reinterpretAsString);
 
@@ -1110,7 +1110,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsFixedString = {1, 1};
     FunctionDocumentation::Category category_reinterpretAsFixedString = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpretAsFixedString = {description_reinterpretAsFixedString, syntax_reinterpretAsFixedString, arguments_reinterpretAsFixedString, returned_value_reinterpretAsFixedString, examples_reinterpretAsFixedString, introduced_in_reinterpretAsFixedString, category_reinterpretAsFixedString};
+    FunctionDocumentation documentation_reinterpretAsFixedString = {description_reinterpretAsFixedString, syntax_reinterpretAsFixedString, arguments_reinterpretAsFixedString, {}, returned_value_reinterpretAsFixedString, examples_reinterpretAsFixedString, introduced_in_reinterpretAsFixedString, category_reinterpretAsFixedString};
 
     factory.registerFunction<FunctionReinterpretAsFixedString>(documentation_reinterpretAsFixedString);
 
@@ -1151,7 +1151,7 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
     };
     FunctionDocumentation::IntroducedIn introduced_in_reinterpret = {1, 1};
     FunctionDocumentation::Category category_reinterpret = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_reinterpret = {description_reinterpret, syntax_reinterpret, arguments_reinterpret, returned_value_reinterpret, examples_reinterpret, introduced_in_reinterpret, category_reinterpret};
+    FunctionDocumentation documentation_reinterpret = {description_reinterpret, syntax_reinterpret, arguments_reinterpret, {}, returned_value_reinterpret, examples_reinterpret, introduced_in_reinterpret, category_reinterpret};
 
     factory.registerFunction<FunctionReinterpret>(documentation_reinterpret);
 }

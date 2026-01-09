@@ -300,16 +300,16 @@ SELECT multiIf - plan
 SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload,
-    if(__table1.color_id IN (    SELECT __table1.id AS id
+    if((__table1.color_id IN (    SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
-    WHERE __table1.name = \'red\'), \'match\', \'no_match\') AS tag
+    WHERE __table1.name = \'red\')), \'match\', \'no_match\') AS tag
 FROM default.t AS __table1
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC,
-    if(__table1.color_id IN (    SELECT __table1.id AS id
+    if((__table1.color_id IN (    SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
-    WHERE __table1.name = \'red\'), \'match\', \'no_match\') ASC
+    WHERE __table1.name = \'red\')), \'match\', \'no_match\') ASC
 SELECT multiIf
 1	a	match
 2	b	no_match
@@ -324,9 +324,9 @@ FROM default.t AS __table1
 countIf
 2
 sumIf - plan
-SELECT sumIf(__table1.color_id, __table1.color_id IN (    SELECT __table1.id AS id
+SELECT sumIf(__table1.color_id, (__table1.color_id IN (    SELECT __table1.id AS id
     FROM dictionary(\'colors\') AS __table1
-    WHERE __table1.name = \'red\')) AS sum_id_match
+    WHERE __table1.name = \'red\'))) AS sum_id_match
 FROM default.t AS __table1
 sumIf
 4

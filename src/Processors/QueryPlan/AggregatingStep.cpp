@@ -345,7 +345,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 }
                 else
                 {
-                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
+                    auto aggregation_for_set
+                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
                     processors.push_back(aggregation_for_set);
@@ -523,7 +524,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 

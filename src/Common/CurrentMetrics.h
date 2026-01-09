@@ -26,9 +26,9 @@ namespace CurrentMetrics
     using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
-    const char * getName(Metric event);
+    const std::string_view & getName(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
-    const char * getDocumentation(Metric event);
+    const std::string_view & getDocumentation(Metric event);
 
     /// Metric identifier -> current value of metric.
     extern std::atomic<Value> values[];

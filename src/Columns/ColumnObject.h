@@ -153,6 +153,7 @@ public:
     void updateHashFast(SipHash & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -288,6 +289,8 @@ public:
     /// and value from shared data and keeping only dynamic path containing non-Null value.
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
+
+    void validateDynamicPathsSizes() const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator

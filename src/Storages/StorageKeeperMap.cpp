@@ -1157,7 +1157,9 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
         auto with_retries = std::make_shared<WithRetries>

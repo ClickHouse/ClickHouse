@@ -26,6 +26,8 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -33,7 +35,6 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -150,6 +151,7 @@ namespace Setting
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
+    extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsMaxThreads max_final_threads;
@@ -176,6 +178,7 @@ namespace Setting
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -198,12 +201,16 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
+    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
 }
 
 namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_PARTITIONS;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -288,11 +295,46 @@ static SortDescription getSortDescriptionForOutputHeader(
     return {};
 }
 
+std::shared_ptr<QueryIdHolder> ReadFromMergeTree::AnalysisResult::checkLimits(
+    const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const
+{
+    const Settings & settings = context_.getSettingsRef();
+    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : data_settings_[MergeTreeSetting::max_partitions_to_read].value;
+    if (max_partitions_to_read > 0)
+    {
+        std::set<String> partitions;
+        for (const auto & part_with_ranges : parts_with_ranges)
+            partitions.insert(part_with_ranges.data_part->info.getPartitionId());
+        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
+        {
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTITIONS,
+                "Too many partitions to read. Current {}, max {}",
+                partitions.size(),
+                max_partitions_to_read);
+        }
+    }
+
+    if (data_settings_[MergeTreeSetting::max_concurrent_queries] > 0
+        && data_settings_[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
+        && selected_marks >= data_settings_[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
+    {
+        auto query_id = context_.getCurrentQueryId();
+        if (!query_id.empty())
+            return data_.getQueryIdHolder(query_id, data_settings_[MergeTreeSetting::max_concurrent_queries]);
+    }
+
+    return nullptr;
+}
+
 ReadFromMergeTree::ReadFromMergeTree(
     RangesInDataPartsPtr parts_,
     MergeTreeData::MutationsSnapshotPtr mutations_,
     Names all_column_names_,
     const MergeTreeData & data_,
+    MergeTreeSettingsPtr data_settings_,
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
@@ -307,10 +349,10 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::optional<size_t> number_of_current_replica_)
     : SourceStepWithFilter(std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
-        {},
         query_info_.row_level_filter,
         query_info_.prewhere_info)), all_column_names_, query_info_, storage_snapshot_, context_)
-    , reader_settings(MergeTreeReaderSettings::createForQuery(context_, *data_.getSettings(), query_info_))
+    , data_settings(std::move(data_settings_))
+    , reader_settings(MergeTreeReaderSettings::createForQuery(context_, *data_settings, query_info_))
     , prepared_parts(std::move(parts_))
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
@@ -380,6 +422,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         mutations_snapshot,
         all_column_names,
         data,
+        data_settings,
         getQueryInfo(),
         getStorageSnapshot(),
         context_,
@@ -435,7 +478,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             std::move(algorithm),
             query_info.row_level_filter,
             query_info.prewhere_info,
-            lazily_read_info,
             index_read_tasks,
             actions_settings,
             reader_settings,
@@ -467,7 +509,7 @@ Pipe ReadFromMergeTree::readFromPool(
     /// Maybe it will make sense to add settings `max_block_size_bytes`
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
-        size_t fixed_index_granularity = (*data.getSettings())[MergeTreeSetting::index_granularity];
+        size_t fixed_index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
         pool_settings.min_marks_for_concurrent_read
             = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
             / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
@@ -545,7 +587,6 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(algorithm),
             query_info.row_level_filter,
             query_info.prewhere_info,
-            lazily_read_info,
             index_read_tasks,
             actions_settings,
             reader_settings,
@@ -626,7 +667,8 @@ Pipe ReadFromMergeTree::readInOrder(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            dataflow_cache_updater);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
@@ -662,7 +704,6 @@ Pipe ReadFromMergeTree::readInOrder(
             std::move(algorithm),
             query_info.row_level_filter,
             query_info.prewhere_info,
-            lazily_read_info,
             index_read_tasks,
             actions_settings,
             reader_settings,
@@ -841,7 +882,6 @@ Pipe ReadFromMergeTree::readByLayers(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
 
     LOG_TRACE(log, "Spreading mark ranges among streams (reading by layers)");
 
@@ -899,7 +939,6 @@ Pipe ReadFromMergeTree::readByLayers(
             {
                 auto header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
                     storage_snapshot->getSampleBlockForColumns(in_order_column_names_to_read),
-                    lazily_read_info,
                     query_info.row_level_filter,
                     query_info.prewhere_info));
                 pipe = Pipe(std::make_shared<NullSource>(header));
@@ -963,7 +1002,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
 
     LOG_TRACE(log, "Spreading mark ranges among streams (default reading)");
 
@@ -1016,7 +1054,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         data.merging_params.is_deleted_column.empty() &&
         !query_info.row_level_filter &&
         !query_info.prewhere_info &&
-        !lazily_read_info &&
         !reader_settings.use_query_condition_cache && /// the query condition cache produces incorrect results with intersecting ranges
         !isVectorColumnReplaced()) /// Vector search optimization needs ranges & offsets to be stable
     {
@@ -1113,7 +1150,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
 
     LOG_TRACE(log, "Spreading ranges among streams with order");
 
@@ -1515,7 +1551,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     std::optional<ActionsDAG> & out_projection)
 {
     const auto & settings = context->getSettingsRef();
-    const auto & data_settings = data.getSettings();
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
     assert(num_streams == requested_num_streams);
@@ -1768,6 +1803,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         requested_num_streams,
         max_block_numbers_to_read,
         data,
+        data_settings,
         all_column_names,
         log,
         indexes,
@@ -1778,15 +1814,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-static void buildIndexes(
+void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAG * filter_actions_dag_,
     const MergeTreeData & data,
     const RangesInDataParts & parts,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
     [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
-    const ContextPtr & context,
-    const SelectQueryInfo & query_info,
+    const ContextPtr & query_context,
+    const SelectQueryInfo & query_info_,
     const StorageMetadataPtr & metadata_snapshot)
 {
     indexes.reset();
@@ -1795,38 +1831,44 @@ static void buildIndexes(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = query_context->getSettingsRef();
 
-    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag ? filter_actions_dag->getOutputs().front() : nullptr), context);
+    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context);
 
     indexes.emplace(
-        ReadFromMergeTree::Indexes{KeyCondition{filter_dag, context, primary_key_column_names, primary_key.expression}});
+        ReadFromMergeTree::Indexes{KeyCondition{
+            filter_dag,
+            query_context,
+            primary_key_column_names,
+            primary_key.expression,
+            /* single_point_ = */ false,
+            /* skip_analysis_ = */ !settings[Setting::use_primary_key]}});
 
     NamesAndTypesList dummy_names_and_types;
-    indexes->key_condition_rpn_template = KeyCondition{filter_dag, context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
+    indexes->key_condition_rpn_template = KeyCondition{filter_dag, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
 
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
+        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        indexes->minmax_idx_condition.emplace(filter_dag, context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, context, false /* strict */);
+        indexes->minmax_idx_condition.emplace(filter_dag, query_context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
     }
 
     indexes->part_values
-        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, context);
+        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
 
     /// Perform virtual column key analysis only when no corresponding physical columns exist.
     const auto & columns = metadata_snapshot->getColumns();
     if (!columns.has("_part_offset") && !columns.has("_part"))
-        MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, context);
+        MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_dag.predicate, query_context);
     if (!columns.has("_part_offset") && !columns.has("_part_starting_offset"))
-        MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(indexes->total_offset_condition, filter_dag.predicate, context);
+        MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(indexes->total_offset_condition, filter_dag.predicate, query_context);
 
     indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
-    if (query_info.isFinal() && !settings[Setting::use_skip_indexes_if_final])
+    if (query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final])
         indexes->use_skip_indexes = false;
 
     if (!indexes->use_skip_indexes)
@@ -1863,7 +1905,7 @@ static void buildIndexes(
             if (inserted)
             {
                 skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info_, metadata_snapshot);
             }
 
             skip_indexes.merged_indices[it->second].addIndex(index_helper);
@@ -1875,7 +1917,7 @@ static void buildIndexes(
         {
 #if USE_USEARCH
             if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
-                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, context, vector_search_parameters);
+                condition = vector_similarity_index->createIndexCondition(filter_dag.predicate, query_context, vector_search_parameters);
 #endif
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
@@ -1883,7 +1925,7 @@ static void buildIndexes(
         else
         {
             if (filter_dag.predicate)
-                condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+                condition = index_helper->createIndexCondition(filter_dag.predicate, query_context);
         }
 
         if (condition && !condition->alwaysUnknownOrTrue())
@@ -2006,6 +2048,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t num_streams,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     const MergeTreeData & data,
+    const MergeTreeSettingsPtr & data_settings_,
     const Names & all_column_names,
     LoggerPtr log,
     std::optional<Indexes> & indexes,
@@ -2107,7 +2150,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data.getSettings(), query_info_);
+        auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
         if (!allow_query_condition_cache_)
             reader_settings.use_query_condition_cache = false;
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
@@ -2367,45 +2410,10 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
         query_info.row_level_filter,
         prewhere_info_value));
 
     updateSortDescription();
-}
-
-void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value)
-{
-    lazily_read_info = lazily_read_info_value;
-
-    NameSet names_set;
-
-    for (const auto & column : lazily_read_info->lazily_read_columns)
-    {
-        names_set.insert(column.name);
-    }
-    std::erase_if(all_column_names, [&names_set] (const String & column_name)
-    {
-        return names_set.contains(column_name);
-    });
-
-    if (std::find_if(all_column_names.begin(), all_column_names.end(), [] (const String & column_name)
-        { return column_name == "_part_offset"; }) == all_column_names.end())
-    {
-        lazily_read_info->remove_part_offset_column = true;
-        all_column_names.emplace_back("_part_offset");
-    }
-
-    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
-        query_info.row_level_filter,
-        query_info.prewhere_info));
-
-    /// if analysis has already been done (like in optimization for projections),
-    /// then update columns to read in analysis result
-    if (analyzed_result_ptr)
-        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
@@ -2416,7 +2424,6 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
         query_info.row_level_filter,
         query_info.prewhere_info));
 
@@ -2645,6 +2652,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         mutations_snapshot,
         all_column_names,
         data,
+        data_settings,
         query_info,
         storage_snapshot,
         context,
@@ -2660,6 +2668,116 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     return cloned_step;
+}
+
+std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+{
+    if (output_header == nullptr)
+        return {};
+
+    NameSet columns_to_keep;
+
+    for (const auto & column_name : required_outputs)
+        columns_to_keep.insert(column_name);
+
+    if (query_info.row_level_filter)
+    {
+        for (const auto * input : query_info.row_level_filter->actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+
+    if (query_info.prewhere_info)
+    {
+        for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+    auto virtuals = data.getVirtualsPtr();
+
+    Names new_column_names;
+    Names columns_to_remove;
+    for (const auto & column_name : all_column_names)
+    {
+        if (columns_to_keep.contains(column_name) || virtuals->has(column_name))
+            new_column_names.push_back(column_name);
+        else
+            columns_to_remove.push_back(column_name);
+    }
+
+    if (columns_to_remove.empty())
+        return {};
+
+    auto lazy_reading_header = std::make_shared<const Block>(
+        MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(columns_to_remove),
+            nullptr, //query_info.row_level_filter,
+            nullptr) //query_info.prewhere_info)
+    );
+
+    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+
+    auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
+        std::move(lazy_reading_header),
+        block_size.max_block_size_rows,
+        info.min_marks_for_concurrent_read,
+        reader_settings,
+        mutations_snapshot,
+        storage_snapshot,
+        context,
+        data.getLogName());
+
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+
+    return new_reading;
+}
+
+void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
+{
+    added_part_starting_offset = true;
+    added_part_offset = true;
+
+    for (const auto & col_name : all_column_names)
+    {
+        if (col_name == "_part_starting_offset")
+            added_part_starting_offset = false;
+        if (col_name == "_part_offset")
+            added_part_offset = false;
+    }
+
+    if (!added_part_starting_offset && !added_part_offset)
+        return;
+
+    Names new_column_names;
+    if (added_part_starting_offset)
+        new_column_names.push_back("_part_starting_offset");
+    if (added_part_offset)
+        new_column_names.push_back("_part_offset");
+
+    new_column_names.insert(new_column_names.end(), all_column_names.begin(), all_column_names.end());
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
@@ -2779,7 +2897,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             /// Recreate output_header without the deferred filters since they will be applied after FINAL
             output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
                 storage_snapshot->getSampleBlockForColumns(all_column_names),
-                lazily_read_info,
                 defer_row_policy ? nullptr : query_info.row_level_filter,
                 defer_prewhere ? nullptr : query_info.prewhere_info));
 
@@ -2823,7 +2940,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
     ProfileEvents::increment(ProfileEvents::SelectedMarksTotal, result.total_marks_pk);
 
-    auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
+    auto query_id_holder = result.checkLimits(*context, data, *data_settings);
 
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
@@ -2869,16 +2986,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// NOTE: It may lead to double computation of expressions.
     std::optional<ActionsDAG> result_projection;
 
-    if (lazily_read_info)
-    {
-        for (const auto & ranges_in_data_part : result.parts_with_ranges)
-        {
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_data_part.data_part, mutations_snapshot, getContext());
-            auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges_in_data_part.data_part, std::move(alter_conversions));
-            lazily_read_info->data_part_infos->emplace(ranges_in_data_part.part_index_in_query, std::move(part_info));
-        }
-    }
-
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
     MergeTreeIndexBuildContextPtr index_build_context;
@@ -2913,7 +3020,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         auto empty_mutations_snapshot = mutations_snapshot->cloneEmpty();
         const auto & settings = context->getSettingsRef();
-        const auto & data_settings = data.getSettings();
         PartRangesReadInfo info(result.parts_with_ranges, settings, *data_settings);
         PoolSettings pool_settings{
             .threads = 1,
@@ -3511,6 +3617,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes", index_name);
 
             index_task.index = *index_it;
+            index_task.is_final = is_final;
         }
 
         for (const auto & [column_name, column_type] : columns)
@@ -3539,14 +3646,12 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     storage_snapshot = std::make_shared<StorageSnapshot>(
         storage_snapshot->storage,
         storage_snapshot->metadata,
-        std::move(new_virtual_columns),
-        std::move(storage_snapshot->data));
+        std::move(new_virtual_columns));
 
     if (output_header != nullptr)
     {
         output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
             storage_snapshot->getSampleBlockForColumns(all_column_names),
-            lazily_read_info,
             query_info.row_level_filter,
             query_info.prewhere_info));
     }

@@ -210,6 +210,7 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;

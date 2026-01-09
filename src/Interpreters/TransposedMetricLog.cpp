@@ -4,19 +4,15 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Storages/StorageView.h>
-#include <Columns/ColumnsCommon.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnTuple.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/System/attachSystemTablesImpl.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadPool.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -39,7 +35,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -150,10 +145,10 @@ ColumnsDescription getColumnsDescription()
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME, std::make_shared<DataTypeDateTime64>(6)));
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeUInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + std::string(ProfileEvents::getName(ProfileEvents::Event(i))), std::make_shared<DataTypeUInt64>()));
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + std::string(CurrentMetrics::getName(CurrentMetrics::Metric(i))), std::make_shared<DataTypeInt64>()));
 
     return ColumnsDescription{result};
 }
@@ -174,7 +169,7 @@ ColumnsDescription getColumnsDescriptionForView()
 }
 
 /// Special view for transposed representation of system.metric_log.
-/// Can be used as compatibility layer, when you want to store transposed table, but your queries want wide table.
+/// Can be used as a compatibility layer, when you want to store transposed table, but your queries want wide table.
 ///
 /// This view is not attached by default, it's attached by TransposedMetricLog, because
 /// it depend on it.
@@ -211,7 +206,7 @@ public:
         size_t num_streams) override
     {
         Block full_output_header = getInMemoryMetadataPtr()->getSampleBlock();
-        /// If destination table is dropped return null source
+        /// If the destination table is dropped, return a Null source
         if (!DatabaseCatalog::instance().isTableExist(view_storage_id, context))
         {
             Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(std::move(full_output_header))));
@@ -226,8 +221,7 @@ public:
 
         internal_view.read(query_plan, input_header.getNames(), snapshot_for_view, query_info, context, processed_stage, max_block_size, num_streams);
 
-
-        /// Doesn't make sense to filter by metric, we will not filter out anything
+        /// It doesn't make sense to filter by metric, as we will not filter out anything
         bool read_all_columns = full_output_header.columns() == column_names.size();
         std::optional<String> additional_name;
         if (!read_all_columns)
@@ -243,7 +237,7 @@ public:
         query_plan.addStep(std::make_unique<CustomMetricLogViewStep>(std::make_shared<const Block>(std::move(input_header)), std::make_shared<const Block>(std::move(output_header))));
     }
 
-    std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
+    static std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
     {
         std::optional<String> additional_name;
         MutableColumnPtr column_for_set = ColumnString::create();
@@ -255,7 +249,7 @@ public:
 
         if (column_for_set->empty())
         {
-            additional_name.emplace(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(0)));
+            additional_name.emplace(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + std::string(ProfileEvents::getName(ProfileEvents::Event(0))));
             column_for_set->insertData(additional_name->data(), additional_name->size());
         }
 

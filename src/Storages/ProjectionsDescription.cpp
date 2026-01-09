@@ -16,6 +16,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -41,6 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
+    extern const int UNKNOWN_SETTING;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -84,6 +87,9 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
+    other.index = index;
+    other.index_granularity = index_granularity;
+    other.index_granularity_bytes = index_granularity_bytes;
 
     return other;
 }
@@ -210,6 +216,31 @@ private:
 
 }
 
+void ProjectionDescription::loadSettings(const SettingsChanges & changes)
+{
+    for (const auto & [setting, value] : changes)
+    {
+        if (setting == "index_granularity")
+            index_granularity = value.safeGet<UInt64>();
+        else if (setting == "index_granularity_bytes")
+            index_granularity_bytes = value.safeGet<UInt64>();
+        else
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}' for projections", setting);
+    }
+
+    /// These checks are permanent sensible safeguards: they apply both to projection creation and projection loading,
+    /// and are not expected to change in the future. Keeping them unconditional simplifies the implementation.
+
+    if (index_granularity && *index_granularity < 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity: value {} makes no sense", *index_granularity);
+
+    if (index_granularity_bytes && *index_granularity_bytes > 0 && *index_granularity_bytes < 1024)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes: {} is lower than 1024", *index_granularity_bytes);
+
+    if (index_granularity_bytes && *index_granularity_bytes == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "projection index_granularity_bytes cannot be 0, which leads to fixed granularity");
+}
+
 ProjectionDescription
 ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
 {
@@ -221,14 +252,31 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
-    if (!projection_definition->query)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "QUERY is required for projection");
-
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
-    auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
+    if (projection_definition->index)
+    {
+        chassert(projection_definition->type);
+        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
+        if (projection_definition->with_settings)
+            result.loadSettings(projection_definition->with_settings->changes);
+        return result;
+    }
+
+    if (projection_definition->with_settings)
+        result.loadSettings(projection_definition->with_settings->changes);
+
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
+    return result;
+}
+
+void ProjectionDescription::fillProjectionDescriptionByQuery(
+    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
+{
+    auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
 
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
@@ -271,7 +319,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         /// Aggregate projections cannot hold parent part offset.
         can_hold_parent_part_offset = false;
 
-        if (query.orderBy())
+        if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
@@ -310,8 +358,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -351,7 +399,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    return result;
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
@@ -463,6 +510,13 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 }
 
 Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
+{
+    if (index)
+        return index->calculate(*this, block, context, perm_ptr);
+    return calculateByQuery(block, context, perm_ptr);
+}
+
+Block ProjectionDescription::calculateByQuery(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.

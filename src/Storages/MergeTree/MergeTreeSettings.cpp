@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -296,7 +298,7 @@ namespace ErrorCodes
 
     - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
     )", 0) \
-    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
     Serialization version for JSON data type. Required for compatibility.
 
     Possible values:
@@ -306,7 +308,7 @@ namespace ErrorCodes
 
     Only version `v3` supports changing the shared data serialization version.
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
     Serialization version for shared data inside JSON data type.
 
     Possible values:
@@ -318,7 +320,7 @@ namespace ErrorCodes
     Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
     [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
     This setting allows to specify different serialization version of the
     shared data inside JSON type for zero level parts that are created during inserts.
     It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
@@ -330,7 +332,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
     Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
     )", 0) \
-    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
     Serialization version for Dynamic data type. Required for compatibility.
 
     Possible values:
@@ -544,6 +546,9 @@ namespace ErrorCodes
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
     OPTIMIZE FINAL query.
     )", 0) \
+    DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    or [during INSERTs](/operations/settings/settings.md#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
     When enabled, merges build and store skip indices for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
@@ -954,6 +959,13 @@ namespace ErrorCodes
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, R"(
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
+    )", 0) \
+    DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
+    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
+
+    Possible values:
+    - 0 - unlimited
+    - 1 - always enabled
     )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer

@@ -1,20 +1,23 @@
 import argparse
 import json
+import os
 import re
 import sys
 import time
 import traceback
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote
 
-sys.path.append("./")
+sys.path.append(".")
 
+from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
+from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
 class CheckStatuses:
@@ -108,11 +111,18 @@ class CreateIssue:
             # Despite parameter might be valuable for failure reproduction, drop it for simplicity
             test_name = test_name.split("[")[0]
 
+        failure_reason_default = None
+        for pattern in TEST_FAILURE_PATTERNS:
+            if pattern in result.info:
+                failure_reason_default = pattern
+                break
+
         failure_reason = UserPrompt.get_string(
             "\nEnter the exact error text from the test output above that identifies the failure.\n"
             "This must be a substring from the output (e.g., 'result differs with reference', 'Client failed! Return code: 210').\n"
             "It will be used to match and group similar failures",
             validator=lambda x: x in result.info,
+            default=failure_reason_default,
         )
         if result.name.startswith("test_"):
             # pytest case
@@ -127,11 +137,11 @@ Test name: {test_name}
 Failure reason: {failure_reason}
 CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
 
-CIDB statistics: [cidb]({result.get_hlabel_link('cidb')})
+Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FLAKY_TEST]
@@ -144,39 +154,43 @@ Test output:
         body = f"""\
 Test name: {result.name}
 CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
-CIDB statistics: [cidb]({result.get_hlabel_link("cidb")})
+Failing test history: [cidb]({result.get_hlabel_link("cidb")})
 
 Test output:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=200, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=200, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FUZZ]
+        if "sanitizer" in result.name.lower():
+            labels.append(IssueLabels.SANITIZER)
 
         return cls.create_and_link_gh_issue(title, body, labels)
 
     @classmethod
     def can_process(cls, job_result, test_result):
-        if job_result.is_error() or test_result.is_error():
-            print(f"Cannot handle error status in job [{job_result.name}] - skip")
+        if any(key in job_result.name for key in ("Unit",)):
+            return True
+        if job_result.is_error() or test_result.is_error() or job_result.is_dropped():
+            print(
+                f"Cannot handle dropped or error status in job [{job_result.name}] - skip"
+            )
             return False
         if len(job_result.results) > 4:
             print("Cannot handle more than 4 test failures in one job - skip")
             return False
         if any(key in job_result.name for key in ("Stateless", "Integration")):
-            if not re.match(r"^(\d{5}|test)_", test_result.name):
-                print(
-                    f"Only regular test failures can be handled, not [{test_result.name}] - skip"
-                )
-                return False
-            else:
-                return True
+            return True
         if any(
             key in job_result.name
-            for key in ("Performance", "Stress", "Finish", "Bugfix", "Docker")
+            for key in ("Performance", "Finish", "Bugfix", "Docker")
         ):
             print("Job type is not supported yet")
             return False
+        if any(key in job_result.name for key in ("Stress",)) and not any(
+            key in test_result.name for key in ("Server died",)
+        ):
+            return True
         if "OOM" in test_result.name:
             print("Cannot handle OOM errors - skip")
             return False
@@ -191,11 +205,17 @@ Test output:
     @classmethod
     def repr_result(cls, result):
         res = f"\n - test output:\n"
+        # For ERROR status (typically job-level failures), meaningful output is usually at the end,
+        # so we truncate from the top to preserve the error details.
+        # For other statuses (test failures), the relevant information is often at the beginning,
+        # so we truncate from the bottom to preserve the initial context.
         res += result.get_info_truncated(
-            truncate_from_top=False, max_info_lines_cnt=20, max_line_length=200
+            truncate_from_top=result.status == Result.Status.ERROR,
+            max_info_lines_cnt=50,
+            max_line_length=200,
         )
         res += f"\n - flags: {', '.join(result.get_labels()) or 'not flaged'}"
-        res += f"\n - cidb: {result.get_hlabel_link("cidb") or 'not found'}"
+        res += f"\n - cidb: {result.get_hlabel_link('cidb') or 'not found'}"
         return res
 
     @classmethod
@@ -207,8 +227,16 @@ Test output:
             bool: True if issue was created successfully, False otherwise
         """
         if any(key in job_name for key in ("Stateless", "Integration")):
-            issue_url = cls.create_gh_issue_on_flaky_or_broken_test(result, job_name)
-        elif any(key in job_name for key in ("Buzz", "AST")):
+            if re.match(r"^(\d{5}|test)_", result.name):
+                issue_url = cls.create_gh_issue_on_flaky_or_broken_test(
+                    result, job_name
+                )
+            else:
+                # Logical errors, Sanitizer, Seg faults - create fuzzer issue for these
+                issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
+                    result, job_name
+                )
+        elif any(key in job_name for key in ("Buzz", "AST", "Stress")):
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                 result, job_name
             )
@@ -235,7 +263,9 @@ Test output:
         ci_failure_flags = UserPrompt.get_string(
             "Enter the CI failure flag associated with this failure type.\n"
             "Available options: 'retry_ok' (for transient failures that may succeed on retry) or leave empty for none",
-            validator=lambda x: x in ("retry_ok", "") and result.has_label(x),
+            validator=lambda x: (
+                x in ("retry_ok", "") and result.has_label(x) if x else True
+            ),
         )
         # support only one flag for now, in future we may need to support multiple flags
         ci_failure_flags = [ci_failure_flags] if ci_failure_flags else []
@@ -261,9 +291,8 @@ Test output:
                 f"Enter SQL LIKE pattern to match job names affected by this failure.\n"
                 f"Current job: '{job_name}'\n"
                 f"Use '%' as wildcard (e.g., '%Stateless%' matches any job containing 'Stateless')",
-                validator=lambda x: all(
-                    part in job_name for part in x.split("%") if part
-                ),
+                validator=lambda x: x
+                and all(part in job_name for part in x.split("%") if part),
             )
             or "%"
         )
@@ -295,7 +324,7 @@ Test pattern: {test_pattern}
 CI report example: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
 Test output example:
 ```
-{result.get_info_truncated(truncate_from_top=False, max_info_lines_cnt=50, max_line_length=200)}
+{result.get_info_truncated(truncate_from_top=result.status == Result.Status.ERROR, max_info_lines_cnt=50, max_line_length=0)}
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.INFRASTRUCTURE]
@@ -362,24 +391,36 @@ class CommitStatusCheck:
                 sys.exit(0)
 
     @staticmethod
-    def process_mergeable_check_status(commit_status_data: GH.CommitStatus, sha: str):
+    def process_mergeable_check_status(
+        commit_status_data: Optional[GH.CommitStatus], sha: str
+    ):
+        override = False
         if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
             pass
+        elif not commit_status_data:
+            if not UserPrompt.confirm(
+                "Mergeable check not found - CI must be still running. Do you want to proceed?"
+            ):
+                sys.exit(0)
+            else:
+                override = True
         elif commit_status_data.state in (Result.Status.FAILED,):
             if UserPrompt.confirm("Do you want to override mergeable check?"):
-                GH.post_commit_status(
-                    CheckStatuses.MERGEABLE_CHECK,
-                    Result.Status.SUCCESS,
-                    "Manually overridden",
-                    "",
-                    sha=sha,
-                    repo="ClickHouse/ClickHouse",
-                )
+                override = True
             else:
                 sys.exit(0)
         else:
             raise Exception(
                 f"Mergeable check commit status state: {commit_status_data.state} and description: {commit_status_data.description} - cannot proceed"
+            )
+        if override:
+            GH.post_commit_status(
+                CheckStatuses.MERGEABLE_CHECK,
+                Result.Status.SUCCESS,
+                "Manually overridden",
+                "",
+                sha=sha,
+                repo="ClickHouse/ClickHouse",
             )
 
     @classmethod
@@ -509,7 +550,7 @@ def main():
     if not is_master_commit:
         pr_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"
         pr_data = Shell.get_output(
-            f"gh pr view {pr_number} --json headRefOid,headRefName"
+            f"gh pr view {pr_number} --json headRefOid,headRefName --repo ClickHouse/ClickHouse"
         )
         pr_data = json.loads(pr_data)
         head_sha = pr_data["headRefOid"]
@@ -600,7 +641,6 @@ def main():
         known_failures = []
         unknown_failures = []
 
-        workflow_result.dump()
         for result in workflow_result.results:
             if result.has_label("issue"):
                 known_failures.append((result.name, result))
@@ -674,22 +714,23 @@ def main():
             else:
                 unknown_failures.append((job_name, failure_result))
 
-    print("\nCI failures:")
-    if known_failures:
-        print("\n--- Known problems ---")
-        for job_name, failure in known_failures:
-            print(f"[{failure.status}] {failure.name} in {job_name}")
+    if known_failures or unknown_failures or not_finished_jobs:
+        print("\nCI failures:")
+        if known_failures:
+            print("\n--- Known problems ---")
+            for job_name, failure in known_failures:
+                print(f"[{failure.status}] {failure.name} in {job_name}")
 
-    if unknown_failures:
-        print("\n--- Unknown problems ---")
-        for job_name, failure in unknown_failures:
-            print(f"[{failure.status}] {failure.name} in {job_name}")
-            failure.set_comment("IGNORED")
+        if unknown_failures:
+            print("\n--- Unknown problems ---")
+            for job_name, failure in unknown_failures:
+                print(f"[{failure.status}] {failure.name} in {job_name}")
+                failure.set_comment("IGNORED")
 
-    if not_finished_jobs:
-        print("\n--- Not finished jobs ---")
-        for _, failure in not_finished_jobs:
-            print(f"[{failure.status}] {failure.name}")
+        if not_finished_jobs:
+            print("\n--- Not finished jobs ---")
+            for _, failure in not_finished_jobs:
+                print(f"[{failure.status}] {failure.name}")
 
     if is_master_commit:
         sys.exit(0)
@@ -730,11 +771,10 @@ def main():
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
 
-    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha)
-
-    CommitStatusCheck.process_mergeable_check_status(
-        mergeable_check_status, sha=head_sha
-    )
+    if not UserPrompt.confirm(
+        f"Add PR #{pr_number} to the merge queue (y - continue, n - exit)?"
+    ):
+        sys.exit(0)
 
     if Shell.check(
         f"gh pr view {pr_number} --json isDraft --jq '.isDraft' | grep -q true"
@@ -744,9 +784,25 @@ def main():
         else:
             sys.exit(0)
 
-    if UserPrompt.confirm(f"Do you want to merge PR {pr_number}?"):
-        if Shell.check(f"gh pr merge {pr_number} --auto"):
-            print(f"PR {pr_number} auto merge has been enabled")
+    CommitStatusCheck.process_sync_status(sync_status, sha=head_sha)
+    CommitStatusCheck.process_mergeable_check_status(
+        mergeable_check_status, sha=head_sha
+    )
+
+    if Shell.check(f"gh pr merge {pr_number} --auto"):
+        # Check if PR was successfully added to the merge queue
+        # uncomment/fix if GH misses became regular
+        # merge_status = Shell.check(
+        #     f"gh pr view {pr_number} --json mergeStateStatus -q '.mergeStateStatus'",
+        #     capture_output=True,
+        # )
+        # if merge_status != "QUEUED":
+        #     print(
+        #         f"⚠ PR #{pr_number} auto-merge enabled but merge queue status unclear [{merge_status}]. "
+        #         f"If PR is not in queue, try redoing 'Merge when ready' button on GitHub."
+        #     )
+        # else:
+        print(f"✓ PR #{pr_number} added to the merge queue")
 
 
 if __name__ == "__main__":

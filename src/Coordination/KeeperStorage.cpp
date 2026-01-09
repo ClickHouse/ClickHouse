@@ -2293,7 +2293,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
             add_parent_update_delta();
         }
 
-        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
+        return new_deltas;
     }
 
     ToDeleteTreeCollector<Storage> collector(storage, zxid, session_id, zk_request.remove_nodes_limit);
@@ -4018,11 +4018,13 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
                 erase_session_from_map(watches, watch_path);
                 break;
             case WatchType::PERSISTENT_WATCH:
-                [[fallthrough]];
+                erase_session_from_map(persistent_watches, watch_path);
+                break;
             case WatchType::PERSISTENT_LIST_WATCH:
-                [[fallthrough]];
+                erase_session_from_map(persistent_list_watches, watch_path);
+                break;
             case WatchType::PERSISTENT_RECURSIVE_WATCH:
-                ++watch_it;
+                erase_session_from_map(persistent_recursive_watches, watch_path);
                 break;
         }
     }
