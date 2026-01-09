@@ -10,6 +10,10 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/TableJoin.h>
@@ -639,6 +643,22 @@ private:
         {
             convertJoinStep(node, &rel);
         }
+        else if (step_name == "Limit")
+        {
+            convertLimitStep(node, &rel);
+        }
+        else if (step_name == "Distinct" || step_name == "PreDistinct")
+        {
+            convertDistinctStep(node, &rel);
+        }
+        else if (step_name == "Union")
+        {
+            convertUnionStep(node, &rel);
+        }
+        else if (step_name == "IntersectOrExcept")
+        {
+            convertIntersectOrExceptStep(node, &rel);
+        }
         else
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, 
@@ -1119,6 +1139,153 @@ private:
         join_rel->set_type(join_type);
 
         // TODO: Support ASOF joins, post-join filters, and other advanced join features
+    }
+
+    void convertLimitStep(const QueryPlan::Node * node, substrait::Rel * rel)
+    {
+        if (node->children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Limit step must have a child");
+
+        auto * fetch_rel = rel->mutable_fetch();
+
+        // Convert child node
+        auto child_rel = convertNode(node->children[0]);
+        fetch_rel->mutable_input()->Swap(&child_rel);
+
+        // Cast to LimitStep to access limit/offset
+        const auto * limit_step = dynamic_cast<const LimitStep *>(node->step.get());
+        if (!limit_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected LimitStep");
+
+        // Get limit (count) - note: getLimitForSorting returns limit + offset
+        size_t limit = limit_step->getLimit();
+        fetch_rel->set_count(static_cast<int64_t>(limit));
+
+        // Get offset if available (getLimitForSorting - getLimit gives us offset)
+        size_t limit_for_sorting = limit_step->getLimitForSorting();
+        if (limit_for_sorting > limit)
+        {
+            size_t offset = limit_for_sorting - limit;
+            fetch_rel->set_offset(static_cast<int64_t>(offset));
+        }
+    }
+
+    void convertDistinctStep(const QueryPlan::Node * node, substrait::Rel * rel)
+    {
+        if (node->children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distinct step must have a child");
+
+        auto * agg_rel = rel->mutable_aggregate();
+
+        // Convert child node
+        auto child_rel = convertNode(node->children[0]);
+        agg_rel->mutable_input()->Swap(&child_rel);
+
+        // Cast to DistinctStep to access distinct columns
+        const auto * distinct_step = dynamic_cast<const DistinctStep *>(node->step.get());
+        if (!distinct_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DistinctStep");
+
+        // Get input header from child node
+        const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & input_header = *input_header_ptr;
+
+        // Get the distinct columns
+        const auto & columns = distinct_step->getColumnNames();
+        auto * grouping = agg_rel->add_groupings();
+
+        if (columns.empty())
+        {
+            // DISTINCT on all columns
+            for (size_t i = 0; i < input_header.columns(); ++i)
+            {
+                auto * grouping_expr = grouping->add_grouping_expressions();
+                auto * selection = grouping_expr->mutable_selection();
+                selection->mutable_direct_reference()->mutable_struct_field()->set_field(static_cast<int>(i));
+            }
+        }
+        else
+        {
+            // DISTINCT on specific columns
+            for (const auto & col_name : columns)
+            {
+                int field_index = -1;
+                for (size_t i = 0; i < input_header.columns(); ++i)
+                {
+                    if (input_header.getByPosition(i).name == col_name)
+                    {
+                        field_index = static_cast<int>(i);
+                        break;
+                    }
+                }
+                if (field_index < 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distinct column {} not found in input header", col_name);
+
+                auto * grouping_expr = grouping->add_grouping_expressions();
+                auto * selection = grouping_expr->mutable_selection();
+                selection->mutable_direct_reference()->mutable_struct_field()->set_field(field_index);
+            }
+        }
+        // No measures - this produces distinct rows via grouping only
+    }
+
+    void convertUnionStep(const QueryPlan::Node * node, substrait::Rel * rel)
+    {
+        if (node->children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Union step must have children");
+
+        auto * set_rel = rel->mutable_set();
+        set_rel->set_op(substrait::SetRel::SET_OP_UNION_ALL);
+
+        // Convert all child nodes
+        for (const auto * child : node->children)
+        {
+            auto child_rel = convertNode(child);
+            set_rel->add_inputs()->Swap(&child_rel);
+        }
+    }
+
+    void convertIntersectOrExceptStep(const QueryPlan::Node * node, substrait::Rel * rel)
+    {
+        if (node->children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IntersectOrExcept step must have children");
+
+        const auto * intersect_except_step = dynamic_cast<const IntersectOrExceptStep *>(node->step.get());
+        if (!intersect_except_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected IntersectOrExceptStep");
+
+        auto * set_rel = rel->mutable_set();
+
+        // Map the operator to Substrait SetRel operation
+        using Operator = ASTSelectIntersectExceptQuery::Operator;
+        switch (intersect_except_step->getOperator())
+        {
+            case Operator::INTERSECT_ALL:
+                // Substrait doesn't have INTERSECT ALL directly, use PRIMARY (keeps duplicates from first input)
+                set_rel->set_op(substrait::SetRel::SET_OP_INTERSECTION_PRIMARY);
+                break;
+            case Operator::INTERSECT_DISTINCT:
+                // INTERSECT DISTINCT removes duplicates
+                set_rel->set_op(substrait::SetRel::SET_OP_INTERSECTION_PRIMARY);
+                break;
+            case Operator::EXCEPT_ALL:
+                // EXCEPT ALL (keeps duplicates)
+                set_rel->set_op(substrait::SetRel::SET_OP_MINUS_PRIMARY);
+                break;
+            case Operator::EXCEPT_DISTINCT:
+                // EXCEPT DISTINCT removes duplicates
+                set_rel->set_op(substrait::SetRel::SET_OP_MINUS_PRIMARY);
+                break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown IntersectOrExcept operator");
+        }
+
+        // Convert all child nodes
+        for (const auto * child : node->children)
+        {
+            auto child_rel = convertNode(child);
+            set_rel->add_inputs()->Swap(&child_rel);
+        }
     }
 
 public:
