@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/PartialAggregateCache.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Columns/IColumn.h>
 
@@ -8,6 +9,12 @@ namespace CurrentMetrics
 {
     extern const Metric PartialAggregateCacheBytes;
     extern const Metric PartialAggregateCacheEntries;
+}
+
+namespace ProfileEvents
+{
+    extern const Event PartialAggregateCacheHits;
+    extern const Event PartialAggregateCacheMisses;
 }
 
 namespace DB
@@ -54,10 +61,12 @@ std::optional<Block> PartialAggregateCache::get(const Key & key)
     auto entry = cache.get(key);
     if (entry)
     {
+        ProfileEvents::increment(ProfileEvents::PartialAggregateCacheHits);
         LOG_TRACE(logger, "Cache hit for part {}", key.part_name);
         return entry->partial_aggregate;
     }
 
+    ProfileEvents::increment(ProfileEvents::PartialAggregateCacheMisses);
     LOG_TRACE(logger, "Cache miss for part {}", key.part_name);
     return std::nullopt;
 }
@@ -85,6 +94,16 @@ size_t PartialAggregateCache::sizeInBytes() const
 size_t PartialAggregateCache::count() const
 {
     return cache.count();
+}
+
+void PartialAggregateCache::setMaxSizeInBytes(size_t max_size_in_bytes)
+{
+    cache.setMaxSizeInBytes(max_size_in_bytes);
+}
+
+std::vector<PartialAggregateCache::Cache::KeyMapped> PartialAggregateCache::dump() const
+{
+    return cache.dump();
 }
 
 }
