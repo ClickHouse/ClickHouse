@@ -209,7 +209,7 @@ struct TestKeeperGetACLRequest final : GetACLRequest, TestKeeperRequest
 struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperRequest
 {
     std::optional<bool> is_multi_read = std::nullopt;
-    void specifyType(bool is_read)
+    void validateOrSpecifyRequestType(bool is_read)
     {
         if (!is_multi_read)
             is_multi_read = is_read;
@@ -229,42 +229,42 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
         {
             if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/false);
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperCreateRequest>(*concrete_request_create));
             }
             else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/false);
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
             else if (const auto * concrete_request_remove_recursive = dynamic_cast<const RemoveRecursiveRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/false);
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperRemoveRecursiveRequest>(*concrete_request_remove_recursive));
             }
             else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/false);
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/false);
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/true);
+                validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
             }
             else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/true);
+                validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperListRequest>(*concrete_request_list));
             }
             else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(generic_request.get()))
             {
-                specifyType(/*is_read=*/true);
+                validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
             }
             else
@@ -572,10 +572,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     return { std::make_shared<ListResponse>(response), {} };
 }
 
-namespace
-{
-
-bool checkNodeStat(const Coordination::Stat & verifiable, const Coordination::Stat & validator)
+static bool checkNodeStat(const Coordination::Stat & verifiable, const Coordination::Stat & validator)
 {
     if (validator.czxid != -1 && validator.czxid != verifiable.czxid)
         return false;
@@ -601,8 +598,6 @@ bool checkNodeStat(const Coordination::Stat & verifiable, const Coordination::St
         return false;
 
     return true;
-}
-
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t zxid) const
@@ -664,9 +659,7 @@ std::pair<ResponsePtr, Undo> TestKeeperGetACLRequest::process(TestKeeper::Contai
 
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
-    chassert(is_multi_read.has_value());
-
-    if (is_multi_read.value())
+    if (is_multi_read.has_value() && is_multi_read.value())
         return processMultiRead(container, zxid);
     else
         return processMultiWrite(container, zxid);
@@ -965,16 +958,6 @@ void TestKeeper::pushRequest(RequestInfo && request)
         finalize(__PRETTY_FUNCTION__);
         throw;
     }
-}
-
-bool TestKeeper::isFeatureEnabled(DB::KeeperFeatureFlag flag) const
-{
-    return keeper_feature_flags.isEnabled(flag);
-}
-
-const DB::KeeperFeatureFlags * TestKeeper::getKeeperFeatureFlags() const
-{
-    return &keeper_feature_flags;
 }
 
 void TestKeeper::create(

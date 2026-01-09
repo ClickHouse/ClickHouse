@@ -43,6 +43,8 @@ public:
     int64_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
     int64_t getLastZXIDSeen() const override { return 0; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag flag) const override { return keeper_feature_flags.isEnabled(flag); }
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
     void create(
             const String & path,
@@ -111,9 +113,6 @@ public:
     void getACL(const String & path, GetACLCallback callback) override;
 
     void finalize(const String & reason) override;
-
-    bool isFeatureEnabled(DB::KeeperFeatureFlag flag) const override;
-    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const override;
 
     struct Node
     {
