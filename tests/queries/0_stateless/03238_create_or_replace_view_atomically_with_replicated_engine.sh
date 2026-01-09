@@ -7,10 +7,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # with Replicated engine
 ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE}_db ENGINE=Replicated('/test/clickhouse/db/${CLICKHOUSE_DATABASE}_db', 's1', 'r1')"
 
+TIMEOUT=60
+
 function create_or_replace_view_thread
 {
     for _ in {1..15}; do
         ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
+        [[ $SECONDS -ge "$TIMEOUT" ]] && break
     done
 }
 
@@ -18,6 +21,7 @@ function select_view_thread
 {
     for _ in {1..15}; do
         ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view" > /dev/null
+        [[ $SECONDS -ge "$TIMEOUT" ]] && break
     done
 }
 
