@@ -93,7 +93,7 @@ public:
     void updateHash(SipHash & hash) const override;
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
@@ -556,12 +556,13 @@ class ALPCodecDecoder
 public:
     explicit ALPCodecDecoder() = default;
 
-    void decode(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
+    UInt32 decode(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
     {
         if (uncompressed_size % sizeof(T) != 0)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Invalid uncompressed size");
 
         const char * source_end = source + source_size;
+        const char * dest_start = dest;
         const char * dest_end = dest + uncompressed_size;
 
         while (source < source_end)
@@ -572,6 +573,8 @@ public:
 
         assert(source == source_end);
         assert(dest == dest_end);
+
+        return dest - dest_start;
     }
 
 private:
@@ -725,7 +728,7 @@ UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_si
     return dest_size + ALP_CODEC_HEADER_SIZE;
 }
 
-void CompressionCodecALP::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < ALP_CODEC_HEADER_SIZE)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. File has wrong header");
@@ -754,20 +757,23 @@ void CompressionCodecALP::doDecompressData(const char * source, UInt32 source_si
             ALP_BLOCK_MAX_FLOAT_COUNT);
 
     source_size -= ALP_CODEC_HEADER_SIZE;
+    UInt32 dest_size;
 
     switch (data_float_width)
     {
     case sizeof(Float32):
-        ALPCodecDecoder<Float32>().decode(source, source_size, dest, uncompressed_size);
+        dest_size = ALPCodecDecoder<Float32>().decode(source, source_size, dest, uncompressed_size);
         break;
     case sizeof(Float64):
-        ALPCodecDecoder<Float64>().decode(source, source_size, dest, uncompressed_size);
+        dest_size = ALPCodecDecoder<Float64>().decode(source, source_size, dest, uncompressed_size);
         break;
     default:
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
             "Cannot decompress ALP-encoded data. Unsupported float width {}",
             static_cast<size_t>(data_float_width));
     }
+
+    return dest_size;
 }
 
 void registerCodecALP(CompressionCodecFactory & factory)
