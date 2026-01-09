@@ -672,7 +672,7 @@ String dumpPartitionSpecification(const PartitionSpecification & partition_speci
         for (size_t i = 0; i < partition_specification.size(); ++i)
         {
             const auto & entry = partition_specification[i];
-            answer += std::format(
+            answer += fmt::format(
                 "(Source id: {}, Transform name: {}, Partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
             if (i != partition_specification.size() - 1)
                 answer += ", ";
@@ -704,7 +704,7 @@ String dumpPartitionKeyValue(const DB::Row & partition_key_value)
 
 String ManifestFileEntry::dumpDeletesMatchingInfo() const
 {
-    return std::format(
+    return fmt::format(
         "Partition specification: {}, partition key value: {}, added sequence number: {}",
         dumpPartitionSpecification(common_partition_specification),
         dumpPartitionKeyValue(partition_key_value),
