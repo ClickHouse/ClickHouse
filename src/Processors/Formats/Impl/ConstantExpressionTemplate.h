@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Parsers/TokenIterator.h>
-#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/TokenIterator.h>
 
 namespace DB
 {
@@ -26,12 +27,22 @@ class ConstantExpressionTemplate : boost::noncopyable
 {
     struct TemplateStructure : boost::noncopyable
     {
-        TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                          ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
+        TemplateStructure(
+            LiteralsInfo & replaced_literals,
+            TokenIterator expression_begin,
+            TokenIterator expression_end,
+            ASTPtr & expr,
+            const IDataType & result_type,
+            bool null_as_default_,
+            ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
-        static size_t getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
-                                      const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
+        static size_t getTemplateHash(
+            const ASTPtr & expression,
+            const LiteralsInfo & replaced_literals,
+            const DataTypePtr & result_column_type,
+            bool null_as_default,
+            const String & salt);
 
         String dumpTemplate() const;
 
@@ -57,21 +68,29 @@ public:
         const size_t max_size;
 
     public:
-        explicit Cache(size_t max_size_ = 4096) : max_size(max_size_) {}
+        explicit Cache(size_t max_size_ = 4096)
+            : max_size(max_size_)
+        {
+        }
 
         /// Deduce template of expression of type result_column_type and add it to cache (or use template from cache)
-        TemplateStructurePtr getFromCacheOrConstruct(const DataTypePtr & result_column_type,
-                                                     bool null_as_default,
-                                                     TokenIterator expression_begin,
-                                                     TokenIterator expression_end,
-                                                     const ASTPtr & expression_,
-                                                     ContextPtr context,
-                                                     bool * found_in_cache = nullptr,
-                                                     const String & salt = {});
+        TemplateStructurePtr getFromCacheOrConstruct(
+            const DataTypePtr & result_column_type,
+            bool null_as_default,
+            TokenIterator expression_begin,
+            TokenIterator expression_end,
+            const ASTPtr & expression_,
+            ContextPtr context,
+            const LiteralTokenMap & token_map,
+            bool * found_in_cache = nullptr,
+            const String & salt = {});
     };
 
     explicit ConstantExpressionTemplate(const TemplateStructurePtr & structure_)
-            : structure(structure_), columns(structure->literals.cloneEmptyColumns()) {}
+        : structure(structure_)
+        , columns(structure->literals.cloneEmptyColumns())
+    {
+    }
 
     /// Read expression from istr, assert it has the same structure and the same types of literals (template matches)
     /// and parse literals into temporary columns
@@ -99,7 +118,6 @@ private:
 
     /// For expressions without literals (e.g. "now()")
     size_t rows_count = 0;
-
 };
 
 }
