@@ -63,8 +63,6 @@ public:
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const;
 
-    // void addAll(EnumValues<T> & rhs) const;
-
     Names getAllRegisteredNames() const override;
 
     std::unordered_set<String> getSetOfAllNames(bool to_lower) const;

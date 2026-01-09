@@ -5,8 +5,7 @@ DROP TABLE IF EXISTS enum;
 CREATE TABLE enum (x {{ ENUM_TYPE }}('One' = 1, 'Two', 'Three')) ENGINE = Memory;
 INSERT INTO enum VALUES (0);
 SELECT * FROM enum ORDER BY x;  -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
-ALTER TABLE enum MODIFY COLUMN x addToEnum('Zero' = 0);
-ALTER TABLE enum MODIFY COLUMN x addToEnum('Four' = 4);
+ALTER TABLE enum MODIFY COLUMN x addToEnum('Zero' = 0, 'Four' = 4);
 INSERT INTO enum VALUES (4);
 SELECT '======================';
 SELECT * FROM enum ORDER BY x;
@@ -17,6 +16,8 @@ ALTER TABLE enum MODIFY COLUMN x addToEnum16('Thousand' = 1000);
 {% endif %}
 ALTER TABLE enum MODIFY COLUMN x addToEnum8('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
 ALTER TABLE enum MODIFY COLUMN x addToEnum8('Hundred' = 100);
+ALTER TABLE enum MODIFY COLUMN x addToEnum8('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x addToEnum8('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
 INSERT INTO enum VALUES (100);
 INSERT INTO enum VALUES ('Hundred');
 INSERT INTO enum VALUES ('Three');

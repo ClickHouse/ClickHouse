@@ -26,7 +26,6 @@ public:
 
     virtual bool contains(const IDataType & rhs) const = 0;
     virtual bool isAdd() const = 0;
-    // virtual void add(IDataType & rhs) const = 0;
 };
 
 
@@ -44,7 +43,7 @@ public:
 private:
     std::string type_name;
     static std::string generateName(const Values & values);
-    bool is_add = false;
+    bool is_add; // created by addToEnum
 
 public:
     explicit DataTypeEnum(const Values & values_, bool is_add_ = false);
@@ -74,14 +73,12 @@ public:
     /// Enum('a' = 1, 'b' = 2) -> Enum('c' = 1, 'b' = 2, 'd' = 3) OK
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
     bool contains(const IDataType & rhs) const override;
-    // void add(IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 
     void updateHashImpl(SipHash & hash) const override;
 
-    void setAdd()  { is_add = true; }
-    bool isAdd() const override  { return is_add;  }
+    bool isAdd() const override  { return is_add; }
 };
 
 template <typename TypeBase, typename TypeAdd>

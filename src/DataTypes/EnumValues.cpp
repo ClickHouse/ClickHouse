@@ -153,58 +153,6 @@ template bool EnumValues<Int8>::containsAll<EnumValues<Int16>::Values>(const Enu
 template bool EnumValues<Int16>::containsAll<EnumValues<Int8>::Values>(const EnumValues<Int8>::Values & rhs_values) const;
 template bool EnumValues<Int16>::containsAll<EnumValues<Int16>::Values>(const EnumValues<Int16>::Values & rhs_values) const;
 
-// template <typename T>
-// void EnumValues<T>::addAll(EnumValues<T> & rhs /* from */) const
-// {
-//     // auto check = [&](const auto & value)
-//     // {
-//     //     auto it = name_to_value_map->find(value.first);
-//     //     /// If we don't have this name, than we have to be sure,
-//     //     /// that this value exists in enum
-//     //     if (it == name_to_value_map->end())
-//     //         return value_to_name_map.count(value.second) > 0;
-
-//     //     /// If we have this name, than it should have the same value
-//     //     return it->value.second == value.second;
-//     // };
-
-//     Values new_values;
-
-
-//     // auto lit = (*name_to_value_map).begin();
-//     // lit->
-
-
-//     for (const auto & value : values)
-//     {
-//         auto it = rhs.name_to_value_map->find(value.first);
-//         /// If we don't have this name, than we have to be sure,
-//         /// that this value exists in enum
-//         if (it == rhs.name_to_value_map->end())
-//             new_values.push_back(value);
-
-//         /// If we have this name, than it should have the same value
-//         else if (it->value.second != value.second)
-//             throw Exception(ErrorCodes::SYNTAX_ERROR, "Enum element {} has old value {}, but new value is {}",
-//                 value.first, value.second, it->value.second);
-//     }
-
-//     for (const auto & new_value : new_values)
-//     {
-//         rhs.values.push_back(new_value);
-//         const auto & inserted_value = rhs.values.back();
-//         rhs.name_to_value_map->insert( {std::string_view{inserted_value.first}, inserted_value.second} );
-//         rhs.value_to_name_map.insert( {inserted_value.second, std::string_view{inserted_value.first}} );
-//     }
-
-// }
-
-// template void EnumValues<Int8>::addAll(EnumValues<Int8> & rhs) const;
-// template void EnumValues<Int8>::addAll(EnumValues<Int16> & rhs) const;
-// template void EnumValues<Int16>::addAll(EnumValues<Int8> & rhs) const;
-// template void EnumValues<Int16>::addAll(EnumValues<Int16> & rhs) const;
-
-
 template class EnumValues<Int8>;
 template class EnumValues<Int16>;
 

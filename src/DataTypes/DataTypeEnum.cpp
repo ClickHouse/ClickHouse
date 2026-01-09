@@ -196,12 +196,6 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
     return false;
 }
 
-// template <typename Type>
-// void DataTypeEnum<Type>::add(IDataType & rhs) const
-// {
-//     auto & rhs_enum = typeid_cast<DataTypeEnum<Type> &>(rhs);
-//     this->addAll(rhs_enum);
-// }
 
 template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
@@ -299,26 +293,21 @@ static DataTypePtr createExact(const ASTPtr & arguments)
         const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
         const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
-        if (is_add
-            && (!value_literal
-                || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64)))
+        if (!name_literal
+            || !value_literal
+            || name_literal->value.getType() != Field::Types::String
+            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
         {
-            throw Exception(
-                ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Elements of addToEnum data type must be of form: "
-                "'name' = number where name is string literal and number is an integer");
+            if (!is_add)
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                    "Elements of Enum data type must be of form: "
+                    "'name' = number or 'name', where name is string literal and number is an integer");
+            else
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                    "Arguments of addToEnum must be of form: "
+                    "'name' = number where name is string literal and number is an integer");
         }
-
-        if (!is_add
-            && (!name_literal || !value_literal || name_literal->value.getType() != Field::Types::String
-                || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64)))
-        {
-            throw Exception(
-                ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Elements of Enum data type must be of form: "
-                "'name' = number or 'name', where name is string literal and number is an integer");
-        }
-
 
         const String & field_name = name_literal->value.safeGet<String>();
         const auto value = value_literal->value.safeGet<FieldType>();
@@ -349,6 +338,12 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto * func = child->as<ASTFunction>();
         const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
+        if (!value_literal
+            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                                    "Elements of Enum data type must be of form: "
+                                    "'name' = number or 'name', where name is string literal and number is an integer");
+
         Int64 value = value_literal->value.safeGet<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
@@ -358,6 +353,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     return createExact<DataTypeEnum8, is_add>(arguments);
 }
 
+// Used by addToEnum
 template <typename TypeBase, typename TypeAdd>
 DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add)
 {
@@ -400,17 +396,16 @@ DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEn
     return std::make_shared<DataTypeEnum<TypeBase>>(merged);
 }
 
-template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int8> & base, const DataTypeEnum<Int8> & add);
-template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int16> & base, const DataTypeEnum<Int16> & add);
-// template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int8> & base, const DataTypeEnum<Int16> & add);
-template DataTypePtr mergeEnumTypes(const DataTypeEnum<Int16> & base, const DataTypeEnum<Int8> & add);
+template DataTypePtr mergeEnumTypes(const DataTypeEnum8 & base, const DataTypeEnum8 & add);
+template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeEnum16 & add);
+template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeEnum8 & add);
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
-    factory.registerDataType("Enum8", createExact<DataTypeEnum8, false>);
+    factory.registerDataType("Enum8", createExact<DataTypeEnum8, false /*is_add */>);
     factory.registerDataType("Enum16", createExact<DataTypeEnum16, false>);
     factory.registerDataType("Enum", create<false>);
-    factory.registerDataType("addToEnum8", createExact<DataTypeEnum8, true>);
+    factory.registerDataType("addToEnum8", createExact<DataTypeEnum8, true /*is_add */>);
     factory.registerDataType("addToEnum16", createExact<DataTypeEnum16, true>);
     factory.registerDataType("addToEnum", create<true>);
 
