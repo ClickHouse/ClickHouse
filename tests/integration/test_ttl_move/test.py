@@ -87,7 +87,7 @@ def check_used_disks_with_retry(node, table_name, expected_disks, retries=1):
 
 # Use unique table name for flaky checker, that run tests multiple times
 def unique_table_name(base_name):
-    return f"{base_name}_{int(time.time())}"
+    return f"{base_name.replace('[', '_').replace(']', '_').replace('-', '_')}_{int(time.time())}"
 
 
 def wait_parts_mover(node, table, *args, **kwargs):

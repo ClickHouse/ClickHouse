@@ -8,6 +8,7 @@
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -37,6 +38,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -132,6 +134,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+    extern const MergeTreeSettingsBool materialize_statistics_on_merge;
 }
 
 namespace ErrorCodes
@@ -148,8 +151,12 @@ namespace
 
 ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & merge_tree_settings
+    )
 {
+    if (!merge_tree_settings[MergeTreeSetting::materialize_statistics_on_merge])
+        return {};
     ColumnsStatistics all_statistics;
     const auto & all_columns = metadata_snapshot->getColumns();
 
@@ -175,7 +182,7 @@ public:
     static constexpr auto FILE_ID = "rows_sources";
 
     explicit RowsSourcesTemporaryFile(TemporaryDataOnDiskScopePtr temporary_data_on_disk_)
-        : temporary_data_on_disk(temporary_data_on_disk_->childScope(CurrentMetrics::TemporaryFilesForMerge))
+        : temporary_data_on_disk(temporary_data_on_disk_->childScope({CurrentMetrics::TemporaryFilesForMerge}))
     {
     }
 
@@ -266,6 +273,15 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
     }
 }
 
+static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns)
+{
+    if (storage_columns.contains(column_name))
+        return column_name;
+
+    /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
+    return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
@@ -276,13 +292,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     NameSet key_columns;
     auto storage_columns = global_ctx->storage_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
-    {
-        if (storage_columns.contains(name))
-            key_columns.insert(name);
-        /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
-        else
-            key_columns.insert(String(Nested::getColumnFromSubcolumn(name, storage_columns)));
-    }
+        key_columns.insert(getColumnNameInStorage(name, storage_columns));
 
     /// Force sign column for Collapsing mode and VersionedCollapsing mode
     if (!global_ctx->merging_params.sign_column.empty())
@@ -320,19 +330,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     /// Key columns required for merge, must not be expired early.
     global_ctx->merge_required_key_columns = key_columns;
-
-    auto add_index_columns_to_merge_stage = [&](const auto & index_columns)
-    {
-        for (const auto & index_column : index_columns)
-        {
-            if (storage_columns.contains(index_column))
-                key_columns.insert(index_column);
-            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
-            else
-                key_columns.insert(String(Nested::getColumnFromSubcolumn(index_column, storage_columns)));
-        }
-    };
-
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
     for (const auto & index : skip_indexes)
@@ -349,21 +346,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             global_ctx->text_indexes_to_merge.push_back(index);
 
             if (index_columns.size() > 1)
-                add_index_columns_to_merge_stage(index_columns);
+            {
+                for (const auto & index_column : index_columns)
+                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns));
+            }
         }
         else if (index_columns.size() == 1)
         {
-            const auto & column_name = index_columns.front();
-            if (storage_columns.contains(column_name))
-                global_ctx->skip_indexes_by_column[column_name].push_back(index);
-            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
-            else
-                global_ctx->skip_indexes_by_column[String(Nested::getColumnFromSubcolumn(column_name, storage_columns))].push_back(index);
+            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns);
+            global_ctx->skip_indexes_by_column[column_name].push_back(index);
         }
         else
         {
-            add_index_columns_to_merge_stage(index_columns);
             global_ctx->merging_skip_indexes.push_back(index);
+
+            for (const auto & index_column : index_columns)
+                key_columns.insert(getColumnNameInStorage(index_column, storage_columns));
         }
     }
 
@@ -762,7 +760,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_columns,
         /// indices,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
-        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
+        getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot, *global_ctx->data_settings),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
@@ -968,7 +966,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_to_squash = projection.calculate(block, global_ctx->context);
+        Block block_with_required_columns;
+        for (const auto & name : projection.getRequiredColumns())
+            if (name != "_part_offset")
+                block_with_required_columns.insert(block.getByName(name));
+        Block block_to_squash = projection.calculate(block_with_required_columns, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
             return;
@@ -1391,7 +1393,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->metadata_snapshot,
         columns_list,
         column_pipepline.indexes_to_recalc,
-        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
+        getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot, *global_ctx->data_settings),
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
@@ -2137,11 +2139,12 @@ private:
     PreparedSets::Subqueries subqueries_for_sets;
 };
 
-class BuildTextIndexStep : public ITransformingStep
+class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
-    BuildTextIndexStep(SharedHeader input_header_, SharedHeader output_header_, std::shared_ptr<BuildTextIndexTransform> transform_)
+    BuildTextIndexStep(SharedHeader input_header_, SharedHeader output_header_, std::shared_ptr<BuildTextIndexTransform> transform_, ContextPtr context_)
         : ITransformingStep(input_header_, output_header_, getTraits())
+        , WithContext(context_)
         , transform(std::move(transform_))
     {
     }
@@ -2149,6 +2152,23 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
         pipeline.addTransform(transform);
+
+        /// Remove possible temporary columns added by index expression.
+        if (!isCompatibleHeader(*pipeline.getSharedHeader(), *getOutputHeader()))
+        {
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                pipeline.getSharedHeader()->getColumnsWithTypeAndName(),
+                getOutputHeader()->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                getContext());
+
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, std::move(converting_actions));
+            });
+        }
     }
 
     void updateOutputHeader() override
@@ -2201,14 +2221,15 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     IndicesDescription description_to_build;
     std::vector<MergeTreeIndexPtr> indexes_to_build;
+    auto storage_columns = global_ctx->storage_columns.getNameSet();
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
         auto required_columns = index.expression->getRequiredColumns();
 
-        bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column)
+        bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column_name)
         {
-            return read_column_names.contains(column);
+            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns));
         });
 
         if (!read_any_required_column)
@@ -2258,7 +2279,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.
-    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(plan.getCurrentHeader(), original_header, transform);
+    auto build_text_index_step = std::make_unique<BuildTextIndexStep>(plan.getCurrentHeader(), original_header, transform, global_ctx->context);
 
     /// Save transform to the context to be able to take segments for merging from it later.
     global_ctx->build_text_index_transforms[data_part.name].push_back(std::move(transform));

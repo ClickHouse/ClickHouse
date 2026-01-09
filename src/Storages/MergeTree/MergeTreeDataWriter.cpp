@@ -423,12 +423,15 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     /// After expression execution partition key columns will be added to block_copy with names regarding partition function.
     auto partition_key_names_and_types = MergeTreePartition::executePartitionByExpression(metadata_snapshot, block_copy, context);
 
-    ColumnRawPtrs partition_columns;
+    Columns partition_columns;
+    ColumnRawPtrs partition_columns_raw_ptrs;
     partition_columns.reserve(partition_key_names_and_types.size());
+    partition_columns_raw_ptrs.reserve(partition_key_names_and_types.size());
     bool all_partition_columns_are_equal = true;
     for (const auto & element : partition_key_names_and_types)
     {
-        partition_columns.emplace_back(block_copy.getColumnOrSubcolumnByName(element.name).column.get());
+        partition_columns.emplace_back(block_copy.getColumnOrSubcolumnByName(element.name).column);
+        partition_columns_raw_ptrs.emplace_back(partition_columns.back().get());
         if (!partition_columns.back()->hasEqualValues())
             all_partition_columns_are_equal = false;
     }
@@ -452,7 +455,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
+    buildScatterSelector(partition_columns_raw_ptrs, partition_num_to_first_row, selector, max_parts, context);
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);

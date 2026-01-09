@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -10,18 +11,23 @@
 #include <Poco/JSON/Parser.h>
 #include <numeric>
 
+#include <boost/algorithm/string/replace.hpp>
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 }
 
 namespace
 {
     ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
     {
+        if (!buckets_num)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
         return sipHash64(path) % buckets_num;
     }
 
@@ -169,6 +175,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
+    bool is_path_with_hive_partitioning_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
@@ -183,6 +190,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
     , bucket_info(bucket_info_)
+    , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
 {
 }
 
@@ -205,15 +213,7 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
     return {"failed", "processing", "persistent_processing"};
 }
 
-bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
-    NodeMetadata & result,
-    Coordination::Stat * stat,
-    LoggerPtr log_)
-{
-    return getMaxProcessedFile(result, stat, processed_node_path, log_);
-}
-
-bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
+bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
     NodeMetadata & result,
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
@@ -232,6 +232,137 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
         return true;
     }
     return false;
+}
+
+ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
+    Coordination::Stat * stat,
+    bool check_failed,
+    LoggerPtr log_)
+{
+    /// With hive partitioning we keep last processed file for each partition
+    /// processed : <JSON with bucket metadata, see NodeMetadata structure>
+    ///   key=bar : file042.parquet
+    ///   key=foo : file123.parquet
+    std::optional<std::string> processed_node_hive_partitioning_path;
+    if (is_path_with_hive_partitioning)
+        processed_node_hive_partitioning_path = std::filesystem::path(processed_node_path) / getHivePart(path);
+    std::optional<std::string> failed_node_path_;
+    if (check_failed)
+        failed_node_path_ = failed_node_path;
+    return getLastProcessedFile(stat, processed_node_path, path, processed_node_hive_partitioning_path,
+        failed_node_path_, log_);
+}
+
+ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
+    Coordination::Stat * stat,
+    const std::string & processed_node_path_,
+    const std::string & file_path,
+    std::optional<std::string> processed_node_hive_partitioning_path,
+    std::optional<std::string> failed_node_path_,
+    LoggerPtr log_)
+{
+    std::vector<std::string> paths = {processed_node_path_};
+    if (failed_node_path_.has_value())
+        paths.push_back(*failed_node_path_);
+    size_t hive_partitioning_index = paths.size();
+    if (processed_node_hive_partitioning_path.has_value())
+        paths.push_back(*processed_node_hive_partitioning_path);
+
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
+    zk_retry.resetFailures();
+    zk_retry.retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(paths);
+    });
+
+    auto check_code = [](auto code, auto path)
+    {
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    size_t size = responses.size();
+    if (size != paths.size())
+        throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+            "Unexpected size of Keeper response, expected {}, got {}",
+            paths.size(), size);
+
+    for (size_t i = 0; i < size; ++i)
+        check_code(responses[i].error, file_path);
+
+    LastProcessedInfo resp;
+
+    if (failed_node_path_.has_value())
+        resp.is_failed = responses[1].error == Coordination::Error::ZOK;
+
+    if (responses[0].data.empty())
+        return resp;
+
+    NodeMetadata result = NodeMetadata::fromString(responses[0].data);
+    if (stat)
+        *stat = responses[0].stat;
+
+    if (processed_node_hive_partitioning_path.has_value())
+        resp.file_path = responses[hive_partitioning_index].data;
+    else
+        resp.file_path = result.file_path;
+
+    return resp;
+}
+
+bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByHivePartition(
+    std::unordered_map<std::string, std::string> & max_processed_files,
+    const std::string & processed_node_path_,
+    LoggerPtr log_)
+{
+    Strings hive_partitions;
+
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
+
+    Coordination::Error code;
+    zk_retry.retryLoop([&]
+    {
+        code = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGetChildren(processed_node_path_, hive_partitions);
+    });
+
+    if (code == Coordination::Error::ZNONODE)
+        return false;
+    else if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, processed_node_path_);
+
+    Strings paths;
+    for (const auto & hive_partition : hive_partitions)
+    {
+        std::string node_path = std::filesystem::path(processed_node_path_) / hive_partition;
+        paths.push_back(std::move(node_path));
+    }
+
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+
+    zk_retry.resetFailures();
+    zk_retry.retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(paths);
+    });
+
+    if (responses.size() != hive_partitions.size())
+        throw Exception(
+            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+            "Unexpected size of Keeper response, expected {}, got {}",
+            hive_partitions.size(), responses.size());
+
+    size_t size = hive_partitions.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (responses[i].error == Coordination::Error::ZOK)
+            max_processed_files[hive_partitions[i]] = responses[i].data;
+        else if (responses[i].error != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(responses[i].error, paths[i]);
+    }
+
+    return true;
 }
 
 ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
@@ -261,6 +392,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const auto processor_info = getProcessorInfo(generateProcessingID());
 
     Coordination::Error code;
+    zk_retry.resetFailures();
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_);
@@ -304,82 +436,39 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     processor_info = getProcessorInfo(generateProcessingID());
 
+    std::string processed_node_hive_path;
+    if (is_path_with_hive_partitioning)
+        processed_node_hive_path = std::filesystem::path(processed_node_path) / getHivePart(path);
+
     const size_t max_num_tries = 100;
     Coordination::Error code;
     std::string failed_path;
     for (size_t i = 0; i < max_num_tries; ++i)
     {
         std::optional<NodeMetadata> processed_node;
-        Coordination::Stat processed_node_stat;
-        std::optional<std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State>> result;
-        zk_retry.resetFailures();
-        zk_retry.retryLoop([&]
+        std::optional<Coordination::Stat> processed_node_stat;
+
+        Coordination::Stat processed_node_stat_;
+        auto processed_file_info = getLastProcessedFile(&processed_node_stat_, /*check_failed*/ true, log);
+
+        if (processed_file_info.is_failed)
         {
-            bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
-            if (is_multi_read_enabled)
+            LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
+            return {false, FileStatus::State::Failed};
+        }
+
+        if (processed_file_info.file_path.has_value())
+        {
+            processed_node_stat = processed_node_stat_;
+
+            LOG_TEST(log, "Current max processed file {} from path: {}",
+                        *processed_file_info.file_path, processed_node_path);
+
+            if (!processed_file_info.file_path->empty() && path <= *processed_file_info.file_path)
             {
-                Coordination::Requests requests;
-                std::vector<std::string> paths{processed_node_path, failed_node_path};
-                zkutil::ZooKeeper::MultiTryGetResponse responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(paths);
-
-                auto check_code = [this](auto code_)
-                {
-                    if (!(code_ == Coordination::Error::ZOK || code_ == Coordination::Error::ZNONODE))
-                        throw zkutil::KeeperException::fromPath(code_, path);
-                };
-                check_code(responses[0].error);
-                check_code(responses[1].error);
-
-                if (responses[1].error == Coordination::Error::ZOK)
-                {
-                    LOG_TEST(log, "File {} is Failed", path);
-                    result = {false, FileStatus::State::Failed};
-                }
-                else if (responses[0].error == Coordination::Error::ZOK)
-                {
-                    if (!responses[0].data.empty())
-                    {
-                        processed_node.emplace(NodeMetadata::fromString(responses[0].data));
-                        processed_node_stat = responses[0].stat;
-
-                        LOG_TEST(log, "Current max processed file {} from path: {}",
-                                processed_node->file_path, processed_node_path);
-
-                        if (!processed_node->file_path.empty() && path <= processed_node->file_path)
-                        {
-                            result = {false, FileStatus::State::Processed};
-                        }
-                    }
-                }
+                return {false, FileStatus::State::Processed};
             }
-            else
-            {
-                NodeMetadata node_metadata;
-                if (getMaxProcessedFile(node_metadata, &processed_node_stat, log))
-                {
-                    bool failed_node_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(failed_node_path);
-                    if (failed_node_exists)
-                    {
-                        LOG_TEST(log, "File {} is Failed", path);
-                        result = {false, FileStatus::State::Failed};
-                    }
-                    else
-                    {
-                        processed_node.emplace(node_metadata);
-                        LOG_TEST(log, "Current max processed file {} from path: {}",
-                                processed_node->file_path, processed_node_path);
-
-                        if (!processed_node->file_path.empty() && path <= processed_node->file_path)
-                        {
-                            result = {false, FileStatus::State::Processed};
-                        }
-                    }
-                }
-            }
-        });
-
-        if (result.has_value())
-            return result.value();
+        }
 
         Coordination::Requests requests;
 
@@ -398,12 +487,13 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                 use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
         auto check_max_processed_path = requests.size();
-        if (processed_node.has_value())
-            requests.push_back(zkutil::makeCheckRequest(processed_node_path, processed_node_stat.version));
+        if (processed_node_stat.has_value())
+            requests.push_back(zkutil::makeCheckRequest(processed_node_path, processed_node_stat->version));
         else
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
         Coordination::Responses responses;
+        zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             auto zk = ObjectStorageQueueMetadata::getZooKeeper(log);
@@ -478,28 +568,63 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(Coor
 void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
     Coordination::Requests & requests,
     const std::string & processed_node_path_,
-    bool ignore_if_exists)
+    bool ignore_if_exists,
+    LastProcessedFileInfoMapPtr created_nodes)
 {
-    NodeMetadata processed_node;
     Coordination::Stat processed_node_stat;
-    if (getMaxProcessedFile(processed_node, &processed_node_stat, processed_node_path_, log))
+
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+    auto processed_file_info = getLastProcessedFile(&processed_node_stat, /*check_failed*/ false, log);
+    if (processed_file_info.file_path.has_value())
     {
         LOG_TEST(log, "Current max processed file: {}, condition less: {}",
-                 processed_node.file_path, bool(path <= processed_node.file_path));
+                 *processed_file_info.file_path, bool(path <= *processed_file_info.file_path));
 
-        if (!processed_node.file_path.empty() && path <= processed_node.file_path)
+        if (!processed_file_info.file_path->empty() && path <= *processed_file_info.file_path)
         {
-            LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, processed_node.file_path);
+            LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, *processed_file_info.file_path);
 
             if (ignore_if_exists)
                 return;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "File ({}) is already processed, while expected it not to be (path: {})",
                 path, processed_node_path_);
         }
-        requests.push_back(zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version));
+        if (created_nodes)
+        {
+            auto cn = created_nodes->find(processed_node_path_);
+            if (cn == created_nodes->end())
+            {
+                created_nodes->emplace(processed_node_path_, LastProcessedFileInfo({path, requests.size()}));
+                requests.push_back(zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version));
+            }
+            else if (cn->second.file_path < path)
+            {
+                LOG_TRACE(log, "Path {} was already set in this request pack, overridden with {}", processed_node_path_, path);
+                requests[cn->second.index] = zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version);
+                cn->second.file_path = path;
+            }
+        }
+        else
+            requests.push_back(zkutil::makeSetRequest(processed_node_path_, node_metadata.toString(), processed_node_stat.version));
+    }
+    else if (created_nodes)
+    {
+        auto cn = created_nodes->find(processed_node_path_);
+        if (cn == created_nodes->end())
+        {
+            LOG_TEST(log, "Max processed file does not exist, creating at: {}", processed_node_path_);
+            created_nodes->emplace(processed_node_path_, LastProcessedFileInfo({path, requests.size()}));
+            requests.push_back(zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent));
+        }
+        else if (cn->second.file_path < path)
+        {   /// Node was added in requests before
+            /// Possible if processing_threads_num > 1
+            LOG_TRACE(log, "Path {} was already created in this request pack, overridden with {}", processed_node_path_, path);
+            requests[cn->second.index] = zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent);
+            cn->second.file_path = path;
+        }
     }
     else
     {
@@ -511,10 +636,29 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
-void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
+void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr created_nodes)
 {
     chassert(created_processing_node);
-    doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false);
+    doPrepareProcessedRequests(requests, processed_node_path, /* ignore_if_exists */false, created_nodes);
+}
+
+void ObjectStorageQueueOrderedFileMetadata::prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_map)
+{
+    std::filesystem::path node_path = std::filesystem::path(processed_node_path) / getHivePart(node_metadata.file_path);
+
+    auto file_info = file_map.find(node_path);
+    if (file_info == file_map.end())
+    {
+        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+        zk_retry.retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+            file_map.emplace(node_path, HiveLastProcessedFileInfo({zk_client->exists(node_path), node_metadata.file_path}));
+        });
+    }
+    else if (node_metadata.file_path > file_info->second.file_path)
+        file_info->second.file_path = node_metadata.file_path;
 }
 
 void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value)
@@ -539,7 +683,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
 
         NodeMetadata processed_node;
         Coordination::Stat processed_node_stat;
-        bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
+        bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
             processed_node,
             &processed_node_stat,
             old_processed_path,
@@ -629,12 +773,15 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
     const std::filesystem::path & zk_path_,
     size_t buckets_num,
+    bool is_path_with_hive_partitioning,
     LoggerPtr log_)
 {
     const bool use_buckets_for_processing = buckets_num > 1;
 
     buckets_num = std::max<size_t>(buckets_num, 1);
-    std::map<size_t, std::string> max_processed_file_per_bucket;
+    // map {bucket_id => {hive_partition => file_name}}
+    // When hive is not used {bucket_id => {"" => file_name}}
+    std::map<size_t, std::unordered_map<std::string, std::string>> max_processed_file_per_bucket_and_hive_partition;
 
     for (size_t i = 0; i < buckets_num; ++i)
     {
@@ -642,9 +789,18 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             ? getProcessedPathWithBucket(zk_path_, i)
             : getProcessedPathWithoutBucket(zk_path_);
 
-        NodeMetadata max_processed_file;
-        if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, log_))
-            max_processed_file_per_bucket[i] = std::move(max_processed_file.file_path);
+        if (is_path_with_hive_partitioning)
+        {
+            std::unordered_map<std::string, std::string> max_processed_files;
+            if (getMaxProcessedFilesByHivePartition(max_processed_files, processed_node_path, log_))
+                max_processed_file_per_bucket_and_hive_partition[i] = std::move(max_processed_files);
+        }
+        else
+        {
+            auto processed_file_info = getLastProcessedFile({}, processed_node_path, "");
+            if (processed_file_info.file_path.has_value())
+                max_processed_file_per_bucket_and_hive_partition[i][""] = std::move(*processed_file_info.file_path);
+        }
     }
 
     std::vector<std::string> failed_paths;
@@ -653,11 +809,27 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     {
         const auto & path = paths[i];
         const auto bucket = use_buckets_for_processing ? getBucketForPathImpl(path, buckets_num) : 0;
-        if (!max_processed_file_per_bucket.empty()
-            && path <= max_processed_file_per_bucket[bucket])
+        if (!max_processed_file_per_bucket_and_hive_partition.empty())
         {
-            LOG_TEST(log_, "Skipping file {}: Processed", path);
-            continue;
+            if (is_path_with_hive_partitioning)
+            {
+                std::string hive_part(getHivePart(path));
+                auto max_processed_file = max_processed_file_per_bucket_and_hive_partition[bucket].find(std::string(hive_part));
+                if (max_processed_file != max_processed_file_per_bucket_and_hive_partition[bucket].end()
+                    && path <= max_processed_file->second)
+                {
+                    LOG_TEST(log_, "Skipping file {}: Processed", path);
+                    continue;
+                }
+            }
+            else
+            {
+                if (path <= max_processed_file_per_bucket_and_hive_partition[bucket][""])
+                {
+                    LOG_TEST(log_, "Skipping file {}: Processed", path);
+                    continue;
+                }
+            }
         }
         failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
         check_paths_indexes.push_back(i);
@@ -665,7 +837,10 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
 
     std::vector<std::string> result;
     if (failed_paths.empty())
+    {
+        paths.clear();
         return; /// All files are already processed.
+    }
 
     auto check_code = [&](auto code, const std::string & path)
     {
@@ -693,6 +868,19 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
 
     }
     paths = std::move(result);
+}
+
+std::string ObjectStorageQueueOrderedFileMetadata::getHivePart(const std::string & file_path)
+{
+    std::string hive_part(VirtualColumnUtils::findHivePartitioningInPath(file_path));
+    normalizeHivePart(hive_part);
+    return hive_part;
+}
+
+void ObjectStorageQueueOrderedFileMetadata::normalizeHivePart(std::string & hive_part)
+{
+    boost::replace_all(hive_part, "_", "__");
+    boost::replace_all(hive_part, "/", "_");
 }
 
 }

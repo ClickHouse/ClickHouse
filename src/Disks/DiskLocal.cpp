@@ -30,6 +30,11 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
+// Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
+#ifdef FS
+#  undef FS
+#endif
 
 namespace CurrentMetrics
 {
