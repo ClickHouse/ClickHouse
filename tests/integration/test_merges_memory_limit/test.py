@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node", mem_limit='14g')
+node = cluster.add_instance("node", mem_limit='20g')
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -27,11 +27,15 @@ def test_memory_limit_success():
         "CREATE TABLE test_merge_oom ENGINE=AggregatingMergeTree ORDER BY id EMPTY AS SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap(x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(20000)"
     )
     node.query("SYSTEM STOP MERGES test_merge_oom")
-
-    for _ in range(15):
-        node.query(
-            "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(600)"
-        )
+    node.query(
+        "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(3000)"Expand commentComment on line L31Code has comments. Press enter to view.
+    )
+    node.query(
+        "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(3000)"
+    )
+    node.query(
+        "INSERT INTO test_merge_oom SELECT number%1024 AS id, arrayReduce('groupArrayState', arrayMap( x-> randomPrintableASCII(100), range(8192))) fat_state FROM numbers(3000)"
+    )
 
     _, error = node.query_and_get_answer_with_error(
         """
