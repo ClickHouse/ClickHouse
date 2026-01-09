@@ -400,6 +400,70 @@ def main():
             pass
     except Exception:
         pass
+    # Generate rocks vs default comparison summary from sidecar metrics
+    try:
+        sidecar_path = env.get("KEEPER_METRICS_FILE", f"{temp_dir}/keeper_metrics.jsonl")
+        cmp_txt = f"{temp_dir}/keeper_compare_summary.txt"
+        rows = []
+        try:
+            if os.path.exists(sidecar_path):
+                with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        try:
+                            obj = json.loads(line)
+                        except Exception:
+                            continue
+                        rows.append(obj)
+        except Exception:
+            rows = []
+        comp = {}
+        for r in rows:
+            try:
+                if (r.get("stage") != "summary") or (r.get("source") != "bench"):
+                    continue
+                scen = str(r.get("scenario") or "")
+                b = str(r.get("backend") or "")
+                nm = str(r.get("name") or "")
+                val = float(r.get("value")) if r.get("value") is not None else None
+                if val is None:
+                    continue
+                comp.setdefault(scen, {}).setdefault(b, {})[nm] = val
+            except Exception:
+                continue
+        lines = []
+        for scen, backs in sorted(comp.items()):
+            d = backs.get("default", {})
+            rk = backs.get("rocks", {})
+            if not d or not rk:
+                continue
+            def _fmt(x):
+                try:
+                    return f"{float(x):.3f}"
+                except Exception:
+                    return str(x)
+            lines.append(f"[scenario] {scen}")
+            for key in ("ops", "rps", "errors", "p50_ms", "p95_ms", "p99_ms"):
+                if key in d or key in rk:
+                    vd = d.get(key, float('nan'))
+                    vr = rk.get(key, float('nan'))
+                    ratio = (vr / vd) if (isinstance(vd, (int, float)) and vd not in (0, float('nan'))) else float('nan')
+                    lines.append(f"  {key}: default={_fmt(vd)} rocks={_fmt(vr)} ratio(rocks/default)={_fmt(ratio)}")
+            lines.append("")
+        try:
+            with open(cmp_txt, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) if lines else "No comparable summary metrics found for rocks vs default")
+        except Exception:
+            cmp_txt = None
+        if cmp_txt and os.path.exists(cmp_txt):
+            files_to_attach.append(str(cmp_txt))
+            results.append(
+                Result.from_commands_run(
+                    name="Keeper Rocks vs Default comparison (bench summary)",
+                    command=[f"bash -lc \"echo '==== rocks vs default summary ===='; sed -n '1,200p' '{cmp_txt}'\""],
+                )
+            )
+    except Exception:
+        pass
     # Avoid pytest collecting generated _instances-* dirs which may be non-readable
     try:
         addopts = env.get("PYTEST_ADDOPTS", "").strip()
