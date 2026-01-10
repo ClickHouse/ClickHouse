@@ -8,17 +8,12 @@ from urllib.parse import quote
 import requests
 
 
-def env(name: str, default: str) -> str:
-    v = os.getenv(name)
-    return v if v not in (None, "") else default
+WAREHOUSE_BUCKET = "warehouse"
+WAREHOUSE_PREFIX = "".strip("/")
+GCS_PROJECT ="test-project"
+STORAGE_EMULATOR_HOST = "http://gcs:4443".rstrip("/")
 
-
-WAREHOUSE_BUCKET = env("WAREHOUSE_BUCKET", "warehouse")
-WAREHOUSE_PREFIX = env("WAREHOUSE_PREFIX", "").strip("/")
-GCS_PROJECT = env("GOOGLE_CLOUD_PROJECT", "test-project")
-STORAGE_EMULATOR_HOST = env("STORAGE_EMULATOR_HOST", "http://gcs:4443").rstrip("/")
-
-REQUESTS_VERIFY = env("REQUESTS_VERIFY", "1") not in ("0", "false", "False", "no", "NO")
+REQUESTS_VERIFY = False
 
 SESSION = requests.Session()
 SESSION.headers.update({"Accept": "application/json"})
@@ -340,7 +335,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
 
-if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8182
-    httpd = http.server.HTTPServer(("0.0.0.0", port), RequestHandler)
-    httpd.serve_forever()
+port = int(sys.argv[1]) if len(sys.argv) > 1 else 8182
+httpd = http.server.HTTPServer(("0.0.0.0", port), RequestHandler)
+httpd.serve_forever()
