@@ -169,6 +169,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         Type::CLEAR_FILESYSTEM_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
         Type::CLEAR_QUERY_CACHE,
+        Type::CLEAR_PARTIAL_AGGREGATE_CACHE,
     };
 
     if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
@@ -582,6 +583,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_PARTIAL_AGGREGATE_CACHE:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
