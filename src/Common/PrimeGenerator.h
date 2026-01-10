@@ -50,7 +50,10 @@ public:
 
         if (limit_odd > std::numeric_limits<UInt32>::max())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "OddPrimesCache supports limit up to {}, got {}", std::numeric_limits<UInt32>::max(), limit_odd);
+                ErrorCodes::LOGICAL_ERROR,
+                "OddPrimesCache supports limit up to {}, got {}",
+                static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 1,
+                limit);
 
         /// We already have enough primes cached
         if (limit_odd <= current_limit)
