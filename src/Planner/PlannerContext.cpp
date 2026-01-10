@@ -7,7 +7,6 @@
 #include <Analyzer/UnionNode.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/IAST.h>
 
 namespace DB
 {
@@ -182,14 +181,8 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
-    /// For distributed queries we must generate a stable name that is compatible between initiator and shards.
-    /// QueryTree hashing may differ after QueryTree <-> AST conversions (e.g. due to analysis details),
-    /// therefore base the name on AST hash instead.
-    ConvertToASTOptions convert_to_ast_options;
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
-    convert_to_ast_options.set_subquery_cte_name = false;
-    const auto set_source_ast = set_source_node->toAST(convert_to_ast_options);
-    const auto set_source_hash = set_source_ast->getTreeHash(/*ignore_aliases*/ true);
+    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.

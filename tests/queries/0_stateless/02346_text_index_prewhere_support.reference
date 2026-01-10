@@ -108,7 +108,7 @@ Name: inv_idx1
 SELECT count() FROM tab PREWHERE NOT (hasAnyTokens(text1, ['drop', 'truncate']) OR hasToken(text2, 'danger')) AND id IN (1, 2, 3, 4)
 4
 4
-Prewhere filter column: and(not(or(__text_index_inv_idx1_hasAnyTokens_5fafbc93f0bb83e3a84167577b0daf96, __text_index_inv_idx2_hasToken_44f9476b70574758924ffa0c5cf5ee1e)), in(id, __set_Int64_16578633610384793602_10779582628121199876)) (removed)
+Prewhere filter column: and(not(or(__text_index_inv_idx1_hasAnyTokens_5fafbc93f0bb83e3a84167577b0daf96, __text_index_inv_idx2_hasToken_44f9476b70574758924ffa0c5cf5ee1e)), in(id, __set_Int64_9176252633170876565_1307576728392119372)) (removed)
 Name: inv_idx2
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE (a > 10 AND hasToken(text1, 'clickhouse')) OR (a <= 10 AND hasAnyTokens(text2, ['mysql', 'postgres']))
@@ -138,7 +138,7 @@ Name: inv_idx1
 SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) WHERE a NOT IN (150, 160) AND id != 15
 4
 4
-Filter column: and(notIn(__table1.a, __set_Int32_8290283434346564038_9061080042084549191), notEquals(__table1.id, 15_UInt8)) (removed)
+Filter column: and(notIn(__table1.a, __set_Int32_7643145616119059242_14966076103117198194), notEquals(__table1.id, 15_UInt8)) (removed)
 Prewhere filter column: __text_index_inv_idx1_hasAllTokens_64566df4f47b0f746cfe56ab10201f26 (removed)
 Name: inv_idx1
 SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') WHERE hasToken(text2, 'fastio')
