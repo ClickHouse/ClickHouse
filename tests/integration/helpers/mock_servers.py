@@ -53,7 +53,17 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
             [
                 "bash",
                 "-c",
-                f"python3 {server_name} {port} {' '.join(args)} >{log_file} 2>{err_log_file}",
+                "python3 -m pip install requests --break-system-packages"
+            ],
+            detach=True,
+        )
+
+        cluster.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                f"python3 -m pip install requests --break-system-packages && python3 {server_name} {port} {' '.join(args)} >{log_file} 2>{err_log_file}",
             ],
             detach=True,
         )

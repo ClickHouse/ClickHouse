@@ -38,6 +38,7 @@ execnet==2.1.1
 fsspec==2024.12.0
 geomet==0.2.1.post1
 geopandas==1.0.1
+google-cloud-storage==3.7.0
 grpcio-tools==1.60.0
 grpcio==1.60.0
 gssapi==1.8.3
@@ -74,9 +75,9 @@ pycparser==2.22
 pycryptodome==3.20.0
 pydantic==2.9.2
 pydantic_core==2.23.4
-pyiceberg==0.8.1
-pyiceberg[glue]==0.8.1
-pyiceberg[hive]==0.8.1
+pyiceberg==0.10.0
+pyiceberg[glue]==0.10.0
+pyiceberg[hive]==0.10.0
 pymongo==4.6.3
 pyparsing==3.1.0
 pyspark==3.5.5
