@@ -39,25 +39,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_bytes_in_set;
-    extern const SettingsUInt64 max_rows_in_set;
-    extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool transform_null_in;
-}
-
-namespace ActionLocks
-{
-    extern const StorageActionBlockType PartsMerge;
-}
-
-
 void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
