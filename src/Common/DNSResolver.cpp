@@ -368,6 +368,7 @@ void DNSResolver::dropCache()
     impl->new_hosts.clear();
     impl->new_addresses.clear();
     impl->host_name.reset();
+    impl->host_addresses.reset();
 }
 
 void DNSResolver::removeHostFromCache(const std::string & host)
