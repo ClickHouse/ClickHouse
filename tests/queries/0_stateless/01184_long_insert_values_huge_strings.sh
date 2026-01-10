@@ -11,8 +11,8 @@ $CLICKHOUSE_CLIENT -q "create table huge_strings (n UInt64, l UInt64, s String, 
 # Timeouts are increased, because test can be slow with sanitizers and parallel runs.
 
 for _ in {1..10}; do
-  $CLICKHOUSE_CLIENT --receive_timeout 100 --send_timeout 100 --connect_timeout 100 --query "select number, (rand() % 10*1000*1000) as l, repeat(randomString(l/1000/1000), 1000*1000) as s, cityHash64(s) from numbers(10) format Values" | $CLICKHOUSE_CLIENT --receive_timeout 100 --send_timeout 100 --connect_timeout 100 --query "insert into huge_strings values" &
-  $CLICKHOUSE_CLIENT --receive_timeout 100 --send_timeout 100 --connect_timeout 100 --query "select number % 10, (rand() % 10) as l, randomString(l) as s, cityHash64(s) from numbers(100000)" | $CLICKHOUSE_CLIENT --receive_timeout 100 --send_timeout 100 --connect_timeout 100 --query "insert into huge_strings format TSV" &
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "select number, (rand() % 10*1000*1000) as l, repeat(randomString(l/1000/1000), 1000*1000) as s, cityHash64(s) from numbers(10) format Values" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=insert+into+huge_strings+values" -d@- &
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "select number % 10, (rand() % 10) as l, randomString(l) as s, cityHash64(s) from numbers(100000) format TSV" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=insert+into+huge_strings+format+TSV" -X POST --data-binary @- &
 done;
 wait
 

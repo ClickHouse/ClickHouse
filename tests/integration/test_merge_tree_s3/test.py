@@ -46,7 +46,7 @@ def cluster():
             with_minio=True,
             stay_alive=True,
             tmpfs=[
-                "/jbod1:size=2M",
+                "/test_merge_tree_s3_jbod1:size=2M",
             ],
         )
 
@@ -808,7 +808,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
         [
             "/usr/bin/dd",
             "if=/dev/zero",
-            "of=/jbod1/dummy",
+            "of=/test_merge_tree_s3_jbod1/dummy",
             "bs=1000",
             "count=2000",
         ]

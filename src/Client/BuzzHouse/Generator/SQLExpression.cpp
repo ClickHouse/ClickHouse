@@ -458,7 +458,8 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
 
-        if (rg.nextBool())
+        /// When running oracles with global aggregates, a correlated column can give false positives
+        if ((this->allow_not_deterministic || !this->levels[this->current_level - 1].global_aggregate) && rg.nextBool())
         {
             /// Make the subquery correlated
             for (const auto & rel : this->levels[this->current_level - 1].rels)
@@ -1508,7 +1509,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     {
         /// Dictionary functions
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda));
         const auto dfunc = rg.pickRandomly(dictFuncs);
 
         sfc->mutable_func()->set_catalog_func(dfunc);

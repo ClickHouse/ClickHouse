@@ -8,3 +8,4 @@ subject	Nullable(String)			Subject - identifies the owner of the public key.
 pkey_algo	Nullable(String)			Public Key Algorithm defines the algorithm the public key can be used with.		
 path	String			Path to the file or directory containing this certificate.		
 default	UInt8			Certificate is in the default certificate location.		
+protocol	String			Protocol name if certificate is from per-protocol TLS config, otherwise empty.		

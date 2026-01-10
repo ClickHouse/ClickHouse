@@ -15,6 +15,7 @@ namespace ErrorCodes
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
+    MergeTreeSettingsPtr data_settings,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & indices_to_recalc,
@@ -23,7 +24,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
     WrittenOffsetColumns * offset_columns)
-    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
+    : IMergedBlockOutputStream(
+          std::move(data_settings),
+          data_part->getDataPartStoragePtr(),
+          metadata_snapshot_,
+          columns_list_,
+          /*reset_columns=*/true)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;

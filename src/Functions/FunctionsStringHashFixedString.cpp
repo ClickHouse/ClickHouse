@@ -375,7 +375,7 @@ SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
     FunctionDocumentation::Category category_RIPEMD160 = FunctionDocumentation::Category::Hash;
     FunctionDocumentation::IntroducedIn introduced_in_RIPEMD160 = {24, 10};
 
-    FunctionDocumentation documentation_RIPEMD160 = {description_RIPEMD160, syntax_RIPEMD160, arguments_RIPEMD160, returned_value_RIPEMD160, example_RIPEMD160, introduced_in_RIPEMD160, category_RIPEMD160};
+    FunctionDocumentation documentation_RIPEMD160 = {description_RIPEMD160, syntax_RIPEMD160, arguments_RIPEMD160, {}, returned_value_RIPEMD160, example_RIPEMD160, introduced_in_RIPEMD160, category_RIPEMD160};
 
     factory.registerFunction<FunctionRIPEMD160>(documentation_RIPEMD160);
 
@@ -402,7 +402,7 @@ SELECT HEX(MD4('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_MD4 = {21, 11};
     FunctionDocumentation::Category category_MD4 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_MD4 = {description_MD4, syntax_MD4, arguments_MD4, returned_value_MD4, example_MD4, introduced_in_MD4, category_MD4};
+    FunctionDocumentation documentation_MD4 = {description_MD4, syntax_MD4, arguments_MD4, {}, returned_value_MD4, example_MD4, introduced_in_MD4, category_MD4};
 
     factory.registerFunction<FunctionMD4>(documentation_MD4);
 
@@ -432,7 +432,7 @@ SELECT HEX(MD5('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_MD5 = {1, 1};
     FunctionDocumentation::Category category_MD5 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_MD5 = {description_MD5, syntax_MD5, arguments_MD5, returned_value_MD5, example_MD5, introduced_in_MD5, category_MD5};
+    FunctionDocumentation documentation_MD5 = {description_MD5, syntax_MD5, arguments_MD5, {}, returned_value_MD5, example_MD5, introduced_in_MD5, category_MD5};
 
     factory.registerFunction<FunctionMD5>(documentation_MD5);
 
@@ -462,7 +462,7 @@ SELECT HEX(SHA1('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA1 = {1, 1};
     FunctionDocumentation::Category category_SHA1 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA1 = {description_SHA1, syntax_SHA1, arguments_SHA1, returned_value_SHA1, example_SHA1, introduced_in_SHA1, category_SHA1};
+    FunctionDocumentation documentation_SHA1 = {description_SHA1, syntax_SHA1, arguments_SHA1, {}, returned_value_SHA1, example_SHA1, introduced_in_SHA1, category_SHA1};
 
     factory.registerFunction<FunctionSHA1>(documentation_SHA1);
 
@@ -491,7 +491,7 @@ SELECT HEX(SHA224('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA224 = {1, 1};
     FunctionDocumentation::Category category_SHA224 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA224 = {description_SHA224, syntax_SHA224, arguments_SHA224, returned_value_SHA224, example_SHA224, introduced_in_SHA224, category_SHA224};
+    FunctionDocumentation documentation_SHA224 = {description_SHA224, syntax_SHA224, arguments_SHA224, {}, returned_value_SHA224, example_SHA224, introduced_in_SHA224, category_SHA224};
 
     factory.registerFunction<FunctionSHA224>(documentation_SHA224);
 
@@ -520,7 +520,7 @@ SELECT HEX(SHA256('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA256 = {1, 1};
     FunctionDocumentation::Category category_SHA256 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA256 = {description_SHA256, syntax_SHA256, arguments_SHA256, returned_value_SHA256, example_SHA256, introduced_in_SHA256, category_SHA256};
+    FunctionDocumentation documentation_SHA256 = {description_SHA256, syntax_SHA256, arguments_SHA256, {}, returned_value_SHA256, example_SHA256, introduced_in_SHA256, category_SHA256};
 
     factory.registerFunction<FunctionSHA256>(documentation_SHA256);
 
@@ -547,7 +547,7 @@ Calculates the SHA384 hash of the given string.
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA384 = {1, 1};
     FunctionDocumentation::Category category_SHA384 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA384 = {description_SHA384, syntax_SHA384, arguments_SHA384, returned_value_SHA384, examples_SHA384, introduced_in_SHA384, category_SHA384};
+    FunctionDocumentation documentation_SHA384 = {description_SHA384, syntax_SHA384, arguments_SHA384, {}, returned_value_SHA384, examples_SHA384, introduced_in_SHA384, category_SHA384};
     factory.registerFunction<FunctionSHA384>(documentation_SHA384);
 
     FunctionDocumentation::Description description_SHA512 = R"(
@@ -575,7 +575,7 @@ SELECT HEX(SHA512('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA512 = {1, 1};
     FunctionDocumentation::Category category_SHA512 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA512 = {description_SHA512, syntax_SHA512, arguments_SHA512, returned_value_SHA512, example_SHA512, introduced_in_SHA512, category_SHA512};
+    FunctionDocumentation documentation_SHA512 = {description_SHA512, syntax_SHA512, arguments_SHA512, {}, returned_value_SHA512, example_SHA512, introduced_in_SHA512, category_SHA512};
 
     factory.registerFunction<FunctionSHA512>(documentation_SHA512);
 
@@ -606,7 +606,7 @@ SELECT HEX(SHA512_256('abc'));
     };
     FunctionDocumentation::IntroducedIn introduced_in_SHA512_256 = {1, 1};
     FunctionDocumentation::Category category_SHA512_256 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA512_256 = {description_SHA512_256, syntax_SHA512_256, arguments_SHA512_256, returned_value_SHA512_256, example_SHA512_256, introduced_in_SHA512_256, category_SHA512_256};
+    FunctionDocumentation documentation_SHA512_256 = {description_SHA512_256, syntax_SHA512_256, arguments_SHA512_256, {}, returned_value_SHA512_256, example_SHA512_256, introduced_in_SHA512_256, category_SHA512_256};
 
     factory.registerFunction<FunctionSHA512_256>(documentation_SHA512_256);
 
@@ -645,7 +645,7 @@ SELECT hex(BLAKE3('ABC'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_BLAKE3 = {22, 10};
     FunctionDocumentation::Category category_BLAKE3 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_BLAKE3 = {description_BLAKE3, syntax_BLAKE3, arguments_BLAKE3, returned_value_BLAKE3, example_BLAKE3, introduced_in_BLAKE3, category_BLAKE3};
+    FunctionDocumentation documentation_BLAKE3 = {description_BLAKE3, syntax_BLAKE3, arguments_BLAKE3, {}, returned_value_BLAKE3, example_BLAKE3, introduced_in_BLAKE3, category_BLAKE3};
 
     factory.registerFunction<FunctionBLAKE3>(documentation_BLAKE3);
 #    endif
@@ -679,7 +679,7 @@ SELECT hex(keccak256('hello'))
     };
     FunctionDocumentation::IntroducedIn introduced_in_keccak256 = {25, 4};
     FunctionDocumentation::Category category_keccak256 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_keccak256 = {description_keccak256, syntax_keccak256, arguments_keccak256, returned_value_keccak256, example_keccak256, introduced_in_keccak256, category_keccak256};
+    FunctionDocumentation documentation_keccak256 = {description_keccak256, syntax_keccak256, arguments_keccak256, {}, returned_value_keccak256, example_keccak256, introduced_in_keccak256, category_keccak256};
 
     factory.registerFunction<FunctionKeccak256>(documentation_keccak256);
 #    endif

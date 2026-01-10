@@ -146,7 +146,48 @@ void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & 
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileDeterministic::name, createAggregateFunctionQuantile<FuncQuantileDeterministic>);
+    FunctionDocumentation::Description description = R"(
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+
+This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and deterministic algorithm of sampling.
+The result is deterministic.
+To get an exact quantile, use the [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact) function.
+
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
+In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+quantileDeterministic(level)(expr, determinator)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}},
+        {"determinator", "Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occurs too often, the function works incorrectly.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an approximate quantile of the specified level.", {"Float64", "Date", "DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing deterministic quantile",
+        R"(
+CREATE TABLE t (val UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (1), (1), (2), (3);
+
+SELECT quantileDeterministic(val, 1) FROM t;
+        )",
+        R"(
+┌─quantileDeterministic(val, 1)─┐
+│                           1.5 │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(NameQuantileDeterministic::name, {createAggregateFunctionQuantile<FuncQuantileDeterministic>, {}, documentation});
     factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, properties });
 
     /// 'median' is an alias for 'quantile'

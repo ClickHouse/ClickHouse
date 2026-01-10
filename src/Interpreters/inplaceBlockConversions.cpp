@@ -33,7 +33,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 
-
 namespace DB
 {
 
@@ -42,9 +41,10 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
 }
 
-namespace ErrorCode
+namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -152,7 +152,7 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
     return default_expr_list;
 }
 
-ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns)
+ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {
     ASTPtr conversion_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & required_column : required_columns)
@@ -163,6 +163,32 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
         const auto & column_in_block = block.getByName(required_column.name);
         if (column_in_block.type->equals(*required_column.type))
             continue;
+
+        /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.
+        /// Users should specify DEFAULT expression in ALTER MODIFY COLUMN statement to replace NULL values.
+        if (isNullableOrLowCardinalityNullable(column_in_block.type) && !isNullableOrLowCardinalityNullable(required_column.type))
+        {
+            /// Before executing ALTER we explicitly check that user provided DEFAULT value to make it a conscious decision.
+            /// However, we may still need to use type's default value in some cases
+            /// (e.g. if a second ALTER removes the DEFAULT, but first is not completed).
+            ASTPtr default_value;
+            if (auto it = column_defaults.find(required_column.name); it != column_defaults.end())
+                default_value = it->second.expression;
+            else if (!forbid_default_defaults)
+                default_value = std::make_shared<ASTLiteral>(required_column.type->getDefault());
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot convert column '{}' from nullable type {} to non-nullable type {}. "
+                    "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
+                    required_column.name, column_in_block.type->getName(), required_column.type->getName());
+
+            auto convert_func = makeASTFunction("_CAST",
+                makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column.name), default_value),
+                std::make_shared<ASTLiteral>(required_column.type->getName()));
+
+            conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+            continue;
+        }
 
         auto cast_func = makeASTFunction(
             "_CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
@@ -241,9 +267,9 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {
-    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 

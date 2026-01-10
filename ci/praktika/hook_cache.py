@@ -76,29 +76,33 @@ class CacheRunnerHooks:
                 if job_digest != cache.digest.get_null_digest()
                 and job_name not in workflow_config.filtered_jobs
             }
-            
+
             # Group 1: Jobs whose digest is NOT a prefix of any other digest
             # (these are independent or leaf jobs)
             root_jobs = {}
             # Group 2: Jobs whose digest starts with a digest from Group 1
             # (these are dependent jobs)
             dependent_jobs = {}
-            
+
             for job_name, job_digest in eligible_jobs.items():
                 # Check if this digest is a prefix of any other digest
                 has_prefix = False
                 for other_digest in eligible_jobs.values():
-                    if other_digest != job_digest and other_digest.startswith(job_digest + "-"):
+                    if other_digest != job_digest and other_digest.startswith(
+                        job_digest + "-"
+                    ):
                         has_prefix = True
                         break
-                
+
                 if not has_prefix:
                     root_jobs[job_name] = job_digest
                 else:
                     dependent_jobs[job_name] = job_digest
-            
-            print(f"Cache fetch: {len(root_jobs)} root jobs, {len(dependent_jobs)} dependent jobs")
-            
+
+            print(
+                f"Cache fetch: {len(root_jobs)} root jobs, {len(dependent_jobs)} dependent jobs"
+            )
+
             # Step 2: Fetch records for root jobs
             successfully_fetched_digests = set()
             with ThreadPoolExecutor(max_workers=200) as executor:
@@ -106,14 +110,14 @@ class CacheRunnerHooks:
                     executor.submit(fetch_record, job_name, job_digest, cache): job_name
                     for job_name, job_digest in root_jobs.items()
                 }
-                
+
                 for future in futures:
                     result = future.result()
                     if result:
                         job_name, record = result
                         fetched_records.append(result)
                         successfully_fetched_digests.add(root_jobs[job_name])
-            
+
             # Step 3: Filter dependent jobs - only fetch if their prefix was successfully fetched
             filtered_dependent_jobs = {}
             for job_name, job_digest in dependent_jobs.items():
@@ -122,16 +126,18 @@ class CacheRunnerHooks:
                     if job_digest.startswith(fetched_digest + "-"):
                         filtered_dependent_jobs[job_name] = job_digest
                         break
-            
-            print(f"Cache fetch: {len(filtered_dependent_jobs)}/{len(dependent_jobs)} dependent jobs have cached prefixes")
-            
+
+            print(
+                f"Cache fetch: {len(filtered_dependent_jobs)}/{len(dependent_jobs)} dependent jobs have cached prefixes"
+            )
+
             # Step 4: Fetch records for filtered dependent jobs
             with ThreadPoolExecutor(max_workers=200) as executor:
                 futures = {
                     executor.submit(fetch_record, job_name, job_digest, cache): job_name
                     for job_name, job_digest in filtered_dependent_jobs.items()
                 }
-                
+
                 for future in futures:
                     result = future.result()
                     if result:

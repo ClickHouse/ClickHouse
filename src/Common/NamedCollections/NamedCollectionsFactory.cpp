@@ -387,34 +387,34 @@ void NamedCollectionFactory::updateFunc()
 
     while (!shutdown_called.load())
     {
-        if (metadata_storage->waitUpdate())
+        try
         {
-            try
+            if (metadata_storage->waitUpdate())
             {
                 reloadFromSQL();
             }
-            catch (const Coordination::Exception & e)
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (Coordination::isHardwareError(e.code))
             {
-                if (Coordination::isHardwareError(e.code))
-                {
-                    LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
-                            DB::getCurrentExceptionMessage(true));
+                LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
+                        DB::getCurrentExceptionMessage(true));
 
-                    sleepForSeconds(1);
-                }
-                else
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    chassert(false);
-                }
-                continue;
+                sleepForSeconds(1);
             }
-            catch (...)
+            else
             {
-                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 chassert(false);
-                continue;
             }
+            continue;
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
+            continue;
         }
     }
 

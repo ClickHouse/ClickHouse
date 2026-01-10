@@ -23,8 +23,7 @@ namespace
 {
 
 /* Generate random string of specified length with fully random bytes (including zero). */
-template <typename RandImpl>
-class FunctionRandomStringImpl : public IFunction
+class FunctionRandomString : public IFunction
 {
 public:
     static constexpr auto name = "randomString";
@@ -91,34 +90,8 @@ public:
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
         return col_to;
     }
-};
 
-class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
-{
-public:
-    explicit FunctionRandomString(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionRandomString>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomString>(); }
 };
 
 }
@@ -143,7 +116,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomString>(documentation);
 }

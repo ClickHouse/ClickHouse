@@ -406,7 +406,7 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionIsIPAddressContainedIn>(documentation);
     }

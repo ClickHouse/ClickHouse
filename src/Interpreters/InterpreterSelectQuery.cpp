@@ -3501,7 +3501,7 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
         }
-        else // if (lim_info.fractiona_offset > 0)
+        else if (lim_info.fractional_offset > 0) [[unlikely]]
         {
             auto fractional_offset_step = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), lim_info.fractional_offset);
             query_plan.addStep(std::move(fractional_offset_step));

@@ -51,6 +51,9 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -95,8 +98,12 @@ PostgreSQLHandler::PostgreSQLHandler(
     params.certificateFile = config.getString(prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, params.privateKeyFile);
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
-        auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
-        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, ctx->getCAPaths().caLocation);
+        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
+        if (params.caLocation.empty())
+        {
+            auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
+            params.caLocation = ctx->getCAPaths().caLocation;
+        }
 
         params.verificationMode = Poco::Net::SSLManager::VAL_VER_MODE;
         if (config.hasProperty(prefix + Poco::Net::SSLManager::CFG_VER_MODE))
@@ -336,7 +343,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
     message_transport->send('S', true);
-    auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
+    Poco::Net::Context::Ptr ctx;
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
         ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix);
@@ -350,6 +357,10 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
             CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
             ctx = Poco::Net::SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
+    }
+    else
+    {
+        ctx = Poco::Net::SSLManager::instance().defaultServerContext();
     }
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));
     changeIO(*ss);
@@ -450,7 +461,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
         String format;
         switch (copy_query->format)
         {
@@ -465,6 +475,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             break;
         }
 
+        const Settings & settings = query_context->getSettingsRef();
+
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
         executor->start();
         while (true)
@@ -477,7 +489,21 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
                 ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
+                auto format_ptr = FormatFactory::instance().getInput(
+                    format,
+                    buf,
+                    io.pipeline.getHeader(),
+                    query_context,
+                    settings[Setting::max_insert_block_size],
+                    std::nullopt,
+                    nullptr,
+                    nullptr,
+                    false,
+                    CompressionMethod::None,
+                    false,
+                    settings[Setting::max_insert_block_size_bytes],
+                    settings[Setting::min_insert_block_size_rows],
+                    settings[Setting::min_insert_block_size_bytes]);
                 while (true)
                 {
                     auto chunk = format_ptr->generate();

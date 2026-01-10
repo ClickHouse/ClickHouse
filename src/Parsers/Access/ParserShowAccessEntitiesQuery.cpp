@@ -71,7 +71,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
 
     String short_name;
     std::optional<std::pair<String, String>> database_and_table_name;
-    if (type == AccessEntityType::ROW_POLICY)
+    if (type == AccessEntityType::ROW_POLICY || type == AccessEntityType::MASKING_POLICY)
     {
         String database;
         String table_name;

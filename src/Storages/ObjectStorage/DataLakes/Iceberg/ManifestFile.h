@@ -55,7 +55,7 @@ struct PartitionSpecsEntry
 using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
 /// Description of Data file in manifest file
-struct ManifestFileEntry
+struct ManifestFileEntry : public boost::noncopyable
 {
     // It's the original string in the Iceberg metadata
     String file_path_key;
@@ -79,7 +79,42 @@ struct ManifestFileEntry
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
+
+    // Constructor
+    ManifestFileEntry(
+        const String& file_path_key_,
+        const String& file_path_,
+        Int64 row_number_,
+        ManifestEntryStatus status_,
+        Int64 added_sequence_number_,
+        Int64 snapshot_id_,
+        Int64 schema_id_,
+        DB::Row& partition_key_value_,
+        PartitionSpecification& common_partition_specification_,
+        std::unordered_map<Int32, ColumnInfo>& columns_infos_,
+        const String& file_format_,
+        std::optional<String> reference_data_file_path_,
+        std::optional<std::vector<Int32>> equality_ids_,
+        std::optional<Int32> sort_order_id_)
+        : file_path_key(file_path_key_)
+        , file_path(file_path_)
+        , row_number(row_number_)
+        , status(status_)
+        , added_sequence_number(added_sequence_number_)
+        , snapshot_id(snapshot_id_)
+        , schema_id(schema_id_)
+        , partition_key_value(std::move(partition_key_value_))
+        , common_partition_specification(common_partition_specification_)
+        , columns_infos(std::move(columns_infos_))
+        , file_format(file_format_)
+        , reference_data_file_path(reference_data_file_path_)
+        , equality_ids(std::move(equality_ids_))
+        , sort_order_id(sort_order_id_)
+    {
+    }
 };
+
+using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
@@ -122,7 +157,7 @@ public:
         DB::ContextPtr context,
         const String & path_to_manifest_file_);
 
-    const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;
+    const std::vector<ManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
@@ -147,14 +182,14 @@ public:
 private:
 
     PartitionSpecification common_partition_specification;
-    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files);
+    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files);
 
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> data_files_without_deleted;
+    std::vector<ManifestFileEntryPtr> data_files_without_deleted;
     // Partition level deletes files
-    std::vector<ManifestFileEntry> position_deletes_files_without_deleted;
-    std::vector<ManifestFileEntry> equality_deletes_files;
+    std::vector<ManifestFileEntryPtr> position_deletes_files_without_deleted;
+    std::vector<ManifestFileEntryPtr> equality_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
     String path_to_manifest_file;
@@ -166,7 +201,7 @@ bool operator<(const PartitionSpecification & lhs, const PartitionSpecification 
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 
-std::weak_ordering operator<=>(const ManifestFileEntry & lhs, const ManifestFileEntry & rhs);
+std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs);
 }
 
 #endif

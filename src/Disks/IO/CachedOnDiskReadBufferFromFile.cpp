@@ -27,6 +27,7 @@ extern const Event FileSegmentPredownloadMicroseconds;
 extern const Event FileSegmentUsedBytes;
 
 extern const Event CachedReadBufferReadFromSourceMicroseconds;
+extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
@@ -619,7 +620,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 watch.stop();
                 auto elapsed = watch.elapsedMicroseconds();
                 current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceMicroseconds, elapsed);
             }
 
             if (!bytes_to_predownload || !has_more_data)
@@ -1139,12 +1140,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         std::optional<std::string> impl_read_stop_reason;
         if (read_type != ReadType::CACHED)
         {
-            object_size = implementation_buffer->tryGetFileSize();
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
                 impl_read_stop_reason = s3_buf->getStopReason();
+                object_size = s3_buf->getObjectSizeFromS3();
             }
 #endif
         }

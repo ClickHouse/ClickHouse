@@ -223,7 +223,7 @@ Concatenates the provided strings, separating them by the specified separator.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_injective = R"(
 Like [`concatWithSeparator`](#concatWithSeparator) but assumes that `concatWithSeparator(sep[,exp1, exp2, ... ]) → result` is injective.
@@ -274,7 +274,7 @@ GROUP BY concatWithSeparatorAssumeInjective('-', first_name, last_name);
         )"
     }
     };
-    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, returned_value_injective, examples_injective, introduced_in, category};
+    FunctionDocumentation documentation_injective = {description_injective, syntax_injective, arguments_injective, {}, returned_value_injective, examples_injective, introduced_in, category};
 
     factory.registerFunction<FunctionConcatWithSeparator>(documentation);
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(documentation_injective);

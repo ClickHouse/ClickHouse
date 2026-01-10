@@ -114,10 +114,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
     {
         size_t bytes_read = 0;
 
-        /// The codec mode is only relevant for codecs which support hardware offloading.
-        ICompressionCodec::CodecMode decompress_mode = ICompressionCodec::CodecMode::Synchronous;
-        bool read_tail = false;
-
         /// If there are unread bytes in the buffer, then we copy needed to `to`.
         if (pos < working_buffer.end())
             bytes_read += read(to, std::min(static_cast<size_t>(working_buffer.end() - pos), n));
@@ -129,25 +125,10 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             size_t size_compressed_without_checksum = 0;
 
             size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
-            if (new_size_compressed)
-            {
-                /// Current block is entirely located in a single 'compressed_in->' buffer.
-                /// We can set asynchronous decompression mode if supported to boost performance.
-                decompress_mode = ICompressionCodec::CodecMode::Asynchronous;
-            }
-            else
-            {
-                /// Current block cannot be decompressed asynchronously, means it probably span across two compressed_in buffers.
-                /// Meanwhile, asynchronous requests for previous blocks should be flushed if any.
-                flushAsynchronousDecompressRequests();
-                /// Fallback to generic API
-                new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
-                decompress_mode = ICompressionCodec::CodecMode::Synchronous;
-            }
             size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
             if (!new_size_compressed)
-               break;
+                return bytes_read;
 
             LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", new_size_compressed, file_in.getFileName(), size_decompressed);
 
@@ -157,7 +138,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             /// need to skip some bytes in decompressed data (seek happened before readBig call).
             if (nextimpl_working_buffer_offset == 0 && size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
             {
-                setDecompressMode(decompress_mode);
                 decompressTo(to + bytes_read, size_decompressed, size_compressed_without_checksum);
                 bytes_read += size_decompressed;
                 bytes += size_decompressed;
@@ -173,7 +153,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
                 working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 /// Synchronous mode must be set since we need read partial data immediately from working buffer to target buffer.
-                setDecompressMode(ICompressionCodec::CodecMode::Synchronous);
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
                 /// Read partial data from first block. Won't run here at second block.
@@ -193,22 +172,13 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
                 working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.
-                setDecompressMode(ICompressionCodec::CodecMode::Asynchronous);
                 decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
-                read_tail = true;
+
+                /// Read partial data from last block.
+                pos = working_buffer.begin();
+                bytes_read += read(to + bytes_read, n - bytes_read);
                 break;
             }
-        }
-
-        /// Here we must make sure all asynchronous requests above are completely done.
-        flushAsynchronousDecompressRequests();
-
-        if (read_tail)
-        {
-            /// Manually take nextimpl_working_buffer_offset into account, because we don't use
-            /// nextImpl in this method.
-            pos = working_buffer.begin();
-            bytes_read += read(to + bytes_read, n - bytes_read);
         }
 
         return bytes_read;

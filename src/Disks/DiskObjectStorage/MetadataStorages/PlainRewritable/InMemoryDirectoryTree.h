@@ -78,6 +78,8 @@ public:
     void moveDirectory(const std::string & from, const std::string & to);
     std::vector<std::string> listDirectory(const std::string & path) const;
     std::pair<bool, std::optional<DirectoryRemoteInfo>> existsDirectory(const std::string & path) const;
+    /// Returns whether a directory exists only in the virtual filesystem tree.
+    bool existsVirtualDirectory(const std::string & path) const;
 
     bool existsFile(const std::string & path) const;
     void removeFile(const std::string & path);

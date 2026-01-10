@@ -141,7 +141,7 @@ public:
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
-    void replaceNodeWithPlan(Node * node, QueryPlanPtr plan);
+    void replaceNodeWithPlan(Node * node, QueryPlan plan);
 
     QueryPlan extractSubplan(Node * subplan_root);
     void cloneInplace(Node * node_to_replace, Node * subplan_root);

@@ -2,9 +2,19 @@
 Interactive user input utilities for terminal prompts and selections.
 """
 
+import sys
+
 
 class UserPrompt:
     """Provides interactive prompts for user input in terminal."""
+
+    @staticmethod
+    def _safe_input(prompt):
+        try:
+            return input(prompt)
+        except KeyboardInterrupt:
+            print("\nCancelled")
+            sys.exit(0)
 
     @staticmethod
     def select_from_menu(menuitems, question="Enter your choice"):
@@ -26,7 +36,7 @@ class UserPrompt:
 
         while True:
             try:
-                choice = input(f"\n{question} (1-{len(menuitems)}): ")
+                choice = UserPrompt._safe_input(f"\n{question} (1-{len(menuitems)}): ")
                 choice_num = int(choice)
 
                 if 1 <= choice_num <= len(menuitems):
@@ -55,14 +65,14 @@ class UserPrompt:
         """
         while True:
             try:
-                choice = input(f"\n{question}: ")
+                choice = UserPrompt._safe_input(f"\n{question}: ")
                 choice_num = int(choice)
                 if validator(choice_num):
                     break
                 else:
-                    raise ValueError("Invalid input. Please enter a valid number.")
+                    raise ValueError("Please enter a valid number.")
             except ValueError as e:
-                print(f"Invalid input. {e}")
+                print(f"ERROR: Invalid input. {e}")
         return choice_num
 
     @staticmethod
@@ -77,33 +87,41 @@ class UserPrompt:
             True for yes, False for no, None if cancelled.
         """
         while True:
-            choice = input(f"\n{question} (y/n): ")
+            choice = UserPrompt._safe_input(f"\n{question} (y/n): ")
             if choice.lower() in ("y", "yes"):
                 return True
             elif choice.lower() in ("n", "no"):
                 return False
             else:
-                print("Invalid choice. Please enter 'y' or 'n'.")
+                print("ERROR: Invalid choice. Please enter 'y' or 'n'.")
 
     @staticmethod
-    def get_string(question, validator=lambda x: True):
+    def get_string(question, validator=lambda x: True, default=None):
         """
         Get a string input from user with optional validation.
 
         Args:
             question: The prompt question to display.
             validator: Optional function to validate the string.
+            default: Optional default value. If provided and user presses Enter, returns this value.
 
         Returns:
             The validated string, or None if cancelled.
         """
+        prompt = f"\n{question}"
+        if default is not None:
+            prompt += f" (default: {default})"
+        prompt += ": "
+
         while True:
             try:
-                choice = input(f"\n{question}: ")
+                choice = UserPrompt._safe_input(prompt)
+                if choice == "" and default is not None:
+                    return default
                 if validator(choice):
                     break
                 else:
-                    raise ValueError("Invalid input. Please enter a valid string.")
+                    raise ValueError("Please enter a valid string.")
             except ValueError as e:
-                print(f"Invalid input. {e}")
+                print(f"ERROR: Invalid input. {e}")
         return choice

@@ -255,7 +255,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/se
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<SplitByRegexpOverloadResolver>(documentation);
 }

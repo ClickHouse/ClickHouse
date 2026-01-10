@@ -383,6 +383,7 @@
     M(SharedMergeTreeBrokenCondemnedPartsInKeeper, "How many broken condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
@@ -487,28 +488,28 @@ namespace CurrentMetrics
     /// +1 to allow using END as a placeholder
     std::atomic<Value> values[END + 1] {};    /// Global variable, initialized by zeros.
 
-    const char * getName(Metric event)
+    static const std::array<std::string_view, END> names =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) #NAME,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) #NAME,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getName(Metric event)
+    {
+        return names[event];
     }
 
-    const char * getDocumentation(Metric event)
+    static const std::array<std::string_view, END> docs =
     {
-        static const char * strings[] =
-        {
-        #define M(NAME, DOCUMENTATION) DOCUMENTATION,
-            APPLY_FOR_METRICS(M)
-        #undef M
-        };
+    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
+        APPLY_FOR_METRICS(M)
+    #undef M
+    };
 
-        return strings[event];
+    const std::string_view & getDocumentation(Metric event)
+    {
+        return docs[event];
     }
 
     Metric end() { return END; }
