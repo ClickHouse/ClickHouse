@@ -17,6 +17,7 @@ pipdeptree==2.23.0
 pycurl==7.45.3
 PyJWT==2.10.1
 pyparsing==2.4.7
+requests==2.32.4
 SecretStorage==3.3.1
 setuptools==78.1.1
 six==1.16.0

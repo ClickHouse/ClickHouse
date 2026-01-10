@@ -75,9 +75,9 @@ pycparser==2.22
 pycryptodome==3.20.0
 pydantic==2.9.2
 pydantic_core==2.23.4
-pyiceberg==0.10.0
-pyiceberg[glue]==0.10.0
-pyiceberg[hive]==0.10.0
+pyiceberg==0.8.1
+pyiceberg[glue]==0.8.1
+pyiceberg[hive]==0.8.1
 pymongo==4.6.3
 pyparsing==3.1.0
 pyspark==3.5.5
