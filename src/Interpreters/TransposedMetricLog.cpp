@@ -1,15 +1,8 @@
 #include <Interpreters/TransposedMetricLog.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeSet.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Functions/FunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Context.h>
-#include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -18,22 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/parseQuery.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/logger_useful.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Sources/NullSource.h>
-
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-
-#include <Core/Settings.h>
 
 
 namespace DB
