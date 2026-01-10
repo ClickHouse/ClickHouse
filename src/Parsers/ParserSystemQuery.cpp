@@ -237,7 +237,48 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     }
 
     if (!found)
+    {
+        static const std::vector<std::pair<std::string_view, Type>> system_aliases = {
+            {"CLEAR DNS CACHE", Type::DROP_DNS_CACHE},
+            {"CLEAR CONNECTIONS CACHE", Type::DROP_CONNECTIONS_CACHE},
+            {"CLEAR MARK CACHE", Type::DROP_MARK_CACHE},
+            {"CLEAR PRIMARY INDEX CACHE", Type::DROP_PRIMARY_INDEX_CACHE},
+            {"CLEAR UNCOMPRESSED CACHE", Type::DROP_UNCOMPRESSED_CACHE},
+            {"CLEAR INDEX MARK CACHE", Type::DROP_INDEX_MARK_CACHE},
+            {"CLEAR INDEX UNCOMPRESSED CACHE", Type::DROP_INDEX_UNCOMPRESSED_CACHE},
+            {"CLEAR VECTOR SIMILARITY INDEX CACHE", Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE},
+            {"CLEAR TEXT INDEX DICTIONARY CACHE", Type::DROP_TEXT_INDEX_DICTIONARY_CACHE},
+            {"CLEAR TEXT INDEX HEADER CACHE", Type::DROP_TEXT_INDEX_HEADER_CACHE},
+            {"CLEAR TEXT INDEX POSTINGS CACHE", Type::DROP_TEXT_INDEX_POSTINGS_CACHE},
+            {"CLEAR TEXT INDEX CACHES", Type::DROP_TEXT_INDEX_CACHES},
+            {"CLEAR MMAP CACHE", Type::DROP_MMAP_CACHE},
+            {"CLEAR QUERY CONDITION CACHE", Type::DROP_QUERY_CONDITION_CACHE},
+            {"CLEAR QUERY CACHE", Type::DROP_QUERY_CACHE},
+            {"CLEAR COMPILED EXPRESSION CACHE", Type::DROP_COMPILED_EXPRESSION_CACHE},
+            {"CLEAR ICEBERG METADATA CACHE", Type::DROP_ICEBERG_METADATA_CACHE},
+            {"CLEAR FILESYSTEM CACHE", Type::DROP_FILESYSTEM_CACHE},
+            {"CLEAR DISTRIBUTED CACHE", Type::DROP_DISTRIBUTED_CACHE},
+            {"CLEAR DISK METADATA CACHE", Type::DROP_DISK_METADATA_CACHE},
+            {"CLEAR PAGE CACHE", Type::DROP_PAGE_CACHE},
+            {"CLEAR SCHEMA CACHE", Type::DROP_SCHEMA_CACHE},
+            {"CLEAR FORMAT SCHEMA CACHE", Type::DROP_FORMAT_SCHEMA_CACHE},
+            {"CLEAR S3 CLIENT CACHE", Type::DROP_S3_CLIENT_CACHE},
+        };
+
+        for (const auto & [alias, type] : system_aliases)
+        {
+            if (ParserKeyword::createDeprecatedPtr(alias)->ignore(pos, expected))
+            {
+                res->type = type;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found)
         return false;
+
 
     switch (res->type)
     {
