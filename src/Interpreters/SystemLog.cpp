@@ -178,11 +178,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     SystemLogSettings log_settings;
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
-
-    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
-        log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
-    else
-        log_settings.queue_settings.table = default_table_name;
+    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -863,15 +859,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
-
-    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
-    {
-        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
-        {
-            auto * storage = storage_with_comment.storage->as<ASTStorage>();
-            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
-        }
-    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);

@@ -42,7 +42,6 @@ private:
 
     void prepareViewForTable(DatabasePtr system_database, StorageID log_table_storage_id, const std::string & view_table_name, size_t view_table_suffix);
 public:
-    static constexpr auto TABLE_NAME_WITH_VIEW = "transposed_metric_log";
     static constexpr auto DESCRIPTION = R"(
         Contains history of metrics values from tables system.metrics and system.events.
         Periodically flushed to disk. Transposed form of system.metric_log.)";
