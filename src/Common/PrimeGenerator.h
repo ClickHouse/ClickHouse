@@ -185,6 +185,10 @@ public:
     /// A special value in the event a multiple of prime might overflow beyond UInt64
     static constexpr UInt64 NO_MULTIPLE = 0;
 
+    static constexpr UInt64 MAX_UINT64 = std::numeric_limits<UInt64>::max();
+
+    static_assert((MAX_UINT64 & 1) == 1, "MAX_UINT64 must be odd");
+
     void resetEmpty()
     {
         bounded = true;
@@ -198,7 +202,7 @@ public:
     {
         bounded = false;
         range_low_odd = 3;
-        range_high_odd = std::numeric_limits<UInt64>::max(); /// 2^64-1 is odd
+        range_high_odd = MAX_UINT64; /// 2^64-1 is odd
 
         resetSegmentState();
     }
@@ -310,9 +314,7 @@ private:
                 return false;
         }
 
-        chassert(bounded || (range_low_odd == 3 && range_high_odd == std::numeric_limits<UInt64>::max()));
-
-        const UInt64 max_u64 = std::numeric_limits<UInt64>::max();
+        chassert(bounded || (range_low_odd == 3 && range_high_odd == MAX_UINT64));
 
         if (!segment_sieved)
         {
@@ -323,7 +325,7 @@ private:
         {
             const UInt64 advance = (segment_odd_count << 1); /// next begin = prev_end + 2
 
-            if (unlikely(segment_begin > max_u64 - advance)) /// Overflow beyond UInt64
+            if (unlikely(segment_begin > MAX_UINT64 - advance)) /// Overflow beyond UInt64
                 return false;
 
             segment_begin += advance;
@@ -338,7 +340,7 @@ private:
         /// Compute segment_end = min(segment_begin + SEGMENT_SIZE, range_high_odd), overflow-safe.
         UInt64 segment_end = segment_begin + SEGMENT_SIZE;
         if (unlikely(segment_end < segment_begin))
-            segment_end = max_u64; /// clamp on overflow (max_u64 is odd)
+            segment_end = MAX_UINT64; /// clamp on overflow (MAX_UINT64 is odd)
         segment_end = std::min(segment_end, range_high_odd);
 
         chassert((segment_begin & 1) == 1);
@@ -383,8 +385,6 @@ private:
         const UInt32 sqrt_hi_u32 = static_cast<UInt32>(sqrt_hi);
 
         /// Activate newly needed base primes (monotonic across segments)
-        const UInt64 max_u64 = std::numeric_limits<UInt64>::max();
-
         while (active_primes < base_primes.size() && base_primes[active_primes] <= sqrt_hi_u32)
         {
             const UInt64 prime = base_primes[active_primes];
@@ -401,7 +401,7 @@ private:
                 if (delta % step)
                     ++k;
 
-                if (unlikely(k > (max_u64 - prime_sq) / step))
+                if (unlikely(k > (MAX_UINT64 - prime_sq) / step))
                     prime_sq = NO_MULTIPLE;
                 else
                     prime_sq += k * step;
@@ -428,14 +428,14 @@ private:
             chassert((prime_sq & 1) == 1);
             chassert(prime_sq >= segment_begin);
 
-            if (likely(segment_end <= max_u64 - step))
+            if (likely(segment_end <= MAX_UINT64 - step))
             {
                 for (; prime_sq <= segment_end; prime_sq += step)
                     markCompositeInSegment(prime_sq);
             }
             else
             {
-                const UInt64 max_before_overflow = max_u64 - step;
+                const UInt64 max_before_overflow = MAX_UINT64 - step;
                 while (prime_sq <= segment_end)
                 {
                     markCompositeInSegment(prime_sq);
@@ -454,7 +454,7 @@ private:
 
     bool bounded = false;
     UInt64 range_low_odd = 3;
-    UInt64 range_high_odd = std::numeric_limits<UInt64>::max();
+    UInt64 range_high_odd = MAX_UINT64;
 
     bool segment_sieved = false;
     UInt64 segment_begin = 0;
