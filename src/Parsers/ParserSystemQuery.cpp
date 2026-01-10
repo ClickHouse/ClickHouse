@@ -536,6 +536,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DROP_PARTIAL_AGGREGATE_CACHE:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
         case Type::DROP_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;

@@ -3,6 +3,9 @@
 
 -- Test partial aggregate cache for GROUP BY queries on MergeTree tables
 
+-- Clear cache to ensure test isolation
+SYSTEM DROP PARTIAL AGGREGATE CACHE;
+
 DROP TABLE IF EXISTS test_partial_agg_cache;
 
 -- Create table and insert data into multiple parts
