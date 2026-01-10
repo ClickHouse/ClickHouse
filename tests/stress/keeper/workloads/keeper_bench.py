@@ -525,6 +525,31 @@ class KeeperBench:
             parsed = self._parse_output_json(out.get("out", ""))
             for k, v in parsed.items():
                 summary[k] = v if k in ("ops", "errors", "p50_ms", "p95_ms", "p99_ms", "has_latency") else summary.get(k, v)
+            if not bool(summary.get("has_latency")):
+                try:
+                    txt = (run_out or {}).get("out", "")
+                except Exception:
+                    txt = ""
+                if txt:
+                    def _pick(text, keys):
+                        for k in keys:
+                            try:
+                                m = re.search(rf"(?i)\\b{re.escape(k)}\\b[^0-9]*([0-9]+(?:\\.[0-9]+)?)", text)
+                                if m:
+                                    return float(m.group(1))
+                            except Exception:
+                                continue
+                        return None
+                    p50 = _pick(txt, ("p50", "50%", "median"))
+                    p95 = _pick(txt, ("p95", "95%"))
+                    p99 = _pick(txt, ("p99", "99%"))
+                    if p50 is not None:
+                        summary["p50_ms"] = float(p50)
+                    if p95 is not None:
+                        summary["p95_ms"] = float(p95)
+                    if p99 is not None:
+                        summary["p99_ms"] = float(p99)
+                    summary["has_latency"] = any(x is not None for x in (p50, p95, p99))
         except Exception:
             pass
         # Fallback: if ops still zero, estimate by znode_count delta on this node

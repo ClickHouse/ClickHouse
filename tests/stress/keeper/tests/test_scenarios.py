@@ -566,7 +566,11 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             ctx["bench_node"] = nodes[0]
             ctx["bench_secure"] = secure
             ctx["bench_servers"] = servers_arg(nodes)
-        forced = parse_bool(os.environ.get("KEEPER_FORCE_BENCH"))
+        try:
+            forced_env = parse_bool(os.environ.get("KEEPER_FORCE_BENCH"))
+        except Exception:
+            forced_env = False
+        forced = forced_env or (kb is None)
         if forced:
             try:
                 cli_dur = int(request.config.getoption("--duration"))
@@ -788,8 +792,35 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                     "value": float(val),
                     "labels_json": "{}",
                 })
+            derived.append({
+                "ts": _ts_ms_str(),
+                "run_id": run_id,
+                "commit_sha": run_meta_eff.get("commit_sha", "local"),
+                "backend": run_meta_eff.get("backend", "default"),
+                "scenario": scenario.get("id", ""),
+                "topology": topo,
+                "node": "all",
+                "stage": "summary",
+                "source": "derived",
+                "name": "nodes_count",
+                "value": float(topo),
+                "labels_json": "{}",
+            })
             if sink_url and derived:
                 sink_clickhouse(sink_url, "keeper_metrics_ts", derived)
+            try:
+                node_lines = []
+                for nn in nodes_names:
+                    dz = (post_zn.get(nn, 0.0) - pre_zn.get(nn, 0.0))
+                    db = (post_db.get(nn, 0.0) - pre_db.get(nn, 0.0))
+                    node_lines.append(f"{nn}: znode+{int(dz)} dirs_bytes+{int(db)}")
+                print(
+                    f"[keeper][bench-created] nodes={len(nodes_names)} total_znode_delta={int(tot['znode'])} total_dirs_bytes_delta={int(tot['dirs_bytes'])}"
+                )
+                if node_lines:
+                    print("[keeper][bench-created-per-node] " + ", ".join(node_lines))
+            except Exception:
+                pass
         except Exception:
             pass
         try:
