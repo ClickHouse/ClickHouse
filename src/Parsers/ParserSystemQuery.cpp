@@ -526,7 +526,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
-        case Type::CLEAR_QUERY_CACHE:
         case Type::DROP_QUERY_CACHE:
         {
             ParserLiteral tag_parser;
@@ -537,7 +536,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::CLEAR_FILESYSTEM_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
@@ -556,7 +554,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::CLEAR_DISTRIBUTED_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE:
         {
             ParserLiteral parser;
@@ -582,14 +579,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::CLEAR_DISK_METADATA_CACHE:
         case Type::DROP_DISK_METADATA_CACHE:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }
-        case Type::CLEAR_SCHEMA_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         {
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
@@ -609,7 +604,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
         {
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
