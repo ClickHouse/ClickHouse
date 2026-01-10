@@ -9,6 +9,9 @@
 namespace DB
 {
 
+/// `system.primes` currently supports only a single output stream, 
+/// because t is not clear what the benefits or behavior of primes_mt would be.
+/// So `num_streams` is intentionally not passed to CTOR.
 class ReadFromSystemPrimesStep final : public SourceStepWithFilter
 {
 public:
@@ -18,8 +21,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         StoragePtr storage_,
-        size_t max_block_size_,
-        size_t num_streams_);
+        size_t max_block_size_);
 
     String getName() const override { return "ReadFromSystemPrimes"; }
 
@@ -35,7 +37,6 @@ private:
     StoragePtr storage;
     ExpressionActionsPtr key_expression;
     size_t max_block_size;
-    size_t num_streams;
     std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 

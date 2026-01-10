@@ -166,8 +166,7 @@ ReadFromSystemPrimesStep::ReadFromSystemPrimesStep(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     StoragePtr storage_,
-    size_t max_block_size_,
-    size_t num_streams_)
+    size_t max_block_size_)
     : SourceStepWithFilter(
           std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
           column_names_,
@@ -178,7 +177,6 @@ ReadFromSystemPrimesStep::ReadFromSystemPrimesStep(
     , storage{std::move(storage_)}
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
     , max_block_size{max_block_size_}
-    , num_streams{num_streams_}
     , storage_limits(query_info_.storage_limits)
 {
     storage_snapshot->check(column_names);
@@ -218,16 +216,13 @@ void ReadFromSystemPrimesStep::initializePipeline(QueryPipelineBuilder & pipelin
 QueryPlanStepPtr ReadFromSystemPrimesStep::clone() const
 {
     return std::make_unique<ReadFromSystemPrimesStep>(
-        column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
+        column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size);
 }
 
 Pipe ReadFromSystemPrimesStep::makePipe()
 {
     auto & primes_storage = storage->as<StorageSystemPrimes &>();
     chassert(primes_storage.step != 0);
-
-    /// For now, let's support only one stream. It is not clear what the benefits or behavior of primes_mt would be
-    num_streams = 1;
 
     const bool has_filter = (filter_actions_dag != nullptr);
 
