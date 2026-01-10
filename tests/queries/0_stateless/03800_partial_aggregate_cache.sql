@@ -23,6 +23,7 @@ INSERT INTO test_partial_agg_cache SELECT '2024-01-02', 'B', number FROM numbers
 SELECT '--- First query (cache miss expected)';
 
 -- First aggregation query - should miss cache
+-- test_partial_agg_cache_query_1
 SELECT category, sum(value), count()
 FROM test_partial_agg_cache
 GROUP BY category
@@ -38,14 +39,15 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query LIKE '%FROM test_partial_agg_cache%GROUP BY category%use_partial_aggregate_cache = 1%'
-    AND query NOT LIKE '%system.query_log%'
+    AND query LIKE '%test_partial_agg_cache_query_1%'
+    AND is_initial_query = 1
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
 SELECT '--- Second query (cache hit expected)';
 
 -- Same query again - should hit cache
+-- test_partial_agg_cache_query_2
 SELECT category, sum(value), count()
 FROM test_partial_agg_cache
 GROUP BY category
@@ -61,8 +63,8 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query LIKE '%FROM test_partial_agg_cache%GROUP BY category%use_partial_aggregate_cache = 1%'
-    AND query NOT LIKE '%system.query_log%'
+    AND query LIKE '%test_partial_agg_cache_query_2%'
+    AND is_initial_query = 1
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -73,6 +75,7 @@ INSERT INTO test_partial_agg_cache SELECT '2024-01-03', 'A', number FROM numbers
 INSERT INTO test_partial_agg_cache SELECT '2024-01-03', 'B', number FROM numbers(10000);
 
 -- Query again - should have mix of hits (old parts) and misses (new part)
+-- test_partial_agg_cache_query_3
 SELECT category, sum(value), count()
 FROM test_partial_agg_cache
 GROUP BY category
@@ -88,8 +91,8 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query LIKE '%FROM test_partial_agg_cache%GROUP BY category%use_partial_aggregate_cache = 1%'
-    AND query NOT LIKE '%system.query_log%'
+    AND query LIKE '%test_partial_agg_cache_query_3%'
+    AND is_initial_query = 1
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
