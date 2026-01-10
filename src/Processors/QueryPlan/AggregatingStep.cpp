@@ -269,10 +269,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
     /// Check if partial aggregate caching is enabled - if so, disable aggregation-in-order to allow cache path
-    auto partial_aggregate_cache_for_check = settings.use_partial_aggregate_cache
+    auto partial_aggregate_cache = settings.use_partial_aggregate_cache
         ? Context::getGlobalContextInstance()->getPartialAggregateCache()
         : nullptr;
-    bool use_partial_aggregate_cache = partial_aggregate_cache_for_check != nullptr;
+    bool use_partial_aggregate_cache = partial_aggregate_cache != nullptr;
 
     /// optimize_aggregation_in_order
     /// If partial aggregate cache is enabled, we disable aggregation-in-order to allow the cache path
@@ -508,9 +508,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         finalizing = collector.detachProcessors(2);
         return;
     }
-
-    /// Use the cache pointer we already retrieved (avoid duplicate call)
-    auto partial_aggregate_cache = partial_aggregate_cache_for_check;
 
     /// If partial aggregate cache is enabled, force single-stream aggregation to support per-part caching
     if (partial_aggregate_cache && pipeline.getNumStreams() > 1)
