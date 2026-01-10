@@ -60,6 +60,7 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Core/Defines.h>
 
 #include "config.h"
 
@@ -983,8 +984,16 @@ void LocalServer::processConfig()
     /// Initialize a dummy query result cache.
     global_context->setQueryResultCache(0, 0, 0, 0);
 
-    /// Initialize a dummy partial aggregate cache.
-    global_context->setPartialAggregateCache(0, 0);
+    /// Initialize partial aggregate cache with defaults (same as Server.cpp).
+    /// This ensures the cache works in tests that use clickhouse-local.
+    size_t partial_aggregate_cache_max_size = config().getUInt64("partial_aggregate_cache.max_size_in_bytes", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_SIZE);
+    size_t partial_aggregate_cache_max_entries = config().getUInt64("partial_aggregate_cache.max_entries", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_ENTRIES);
+    if (partial_aggregate_cache_max_size > max_cache_size)
+    {
+        partial_aggregate_cache_max_size = max_cache_size;
+        LOG_INFO(log, "Lowered partial aggregate cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(partial_aggregate_cache_max_size));
+    }
+    global_context->setPartialAggregateCache(partial_aggregate_cache_max_size, partial_aggregate_cache_max_entries);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
