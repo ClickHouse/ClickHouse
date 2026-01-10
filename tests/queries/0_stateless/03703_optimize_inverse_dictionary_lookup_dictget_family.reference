@@ -83,7 +83,7 @@ SELECT
 FROM default.tab AS __table1
 WHERE __table1.id IN (SELECT __table1.id AS id
 FROM dictionary(\'dictionary_all\') AS __table1
-WHERE _CAST(__table1.dt, \'DateTime\') = _CAST(\'2025-01-01 10:00:00\', \'DateTime\'))
+WHERE _CAST(__table1.dt, \'DateTime\') = _CAST(1735722000, \'DateTime\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC

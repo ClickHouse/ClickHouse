@@ -25,6 +25,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -1213,12 +1214,39 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
         }
         case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::DateTime64:
+        case TypeIndex::Date32:
         {
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            return Field(buf.str());
+        }
+        case TypeIndex::DateTime:
+        {
+            /// for DateTime64 and DateTime, we must NOT use text serialization because formatted datetime strings
+            /// are ambiguous during DST transitions (the same local time can correspond to
+            /// two different UTC timestamps, different by 1 hour). Instead we return raw numeric value which
+            /// is wrapped in CAST() by ConstantNode::toASTImpl, so timestamp will be not ambiguous
+            const auto & datetime_col = assert_cast<const ColumnVector<UInt32> &>(*column);
+            return Field(datetime_col.getData()[row]);
+        }
+        case TypeIndex::DateTime64:
+        {
+            /// The reason of this: see the comment above.
+            ///
+            /// Logic behind it -- it is complicated to convert DateTime64 to string and then convert it back,
+            /// considering the problem with DST above. Also, it is not possible to convert DT64 from integer
+            /// so we convert DT64 to Decimal64, then we convert Decimal to string and we have '<int>.<frac>'
+            /// This string structure can be converted fine to DT64
+            ///
+            /// This complicated logic is used to avoid bugs regarding DST on remote execution, where we send
+            /// the query in text format to execution node
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+            const auto & decimal_col = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
+            Int64 raw_value = decimal_col.getData()[row].value;
+            UInt32 scale = datetime64_type.getScale();
+
+            WriteBufferFromOwnString buf;
+            writeText(DateTime64(raw_value), scale, buf, true /* trailing_zeros */);
             return Field(buf.str());
         }
         case TypeIndex::UInt8:
