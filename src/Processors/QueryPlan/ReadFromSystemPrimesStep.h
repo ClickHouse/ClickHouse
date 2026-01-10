@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/// `system.primes` currently supports only a single output stream, 
+/// `system.primes` currently supports only a single output stream,
 /// because t is not clear what the benefits or behavior of primes_mt would be.
 /// So `num_streams` is intentionally not passed to CTOR.
 class ReadFromSystemPrimesStep final : public SourceStepWithFilter
