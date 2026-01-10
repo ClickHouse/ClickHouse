@@ -1,6 +1,7 @@
 #include <Processors/Transforms/PartialAggregateCachingTransform.h>
 #include <Interpreters/Cache/PartialAggregateInfo.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Chunk.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -165,8 +166,16 @@ Chunk PartialAggregateCachingTransform::generate()
         auto & block = *output_iterator;
         ++output_iterator;
 
+        /// Add AggregatedChunkInfo to match what AggregatingTransform outputs
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = block.info.bucket_num;
+        info->is_overflows = block.info.is_overflows;
+        info->out_of_order_buckets = block.info.out_of_order_buckets;
+
         auto num_rows = block.rows();
-        return Chunk(block.getColumns(), num_rows);
+        Chunk chunk(block.getColumns(), num_rows);
+        chunk.getChunkInfos().add(std::move(info));
+        return chunk;
     }
 
     return {};
