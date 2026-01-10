@@ -1988,6 +1988,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_QUERY_CACHE:
+        case Type::DROP_PARTIAL_AGGREGATE_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
