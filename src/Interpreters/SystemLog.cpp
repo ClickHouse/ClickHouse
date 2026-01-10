@@ -314,18 +314,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
     else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
         auto schema = config.getString(config_prefix + ".schema_type", "wide");
-        if (schema == "transposed_with_wide_view")
-        {
-            log_settings.view_name_for_transposed_metric_log = config.getString(config_prefix + ".table", "metric_log");
-            return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema == "transposed")
+        if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
         {
             return std::make_shared<TSystemLog>(context, log_settings);
         }
         else if (schema != "wide")
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide' and 'transposed'", schema);
         }
     }
     return std::make_shared<TSystemLog>(context, log_settings);
@@ -362,17 +357,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
+    if (metric_log == nullptr && config.has("metric_log")
+        && (config.getString("metric_log.schema_type", "wide") == "transposed" || config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view"))
     {
         transposed_metric_log = createSystemLog<TransposedMetricLog>(
             global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
     }
-    else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
-    {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
-    }
-
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try

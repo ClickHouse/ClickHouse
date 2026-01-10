@@ -69,8 +69,6 @@ public:
 
     static ASTPtr getDefaultOrderByAST();
 
-    void prepareTable() override;
-
     /// We need to create view at startup, otherwise, until first flush view will not exist
     /// even if transposed table itself exists
     bool mustBePreparedAtStartup() const override { return !view_name.empty(); }
