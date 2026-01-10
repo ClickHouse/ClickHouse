@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
             {"apply_ttl_on_fly", false, false, "Add a new setting that allows to apply TTL expressions during SELECT queries without waiting for background merges"},
+            {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
