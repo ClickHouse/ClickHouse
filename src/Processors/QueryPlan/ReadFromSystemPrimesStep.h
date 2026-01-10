@@ -30,7 +30,6 @@ public:
     QueryPlanStepPtr clone() const override;
 
 private:
-    void checkLimits(size_t rows);
     Pipe makePipe();
 
     const Names column_names;
