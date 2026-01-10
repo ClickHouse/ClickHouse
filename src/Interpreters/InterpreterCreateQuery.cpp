@@ -628,7 +628,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
-    for (const auto * ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
+    for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
     {
         ColumnDescription column;
 

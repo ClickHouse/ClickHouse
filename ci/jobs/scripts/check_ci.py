@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -8,13 +9,15 @@ from datetime import datetime
 from typing import List, Optional
 from urllib.parse import quote
 
-sys.path.append("./")
+sys.path.append(".")
 
+from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell
+from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
 class CheckStatuses:
@@ -108,11 +111,18 @@ class CreateIssue:
             # Despite parameter might be valuable for failure reproduction, drop it for simplicity
             test_name = test_name.split("[")[0]
 
+        failure_reason_default = None
+        for pattern in TEST_FAILURE_PATTERNS:
+            if pattern in result.info:
+                failure_reason_default = pattern
+                break
+
         failure_reason = UserPrompt.get_string(
             "\nEnter the exact error text from the test output above that identifies the failure.\n"
             "This must be a substring from the output (e.g., 'result differs with reference', 'Client failed! Return code: 210').\n"
             "It will be used to match and group similar failures",
             validator=lambda x: x in result.info,
+            default=failure_reason_default,
         )
         if result.name.startswith("test_"):
             # pytest case
@@ -127,7 +137,7 @@ Test name: {test_name}
 Failure reason: {failure_reason}
 CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
 
-CIDB statistics: [cidb]({result.get_hlabel_link('cidb')})
+Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```
@@ -144,7 +154,7 @@ Test output:
         body = f"""\
 Test name: {result.name}
 CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
-CIDB statistics: [cidb]({result.get_hlabel_link("cidb")})
+Failing test history: [cidb]({result.get_hlabel_link("cidb")})
 
 Test output:
 ```
@@ -152,6 +162,8 @@ Test output:
 ```
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FUZZ]
+        if "sanitizer" in result.name.lower():
+            labels.append(IssueLabels.SANITIZER)
 
         return cls.create_and_link_gh_issue(title, body, labels)
 
@@ -702,22 +714,23 @@ def main():
             else:
                 unknown_failures.append((job_name, failure_result))
 
-    print("\nCI failures:")
-    if known_failures:
-        print("\n--- Known problems ---")
-        for job_name, failure in known_failures:
-            print(f"[{failure.status}] {failure.name} in {job_name}")
+    if known_failures or unknown_failures or not_finished_jobs:
+        print("\nCI failures:")
+        if known_failures:
+            print("\n--- Known problems ---")
+            for job_name, failure in known_failures:
+                print(f"[{failure.status}] {failure.name} in {job_name}")
 
-    if unknown_failures:
-        print("\n--- Unknown problems ---")
-        for job_name, failure in unknown_failures:
-            print(f"[{failure.status}] {failure.name} in {job_name}")
-            failure.set_comment("IGNORED")
+        if unknown_failures:
+            print("\n--- Unknown problems ---")
+            for job_name, failure in unknown_failures:
+                print(f"[{failure.status}] {failure.name} in {job_name}")
+                failure.set_comment("IGNORED")
 
-    if not_finished_jobs:
-        print("\n--- Not finished jobs ---")
-        for _, failure in not_finished_jobs:
-            print(f"[{failure.status}] {failure.name}")
+        if not_finished_jobs:
+            print("\n--- Not finished jobs ---")
+            for _, failure in not_finished_jobs:
+                print(f"[{failure.status}] {failure.name}")
 
     if is_master_commit:
         sys.exit(0)
@@ -759,7 +772,7 @@ def main():
             traceback.print_exc()
 
     if not UserPrompt.confirm(
-        f"Do you want to merge PR #{pr_number} (y - continue, n - exit)?"
+        f"Add PR #{pr_number} to the merge queue (y - continue, n - exit)?"
     ):
         sys.exit(0)
 
@@ -777,7 +790,19 @@ def main():
     )
 
     if Shell.check(f"gh pr merge {pr_number} --auto"):
-        print(f"PR {pr_number} auto merge has been enabled")
+        # Check if PR was successfully added to the merge queue
+        # uncomment/fix if GH misses became regular
+        # merge_status = Shell.check(
+        #     f"gh pr view {pr_number} --json mergeStateStatus -q '.mergeStateStatus'",
+        #     capture_output=True,
+        # )
+        # if merge_status != "QUEUED":
+        #     print(
+        #         f"⚠ PR #{pr_number} auto-merge enabled but merge queue status unclear [{merge_status}]. "
+        #         f"If PR is not in queue, try redoing 'Merge when ready' button on GitHub."
+        #     )
+        # else:
+        print(f"✓ PR #{pr_number} added to the merge queue")
 
 
 if __name__ == "__main__":

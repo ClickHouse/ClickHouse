@@ -56,23 +56,37 @@ struct DivideIntegralByConstantImpl
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        if (unlikely(is_signed_v<B> && b == -1))
+        if constexpr (is_signed_v<B>)
         {
-            for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
-            return;
+            if (b == -1) [[unlikely]]
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
+                return;
+            }
         }
 
         /// Division with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        if (b > std::numeric_limits<A>::max()) [[unlikely]]
         {
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = 0;
             return;
         }
+        else
+        {
+            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
+            {
+                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c_pos[i] = 0;
+                    return;
+                }
+            }
+        }
 
-        if (unlikely(static_cast<A>(b) == 0))
+        if (static_cast<A>(b) == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         divideImpl(a_pos, b, c_pos, size);

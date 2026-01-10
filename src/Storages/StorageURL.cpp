@@ -1583,7 +1583,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")
