@@ -26,7 +26,7 @@ from ..framework.io.probes import (
     srvr_kv,
     dirs,
 )
-from ..framework.io.prom_parse import parse_prometheus_text
+from ..framework.io.prom_parse import parse_prometheus_text, DEFAULT_PREFIXES
 from ..framework.io.sink import has_ci_sink, sink_clickhouse
 from ..framework.metrics.sampler import MetricsSampler
 from ..gates.base import apply_gate, single_leader
@@ -42,6 +42,12 @@ def _apply_step(step, nodes, leader, ctx):
 
 def _apply_gate(gate, nodes, leader, ctx, summary):
     apply_gate(gate, nodes, leader, ctx, summary)
+
+
+def _ts_ms_str():
+    t = time.time()
+    lt = time.gmtime(t)
+    return time.strftime('%Y-%m-%d %H:%M:%S', lt) + f'.{int((t - int(t))*1000):03d}'
 
 
 def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_id=""):
@@ -65,7 +71,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                     continue
                 metrics_ts_rows.append(
                     {
-                        "ts": int(time.time()),
+                        "ts": _ts_ms_str(),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -82,31 +88,59 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
         except Exception:
             pass
         try:
-            p = prom_metrics(n)
-            for r in parse_prometheus_text(p):
-                name = r.get("name", "")
-                val = 0.0
+            snap_prom = True
+            try:
+                v = os.environ.get("KEEPER_SNAPSHOT_PROM", "1").strip().lower()
+                snap_prom = v in ("1", "true", "yes", "on")
+            except Exception:
+                snap_prom = True
+            if snap_prom:
+                allow = None
                 try:
-                    val = float(r.get("value", 0.0))
+                    pa = os.environ.get("KEEPER_PROM_ALLOW_PREFIXES", "").strip()
+                    if pa:
+                        allow = [p for p in (pa.split(",") or []) if p]
                 except Exception:
+                    allow = None
+                name_allow = None
+                try:
+                    pna = os.environ.get("KEEPER_PROM_NAME_ALLOWLIST", "").strip()
+                    if pna:
+                        name_allow = [p for p in (pna.split(",") or []) if p]
+                except Exception:
+                    name_allow = None
+                excl = None
+                try:
+                    pel = os.environ.get("KEEPER_PROM_EXCLUDE_LABEL_KEYS", "").strip()
+                    if pel:
+                        excl = [p for p in (pel.split(",") or []) if p]
+                except Exception:
+                    excl = None
+                p = prom_metrics(n)
+                for r in parse_prometheus_text(p, allow_prefixes=allow, name_allowlist=name_allow, exclude_label_keys=excl):
+                    name = r.get("name", "")
                     val = 0.0
-                lj = r.get("labels_json", "{}")
-                metrics_ts_rows.append(
-                    {
-                        "ts": int(time.time()),
-                        "run_id": run_id,
-                        "commit_sha": run_meta.get("commit_sha", "local"),
-                        "backend": run_meta.get("backend", "default"),
-                        "scenario": scenario_id,
-                        "topology": topo,
-                        "node": n.name,
-                        "stage": stage,
-                        "source": "prom",
-                        "name": name,
-                        "value": val,
-                        "labels_json": lj,
-                    }
-                )
+                    try:
+                        val = float(r.get("value", 0.0))
+                    except Exception:
+                        val = 0.0
+                    lj = r.get("labels_json", "{}")
+                    metrics_ts_rows.append(
+                        {
+                            "ts": _ts_ms_str(),
+                            "run_id": run_id,
+                            "commit_sha": run_meta.get("commit_sha", "local"),
+                            "backend": run_meta.get("backend", "default"),
+                            "scenario": scenario_id,
+                            "topology": topo,
+                            "node": n.name,
+                            "stage": stage,
+                            "source": "prom",
+                            "name": name,
+                            "value": val,
+                            "labels_json": lj,
+                        }
+                    )
         except Exception:
             pass
         try:
@@ -118,7 +152,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                     val = 0.0
                 metrics_ts_rows.append(
                     {
-                        "ts": int(time.time()),
+                        "ts": _ts_ms_str(),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -143,7 +177,7 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
                     val = 0.0
                 metrics_ts_rows.append(
                     {
-                        "ts": int(time.time()),
+                        "ts": _ts_ms_str(),
                         "run_id": run_id,
                         "commit_sha": run_meta.get("commit_sha", "local"),
                         "backend": run_meta.get("backend", "default"),
@@ -393,12 +427,70 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             ctx["seed"] = 0
         sampler = None
         if sink_url:
-            interval = (
-                int(opts.get("monitor_interval_s", 5)) if isinstance(opts, dict) else 5
-            )
-            prom_allow = (
-                opts.get("prom_allow_prefixes") if isinstance(opts, dict) else None
-            )
+            # interval: prefer env override, else scenario option, else default 5
+            try:
+                env_int = os.environ.get("KEEPER_MONITOR_INTERVAL_S")
+                interval = int(env_int) if env_int not in (None, "") else None
+            except Exception:
+                interval = None
+            if interval is None:
+                interval = (
+                    int(opts.get("monitor_interval_s", 5)) if isinstance(opts, dict) else 5
+                )
+            # prom allowlist: env comma-separated overrides scenario list
+            prom_allow = None
+            try:
+                pa = os.environ.get("KEEPER_PROM_ALLOW_PREFIXES", "").strip()
+                if pa:
+                    prom_allow = [p for p in (pa.split(",") or []) if p]
+            except Exception:
+                prom_allow = None
+            if prom_allow is None:
+                prom_allow = (
+                    opts.get("prom_allow_prefixes") if isinstance(opts, dict) else None
+                )
+            # prom name allowlist (exact metric names)
+            prom_name_allow = None
+            try:
+                pna = os.environ.get("KEEPER_PROM_NAME_ALLOWLIST", "").strip()
+                if pna:
+                    prom_name_allow = [p for p in (pna.split(",") or []) if p]
+            except Exception:
+                prom_name_allow = None
+            if prom_name_allow is None and isinstance(opts, dict):
+                try:
+                    x = opts.get("prom_name_allowlist")
+                    if isinstance(x, list) and x:
+                        prom_name_allow = [str(y) for y in x if str(y)]
+                except Exception:
+                    prom_name_allow = None
+            # prom exclude label keys
+            prom_excl_labels = None
+            try:
+                pel = os.environ.get("KEEPER_PROM_EXCLUDE_LABEL_KEYS", "").strip()
+                if pel:
+                    prom_excl_labels = [p for p in (pel.split(",") or []) if p]
+            except Exception:
+                prom_excl_labels = None
+            if prom_excl_labels is None and isinstance(opts, dict):
+                try:
+                    x = opts.get("prom_exclude_label_keys")
+                    if isinstance(x, list) and x:
+                        prom_excl_labels = [str(y) for y in x if str(y)]
+                except Exception:
+                    prom_excl_labels = None
+            # prom sampling frequency: every N snapshots
+            prom_every_n = None
+            try:
+                pen = os.environ.get("KEEPER_PROM_EVERY_N")
+                prom_every_n = int(pen) if pen not in (None, "") else None
+            except Exception:
+                prom_every_n = None
+            if prom_every_n is None and isinstance(opts, dict):
+                try:
+                    prom_every_n = int(opts.get("prom_every_n"))
+                except Exception:
+                    prom_every_n = None
             sampler = MetricsSampler(
                 nodes,
                 run_meta_eff,
@@ -409,6 +501,9 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 stage_prefix="run",
                 run_id=run_id,
                 prom_allow_prefixes=prom_allow,
+                prom_name_allowlist=prom_name_allow,
+                prom_exclude_label_keys=prom_excl_labels,
+                prom_every_n=prom_every_n if prom_every_n is not None else 3,
                 ctx=ctx,
             )
             sampler.start()
@@ -582,7 +677,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                         continue
                     rows.append(
                         {
-                            "ts": int(time.time()),
+                            "ts": _ts_ms_str(),
                             "run_id": run_id,
                             "commit_sha": run_meta_eff.get("commit_sha", "local"),
                             "backend": run_meta_eff.get("backend", "default"),
@@ -599,7 +694,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 if rows:
                     rows.append(
                         {
-                            "ts": int(time.time()),
+                            "ts": _ts_ms_str(),
                             "run_id": run_id,
                             "commit_sha": run_meta_eff.get("commit_sha", "local"),
                             "backend": run_meta_eff.get("backend", "default"),
@@ -661,7 +756,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 db = (post_db.get(nn, 0.0) - pre_db.get(nn, 0.0))
                 for key, val in (("delta_znode_count", dz), ("delta_ephemerals_count", de), ("delta_watch_count", dw), ("delta_dirs_bytes", db)):
                     derived.append({
-                        "ts": int(time.time()),
+                        "ts": _ts_ms_str(),
                         "run_id": run_id,
                         "commit_sha": run_meta_eff.get("commit_sha", "local"),
                         "backend": run_meta_eff.get("backend", "default"),
@@ -680,7 +775,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 tot["dirs_bytes"] += db
             for key, val in (("total_delta_znode_count", tot["znode"]), ("total_delta_ephemerals_count", tot["ephem"]), ("total_delta_watch_count", tot["watch"]), ("total_delta_dirs_bytes", tot["dirs_bytes"])):
                 derived.append({
-                    "ts": int(time.time()),
+                    "ts": _ts_ms_str(),
                     "run_id": run_id,
                     "commit_sha": run_meta_eff.get("commit_sha", "local"),
                     "backend": run_meta_eff.get("backend", "default"),
@@ -706,7 +801,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         if sink_url and not bench_ran_flag:
             try:
                 row = {
-                    "ts": int(time.time()),
+                    "ts": _ts_ms_str(),
                     "run_id": run_id,
                     "commit_sha": run_meta_eff.get("commit_sha", "local"),
                     "backend": run_meta_eff.get("backend", "default"),
