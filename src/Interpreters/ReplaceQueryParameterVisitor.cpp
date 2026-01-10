@@ -121,11 +121,35 @@ bool needCastFromString(const DataTypePtr & type)
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 {
     const auto & ast_param = ast->as<ASTQueryParameter &>();
-    const String & value = getParamValue(ast_param.name);
     const String & type_name = ast_param.type;
     String alias = ast_param.alias;
 
     const auto data_type = DataTypeFactory::instance().get(type_name);
+
+    auto it = query_parameters.find(ast_param.name);
+    if (it == query_parameters.end())
+    {
+        if (data_type->isNullable())
+        {
+            Field literal = data_type->getDefault();
+
+            if (typeid_cast<const DataTypeString *>(data_type.get()))
+                ast = std::make_shared<ASTLiteral>(literal);
+            else
+                ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
+
+            ast->setAlias(alias);
+            ++num_replaced_parameters;
+            return;
+        }
+
+        // Parameter not provided and not nullable: keep existing behavior (throw)
+        const String & value_missing_name = ast_param.name;
+        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(value_missing_name));
+    }
+
+    const String & value = it->second;
+    ++num_replaced_parameters;
     auto temp_column_ptr = data_type->createColumn();
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
