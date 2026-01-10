@@ -570,7 +570,17 @@ namespace DB
     DECLARE(Bool, disable_internal_dns_cache, false, "Disables the internal DNS cache. Recommended for operating ClickHouse in systems with frequently changing infrastructure such as Kubernetes.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
-    DECLARE(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
+    DECLARE(UInt32, dns_max_consecutive_failures, 5, R"(
+    The number of consecutive failures accepted when updating a DNS cache entry before it is dropped. Set to `0` to disable cache dropping.
+
+    :::note
+    Cache dropping means just stopping to update this cache entry after consecutive failures (the others still continue to be updated), but it won't be cleared. Cache entries will only be cleaned by `SYSTEM DROP DNS CACHE`.
+    :::
+
+    **See also**
+
+    - [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system#drop-dns-cache)
+    )", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv4, true, "Allows resolve names to ipv4 addresses.", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv6, true, "Allows resolve names to ipv6 addresses.", 0) \
     \
