@@ -20,7 +20,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/parseQuery.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -28,12 +27,9 @@
 #include <Processors/Sources/NullSource.h>
 
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
@@ -59,95 +55,6 @@ namespace Setting
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
-}
-
-namespace
-{
-
-constexpr auto VIEW_COLUMNS_ORDER =
-{
-    TransposedMetricLog::EVENT_TIME_NAME,
-    TransposedMetricLog::VALUE_NAME,
-    TransposedMetricLog::METRIC_NAME,
-    TransposedMetricLog::HOSTNAME_NAME,
-    TransposedMetricLog::EVENT_DATE_NAME,
-};
-
-constexpr auto HOUR_ALIAS_NAME = "hour";
-
-/// SELECT event_time, value ..., metric FROM system.transposed_metric_log ORDER BY event_time;
-std::shared_ptr<ASTSelectWithUnionQuery> getSelectQuery(const StorageID & source_storage_id)
-{
-    std::shared_ptr<ASTSelectWithUnionQuery> result = std::make_shared<ASTSelectWithUnionQuery>();
-    std::shared_ptr<ASTSelectQuery> select_query = std::make_shared<ASTSelectQuery>();
-    std::shared_ptr<ASTExpressionList> expression_list = std::make_shared<ASTExpressionList>();
-
-    for (const auto & column_name : VIEW_COLUMNS_ORDER)
-        expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-
-    auto last_element = makeASTFunction("toStartOfHour", std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_TIME_NAME));
-
-    auto select_list_last_element = last_element->clone();
-    select_list_last_element->setAlias(HOUR_ALIAS_NAME);
-    expression_list->children.push_back(select_list_last_element);
-
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expression_list));
-
-    auto tables = std::make_shared<ASTTablesInSelectQuery>();
-    auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_expression = std::make_shared<ASTTableExpression>();
-    auto database_and_table_name = std::make_shared<ASTTableIdentifier>(source_storage_id);
-    table_expression->database_and_table_name = database_and_table_name;
-    table->table_expression = table_expression;
-    tables->children.emplace_back(table);
-    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
-
-    std::shared_ptr<ASTExpressionList> order_by = std::make_shared<ASTExpressionList>();
-    std::shared_ptr<ASTOrderByElement> order_by_date = std::make_shared<ASTOrderByElement>();
-    order_by_date->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::EVENT_DATE_NAME));
-    order_by_date->direction = 1;
-    std::shared_ptr<ASTOrderByElement> order_by_time = std::make_shared<ASTOrderByElement>();
-    order_by_time->children.emplace_back(std::make_shared<ASTIdentifier>("hour"));
-    order_by_time->direction = 1;
-    std::shared_ptr<ASTOrderByElement> order_by_metric = std::make_shared<ASTOrderByElement>();
-    order_by_metric->children.emplace_back(std::make_shared<ASTIdentifier>(TransposedMetricLog::METRIC_NAME));
-    order_by_metric->direction = 1;
-    order_by->children.emplace_back(order_by_date);
-    order_by->children.emplace_back(order_by_time);
-    order_by->children.emplace_back(order_by_metric);
-
-    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by);
-
-    result->list_of_selects = std::make_shared<ASTExpressionList>();
-    result->list_of_selects->children.emplace_back(select_query);
-
-    return result;
-}
-
-ASTCreateQuery getCreateQuery(const StorageID & source_storage_id)
-{
-    ASTCreateQuery query;
-    query.children.emplace_back(getSelectQuery(source_storage_id));
-    query.select = query.children[0]->as<ASTSelectWithUnionQuery>();
-    return query;
-}
-
-ColumnsDescription getColumnsDescription()
-{
-    NamesAndTypesList result;
-    result.push_back(NameAndTypePair(TransposedMetricLog::HOSTNAME_NAME, std::make_shared<DataTypeString>()));
-    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_DATE_NAME, std::make_shared<DataTypeDate>()));
-    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
-    result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME, std::make_shared<DataTypeDateTime64>(6)));
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + std::string(ProfileEvents::getName(ProfileEvents::Event(i))), std::make_shared<DataTypeUInt64>()));
-
-    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + std::string(CurrentMetrics::getName(CurrentMetrics::Metric(i))), std::make_shared<DataTypeInt64>()));
-
-    return ColumnsDescription{result};
-}
-
 }
 
 
@@ -230,7 +137,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
         if (new_value < old_value)
             continue;
 
-        elem.metric_name = PROFILE_EVENT_PREFIX;
+        elem.metric_name = "ProfileEvent_";
         elem.metric_name += ProfileEvents::getName(ProfileEvents::Event(i));
         elem.value = new_value - old_value;
         old_value = new_value;
@@ -239,20 +146,11 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
-        elem.metric_name = CURRENT_METRIC_PREFIX;
+        elem.metric_name = "CurrentMetric_";
         elem.metric_name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
         elem.value = CurrentMetrics::values[i];
         this->add(elem);
     }
-}
-
-
-ASTPtr TransposedMetricLog::getDefaultOrderByAST()
-{
-    /// Always use default ORDER BY because it's the most effective for view
-    std::string order_by_str = std::string{"("} + getDefaultOrderBy() + ")";
-    ParserStorageOrderByClause order_by_p(/*allow_order_*/ false);
-    return parseQuery(order_by_p, order_by_str, "Order by for transposed metric log", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
 }
