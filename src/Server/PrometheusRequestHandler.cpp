@@ -55,6 +55,7 @@ namespace TimeSeriesSetting
 
 namespace
 {
+#if USE_PROMETHEUS_PROTOBUFS
     String getRequestPath(const HTTPServerRequest & request)
     {
         const auto & uri = request.getURI();
@@ -100,6 +101,7 @@ namespace
 
         return *table_name;
     }
+#endif
 }
 
 /// Base implementation of a prometheus protocol.

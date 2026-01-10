@@ -79,7 +79,9 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         <handler>
 ///             <type>remote_write</type>
 ///             <!-- The remaining path after the prefix is treated as a table name (db.table or table). -->
+///             \verbatim
 ///             <table_name_url_prefix>/write/</table_name_url_prefix>
+///             \endverbatim
 ///         </handler>
 ///     </my_rule2>
 ///     <my_rule3>

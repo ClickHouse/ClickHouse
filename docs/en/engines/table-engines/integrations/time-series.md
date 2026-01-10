@@ -54,7 +54,7 @@ Then this table can be used with the following protocols (a port must be assigne
 
 When configuring a Prometheus remote-write handler with `table_name_url_prefix`, make sure the handler's `<url>` rule matches paths that include the table name. For example:
 
-```
+```xml
 <url>regex:^/write/.*</url>
 <table_name_url_prefix>/write/</table_name_url_prefix>
 ```
