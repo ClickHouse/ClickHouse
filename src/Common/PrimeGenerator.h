@@ -363,7 +363,7 @@ private:
         else
             std::fill(segment_composite_bits.begin(), segment_composite_bits.begin() + segment_word_count, 0);
 
-        sieveSegment(segment_end);
+        sieveSegment();
 
         /// Pad tail bits of the last word so scanning never returns out-of-range positions
         const unsigned tail_bits = static_cast<unsigned>(segment_odd_count & 63);
@@ -374,8 +374,12 @@ private:
         return true;
     }
 
-    void sieveSegment(UInt64 segment_end)
+    /// We assume that when it is called, `segment_begin` and `segment_odd_count` are already set properly.
+    void sieveSegment()
     {
+        chassert(segment_odd_count > 0);
+        const UInt64 segment_end = segment_begin + ((segment_odd_count - 1) << 1);
+
         const UInt64 sqrt_hi = integerSqrt(segment_end);
         primes_cache.ensureUpTo(sqrt_hi);
 
