@@ -137,12 +137,11 @@ public:
             if ((prime_sq & 1) == 0)
                 prime_sq += prime;
 
-            const UInt64 step = prime << 1;
-            for (; prime_sq <= current_limit; prime_sq += step)
-            {
-                const UInt64 idx = (prime_sq - 3) >> 1;
+            const UInt64 multiple_start_index = (prime_sq - 3) >> 1;
+
+            /// Mark odd multiples of prime as composite
+            for (UInt64 idx = multiple_start_index; idx < new_n_odds; idx += prime)
                 setBit(composite_bits, idx);
-            }
         }
 
         for (UInt64 i = old_n_odds; i < new_n_odds; ++i)
