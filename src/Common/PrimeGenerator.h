@@ -22,6 +22,12 @@ extern const int LOGICAL_ERROR;
 /// SELECT * FROM system.primes WHERE prime == toUInt64('18446744073709551557');
 /// Useful to check after making changes to the prime generation code.
 
+/// Return floor(sqrt(x)) for UInt64.
+///
+/// We cannot just do `static_cast<UInt64>(std::sqrt(x))` because `std::sqrt` operates on floating point values and can
+/// round up/down for large `UInt64` inputs. Many parts of the sieve rely on exact integer boundaries (e.g. primes up to
+/// sqrt(segment_end)), so we take a floating-point approximation and then adjust it with integer arithmetic until
+/// `r*r <= x < (r+1)*(r+1)` (checked via divisions to avoid overflow).
 inline UInt64 integerSqrt(UInt64 x)
 {
     UInt64 r = static_cast<UInt64>(std::sqrt(static_cast<long double>(x)));
@@ -37,6 +43,16 @@ inline UInt64 integerSqrt(UInt64 x)
 class OddPrimesCache
 {
 public:
+    /// Ensure that the cache contains all odd primes up to `limit` (inclusive).
+    ///
+    /// The cache stores only odd numbers starting from 3, so bit index `i` corresponds to the value `3 + 2*i`.
+    /// This function rounds `limit` down to an odd value and either builds the initial sieve or extends the existing one.
+    ///
+    /// High-level steps:
+    /// - Round `limit` down to an odd number and validate it is within supported range.
+    /// - Fast-path: return if the cache already covers the requested limit.
+    /// - First call: build an odd-only sieve up to `limit` and collect primes.
+    /// - Subsequent calls: extend the sieve range and mark composites using already known base primes.
     void ensureUpTo(UInt64 limit)
     {
         /// 2 is not covered by this cache
@@ -59,7 +75,7 @@ public:
         if (limit_odd <= current_limit)
             return;
 
-        /// Initially `current_limit` is 1, so the first call will always enter here
+        /// Initially `current_limit` is 1, so the first call with `limit >= 3` will always enter here
         if (current_limit < 3)
         {
             current_limit = limit_odd;
@@ -83,8 +99,8 @@ public:
 
                     const UInt64 multiple_start_index = ((prime * prime) - 3) >> 1;
 
-                    /// Mark odd multiples of prime as composite
-                    for (UInt64 j = multiple_start_index; j < num_odds; j += prime) /// This addition by prime always lands on odd indices
+                    /// Mark odd multiples of prime as composite (index step `prime` corresponds to value step `2*prime`)
+                    for (UInt64 j = multiple_start_index; j < num_odds; j += prime)
                         setBit(composite_bits, j);
                 }
             }
@@ -175,7 +191,7 @@ private:
 class SegmentedOddSieve
 {
 public:
-    /// How many numbers are in a segment (odd and even, in total SEGMENT_SIZE + 1)
+    /// Segment span in integers (full segment covers `SEGMENT_SIZE + 1` consecutive integers)
     static constexpr UInt64 SEGMENT_SIZE = (1ULL << 19);
 
     /// How many odd numbers can fit in a segment
@@ -226,7 +242,19 @@ public:
         resetSegmentState();
     }
 
-    /// Returns nullopt only when bounded range is exhausted (or if the unbounded stream overflows, which is infeasible in practice)
+    /// Return the next odd prime in the configured range.
+    ///
+    /// The sieve is segmented: at any point, `segment_composite_bits` holds compositeness for one segment of consecutive
+    /// odd numbers, and `next_candidate_idx` tracks where scanning should continue.
+    ///
+    /// High-level steps:
+    /// - Ensure the current segment is sieved (call `sieveNextSegment()` if needed).
+    /// - Scan the bitmap starting at `next_candidate_idx` for the next non-composite bit (prime).
+    /// - Convert the found index to a value (`segment_begin + 2*idx`), advance `next_candidate_idx`, and return it.
+    /// - If the segment has no remaining primes, advance to the next segment and continue.
+    ///
+    /// Returns `std::nullopt` only when the bounded range is exhausted (or if the unbounded stream overflows, which is
+    /// infeasible in practice).
     std::optional<UInt64> next()
     {
         while (true)
@@ -306,6 +334,18 @@ private:
         segment_composite_bits[idx >> 6] |= (1ULL << (idx & 63));
     }
 
+    /// Prepare and sieve the next segment of odd numbers.
+    ///
+    /// The sieve stores only odd values and represents a segment by a bitmap where bit `i` corresponds to the odd number
+    /// `segment_begin + 2*i` and is set for composites.
+    ///
+    /// High-level steps:
+    /// - Choose `segment_begin` for the first segment, otherwise advance to the next odd after the previous segment end.
+    /// - Compute the segment end (clamped to `range_high_odd`) and derive `segment_odd_count`/`segment_word_count`.
+    /// - Clear the bitmap and call `sieveSegment()` to mark composites using base primes.
+    /// - Pad tail bits and reset `next_candidate_idx` for scanning primes in `next()`.
+    ///
+    /// Returns false when the bounded range is exhausted or when `UInt64` overflow prevents advancing.
     bool sieveNextSegment()
     {
         static_assert((SEGMENT_SIZE & 1) == 0, "SEGMENT_SIZE must be even");
@@ -374,7 +414,15 @@ private:
         return true;
     }
 
-    /// We assume that when it is called, `segment_begin` and `segment_odd_count` are already set properly.
+    /// Mark composite numbers in the current segment bitmap.
+    ///
+    /// Assumes that `segment_begin`/`segment_odd_count` describe the current segment and `segment_composite_bits` was cleared.
+    ///
+    /// High-level steps:
+    /// - Compute `segment_end` from segment state.
+    /// - Ensure base primes up to `sqrt(segment_end)` exist via `OddPrimesCache`.
+    /// - For each active base prime `p`, mark odd multiples `m` in this segment (`m += 2*p`) in the bitmap; keep the first
+    ///   multiple after `segment_end` in `next_multiple_by_prime` to resume quickly in the next segment.
     void sieveSegment()
     {
         chassert(segment_odd_count > 0);
@@ -458,21 +506,50 @@ private:
         }
     }
 
+    /// Whether we generate primes only within a fixed range.
+    /// Updated by `resetEmpty()`/`resetUnbounded()`/`resetRange()`, used by `sieveNextSegment()` to decide when to stop.
     bool bounded = false;
+
+    /// Inclusive range bounds for prime generation (odd values >= 3 when non-empty; `resetEmpty()` uses 0/0).
+    /// Updated by `resetEmpty()`/`resetUnbounded()`/`resetRange()`, used by `sieveNextSegment()` to pick/clip segments.
     UInt64 range_low_odd = 3;
     UInt64 range_high_odd = MAX_UINT64;
 
+    /// Whether current segment state is initialized and its bitmap is valid.
+    /// Reset by `resetSegmentState()`, set/used by `next()`/`sieveNextSegment()`.
     bool segment_sieved = false;
+
+    /// Segment begin value (odd). Together with `segment_odd_count` defines current segment:
+    /// `[segment_begin .. segment_begin + 2*(segment_odd_count - 1)]` (inclusive).
+    /// Updated by `sieveNextSegment()`, used by `next()`/`sieveSegment()`/`markCompositeInSegment()`.
     UInt64 segment_begin = 0;
+
+    /// How many odd numbers are in the current segment.
+    /// Updated by `sieveNextSegment()`, used by `next()`/`sieveSegment()`/`markCompositeInSegment()`.
     UInt64 segment_odd_count = 0;
+
+    /// How many 64-bit words in `segment_composite_bits` contain data for current segment (`ceil(segment_odd_count / 64)`).
+    /// Updated by `sieveNextSegment()`, used by `next()` and to clear/pad the bitmap.
     size_t segment_word_count = 0;
+
+    /// Scan cursor within the current segment bitmap (odd index to check next in `next()`).
+    /// Reset by `sieveNextSegment()`, advanced by `next()`.
     UInt64 next_candidate_idx = 0;
 
+    /// Composite bitmap for the current segment; bit i corresponds to odd value `segment_begin + 2*i`.
+    /// Sized to `SEGMENT_WORD_CAPACITY` to avoid reallocations; only first `segment_word_count` words are used.
     std::vector<UInt64> segment_composite_bits;
 
+    /// Cached base odd primes used for sieving (`OddPrimesCache::ensureUpTo(sqrt(segment_end))`).
+    /// Populated/extended by `sieveSegment()`, persists across segments.
     OddPrimesCache primes_cache;
 
+    /// Number of base primes currently active for sieving; equals `next_multiple_by_prime.size()`.
+    /// Reset by `resetSegmentState()`, increased by `sieveSegment()` as `sqrt(segment_end)` grows.
     size_t active_primes = 0;
+
+    /// For each active base prime, stores the next odd multiple to mark in the current/next segment (or `NO_MULTIPLE`).
+    /// Reset by `resetSegmentState()`, updated by `sieveSegment()` to resume marking efficiently across segments.
     std::vector<UInt64> next_multiple_by_prime;
 };
 
