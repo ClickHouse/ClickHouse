@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
             {"parallel_replicas_ast_based_filter_pushdown_for_views", false, true, "Enable the optimization by default."},
+            {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
