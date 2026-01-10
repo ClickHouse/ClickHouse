@@ -40,6 +40,10 @@ public:
     /// This table is usually queried by time range + some fixed metric name.
     static const char * getDefaultOrderBy() { return "event_date, toStartOfHour(event_time), metric"; }
 
+    static constexpr auto DESCRIPTION = R"(
+        Contains history of metrics values from tables system.metrics and system.events.
+        Periodically flushed to disk. Transposed form of system.metric_log.)";
+
     TransposedMetricLog(
         ContextPtr context_,
         const SystemLogSettings & settings_,
