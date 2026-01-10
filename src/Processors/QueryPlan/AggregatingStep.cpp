@@ -267,14 +267,26 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
+    /// Check if partial aggregate caching is enabled - if so, disable aggregation-in-order to allow cache path
+    bool use_partial_aggregate_cache = settings.use_partial_aggregate_cache
+        && Context::getGlobalContextInstance()->getPartialAggregateCache() != nullptr;
+
     /// optimize_aggregation_in_order
-    if (!sort_description_for_merging.empty())
+    /// If partial aggregate cache is enabled, we disable aggregation-in-order to allow the cache path
+    if (!sort_description_for_merging.empty() && !use_partial_aggregate_cache)
     {
         /// two-level aggregation is not supported anyway for in order aggregation.
         allow_to_use_two_level_group_by = false;
 
         /// It is incorrect for in order aggregation.
         params.stats_collecting_params.disable();
+    }
+    else if (!sort_description_for_merging.empty() && use_partial_aggregate_cache)
+    {
+        /// Partial aggregate cache is enabled - disable aggregation-in-order to use cache path
+        LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Disabling aggregation-in-order to allow partial aggregate cache path");
+        sort_description_for_merging.clear();
+        group_by_sort_description.clear();
     }
 
     if (!allow_to_use_two_level_group_by)
@@ -500,9 +512,17 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         ? Context::getGlobalContextInstance()->getPartialAggregateCache()
         : nullptr;
 
+    LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Partial aggregate cache: use_setting={}, cache_ptr={}, num_streams={}", 
+              settings.use_partial_aggregate_cache, 
+              partial_aggregate_cache != nullptr ? "non-null" : "null",
+              pipeline.getNumStreams());
+
     /// If partial aggregate cache is enabled, force single-stream aggregation to support per-part caching
     if (partial_aggregate_cache && pipeline.getNumStreams() > 1)
+    {
+        LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Resizing pipeline from {} to 1 stream for partial aggregate cache", pipeline.getNumStreams());
         pipeline.resize(1, false, settings.min_outstreams_per_resize_after_split);
+    }
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
@@ -536,6 +556,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Single-stream path: partial_aggregate_cache={}", partial_aggregate_cache != nullptr ? "non-null" : "null");
         if (partial_aggregate_cache)
         {
             /// Compute query hash from aggregation parameters (keys + aggregate functions)
@@ -550,16 +571,18 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             }
             IASTHash query_hash = getSipHash128AsPair(hash);
 
+            LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Adding PartialAggregateCachingTransform with query_hash={}/{}", query_hash.low64, query_hash.high64);
             pipeline.addSimpleTransform([&, query_hash, partial_aggregate_cache](const SharedHeader & header)
             {
                 return std::make_shared<PartialAggregateCachingTransform>(
                     header, params, query_hash, partial_aggregate_cache, final);
             });
-        }
-        else
-        {
-            pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                        { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("AggregatingStep"), "Using regular AggregatingTransform (no cache)");
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
         }
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
