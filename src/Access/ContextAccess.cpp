@@ -75,41 +75,23 @@ namespace
         return ids;
     }
 
-    /// Filter access-denied hint output (the "required grant"/"missing permissions" text in ACCESS_DENIED errors)
-    /// to avoid exposing column names when they come from implicit expansion (e.g. SELECT *),
-    /// while keeping database/table names that the user already specified in the query.
+    /// Filter access-denied hint output (the "required grant"/"missing permissions" text in ACCESS_DENIED errors).
+    /// Column names from implicit expansion (e.g. SELECT *) require SHOW_COLUMNS to be shown in hints.
     AccessRightsElement filterAccessElementForHints(const AccessRightsElement & element, const AccessRights & access)
     {
-        if (element.isGlobalWithParameter())
+        if (element.columns.empty())
             return element;
 
+        // Columns imply a resolved table and database (current DB is already substituted upstream).
+        assert(!element.table.empty());
+        assert(!element.database.empty());
+
+        if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
+            return element;
+
+        // Hide column names unless SHOW_COLUMNS covers all required columns.
         AccessRightsElement res = element;
-
-        if (!res.table.empty())
-        {
-            const bool has_show_columns_global = access.isGranted(AccessType::SHOW_COLUMNS);
-            if (!res.columns.empty() && !has_show_columns_global)
-            {
-                const size_t original_columns = res.columns.size();
-                if (!access.isGranted(AccessType::SHOW_COLUMNS, res.database, res.table))
-                {
-                    Strings filtered;
-                    filtered.reserve(res.columns.size());
-                    for (const auto & column : res.columns)
-                    {
-                        if (access.isGranted(AccessType::SHOW_COLUMNS, res.database, res.table, column))
-                            filtered.push_back(column);
-                    }
-                    res.columns = std::move(filtered);
-                }
-                if (res.columns.size() != original_columns)
-                    res.columns.clear();
-            }
-        }
-
-        if (res.table.empty())
-            res.columns.clear();
-
+        res.columns.clear();
         return res;
     }
 
