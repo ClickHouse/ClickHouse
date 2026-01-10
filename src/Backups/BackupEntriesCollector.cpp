@@ -13,7 +13,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
-#include <Storages/StorageMaterializedView.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -24,7 +23,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -549,9 +547,12 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
-            res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
+            if (storage)
+                res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
+            else
+                res_table_info.should_backup_data = !backup_settings.structure_only;
 
-            if (!backup_settings.structure_only)
+            if (res_table_info.should_backup_data)
             {
                 auto it = database_info.tables.find(table_name);
                 if (it != database_info.tables.end())
@@ -813,9 +814,6 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
 {
-    if (backup_settings.structure_only)
-        return;
-
     const auto & table_info = table_infos.at(table_name);
     if (!table_info.should_backup_data)
         return;
@@ -850,33 +848,13 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 bool BackupEntriesCollector::shouldBackupTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
 {
-    if (backup_settings.backup_data_from_refreshable_materialized_view_targets)
-        return true;
+    chassert(storage);
 
-    if (!storage)
-        return true;
+    if (backup_settings.structure_only)
+        return false;
 
-    /// Skip table data for refreshable materialized view targets.
-    auto dependents = DatabaseCatalog::instance().getReferentialDependents(storage->getStorageID());
-
-    auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
-    {
-        auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
-        if (!table || table->getName() != "MaterializedView")
-            return false;
-
-        const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-        bool append = false;
-        if (const auto & metadata = table->getInMemoryMetadataPtr())
-        {
-            const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<const ASTRefreshStrategy>() : nullptr;
-            append = refresh_strategy && refresh_strategy->append;
-        }
-        return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
-    };
-    if (!dependents.empty()
-        && std::all_of(
-            dependents.begin(), dependents.end(), [&](const auto & dependent) { return is_rmv_targeting_table(dependent, storage); }))
+    if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
+        && BackupUtils::isTargetForReplaceRefreshableMaterializedView(storage->getStorageID(), context))
     {
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;
