@@ -33,8 +33,10 @@ void PartialAggregateCachingTransform::consume(Chunk chunk)
     if (!part_info)
     {
         /// No part info - use a default key (won't benefit from caching)
+        LOG_DEBUG(log, "Chunk has no PartialAggregateInfo, grouping under __no_part_info__ (cache will not be used)");
         auto & data = parts_data["__no_part_info__"];
-        data.part_name = "__no_part_info__";
+        if (data.part_name.empty())
+            data.part_name = "__no_part_info__";
         data.chunks.push_back(std::move(chunk));
         return;
     }
@@ -56,7 +58,17 @@ Chunk PartialAggregateCachingTransform::generate()
     {
         generate_started = true;
 
-        LOG_DEBUG(log, "Processing {} parts for partial aggregate caching", parts_data.size());
+        LOG_DEBUG(log, "Processing {} parts for partial aggregate caching, cache is {}", parts_data.size(), cache ? "available" : "nullptr");
+        size_t parts_with_info = 0;
+        size_t parts_without_info = 0;
+        for (const auto & [part_key, part_data] : parts_data)
+        {
+            if (part_data.part_name == "__no_part_info__")
+                ++parts_without_info;
+            else
+                ++parts_with_info;
+        }
+        LOG_DEBUG(log, "Parts with PartialAggregateInfo: {}, parts without: {}", parts_with_info, parts_without_info);
 
         /// Collect all partial aggregates (from cache or freshly computed)
         std::vector<Block> partial_aggregates;
