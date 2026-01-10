@@ -397,6 +397,32 @@ ORDER BY day DESC
         except Exception:
             pairs = set()
 
+        # Attempt to upgrade ts column to DateTime64(3) if needed (one-time, best-effort)
+        try:
+            col_q = (
+                f"SELECT type FROM system.columns WHERE database = '{metrics_db}' AND table = '{table}' AND name = 'ts' FORMAT TabSeparated"
+            )
+            r = requests.get(
+                url=self.url,
+                params={"query": col_q},
+                headers=self.auth,
+                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+            )
+            t = (r.text or "").strip()
+            if t and not t.startswith("DateTime64"):
+                try:
+                    alter = f"ALTER TABLE {metrics_db}.{table} MODIFY COLUMN ts DateTime64(3)"
+                    requests.post(
+                        url=self.url,
+                        params={"query": alter},
+                        headers=self.auth,
+                        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Dedupe: check if any rows exist for these (run_id, scenario) in recent window
         if pairs:
             def _q(s: str) -> str:

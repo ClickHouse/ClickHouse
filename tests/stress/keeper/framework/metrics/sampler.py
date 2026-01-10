@@ -4,8 +4,14 @@ import time
 
 from ..core.settings import SAMPLER_FLUSH_EVERY, SAMPLER_ROW_FLUSH_THRESHOLD
 from ..io.probes import lgif, mntr, prom_metrics, dirs, srvr_kv
-from ..io.prom_parse import parse_prometheus_text
+from ..io.prom_parse import parse_prometheus_text, DEFAULT_PREFIXES
 from ..io.sink import sink_clickhouse
+
+
+def _ts_ms_str():
+    t = time.time()
+    lt = time.gmtime(t)
+    return time.strftime('%Y-%m-%d %H:%M:%S', lt) + f'.{int((t - int(t))*1000):03d}'
 
 
 class MetricsSampler:
@@ -20,6 +26,9 @@ class MetricsSampler:
         stage_prefix="run",
         run_id="",
         prom_allow_prefixes=None,
+        prom_name_allowlist=None,
+        prom_exclude_label_keys=None,
+        prom_every_n=1,
         ctx=None,
     ):
         self.nodes = nodes
@@ -30,9 +39,41 @@ class MetricsSampler:
         self.interval_s = max(1, int(interval_s))
         self.stage_prefix = stage_prefix
         self.run_id = run_id or ""
+        # Defaults to reduce volume safely across all scenarios
+        DEFAULT_NAME_ALLOW = (
+            "keeper_znode_count",
+            "keeper_ephemerals_count",
+            "keeper_total_watches_count",
+            "keeper_session_count",
+            "keeper_packets_received_total",
+            "keeper_packets_sent_total",
+            "keeper_outstanding_requests",
+            "keeper_approximate_data_size",
+            "keeper_connections",
+            "raft_current_term",
+            "raft_commit_index",
+            "raft_snapshot_index",
+            "raft_is_leader",
+        )
+        DEFAULT_EXCL_LABEL_KEYS = ("le", "quantile")
+
         self.prom_allow_prefixes = (
             tuple(prom_allow_prefixes) if prom_allow_prefixes else None
         )
+        # None -> use default allowlist; empty tuple/list -> disable
+        if prom_name_allowlist is None:
+            self.prom_name_allowlist = DEFAULT_NAME_ALLOW
+        else:
+            self.prom_name_allowlist = tuple(prom_name_allowlist)
+            if len(self.prom_name_allowlist) == 0:
+                self.prom_name_allowlist = None
+        self.prom_exclude_label_keys = (
+            tuple(prom_exclude_label_keys) if prom_exclude_label_keys else DEFAULT_EXCL_LABEL_KEYS
+        )
+        try:
+            self._prom_every_n = max(1, int(prom_every_n))
+        except Exception:
+            self._prom_every_n = 1
         self._stop = False
         self._th = None
         self._metrics_ts_rows = []
@@ -54,7 +95,7 @@ class MetricsSampler:
                             continue
                         self._metrics_ts_rows.append(
                             {
-                                "ts": int(time.time()),
+                                "ts": _ts_ms_str(),
                                 "run_id": self.run_id,
                                 "commit_sha": self.run_meta.get("commit_sha", "local"),
                                 "backend": self.run_meta.get("backend", "default"),
@@ -89,7 +130,7 @@ class MetricsSampler:
                 for nm, val in ("lines", d_lines), ("bytes", d_bytes):
                     self._metrics_ts_rows.append(
                         {
-                            "ts": int(time.time()),
+                            "ts": _ts_ms_str(),
                             "run_id": self.run_id,
                             "commit_sha": self.run_meta.get("commit_sha", "local"),
                             "backend": self.run_meta.get("backend", "default"),
@@ -121,7 +162,7 @@ class MetricsSampler:
                         continue
                     self._metrics_ts_rows.append(
                         {
-                            "ts": int(time.time()),
+                            "ts": _ts_ms_str(),
                             "run_id": self.run_id,
                             "commit_sha": self.run_meta.get("commit_sha", "local"),
                             "backend": self.run_meta.get("backend", "default"),
@@ -143,38 +184,42 @@ class MetricsSampler:
             except Exception:
                 pass
             try:
-                p = prom_metrics(n)
-                parsed = parse_prometheus_text(
-                    p, allow_prefixes=self.prom_allow_prefixes
-                )
-                for r in parsed:
-                    name = r.get("name", "")
-                    try:
-                        val = float(r.get("value", 0.0))
-                    except Exception:
-                        val = 0.0
-                    lj = r.get("labels_json", "{}")
-                    self._metrics_ts_rows.append(
-                        {
-                            "ts": int(time.time()),
-                            "run_id": self.run_id,
-                            "commit_sha": self.run_meta.get("commit_sha", "local"),
-                            "backend": self.run_meta.get("backend", "default"),
-                            "scenario": self.scenario_id,
-                            "topology": self.topology,
-                            "node": n.name,
-                            "stage": self.stage_prefix,
-                            "source": "prom",
-                            "name": name,
-                            "value": val,
-                            "labels_json": lj,
-                        }
+                if (self._snap_count % self._prom_every_n) == 0:
+                    p = prom_metrics(n)
+                    parsed = parse_prometheus_text(
+                        p,
+                        allow_prefixes=(self.prom_allow_prefixes or DEFAULT_PREFIXES),
+                        name_allowlist=self.prom_name_allowlist,
+                        exclude_label_keys=self.prom_exclude_label_keys,
                     )
-                if self._ctx is not None:
-                    cache = self._ctx.setdefault("_metrics_cache", {})
-                    entry = dict(cache.get(n.name) or {})
-                    entry["prom_rows"] = parsed
-                    cache[n.name] = entry
+                    for r in parsed:
+                        name = r.get("name", "")
+                        try:
+                            val = float(r.get("value", 0.0))
+                        except Exception:
+                            val = 0.0
+                        lj = r.get("labels_json", "{}")
+                        self._metrics_ts_rows.append(
+                            {
+                                "ts": _ts_ms_str(),
+                                "run_id": self.run_id,
+                                "commit_sha": self.run_meta.get("commit_sha", "local"),
+                                "backend": self.run_meta.get("backend", "default"),
+                                "scenario": self.scenario_id,
+                                "topology": self.topology,
+                                "node": n.name,
+                                "stage": self.stage_prefix,
+                                "source": "prom",
+                                "name": name,
+                                "value": val,
+                                "labels_json": lj,
+                            }
+                        )
+                    if self._ctx is not None:
+                        cache = self._ctx.setdefault("_metrics_cache", {})
+                        entry = dict(cache.get(n.name) or {})
+                        entry["prom_rows"] = parsed
+                        cache[n.name] = entry
             except Exception:
                 pass
 

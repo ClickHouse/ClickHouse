@@ -90,7 +90,7 @@ def ensure_sink_schema(_url_ignored=None):
     ddls = [
         f"CREATE DATABASE IF NOT EXISTS {db}",
         f"""CREATE TABLE IF NOT EXISTS {db}.keeper_metrics_ts (
-            ts DateTime DEFAULT now(),
+            ts DateTime64(3) DEFAULT now64(3),
             run_id String,
             commit_sha String,
             backend String,
