@@ -1153,6 +1153,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
+                    .condition = index_and_condition.condition->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1162,6 +1163,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .type = ReadFromMergeTree::IndexType::Skip,
                     .name = index_name,
                     .description = std::move(description),
+                    .condition = index_and_condition.condition->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
