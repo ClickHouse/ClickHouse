@@ -402,24 +402,21 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
 
     auto root_it = container.find(path);
     if (root_it == container.end())
-    {
-        response.error = Error::ZNONODE;
         return { std::make_shared<RemoveRecursiveResponse>(response), undo };
-    }
 
-    std::vector<std::pair<std::string, Coordination::TestKeeper::Node>> children;
+    std::vector<std::pair<std::string, Coordination::TestKeeper::Node>> removed_nodes;
 
-    for (auto it = std::next(root_it); it != container.end(); ++it)
+    for (auto it = root_it; it != container.end(); ++it)
     {
         const auto & [child_path, child_node] = *it;
 
         if (child_path.starts_with(path))
-            children.emplace_back(child_path, child_node);
+            removed_nodes.emplace_back(child_path, child_node);
         else
             break;
     }
 
-    if (children.size() > remove_nodes_limit)
+    if (removed_nodes.size() > remove_nodes_limit)
     {
         response.error = Error::ZNOTEMPTY;
         return { std::make_shared<RemoveRecursiveResponse>(response), undo };
@@ -429,7 +426,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
     --parent.stat.numChildren;
     ++parent.stat.cversion;
 
-    for (const auto & [child_path, child_node] : children)
+    for (const auto & [child_path, child_node] : removed_nodes)
     {
         auto child_it = container.find(child_path);
         chassert(child_it != container.end());
@@ -437,7 +434,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
     }
 
     response.error = Error::ZOK;
-    undo = [&container, dead = std::move(children), root_path = path]()
+    undo = [&container, dead = std::move(removed_nodes), root_path = path]()
     {
         for (auto && [child_path, child_node] : dead)
             container.emplace(child_path, child_node);
