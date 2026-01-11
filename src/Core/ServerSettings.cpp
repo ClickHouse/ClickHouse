@@ -571,7 +571,7 @@ namespace DB
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
     DECLARE(UInt32, dns_max_consecutive_failures, 5, R"(
-    Stop further attempts to resolve the DNS name after this number of failures. The information still remains in the DNS cache.
+    Stop further attempts to update a hostname's DNS cache after this number of consecutive failures. The information still remains in the DNS cache. Zero means unlimited.
 
     **See also**
 
