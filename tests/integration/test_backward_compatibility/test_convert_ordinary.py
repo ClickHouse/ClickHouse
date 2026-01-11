@@ -261,6 +261,11 @@ def check_convert_all_dbs_to_atomic():
             "SELECT count(), sum(n) FROM {}.detached".format(db)
         )
 
+    node.query("DROP TABLE atomic.l")
+    node.query("DROP TABLE other.l")
+    node.query("DROP TABLE ordinary.l")
+    node.query("DROP TABLE `.o r d i n a r y.`.`t. a. b. l. e.`")
+
     node.query("DROP DATABASE mem")
     node.query("DROP DATABASE atomic")
     node.query("DROP DATABASE `.o r d i n a r y.`")

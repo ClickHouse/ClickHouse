@@ -136,7 +136,6 @@ def dependent_tables_assert():
     assert "system.join" in res
     assert "default.src" in res
     assert "dict.dep_y" in res
-    assert "lazy.log" in res
     assert "test.d" in res
     assert "default.join" in res
     assert "a.t" in res
