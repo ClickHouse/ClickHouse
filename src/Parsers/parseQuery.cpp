@@ -348,10 +348,16 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    IParser::Pos this_query_end_pos = token_iterator;
+    while (this_query_end_pos->type != TokenType::Semicolon
+           && this_query_end_pos->type != TokenType::EndOfStream
+           && this_query_end_pos->type != TokenType::Error)
+        ++this_query_end_pos;
+
     if (!parse_res)
     {
         /// Generic parse error.
-        out_error_message = getSyntaxErrorMessage(query_begin, last_token.end,
+        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -361,7 +367,7 @@ ASTPtr tryParseQuery(
         && token_iterator->type != TokenType::Semicolon)
     {
         expected.add(last_token.begin, "end of query");
-        out_error_message = getSyntaxErrorMessage(query_begin, last_token.end,
+        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
