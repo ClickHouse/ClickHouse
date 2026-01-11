@@ -75,14 +75,13 @@ void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 {
     for (auto & child : ast->children)
     {
-        void * old_ptr = child.get();
+        IAST * old_ptr = child.get();
         visit(child);
-        void * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
         /// We have to replace them if the child was replaced.
-        if (new_ptr != old_ptr)
-            ast->updatePointerToChild(old_ptr, new_ptr);
+        if (child.get() != old_ptr)
+            ast->updatePointerToChild(old_ptr, child);
     }
 }
 

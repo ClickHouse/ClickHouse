@@ -125,9 +125,9 @@ public:
 
     ASTPtr clone() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&elem));
+        f(&elem, nullptr);
     }
 
 protected:
@@ -629,7 +629,7 @@ bool ASTCreateQuery::hasInnerUUIDs() const
     return false;
 }
 
-boost::intrusive_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
+ASTStorage * ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
 {
     if (targets)
         return targets->getInnerEngine(target_kind);

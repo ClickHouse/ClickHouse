@@ -60,27 +60,10 @@ ASTPtr ASTTableJoin::clone() const
     return res;
 }
 
-void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
+void ASTTableJoin::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
-    IAST * new_using_expression_list = using_expression_list.get();
-    f(reinterpret_cast<void **>(&new_using_expression_list));
-    if (new_using_expression_list != using_expression_list.get())
-    {
-        if (new_using_expression_list)
-            using_expression_list = getChild(*new_using_expression_list);
-        else
-            using_expression_list.reset();
-    }
-
-    IAST * new_on_expression = on_expression.get();
-    f(reinterpret_cast<void **>(&new_on_expression));
-    if (new_on_expression != on_expression.get())
-    {
-        if (new_on_expression)
-            on_expression = getChild(*new_on_expression);
-        else
-            on_expression.reset();
-    }
+    f(nullptr, &using_expression_list);
+    f(nullptr, &on_expression);
 }
 
 void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

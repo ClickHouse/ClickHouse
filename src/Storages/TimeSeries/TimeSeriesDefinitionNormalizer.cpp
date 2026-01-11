@@ -394,15 +394,16 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEngines(ASTCreateQuery & cre
         if (create.hasTargetTableID(target_kind))
             continue; /// External target is set, inner engine is not needed.
 
-        auto inner_table_engine = create.getTargetInnerEngine(target_kind);
+        auto * inner_table_engine = create.getTargetInnerEngine(target_kind);
         if (inner_table_engine && inner_table_engine->engine)
             continue; /// Engine is set already, skip it.
 
         if (!inner_table_engine)
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but the inner ENGINE is not: just set default one.
-            inner_table_engine = make_intrusive<ASTStorage>();
-            create.setTargetInnerEngine(target_kind, inner_table_engine);
+            auto new_inner_table_engine = make_intrusive<ASTStorage>();
+            inner_table_engine = new_inner_table_engine.get();
+            create.setTargetInnerEngine(target_kind, std::move(new_inner_table_engine));
         }
 
         /// Set engine by default.

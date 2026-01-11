@@ -1050,7 +1050,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 boost::replace_first(storage->engine->name, "Replicated", "Shared");
             else if (create_table_query->is_materialized_view_with_inner_table())
             {
-                storage = create_table_query->targets->getInnerEngine(ViewTarget::To).get();
+                storage = create_table_query->targets->getInnerEngine(ViewTarget::To);
                 if (storage != nullptr && storage->engine != nullptr)
                     boost::replace_first(storage->engine->name, "Replicated", "Shared");
             }

@@ -55,7 +55,7 @@ struct ViewTarget
 
     /// Table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
-    boost::intrusive_ptr<ASTStorage> inner_engine;
+    ASTPtr inner_engine;
 
     /// Table's AST with query parameters
     ASTPtr table_ast;
@@ -108,8 +108,8 @@ public:
     /// Sets the table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
     void setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def);
-    boost::intrusive_ptr<ASTStorage> getInnerEngine(ViewTarget::Kind kind) const;
-    std::vector<boost::intrusive_ptr<ASTStorage>> getInnerEngines() const;
+    ASTStorage * getInnerEngine(ViewTarget::Kind kind) const;
+    std::vector<ASTStorage *> getInnerEngines() const;
 
     /// Returns a list of all kinds of views in this ASTViewTargets.
     std::vector<ViewTarget::Kind> getKinds() const;
@@ -133,7 +133,7 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

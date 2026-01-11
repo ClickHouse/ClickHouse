@@ -94,7 +94,7 @@ namespace
             {
                 /// Create the inner target table.
                 auto inner_table_engine = target_info ? target_info->inner_engine : nullptr;
-                target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine);
+                target_table_id = inner_tables_creator.createInnerTable(kind, inner_uuid, inner_table_engine->as<ASTStorage>());
             }
         }
 

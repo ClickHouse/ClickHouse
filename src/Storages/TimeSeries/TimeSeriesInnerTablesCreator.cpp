@@ -158,7 +158,7 @@ StorageID TimeSeriesInnerTablesCreator::getInnerTableID(ViewTarget::Kind inner_t
 boost::intrusive_ptr<ASTCreateQuery> TimeSeriesInnerTablesCreator::getInnerTableCreateQuery(
     ViewTarget::Kind inner_table_kind,
     const UUID & inner_table_uuid,
-    const boost::intrusive_ptr<ASTStorage> & inner_storage_def) const
+    const ASTStorage * inner_storage_def) const
 {
     auto manual_create_query = make_intrusive<ASTCreateQuery>();
 
@@ -181,7 +181,7 @@ boost::intrusive_ptr<ASTCreateQuery> TimeSeriesInnerTablesCreator::getInnerTable
 StorageID TimeSeriesInnerTablesCreator::createInnerTable(
     ViewTarget::Kind inner_table_kind,
     const UUID & inner_table_uuid,
-    const boost::intrusive_ptr<ASTStorage> & inner_storage_def) const
+    const ASTStorage * inner_storage_def) const
 {
     /// We will make a query to create the inner target table.
     auto create_context = Context::createCopy(getContext());

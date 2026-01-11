@@ -1159,7 +1159,7 @@ namespace
 
     void setNullTableEngine(ASTStorage & storage)
     {
-        storage.forEachPointerToChild([](void ** ptr) mutable
+        storage.forEachPointerToChild([](IAST ** ptr, boost::intrusive_ptr<IAST> *)
         {
             *ptr = nullptr;
         });

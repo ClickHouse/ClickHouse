@@ -168,21 +168,21 @@ void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
     }
 }
 
-boost::intrusive_ptr<ASTStorage> ASTViewTargets::getInnerEngine(ViewTarget::Kind kind) const
+ASTStorage * ASTViewTargets::getInnerEngine(ViewTarget::Kind kind) const
 {
     if (const auto * target = tryGetTarget(kind))
-        return target->inner_engine;
+        return target->inner_engine->as<ASTStorage>();
     return nullptr;
 }
 
-std::vector<boost::intrusive_ptr<ASTStorage>> ASTViewTargets::getInnerEngines() const
+std::vector<ASTStorage *> ASTViewTargets::getInnerEngines() const
 {
-    std::vector<boost::intrusive_ptr<ASTStorage>> res;
+    std::vector<ASTStorage *> res;
     res.reserve(targets.size());
     for (const auto & target : targets)
     {
         if (target.inner_engine)
-            res.push_back(target.inner_engine);
+            res.push_back(target.inner_engine->as<ASTStorage>());
     }
     return res;
 }
@@ -298,22 +298,12 @@ std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind k
     UNREACHABLE();
 }
 
-void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
+void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
     for (auto & target : targets)
     {
-        if (target.inner_engine)
-        {
-            ASTStorage * new_inner_engine = target.inner_engine.get();
-            f(reinterpret_cast<void **>(&new_inner_engine));
-            if (new_inner_engine != target.inner_engine.get())
-            {
-                if (new_inner_engine)
-                    target.inner_engine = boost::static_pointer_cast<ASTStorage>(getChild(*new_inner_engine));
-                else
-                    target.inner_engine.reset();
-            }
-        }
+        f(nullptr, &target.table_ast);
+        f(nullptr, &target.inner_engine);
     }
 }
 
