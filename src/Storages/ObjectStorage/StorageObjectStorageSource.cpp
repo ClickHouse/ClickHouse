@@ -18,6 +18,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -635,7 +636,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
- 
+
+#if USE_PARQUET
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
         {
             auto cache_log = getLogger("ParquetMetadataCache");
@@ -643,42 +645,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (isParquetFormat(object_info, configuration)
                 && !object_info->getObjectMetadata()->etag.empty())
             {
-                auto format_settings_with_metadata_cache_key = format_settings;
-                if (!format_settings_with_metadata_cache_key.has_value())
-                {
-                    format_settings_with_metadata_cache_key.emplace(getFormatSettings(context_));
-                }
-                LOG_DEBUG(cache_log, "creating cache key {} : {}", object_info->getPath(), object_info->getObjectMetadata()->etag);
-                std::pair<std::string, std::string> cache_key = std::make_pair(
-                    object_info->getPath(),
-                    object_info->getObjectMetadata()->etag);
-                format_settings_with_metadata_cache_key->parquet.metadata_cache_key = cache_key;
-                if (format_settings_with_metadata_cache_key->parquet.metadata_cache_key)
-                {
-                    LOG_DEBUG(cache_log, "successfully set cache key");
-                }
-                else
-                {
-                    LOG_DEBUG(cache_log, "failed to set cache key");
-                }
-                input_format = FormatFactory::instance().getInput(
-                object_info->getFileFormat().value_or(configuration->format),
-                *read_buf,
-                initial_header,
-                context_,
-                max_block_size,
-                format_settings_with_metadata_cache_key,
-                parser_shared_resources,
-                filter_info,
-                true /* is_remote_fs */,
-                compression_method,
-                need_only_count);
+                LOG_DEBUG(cache_log, "setting mapping for {} -> {}", object_info->getPath(), object_info->getObjectMetadata()->etag);
+                std::shared_ptr<ParquetMetadataCache> metadata_cache = context_->getParquetMetadataCache();
+                metadata_cache->key_map.setEtagForFile(object_info->getPath(), object_info->getObjectMetadata()->etag);
             }
             else
             {
-                LOG_DEBUG(cache_log, "failed format check or etag is empty");
+                LOG_DEBUG(cache_log, "failed format check or etag is empty etag: {}", object_info->getObjectMetadata()->etag);
             }
-        } 
+        }
+#endif
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);

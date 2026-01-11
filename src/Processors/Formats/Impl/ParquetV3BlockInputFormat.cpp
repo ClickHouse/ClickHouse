@@ -9,6 +9,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WithFileName.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
@@ -95,10 +96,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
-        //LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
-        if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
+        if (metadata_cache)
         {
-            auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
+            String file_name = getFileNameFromReadBuffer(*in);
+            String etag = metadata_cache->key_map.getEtagForFile(file_name);
             ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
             reader->reader.file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
                 return Parquet::Reader::readFileMetaData(reader->reader.prefetcher);
@@ -126,10 +127,10 @@ Chunk ParquetV3BlockInputFormat::read()
         parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto log = getLogger("ParquetMetadataCache");
-        //LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
-        if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
+        if (metadata_cache)
         {
-            auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
+            String file_name = getFileNameFromReadBuffer(*in);
+            String etag = metadata_cache->key_map.getEtagForFile(file_name);
             ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
             file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
                 return Parquet::Reader::readFileMetaData(temp_prefetcher);
@@ -197,17 +198,10 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
     auto log = getLogger("ParquetMetadataCache");
-    if (format_settings.parquet.metadata_cache_key)
+    if (metadata_cache)
     {
-        LOG_DEBUG(log, "cache key {} : {}", format_settings.parquet.metadata_cache_key.value().first, format_settings.parquet.metadata_cache_key.value().second);
-    }
-    else
-    {
-        LOG_DEBUG(log, "cache key is not set");
-    }
-    if (metadata_cache && format_settings.parquet.metadata_cache_key.has_value())
-    {
-        auto [file_name, etag] = format_settings.parquet.metadata_cache_key.value();
+        String file_name = getFileNameFromReadBuffer(in);
+        String etag = metadata_cache->key_map.getEtagForFile(file_name);
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
         file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
             return Parquet::Reader::readFileMetaData(prefetcher);
