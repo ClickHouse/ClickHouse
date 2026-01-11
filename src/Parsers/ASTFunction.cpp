@@ -507,7 +507,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && !(frame.need_parens && !alias.empty()))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
             ostr << '(';
             for (size_t i = 0; i < arguments->children.size(); ++i)
