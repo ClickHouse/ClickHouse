@@ -154,8 +154,9 @@ namespace
                         auto select_copy = create.select->clone();
                         ApplyWithSubqueryVisitor(global_context).visit(select_copy);
 
-                        // Use the database where the materialized view is created to resolve nested views
+                        /// Use the database where the materialized view is created to resolve nested views
                         ContextMutablePtr mv_db_context = Context::createCopy(global_context);
+                        /// During bootstrap/restore scenarios, the database may not exist yet, so we provide a way to skip this validation
                         if (validate_current_database)
                             mv_db_context->setCurrentDatabase(table_name.database);
                         else
