@@ -571,11 +571,7 @@ namespace DB
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
     DECLARE(UInt32, dns_max_consecutive_failures, 5, R"(
-    The number of consecutive failures accepted when updating a DNS cache entry before it is dropped. Set to `0` to disable cache dropping.
-
-    :::note
-    Cache dropping means just stopping to update this cache entry after consecutive failures (the others still continue to be updated), but it won't be cleared. Cache entries will only be cleaned by `SYSTEM DROP DNS CACHE`.
-    :::
+    Stop further attempts to resolve the DNS name after this number of failures. The information still remains in the DNS cache.
 
     **See also**
 
