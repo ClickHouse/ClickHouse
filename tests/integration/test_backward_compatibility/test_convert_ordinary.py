@@ -98,13 +98,15 @@ def create_some_tables(db):
         "CREATE TABLE {}.mt2 (n int) ENGINE=MergeTree order by n".format(db),
     )
     node.query(
-        "CREATE TABLE {}.rmt1 (n int, m int) ENGINE=ReplicatedMergeTree('/test/rmt1/{}', '1') order by n".format(
-            db, db
+        "DROP TABLE IF EXISTS {}.rmt1 SYNC;"
+        "CREATE TABLE {}.rmt1 (n int, m int) ENGINE=ReplicatedMergeTree('/test/rmt1/{}', '1') order by n;".format(
+            db, db, db
         ),
     )
     node.query(
-        "CREATE TABLE {}.rmt2 (n int, m int) ENGINE=ReplicatedMergeTree('/test/{}/rmt2', '1') order by n".format(
-            db, db
+        "DROP TABLE IF EXISTS {}.rmt2 SYNC;"
+        "CREATE TABLE {}.rmt2 (n int, m int) ENGINE=ReplicatedMergeTree('/test/{}/rmt2', '1') order by n;".format(
+            db, db, db
         ),
     )
     node.exec_in_container(
@@ -115,8 +117,9 @@ def create_some_tables(db):
         ]
     )
     node.query(
-        "CREATE MATERIALIZED VIEW {}.mv1 (n int) ENGINE=ReplicatedMergeTree('/test/{}/mv1/', '1') order by n AS SELECT n FROM {}.rmt1".format(
-            db, db, db
+        "DROP TABLE IF EXISTS {}.mv1 SYNC;"
+        "CREATE MATERIALIZED VIEW {}.mv1 (n int) ENGINE=ReplicatedMergeTree('/test/{}/mv1/', '1') order by n AS SELECT n FROM {}.rmt1;".format(
+            db, db, db, db
         ),
     )
     node.query(
@@ -141,11 +144,11 @@ def create_some_tables(db):
 
 
 def check_convert_all_dbs_to_atomic():
-    node.query("DROP DATABASE IF EXISTS ordinary")
-    node.query("DROP DATABASE IF EXISTS other")
-    node.query("DROP DATABASE IF EXISTS `.o r d i n a r y.`")
-    node.query("DROP DATABASE IF EXISTS atomic")
-    node.query("DROP DATABASE IF EXISTS mem")
+    node.query("DROP DATABASE IF EXISTS ordinary SYNC")
+    node.query("DROP DATABASE IF EXISTS other SYNC")
+    node.query("DROP DATABASE IF EXISTS `.o r d i n a r y.` SYNC")
+    node.query("DROP DATABASE IF EXISTS atomic SYNC")
+    node.query("DROP DATABASE IF EXISTS mem SYNC")
 
     node.query(
         "CREATE DATABASE ordinary ENGINE=Ordinary",
@@ -261,16 +264,16 @@ def check_convert_all_dbs_to_atomic():
             "SELECT count(), sum(n) FROM {}.detached".format(db)
         )
 
-    node.query("DROP TABLE atomic.l")
-    node.query("DROP TABLE other.l")
-    node.query("DROP TABLE ordinary.l")
-    node.query("DROP TABLE `.o r d i n a r y.`.`t. a. b. l. e.`")
+    node.query("DROP TABLE atomic.l SYNC")
+    node.query("DROP TABLE other.l SYNC")
+    node.query("DROP TABLE ordinary.l SYNC")
+    node.query("DROP TABLE `.o r d i n a r y.`.`t. a. b. l. e.` SYNC")
 
-    node.query("DROP DATABASE mem")
-    node.query("DROP DATABASE atomic")
-    node.query("DROP DATABASE `.o r d i n a r y.`")
-    node.query("DROP DATABASE other")
-    node.query("DROP DATABASE ordinary")
+    node.query("DROP DATABASE mem SYNC")
+    node.query("DROP DATABASE atomic SYNC")
+    node.query("DROP DATABASE `.o r d i n a r y.` SYNC")
+    node.query("DROP DATABASE other SYNC")
+    node.query("DROP DATABASE ordinary SYNC")
 
 
 def test_convert_ordinary_to_atomic(start_cluster):
