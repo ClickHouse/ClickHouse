@@ -83,4 +83,4 @@ ClickHouse is a nice DBMS, and it's a good place to work.
 
 Check out our **current openings** here: https://clickhouse.com/company/careers
 
-Email: careers@clickhouse.com!
+Email: careers@clickhouse.com!.
