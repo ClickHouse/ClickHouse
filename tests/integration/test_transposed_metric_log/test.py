@@ -66,6 +66,7 @@ def test_table_rotation(start_cluster):
     in_old_metric_log = int(node1.query("select count() from system.metric_log_0").strip())
 
     assert in_old_metric_log > 0
+    node1.replace_in_config(LOG_PATH, ">transposed<", ">wide<")
 
 
 def insert_into_transposed_metric_log(node, table_name, size):
