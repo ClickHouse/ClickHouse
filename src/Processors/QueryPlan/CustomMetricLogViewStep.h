@@ -12,7 +12,9 @@ namespace DB
 /// filter push down through it and it's possible only with custom code in filterPushDown.cpp
 class CustomMetricLogViewStep : public ITransformingStep
 {
+private:
     SortDescription sort_description;
+
 public:
     CustomMetricLogViewStep(SharedHeader input_header_, SharedHeader output_header_);
 

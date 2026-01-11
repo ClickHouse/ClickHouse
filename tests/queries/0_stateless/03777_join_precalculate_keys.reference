@@ -10,7 +10,7 @@ Header: 1 UInt8
     Header: __table2.a UInt8
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
       Header: __table2.a UInt8
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
         Header: dummy UInt8
 1
 Expression ((Project names + Projection))
@@ -32,6 +32,6 @@ Header: 1 UInt8
         Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
         Header: __table2.a UInt8
                 __table2.b UInt8
-          ReadFromStorage (SystemOne)
+          ReadFromSystemOne
           Header: dummy UInt8
 1
