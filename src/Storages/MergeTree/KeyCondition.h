@@ -1,9 +1,13 @@
 #pragma once
 
 #include <optional>
+#include <memory>
+#include <mutex>
+#include <span>
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
+#include <Core/RangeRef.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -107,6 +111,11 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    BoolMask checkInHyperrectangle(
+        std::span<const RangeRef> hyperrectangle,
+        ColumnsWithTypeAndName * key_columns_block,
+        const DataTypes & data_types) const;
+
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
@@ -116,6 +125,15 @@ public:
         size_t used_key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
+        const DataTypes & data_types,
+        BoolMask initial_mask = BoolMask(false, false)) const;
+
+    /// Same as checkInRange, but avoids materialization of Field values from columns.
+    BoolMask checkInRange(
+        size_t used_key_size,
+        ColumnsWithTypeAndName * key_columns_block,
+        const ColumnValueRef * left_keys,
+        const ColumnValueRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
@@ -326,6 +344,7 @@ public:
     KeyCondition(
         ThisIsPrivate,
         ColumnIndices key_columns_,
+        DataTypes key_data_types_,
         size_t num_key_columns_,
         bool single_point_,
         bool date_time_overflow_behavior_ignore_,
@@ -350,6 +369,8 @@ private:
         BoolMask initial_mask) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+
+    void rebuildPreparedRangeForRefs();
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -487,6 +508,7 @@ private:
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
     /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
+    DataTypes key_data_types;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType
@@ -568,5 +590,25 @@ private:
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
     /// on a given regular expression, which is relaxed for simplicity.
     bool relaxed = false;
+
+    struct PreparedRangeForRefs
+    {
+        struct PreparedValue
+        {
+            ColumnPtr column;
+            ColumnValueRef ref;
+        };
+
+        struct PreparedRange
+        {
+            PreparedValue left;
+            PreparedValue right;
+            RangeRef range;
+        };
+
+        std::vector<PreparedRange> ranges;
+    };
+
+    PreparedRangeForRefs prepared_range_for_refs;
 };
 }

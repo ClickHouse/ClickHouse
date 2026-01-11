@@ -31,6 +31,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/Settings.h>
+#include <Core/RangeRef.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -1582,34 +1583,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         }
     }
 
-    /// If there are no monotonic functions, there is no need to save block reference.
-    /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
-    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
-    if (key_condition.hasMonotonicFunctionsChain())
-    {
-        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
-        {
-            field = {index_columns.get(), row, column};
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-        };
-    }
-    else
-    {
-        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
-        {
-            (*index_columns)[column].column->get(row, field);
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-        };
-    }
-
-    /// NOTE Creating temporary Field objects to pass to KeyCondition.
     size_t used_key_size = num_key_columns;
-    std::vector<FieldRef> index_left(used_key_size);
-    std::vector<FieldRef> index_right(used_key_size);
+
+    std::vector<ColumnValueRef> index_left_refs(used_key_size);
+    std::vector<ColumnValueRef> index_right_refs(used_key_size);
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -1621,40 +1598,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         auto check_key_condition = [&]()
         {
+            auto set_key = [&](size_t row, size_t column, ColumnValueRef & out, ColumnValueRef::Special missing_special)
+            {
+                const auto * col = (*index_columns)[column].column.get();
+                if (!col)
+                {
+                    out = (missing_special == ColumnValueRef::Special::NegativeInfinity) ? ColumnValueRef::negativeInfinity()
+                                                                                        : ColumnValueRef::positiveInfinity();
+                    return;
+                }
+
+                if (col->isNullAt(row))
+                {
+                    out = ColumnValueRef::positiveInfinity();
+                    return;
+                }
+
+                out = ColumnValueRef::normal(col, row);
+            };
+
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
-                    if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
-                    else
-                        left = NEGATIVE_INFINITY;
+                    auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
+                    auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
 
-                    right = POSITIVE_INFINITY;
+                    set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
+                    right = ColumnValueRef::positiveInfinity();
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
-                    if ((*index_columns)[i].column)
-                    {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
-                    }
-                    else
-                    {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
-                    }
+                    auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
+                    auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+
+                    set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
+                    set_key(range.end, i, right, ColumnValueRef::Special::PositiveInfinity);
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+
+            return key_condition.checkInRange(used_key_size, index_columns.get(), index_left_refs.data(), index_right_refs.data(), key_types, initial_mask);
         };
 
         auto check_part_offset_condition = [&]()

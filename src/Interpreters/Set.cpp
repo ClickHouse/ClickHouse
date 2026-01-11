@@ -2,6 +2,10 @@
 #include <shared_mutex>
 
 #include <Core/Field.h>
+#include <Core/RangeRef.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Functions/IFunction.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
@@ -817,6 +821,46 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     }
 
     return {can_be_true, true};
+}
+
+/// TODO: optimize by avoiding materialization of key_ranges
+BoolMask MergeTreeSetIndex::checkInRange(
+    std::span<const RangeRef> key_ranges, const DataTypes & data_types, bool single_point, ColumnsWithTypeAndName *) const
+{
+    std::vector<Range> key_ranges_materialized;
+    key_ranges_materialized.reserve(key_ranges.size());
+
+    for (const auto & r : key_ranges)
+    {
+        FieldRef left;
+        FieldRef right;
+
+        if (r.left.isNegativeInfinity())
+            left = NEGATIVE_INFINITY;
+        else if (r.left.isPositiveInfinity())
+            left = POSITIVE_INFINITY;
+        else
+        {
+            r.left.column->get(r.left.row, left);
+            if (left.isNull())
+                left = POSITIVE_INFINITY;
+        }
+
+        if (r.right.isNegativeInfinity())
+            right = NEGATIVE_INFINITY;
+        else if (r.right.isPositiveInfinity())
+            right = POSITIVE_INFINITY;
+        else
+        {
+            r.right.column->get(r.right.row, right);
+            if (right.isNull())
+                right = POSITIVE_INFINITY;
+        }
+
+        key_ranges_materialized.emplace_back(left, r.left_included, right, r.right_included);
+    }
+
+    return checkInRange(key_ranges_materialized, data_types, single_point);
 }
 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const

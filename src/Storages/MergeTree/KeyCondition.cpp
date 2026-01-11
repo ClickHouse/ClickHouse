@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <Core/PlainRanges.h>
+#include <Core/RangeRef.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -38,10 +39,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <array>
 #include <algorithm>
 #include <cassert>
+#include <span>
 #include <stack>
 #include <limits>
+#include <Common/PODArray.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -887,10 +891,15 @@ KeyCondition::KeyCondition(
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
+    chassert(key_expr_);
+    const auto & sample_block = key_expr_->getSampleBlock();
+
+    key_data_types.reserve(num_key_columns);
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
         key_columns.try_emplace(name, key_index);
+        key_data_types.push_back(sample_block.getByName(name).type);
         ++key_index;
     }
 
@@ -904,6 +913,7 @@ KeyCondition::KeyCondition(
         has_filter = (filter_dag.predicate != nullptr);
         relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        rebuildPreparedRangeForRefs();
         return;
     }
 
@@ -917,6 +927,7 @@ KeyCondition::KeyCondition(
         has_filter = false;
         relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        rebuildPreparedRangeForRefs();
         return;
     }
 
@@ -933,14 +944,18 @@ KeyCondition::KeyCondition(
 
     if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
         relaxed = true;
+
+    /// This builds non-Field representation for RPNElement ranges
+    rebuildPreparedRangeForRefs();
 }
 
 KeyCondition::KeyCondition(
-    ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
+    ThisIsPrivate, ColumnIndices key_columns_, DataTypes key_data_types_, size_t num_key_columns_, bool single_point_,
     bool date_time_overflow_behavior_ignore_, bool relaxed_)
     : has_filter(true)
     , key_columns(std::move(key_columns_))
     , num_key_columns(num_key_columns_)
+    , key_data_types(std::move(key_data_types_))
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
     , relaxed(relaxed_)
@@ -952,6 +967,9 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
         return false;
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
+
+    /// TODO: Convert to only incremental update instead of full rebuild
+    rebuildPreparedRangeForRefs();
     return true;
 }
 
@@ -2966,6 +2984,367 @@ static BoolMask forAnyHyperrectangle(
     return result;
 }
 
+static DataTypePtr getRangeTypeForRPNElement(const KeyCondition::RPNElement & element, const DataTypePtr & key_type)
+{
+    DataTypePtr result = key_type;
+    for (const auto & func : element.monotonic_functions_chain)
+        result = func->getResultType();
+    return result;
+}
+
+void KeyCondition::rebuildPreparedRangeForRefs()
+{
+    auto & prepared = prepared_range_for_refs;
+
+    prepared.ranges.clear();
+    prepared.ranges.resize(rpn.size());
+
+    auto make_prepared_value = [](const FieldRef & value, const DataTypePtr & type) -> PreparedRangeForRefs::PreparedValue
+    {
+        PreparedRangeForRefs::PreparedValue out;
+
+        if (value.isNegativeInfinity())
+        {
+            out.ref = ColumnValueRef::negativeInfinity();
+            return out;
+        }
+        if (value.isPositiveInfinity() || value.isNull())
+        {
+            out.ref = ColumnValueRef::positiveInfinity();
+            return out;
+        }
+
+        auto col = type->createColumn();
+        col->insert(value);
+        col->protect();
+        out.column = std::move(col);
+        out.ref = ColumnValueRef::normal(out.column.get(), 0);
+        return out;
+    };
+
+    for (size_t i = 0; i < rpn.size(); ++i)
+    {
+        const auto & element = rpn[i];
+        auto & dst = prepared.ranges[i];
+
+        if (element.function == RPNElement::FUNCTION_IN_RANGE || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IS_NULL || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            const size_t key_column = element.getKeyColumn();
+            if (key_column >= key_data_types.size())
+                continue;
+
+            const DataTypePtr range_type = getRangeTypeForRPNElement(element, key_data_types[key_column]);
+
+            dst.left = make_prepared_value(element.range.left, range_type);
+            dst.right = make_prepared_value(element.range.right, range_type);
+            dst.range.left = dst.left.ref;
+            dst.range.right = dst.right.ref;
+            dst.range.left_included = element.range.left_included;
+            dst.range.right_included = element.range.right_included;
+        }
+    }
+}
+
+/// TODO: Remove it. There should be no Field
+static Field materializeFieldForMonotonicity(
+    const ColumnsWithTypeAndName & key_columns,
+    size_t column_idx,
+    const ColumnValueRef & ref)
+{
+    if (ref.isNegativeInfinity())
+        return NEGATIVE_INFINITY;
+    if (ref.isPositiveInfinity())
+        return POSITIVE_INFINITY;
+
+    if (column_idx >= key_columns.size() || !key_columns[column_idx].column)
+        return POSITIVE_INFINITY;
+
+    Field out;
+    key_columns[column_idx].column->get(ref.row, out);
+    if (out.isNull())
+        out = POSITIVE_INFINITY;
+    return out;
+}
+
+static std::optional<size_t> getOrCreateFunctionResultColumnIndex(
+    ColumnsWithTypeAndName & key_columns,
+    size_t input_column_idx,
+    const FunctionBasePtr & func)
+{
+    chassert(func);
+
+    if (input_column_idx >= key_columns.size())
+        return std::nullopt;
+
+    const ColumnWithTypeAndName input = key_columns[input_column_idx];
+    if (!input.column)
+        return std::nullopt;
+
+    WriteBufferFromOwnString buf;
+    writeText("_", buf);
+    writePointerHex(func.get(), buf);
+    writeText("_" + toString(input_column_idx), buf);
+    const String result_name = buf.str();
+
+    size_t result_idx = key_columns.size();
+    for (size_t i = 0; i < result_idx; ++i)
+    {
+        if (key_columns[i].name == result_name)
+            result_idx = i;
+    }
+
+    if (result_idx == key_columns.size())
+    {
+        ColumnsWithTypeAndName args{input};
+        key_columns.emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+        result_idx = key_columns.size() - 1;
+        key_columns[result_idx].column = func->execute(args, key_columns[result_idx].type, input.column->size(), /* dry_run = */ false);
+    }
+
+    return result_idx;
+}
+
+static std::optional<RangeRef> applyMonotonicFunctionsChainToRangeForRefs(
+    RangeRef key_range,
+    size_t key_column_idx,
+    ColumnsWithTypeAndName * key_columns,
+    const KeyCondition::MonotonicFunctionsChain & functions,
+    DataTypePtr current_type,
+    bool single_point)
+{
+    size_t current_column_idx = key_column_idx;
+
+    for (const auto & func : functions)
+    {
+        if (!func)
+            return {};
+
+        const Field left_field = key_columns ? materializeFieldForMonotonicity(*key_columns, current_column_idx, key_range.left)
+                                             : (key_range.left.isNegativeInfinity() ? Field(NEGATIVE_INFINITY) : Field(POSITIVE_INFINITY));
+        const Field right_field = key_columns
+            ? materializeFieldForMonotonicity(*key_columns, current_column_idx, key_range.right)
+            : (key_range.right.isNegativeInfinity() ? Field(NEGATIVE_INFINITY) : Field(POSITIVE_INFINITY));
+
+        IFunction::Monotonicity monotonicity
+            = single_point ? IFunction::Monotonicity{true} : func->getMonotonicityForRange(*current_type.get(), left_field, right_field);
+
+        if (!monotonicity.is_monotonic)
+            return {};
+
+        if (key_range.left.isNormal() || key_range.right.isNormal())
+        {
+            if (!key_columns)
+                return {};
+
+            auto result_idx = getOrCreateFunctionResultColumnIndex(*key_columns, current_column_idx, func);
+            if (!result_idx)
+                return {};
+
+            const auto * result_col = (*key_columns)[*result_idx].column.get();
+            if (!result_col)
+                return {};
+
+            if (key_range.left.isNormal())
+            {
+                key_range.left = result_col->isNullAt(key_range.left.row)
+                    ? ColumnValueRef::positiveInfinity()
+                    : ColumnValueRef::normal(result_col, key_range.left.row);
+                key_range.left_included = true;
+            }
+
+            if (key_range.right.isNormal())
+            {
+                key_range.right = result_col->isNullAt(key_range.right.row)
+                    ? ColumnValueRef::positiveInfinity()
+                    : ColumnValueRef::normal(result_col, key_range.right.row);
+                key_range.right_included = true;
+            }
+
+            current_column_idx = *result_idx;
+        }
+
+        current_type = func->getResultType();
+
+        if (!monotonicity.is_positive)
+            key_range.invert();
+    }
+
+    return key_range;
+}
+
+struct UInt64RangeForCurve
+{
+    UInt64 left = 0;
+    UInt64 right = 0;
+    bool left_included = false;
+    bool right_included = false;
+    bool left_is_negative_infinity = false;
+    bool right_is_positive_infinity = false;
+};
+
+static std::optional<UInt64RangeForCurve> tryGetUInt64RangeForCurve(const Range & range)
+{
+    UInt64RangeForCurve out;
+    out.left_included = range.left_included;
+    out.right_included = range.right_included;
+
+    if (range.left.isNegativeInfinity())
+        out.left_is_negative_infinity = true;
+    else if (range.left.isPositiveInfinity() || range.left.isNull())
+        return {};
+    else
+        out.left = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), range.left);
+
+    if (range.right.isPositiveInfinity())
+        out.right_is_positive_infinity = true;
+    else if (range.right.isNegativeInfinity() || range.right.isNull())
+        return {};
+    else
+        out.right = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), range.right);
+
+    return out;
+}
+
+static bool intersectsRange(const UInt64RangeForCurve & condition, UInt64 range_left, UInt64 range_right)
+{
+    /// [range_left, range_right] is to the left of condition.
+    if (!condition.left_is_negative_infinity)
+    {
+        if (range_right < condition.left)
+            return false;
+        if (range_right == condition.left && !condition.left_included)
+            return false;
+    }
+
+    /// [range_left, range_right] is to the right of condition.
+    if (!condition.right_is_positive_infinity)
+    {
+        if (range_left > condition.right)
+            return false;
+        if (range_left == condition.right && !condition.right_included)
+            return false;
+    }
+
+    return true;
+}
+
+static bool containsRange(const UInt64RangeForCurve & condition, UInt64 range_left, UInt64 range_right)
+{
+    if (!condition.left_is_negative_infinity)
+    {
+        if (range_left < condition.left)
+            return false;
+        if (range_left == condition.left && !condition.left_included)
+            return false;
+    }
+
+    if (!condition.right_is_positive_infinity)
+    {
+        if (range_right > condition.right)
+            return false;
+        if (range_right == condition.right && !condition.right_included)
+            return false;
+    }
+
+    return true;
+}
+
+template <typename F>
+static BoolMask forAnyHyperrectangleForRefs(
+    size_t key_size,
+    const ColumnValueRef * left_keys,
+    const ColumnValueRef * right_keys,
+    bool left_bounded,
+    bool right_bounded,
+    RangeRef * hyperrectangle, /// This argument is modified in-place for the callback
+    const DataTypes & data_types,
+    size_t prefix_size,
+    BoolMask initial_mask,
+    F && callback)
+{
+    if (!left_bounded && !right_bounded)
+        return callback(hyperrectangle);
+
+    if (left_bounded && right_bounded)
+    {
+        /// Let's go through the matching elements of the key.
+        while (prefix_size < key_size)
+        {
+            if (left_keys[prefix_size].compare(right_keys[prefix_size]) == 0)
+            {
+                /// Point ranges.
+                hyperrectangle[prefix_size] = RangeRef(left_keys[prefix_size]);
+                ++prefix_size;
+            }
+            else
+                break;
+        }
+    }
+
+    if (prefix_size == key_size)
+        return callback(hyperrectangle);
+
+    if (prefix_size + 1 == key_size)
+    {
+        const bool with_null = isNullableOrLowCardinalityNullable(data_types[prefix_size]);
+        if (left_bounded && right_bounded)
+            hyperrectangle[prefix_size] = RangeRef(left_keys[prefix_size], true, right_keys[prefix_size], true);
+        else if (left_bounded)
+            hyperrectangle[prefix_size] = RangeRef::createLeftBounded(left_keys[prefix_size], true, with_null);
+        else if (right_bounded)
+            hyperrectangle[prefix_size] = RangeRef::createRightBounded(right_keys[prefix_size], true, with_null);
+
+        return callback(hyperrectangle);
+    }
+
+    /// (x1 .. x2) × (-inf .. +inf)
+
+    const bool with_null = isNullableOrLowCardinalityNullable(data_types[prefix_size]);
+    if (left_bounded && right_bounded)
+        hyperrectangle[prefix_size] = RangeRef(left_keys[prefix_size], false, right_keys[prefix_size], false);
+    else if (left_bounded)
+        hyperrectangle[prefix_size] = RangeRef::createLeftBounded(left_keys[prefix_size], false, with_null);
+    else if (right_bounded)
+        hyperrectangle[prefix_size] = RangeRef::createRightBounded(right_keys[prefix_size], false, with_null);
+
+    for (size_t i = prefix_size + 1; i < key_size; ++i)
+        hyperrectangle[i] = RangeRef::createWholeUniverse(isNullableOrLowCardinalityNullable(data_types[i]));
+
+    auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
+
+    /// There are several early-exit conditions (like the one below) hereinafter.
+    /// They provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
+    if (result.isComplete())
+        return result;
+
+    /// [x1]       × [y1 .. +inf)
+
+    if (left_bounded)
+    {
+        hyperrectangle[prefix_size] = RangeRef(left_keys[prefix_size]);
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangleForRefs(
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+
+        if (result.isComplete())
+            return result;
+    }
+
+    /// [x2]       × (-inf .. y2]
+
+    if (right_bounded)
+    {
+        hyperrectangle[prefix_size] = RangeRef(right_keys[prefix_size]);
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangleForRefs(
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+    }
+
+    return result;
+}
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
@@ -2989,6 +3368,385 @@ BoolMask KeyCondition::checkInRange(
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
+    });
+}
+
+BoolMask KeyCondition::checkInHyperrectangle(
+    std::span<const RangeRef> hyperrectangle,
+    ColumnsWithTypeAndName * key_columns_block,
+    const DataTypes & data_types) const
+{
+    const auto & prepared = prepared_range_for_refs;
+    chassert(prepared.ranges.size() == rpn.size());
+
+    auto curve_type = [&](size_t key_column_pos)
+    {
+        for (const auto & curve : key_space_filling_curves)
+            if (curve.key_column_pos == key_column_pos)
+                return curve.type;
+        return SpaceFillingCurveType::Unknown;
+    };
+
+    PODArrayWithStackMemory<BoolMask, 1024> rpn_stack;
+
+    for (size_t i = 0; i < rpn.size(); ++i)
+    {
+        const auto & element = rpn[i];
+        if (element.argument_num_of_space_filling_curve.has_value())
+        {
+            /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// we cannot process it.
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_IN_RANGE
+                 || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+        {
+            const size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Hyperrectangle size is {}, but requested element at position {} ({})",
+                    hyperrectangle.size(),
+                    key_column,
+                    element.toString());
+            }
+
+            RangeRef key_range = hyperrectangle[key_column];
+
+            /// The case when the column is wrapped in a chain of possibly monotonic functions.
+            if (!element.monotonic_functions_chain.empty())
+            {
+                /// This is not fast. We have materialization to Field inside to get monotonicity information.
+                std::optional<RangeRef> new_range = applyMonotonicFunctionsChainToRangeForRefs(
+                    key_range,
+                    key_column,
+                    key_columns_block,
+                    element.monotonic_functions_chain,
+                    data_types[key_column],
+                    single_point);
+
+                if (!new_range)
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+                key_range = *new_range;
+            }
+
+            const auto & prepared_range = prepared.ranges[i];
+
+            bool intersects = prepared_range.range.intersectsRange(key_range);
+            bool contains = prepared_range.range.containsRange(key_range);
+
+            rpn_stack.emplace_back(intersects, !contains);
+
+            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
+            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
+            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
+            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
+            /// Therefore, we must set `can_be_false = true` to be safe.
+            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (
+            element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            const size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Hyperrectangle size is {}, but requested element at position {} ({})",
+                    hyperrectangle.size(),
+                    key_column,
+                    element.toString());
+            }
+
+            const RangeRef & key_range = hyperrectangle[key_column];
+            const auto & prepared_range = prepared.ranges[i];
+
+            bool intersects = prepared_range.range.intersectsRange(key_range);
+            bool contains = prepared_range.range.containsRange(key_range);
+
+            rpn_stack.emplace_back(intersects, !contains);
+
+            if (element.function == RPNElement::FUNCTION_IS_NULL)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (
+            element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (!element.set_index)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
+
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point, key_columns_block));
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+        {
+            const size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Hyperrectangle size is {}, but requested element at position {} ({})",
+                    hyperrectangle.size(),
+                    key_column,
+                    element.toString());
+            }
+
+            const auto type_without_null = removeNullable(recursiveRemoveLowCardinality(data_types[key_column]));
+            if (!WhichDataType(type_without_null).isUInt64())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const RangeRef & key_range_ref = hyperrectangle[key_column];
+            if (!key_range_ref.left.isNormal() || !key_range_ref.right.isNormal())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            if (!key_range_ref.left.column || !key_range_ref.right.column || key_range_ref.left.column != key_range_ref.right.column)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            UInt64 left = key_range_ref.left.column->getUInt(key_range_ref.left.row);
+            UInt64 right = key_range_ref.right.column->getUInt(key_range_ref.right.row);
+
+            bool left_included = key_range_ref.left_included;
+            bool right_included = key_range_ref.right_included;
+
+            /// Convert open bounds into closed for UInt64 when possible, like Range::shrinkToIncludedIfPossible().
+            if (!left_included)
+            {
+                if (left != std::numeric_limits<UInt64>::max())
+                {
+                    ++left;
+                    left_included = true;
+                }
+                else
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+            }
+
+            if (!right_included)
+            {
+                if (right != std::numeric_limits<UInt64>::min())
+                {
+                    --right;
+                    right_included = true;
+                }
+                else
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+            }
+
+            if (left > right)
+            {
+                /// Empty interval.
+                rpn_stack.emplace_back(false, false);
+                continue;
+            }
+
+            /// TODO: Create lightweight `prepared` version
+            const size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
+            if (num_dimensions != 2)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            auto condition_range_x = tryGetUInt64RangeForCurve(element.space_filling_curve_args_hyperrectangle[0]);
+            auto condition_range_y = tryGetUInt64RangeForCurve(element.space_filling_curve_args_hyperrectangle[1]);
+            if (!condition_range_x || !condition_range_y)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            BoolMask mask(false, true);
+            auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+            {
+                BoolMask current_intersection(true, false);
+
+                {
+                    bool intersects = intersectsRange(*condition_range_x, curve_hyperrectangle[0].first, curve_hyperrectangle[0].second);
+                    bool contains = containsRange(*condition_range_x, curve_hyperrectangle[0].first, curve_hyperrectangle[0].second);
+                    current_intersection = current_intersection & BoolMask(intersects, !contains);
+                }
+
+                {
+                    bool intersects = intersectsRange(*condition_range_y, curve_hyperrectangle[1].first, curve_hyperrectangle[1].second);
+                    bool contains = containsRange(*condition_range_y, curve_hyperrectangle[1].first, curve_hyperrectangle[1].second);
+                    current_intersection = current_intersection & BoolMask(intersects, !contains);
+                }
+
+                mask = mask | current_intersection;
+            };
+
+            switch (curve_type(key_column))
+            {
+                case SpaceFillingCurveType::Hilbert:
+                {
+                    hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                    break;
+                }
+                case SpaceFillingCurveType::Morton:
+                {
+                    mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                    break;
+                }
+                case SpaceFillingCurveType::Unknown:
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                }
+            }
+
+            rpn_stack.emplace_back(mask);
+        }
+        else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+        {
+            if (element.key_columns.size() != 2)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const size_t x_column = element.key_columns[0];
+            const size_t y_column = element.key_columns[1];
+            if (x_column >= hyperrectangle.size() || y_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const auto & x_range = hyperrectangle[x_column];
+            const auto & y_range = hyperrectangle[y_column];
+
+            if (!x_range.left.isNormal() || !x_range.right.isNormal() || !y_range.left.isNormal() || !y_range.right.isNormal())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            if (!x_range.left.column || !x_range.right.column || !y_range.left.column || !y_range.right.column)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const Float64 x_min = x_range.left.column->getFloat64(x_range.left.row);
+            const Float64 x_max = x_range.right.column->getFloat64(x_range.right.row);
+            const Float64 y_min = y_range.left.column->getFloat64(y_range.left.row);
+            const Float64 y_max = y_range.right.column->getFloat64(y_range.right.row);
+
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point>;
+            Polygon polygon_by_minmax_index;
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+
+            boost::geometry::correct(polygon_by_minmax_index);
+
+            if (!element.polygon)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            /// Because the polygon may have a hole so the "can_be_false" should always be true.
+            rpn_stack.emplace_back(boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            assert(!rpn_stack.empty());
+            rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 & arg2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            assert(!rpn_stack.empty());
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 | arg2;
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.emplace_back(false, true);
+        }
+        else if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.emplace_back(true, false);
+        }
+        else
+        {
+            /// Unknown element type for fast path.
+            rpn_stack.emplace_back(true, true);
+        }
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
+
+    return rpn_stack.back();
+}
+
+
+BoolMask KeyCondition::checkInRange(
+    size_t used_key_size,
+    ColumnsWithTypeAndName * key_columns_block,
+    const ColumnValueRef * left_keys,
+    const ColumnValueRef * right_keys,
+    const DataTypes & data_types,
+    BoolMask initial_mask) const
+{
+    PODArrayWithStackMemory<RangeRef, 1024> key_ranges(used_key_size);
+    for (size_t i = 0; i < used_key_size; ++i)
+        key_ranges[i] = RangeRef::createWholeUniverse(isNullableOrLowCardinalityNullable(data_types[i]));
+
+    return forAnyHyperrectangleForRefs(used_key_size, left_keys, right_keys, true, true, key_ranges.data(), data_types, 0, initial_mask,
+        [&] (const RangeRef * key_ranges_hyperrectangle)
+    {
+        return checkInHyperrectangle(std::span<const RangeRef>(key_ranges_hyperrectangle, used_key_size), key_columns_block, data_types);
     });
 }
 
@@ -4193,6 +4951,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
             if (j > 0)
                 target.rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
+        target.rebuildPreparedRangeForRefs();
     };
 
     if (!all_complex)
@@ -4208,7 +4967,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
                 continue;
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
-            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), key_data_types, num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }
@@ -4223,6 +4982,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
             copy->rpn.clear();
             add_rpn_ranges(*copy, *this, complex_conjuncts);
         }
+        *out_complex_condition = std::move(copy);
     }
 }
 
