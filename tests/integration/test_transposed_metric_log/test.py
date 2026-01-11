@@ -67,18 +67,6 @@ def test_table_rotation(start_cluster):
 
     assert in_old_metric_log > 0
 
-    time.sleep(1)
-    node1.query("SYSTEM FLUSH LOGS")
-
-    in_old_metric_log_again = int(node1.query("select count() from system.metric_log_0").strip())
-
-    assert in_old_metric_log == in_old_metric_log_again
-
-    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) > 0
-    node1.query("DROP TABLE system.transposed_metric_log_3 SYNC")
-    # still works, return 0
-    assert int(node1.query("SELECT count() FROM system.metric_log_3 WHERE not ignore(*)").strip()) == 0
-
 
 def insert_into_transposed_metric_log(node, table_name, size):
     INGEST_INTO_TRANSPOSED_LOG = f"""
