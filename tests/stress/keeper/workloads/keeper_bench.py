@@ -204,26 +204,63 @@ class KeeperBench:
         try:
             data = json.loads(out_text or "{}")
             if isinstance(data, dict):
-                s["ops"] = int(
-                    data.get("operations") or data.get("total_requests") or 0
-                )
-                s["errors"] = int(data.get("errors") or data.get("failed") or 0)
-                lat = data.get("latency") or data.get("latency_ms") or {}
-                def _pick(d, *ks):
-                    for k in ks:
-                        if k in d:
-                            return d.get(k)
+                try:
+                    s["ops"] = int(data.get("operations") or data.get("total_requests") or 0)
+                except Exception:
+                    pass
+                try:
+                    s["errors"] = int(data.get("errors") or data.get("failed") or 0)
+                except Exception:
+                    pass
+                def _to_float_ms(v):
+                    try:
+                        if isinstance(v, (int, float)):
+                            return float(v)
+                        t = str(v).strip().lower()
+                        import re as _re
+                        m = _re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(us|ms|s)?", t)
+                        if not m:
+                            return None
+                        val = float(m.group(1))
+                        unit = m.group(2) or ""
+                        if unit == "us":
+                            return val / 1000.0
+                        if unit == "s":
+                            return val * 1000.0
+                        return val
+                    except Exception:
+                        return None
+                def _search_any(obj, keys):
+                    stack = [obj]
+                    while stack:
+                        cur = stack.pop()
+                        if isinstance(cur, dict):
+                            for k, v in cur.items():
+                                lk = str(k).lower().replace("_", "")
+                                for kk in keys:
+                                    if lk == kk or lk.endswith(kk) or kk in lk:
+                                        val = _to_float_ms(v)
+                                        if val is not None:
+                                            return val
+                            for v in cur.values():
+                                stack.append(v)
+                        elif isinstance(cur, list):
+                            for it in cur:
+                                stack.append(it)
                     return None
-                p50 = _pick(lat, "p50", "50%", "median")
-                p95 = _pick(lat, "p95", "95%")
-                p99 = _pick(lat, "p99", "99%")
+                k50 = ["p50", "50%", "median", "50th", "p50ms"]
+                k95 = ["p95", "95%", "95th", "p95ms"]
+                k99 = ["p99", "99%", "99th", "p99ms"]
+                p50 = _search_any(data, k50)
+                p95 = _search_any(data, k95)
+                p99 = _search_any(data, k99)
                 if p50 is not None:
                     s["p50_ms"] = float(p50)
                 if p95 is not None:
                     s["p95_ms"] = float(p95)
                 if p99 is not None:
                     s["p99_ms"] = float(p99)
-                s["has_latency"] = any(x is not None for x in (p50, p95, p99))
+                s["has_latency"] = any(x is not None and float(x) > 0 for x in (p50, p95, p99))
         except Exception:
             pass
         return s
@@ -540,9 +577,9 @@ class KeeperBench:
                             except Exception:
                                 continue
                         return None
-                    p50 = _pick(txt, ("p50", "50%", "median"))
-                    p95 = _pick(txt, ("p95", "95%"))
-                    p99 = _pick(txt, ("p99", "99%"))
+                    p50 = _pick(txt, ("p50", "50%", "median", "50th"))
+                    p95 = _pick(txt, ("p95", "95%", "95th"))
+                    p99 = _pick(txt, ("p99", "99%", "99th"))
                     if p50 is not None:
                         summary["p50_ms"] = float(p50)
                     if p95 is not None:
