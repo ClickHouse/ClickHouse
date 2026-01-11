@@ -865,6 +865,7 @@ def test_merge_canceled_by_drop(cluster, node_name):
 @pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])
 @pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_policy):
+    broken_s3.reset()
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_s3_errors NO DELAY")
     node.query(
@@ -914,6 +915,7 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
+    broken_s3.reset()
     node = cluster.instances[node_name]
     settings = {
         "storage_policy": "external_broken_s3",
@@ -965,6 +967,7 @@ def test_s3_engine_heavy_write_check_mem(
     pytest.skip(
         "Disabled, will be fixed after https://github.com/ClickHouse/ClickHouse/issues/51152"
     )
+    broken_s3.reset()
 
     in_flight = in_flight_memory[0]
     memory = in_flight_memory[1]
@@ -1021,6 +1024,7 @@ def test_s3_engine_heavy_write_check_mem(
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
+    broken_s3.reset()
     memory = 2279055040
 
     node = cluster.instances[node_name]
