@@ -3586,16 +3586,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             UInt64 left = key_range_ref.left.column->getUInt(key_range_ref.left.row);
             UInt64 right = key_range_ref.right.column->getUInt(key_range_ref.right.row);
 
-            bool left_included = key_range_ref.left_included;
-            bool right_included = key_range_ref.right_included;
-
             /// Convert open bounds into closed for UInt64 when possible, like Range::shrinkToIncludedIfPossible().
-            if (!left_included)
+            if (!key_range_ref.left_included)
             {
                 if (left != std::numeric_limits<UInt64>::max())
                 {
                     ++left;
-                    left_included = true;
                 }
                 else
                 {
@@ -3604,12 +3600,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 }
             }
 
-            if (!right_included)
+            if (!key_range_ref.right_included)
             {
                 if (right != std::numeric_limits<UInt64>::min())
                 {
                     --right;
-                    right_included = true;
                 }
                 else
                 {
