@@ -109,7 +109,10 @@ def dependent_tables_assert():
 
 def test_dependent_tables(started_cluster):
     query = instance.query
+    query("drop database if exists a")
     query("create database a")
+    query("drop database if exists test")
+    query("create database test")
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     query(
@@ -139,6 +142,7 @@ def test_dependent_tables(started_cluster):
     query("drop dictionary test.d")
     query("drop table src")
     query("drop table system.join")
+    query("drop database test")
     query("drop database a")
 
 
