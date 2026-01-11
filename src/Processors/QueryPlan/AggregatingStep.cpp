@@ -268,14 +268,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
-    /// Check if partial aggregate caching is enabled - if so, disable aggregation-in-order to allow cache path
     auto partial_aggregate_cache = settings.use_partial_aggregate_cache
         ? Context::getGlobalContextInstance()->getPartialAggregateCache()
         : nullptr;
     bool use_partial_aggregate_cache = partial_aggregate_cache != nullptr;
 
     /// optimize_aggregation_in_order
-    /// If partial aggregate cache is enabled, we disable aggregation-in-order to allow the cache path
     if (!sort_description_for_merging.empty() && !use_partial_aggregate_cache)
     {
         /// two-level aggregation is not supported anyway for in order aggregation.
@@ -286,7 +284,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else if (!sort_description_for_merging.empty() && use_partial_aggregate_cache)
     {
-        /// Partial aggregate cache is enabled - disable aggregation-in-order to use cache path
         sort_description_for_merging.clear();
         group_by_sort_description.clear();
     }
@@ -509,7 +506,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    /// If partial aggregate cache is enabled, force single-stream aggregation to support per-part caching
     if (partial_aggregate_cache && pipeline.getNumStreams() > 1)
         pipeline.resize(1, false, settings.min_outstreams_per_resize_after_split);
 

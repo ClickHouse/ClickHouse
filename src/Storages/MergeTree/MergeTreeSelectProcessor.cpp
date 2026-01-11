@@ -269,15 +269,10 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         {
             String part_name
                 = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
-            LOG_TRACE(log, "Attaching PartialAggregateInfo to chunk for part {}", part_name);
             chunk.getChunkInfos().add(std::make_shared<PartialAggregateInfo>(
                 data_part->storage.getStorageID().uuid,
                 part_name,
                 data_part->info.mutation));
-        }
-        else
-        {
-            LOG_TRACE(log, "Not attaching PartialAggregateInfo: use_partial_aggregate_cache={}", reader_settings.use_partial_aggregate_cache);
         }
 
         return ChunkAndProgress{
