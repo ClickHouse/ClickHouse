@@ -953,7 +953,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     size_t total_granules = ranges.ranges.getNumberOfMarks();
 
-                    if (use_skip_indexes_on_data_read)
+                    if (!use_skip_indexes_on_data_read)
                     {
                         ranges.ranges = filterMarksUsingMergedIndex(
                             indices_and_condition.indices,
