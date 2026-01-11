@@ -589,7 +589,6 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             {
                 /// Part came from RESTORE with a temporary directory.
                 /// Just remove the temporary part since it's a duplicate.
-                /// The data already exists on another replica and will be fetched if needed.
                 LOG_DEBUG(log, "Removing deduplicated part {} from temporary path {}", part->name, relative_path);
                 part->removeIfNeeded();
             }
