@@ -20,7 +20,7 @@ FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresho
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -124,6 +124,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         sorting_step->setTopKThresholdTracker(threshold_tracker);
     }
 
+    bool added_step = false;
+
     if  (settings.use_top_k_dynamic_filtering &&
          !read_from_mergetree_step->getPrewhereInfo())
     {
@@ -141,8 +143,27 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
+        auto initial_header = read_from_mergetree_step->getOutputHeader();
+
         LOG_TRACE(getLogger("optimizeTopK"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
         read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
+
+        auto updated_header = read_from_mergetree_step->getOutputHeader();
+        if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+        {
+            auto dag = ActionsDAG::makeConvertingActions(
+                updated_header->getColumnsWithTypeAndName(),
+                initial_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name, read_from_mergetree_step->getContext());
+
+            auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+            auto & converting_node = nodes.emplace_back();
+            converting_node.step = std::move(converting_step);
+
+            node->children.push_back(&converting_node);
+            std::swap(node->step, converting_node.step);
+            added_step = true;
+        }
     }
 
     ///TopKThresholdTracker acts as a link between 3 components
@@ -154,7 +175,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, n, direction, where_clause, threshold_tracker});
 
-    return 0;
+    return added_step ? 1 : 0;
 }
 
 }

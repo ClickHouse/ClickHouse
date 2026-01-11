@@ -635,7 +635,7 @@ public:
 
         asts.reserve(asts.size() + n);
 
-        auto * start = operands.begin() + operands.size() - n;
+        auto start = operands.begin() + operands.size() - n;
         asts.insert(asts.end(), std::make_move_iterator(start), std::make_move_iterator(operands.end()));
         operands.erase(start, operands.end());
 

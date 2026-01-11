@@ -306,7 +306,7 @@ void StackTrace::forEachFrame(
 
             current_inline_frame.file = "inlined from " + file_for_inline_frame;
             current_inline_frame.line = frame.location.line;
-            current_inline_frame.symbol = frame.name;
+            current_inline_frame.symbol = demangle(frame.name);
 
             callback(current_inline_frame);
         }
@@ -406,9 +406,9 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
+String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
-    if (!symbol_name)
+    if (symbol_name.empty())
         return "?";
 
     if (file.has_value())
@@ -420,20 +420,18 @@ String demangleAndCollapseNames(std::optional<std::string_view> file, const char
             return "?";
     }
 
-    String haystack = demangle(symbol_name);
-
     // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
     {
         size_t pos = 0;
-        while ((pos = haystack.find(needle, pos)) != std::string::npos)
+        while ((pos = symbol_name.find(needle, pos)) != std::string::npos)
         {
-            haystack.replace(pos, needle.length(), to);
+            symbol_name.replace(pos, needle.length(), to);
             pos += to.length();
         }
     }
 
-    return haystack;
+    return symbol_name;
 }
 
 struct StackTraceRefTriple
@@ -486,7 +484,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             out << *frame.file << ':' << *frame.line << ": ";
 
         if (frame.symbol.has_value())
-            out << demangleAndCollapseNames(frame.file, frame.symbol->data());
+            out << collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 

@@ -458,7 +458,8 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
 
-        if (rg.nextBool())
+        /// When running oracles with global aggregates, a correlated column can give false positives
+        if ((this->allow_not_deterministic || !this->levels[this->current_level - 1].global_aggregate) && rg.nextBool())
         {
             /// Make the subquery correlated
             for (const auto & rel : this->levels[this->current_level - 1].rels)

@@ -1,11 +1,10 @@
 -- Tags: stateful, long
 
-SET optimize_read_in_order=0, query_plan_read_in_order=0, local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
-
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
-SET max_threads=8, use_hedged_requests=0, max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+-- External aggregation is not supported as of now
+SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 

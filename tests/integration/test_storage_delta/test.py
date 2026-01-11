@@ -72,7 +72,7 @@ S3_DATA = [
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("test_storage_delta")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog",
@@ -80,7 +80,7 @@ def get_spark():
         )
         .config(
             "spark.sql.catalog.spark_catalog.warehouse",
-            "/var/lib/clickhouse/user_files",
+            "/var/lib/clickhouse/user_files/test_storage_delta",
         )
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
@@ -3548,8 +3548,8 @@ def test_subcolumns(started_cluster, column_mapping):
             os.path.join(os.path.dirname(os.path.realpath(__file__))), data_file
         )
     )
-    write_delta_from_df(spark, df, path, mode="overwrite")
-    default_upload_directory(started_cluster, "s3", path, "")
+    write_delta_from_df(spark, df, f"/{path}", mode="overwrite")
+    default_upload_directory(started_cluster, "s3", f"/{path}", "")
 
     s3_objects = list(minio_client.list_objects(bucket, table_name, recursive=True))
     file_names = []

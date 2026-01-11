@@ -1,5 +1,6 @@
 #include <iomanip>
 
+#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>

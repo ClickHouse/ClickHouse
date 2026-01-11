@@ -40,14 +40,14 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 
 #if USE_AVRO
 
-IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
-    : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_.file_path))
+IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
+    : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_->file_path))
     , info{
-          data_manifest_file_entry_.file_path_key,
-          data_manifest_file_entry_.schema_id,
+          data_manifest_file_entry_->file_path_key,
+          data_manifest_file_entry_->schema_id,
           schema_id_relevant_to_iterator_,
-          data_manifest_file_entry_.added_sequence_number,
-          data_manifest_file_entry_.file_format,
+          data_manifest_file_entry_->added_sequence_number,
+          data_manifest_file_entry_->file_format,
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {}}
 {
@@ -71,7 +71,7 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, context_);
 }
 
-void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object)
+void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPtr position_delete_object)
 {
     if (Poco::toUpper(info.file_format) != "PARQUET")
     {
@@ -81,16 +81,16 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntry p
             info.file_format);
     }
     info.position_deletes_objects.emplace_back(
-        position_delete_object.file_path, position_delete_object.file_format, position_delete_object.reference_data_file_path);
+        position_delete_object->file_path, position_delete_object->file_format, position_delete_object->reference_data_file_path);
 }
 
-void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileEntry & equality_delete_object)
+void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object)
 {
     info.equality_deletes_objects.emplace_back(
-        equality_delete_object.file_path,
-        equality_delete_object.file_format,
-        equality_delete_object.equality_ids,
-        equality_delete_object.schema_id);
+        equality_delete_object->file_path,
+        equality_delete_object->file_format,
+        equality_delete_object->equality_ids,
+        equality_delete_object->schema_id);
 }
 
 #endif

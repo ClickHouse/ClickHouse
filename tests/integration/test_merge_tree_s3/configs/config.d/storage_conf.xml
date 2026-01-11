@@ -63,7 +63,7 @@
             <s3_with_cache_and_jbod>
                 <type>cache</type>
                 <disk>s3</disk>
-                <path>/jbod1/</path>
+                <path>/test_merge_tree_s3_jbod1/</path>
                 <max_size>1000000</max_size>
                 <max_file_segment_size>1Gi</max_file_segment_size>
             </s3_with_cache_and_jbod>
