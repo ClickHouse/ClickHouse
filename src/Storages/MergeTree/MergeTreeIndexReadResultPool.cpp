@@ -47,7 +47,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = part.ranges;
-    size_t total_granules = ranges.getNumberOfMarks();
+    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
 
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
