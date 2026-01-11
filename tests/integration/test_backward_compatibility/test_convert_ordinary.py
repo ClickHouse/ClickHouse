@@ -261,11 +261,11 @@ def check_convert_all_dbs_to_atomic():
             "SELECT count(), sum(n) FROM {}.detached".format(db)
         )
 
-    node.query("DROP DATABASE ordinary")
-    node.query("DROP DATABASE other")
-    node.query("DROP DATABASE `.o r d i n a r y.`")
-    node.query("DROP DATABASE atomic")
     node.query("DROP DATABASE mem")
+    node.query("DROP DATABASE atomic")
+    node.query("DROP DATABASE `.o r d i n a r y.`")
+    node.query("DROP DATABASE other")
+    node.query("DROP DATABASE ordinary")
 
 
 def test_convert_ordinary_to_atomic(start_cluster):
