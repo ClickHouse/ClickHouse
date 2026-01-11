@@ -349,9 +349,8 @@ ASTPtr tryParseQuery(
     }
 
     IParser::Pos this_query_end_pos = token_iterator;
-    while (this_query_end_pos->type != TokenType::Semicolon
-           && this_query_end_pos->type != TokenType::EndOfStream
-           && this_query_end_pos->type != TokenType::Error)
+    while (!this_query_end_pos->isEnd() && !this_query_end_pos->isError()
+        && this_query_end_pos->type != TokenType::Semicolon)
         ++this_query_end_pos;
 
     if (!parse_res)
