@@ -1,8 +1,10 @@
+{% for NULLABLE_START, NULLABLE_END in {'' : '', 'Nullable(' : ')'}.items() -%}
+SELECT '======= NULLABLE {{ NULLABLE_START }} {{ NULLABLE_END }} ===============';
 {% for ENUM_TYPE in ['Enum', 'Enum8', 'Enum16'] -%}
 
 SELECT '======= {{ ENUM_TYPE }} ===============';
 DROP TABLE IF EXISTS enum;
-CREATE TABLE enum (x {{ ENUM_TYPE }}('One' = 1, 'Two', 'Three')) ENGINE = Memory;
+CREATE TABLE enum (x {{ NULLABLE_START }}{{ ENUM_TYPE }}('One' = 1, 'Two', 'Three'){{ NULLABLE_END }}) ENGINE = Memory;
 INSERT INTO enum VALUES (0);
 SELECT * FROM enum ORDER BY x;  -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 ALTER TABLE enum MODIFY COLUMN x addToEnum('Zero' = 0, 'Four' = 4);
@@ -18,6 +20,8 @@ ALTER TABLE enum MODIFY COLUMN x addToEnum8('Thousand' = 1000); -- { serverError
 ALTER TABLE enum MODIFY COLUMN x addToEnum8('Hundred' = 100);
 ALTER TABLE enum MODIFY COLUMN x addToEnum8('Four' = 44, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE enum MODIFY COLUMN x addToEnum8('FortyFour' = 4, 'Five' = 5); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE enum MODIFY COLUMN x addToEnum8('ThousandOne');
+SHOW CREATE TABLE enum;
 INSERT INTO enum VALUES (100);
 INSERT INTO enum VALUES ('Hundred');
 INSERT INTO enum VALUES ('Three');
@@ -25,6 +29,7 @@ SELECT '======================';
 SELECT * FROM enum ORDER BY x;
 
 DROP TABLE enum;
+{% endfor -%}
 {% endfor -%}
 
 
@@ -36,3 +41,7 @@ CREATE TABLE nonenum (x Int8) ENGINE = Memory;
 ALTER TABLE nonenum MODIFY COLUMN x addToEnum('A' = 1); -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE nonenum ADD COLUMN z addToEnum('A' = 1); -- { serverError BAD_ARGUMENTS }
 DROP TABLE nonenum;
+
+CREATE TABLE enumoverflow (x Enum8('a' = 127)) ENGINE = Memory;
+ALTER TABLE enumoverflow MODIFY COLUMN x addToEnum('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enumoverflow;

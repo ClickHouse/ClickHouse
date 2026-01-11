@@ -27,6 +27,7 @@ public:
 
     virtual bool contains(const IDataType & rhs) const = 0;
     virtual bool isAdd() const = 0;
+    virtual bool isRelative() const = 0;
 };
 
 
@@ -45,9 +46,10 @@ private:
     std::string type_name;
     static std::string generateName(const Values & values);
     bool is_add; // created by addToEnum
+    bool is_relative; // addToEnum is able to renumber
 
 public:
-    explicit DataTypeEnum(const Values & values_, bool is_add_ = false);
+    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, bool is_relative_ = false);
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
@@ -80,6 +82,7 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     bool isAdd() const override  { return is_add; }
+    bool isRelative() const override  { return is_relative; }
 };
 
 template <typename TypeBase, typename TypeAdd>

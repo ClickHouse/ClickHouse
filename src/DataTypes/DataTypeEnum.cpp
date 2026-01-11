@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -69,10 +70,11 @@ std::string DataTypeEnum<Type>::generateName(const Values & values)
 }
 
 template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_)
+DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, bool is_relative_)
     : EnumValues<Type>(values_)
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
+    , is_relative(is_relative_ && is_add_)
 {
 }
 
@@ -221,13 +223,14 @@ static void checkASTStructure(const ASTPtr & child)
                         "'name' = number, where name is string literal and number is an integer");
 }
 
-static void autoAssignNumberForEnum(const ASTPtr & arguments)
+static bool autoAssignNumberForEnum(const ASTPtr & arguments)
 {
     Int64 literal_child_assign_num = 1;
     ASTs assign_number_child;
     assign_number_child.reserve(arguments->children.size());
     bool is_first_child = true;
     size_t assign_count= 0;
+    bool can_be_relative = true;
 
     for (const ASTPtr & child : arguments->children)
     {
@@ -254,6 +257,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
                 literal_child_assign_num = value_literal->value.safeGet<Int64>();
             }
             assign_number_child.emplace_back(child);
+            can_be_relative = false;
         }
         else
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
@@ -269,10 +273,11 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
                         "'name' = number or 'name', where name is string literal and number is an integer");
 
     arguments->children = assign_number_child;
+    return can_be_relative;
 }
 
-template <typename DataTypeEnum, bool is_add = false>
-static DataTypePtr createExact(const ASTPtr & arguments)
+template <typename DataTypeEnum>
+static DataTypePtr createExact(const ASTPtr & arguments, bool is_add = false, bool auto_assign = true, bool is_relative = false)
 {
     if (!arguments || arguments->children.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Enum data type cannot be empty");
@@ -282,8 +287,10 @@ static DataTypePtr createExact(const ASTPtr & arguments)
 
     using FieldType = typename DataTypeEnum::FieldType;
 
-    if (!is_add)
-        autoAssignNumberForEnum(arguments);
+    bool is_relative_flag = is_relative;
+
+    if (auto_assign)
+        is_relative_flag = autoAssignNumberForEnum(arguments);
 
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
@@ -299,15 +306,9 @@ static DataTypePtr createExact(const ASTPtr & arguments)
             || name_literal->value.getType() != Field::Types::String
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
         {
-            if (!is_add)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                    "Elements of Enum data type must be of form: "
-                    "'name' = number or 'name', where name is string literal and number is an integer");
-            else
-                throw Exception(
-                    ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                    "Arguments of addToEnum must be of form: "
-                    "'name' = number where name is string literal and number is an integer");
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                "Elements of Enum data type must be of form: "
+                "'name' = number or 'name', where name is string literal and number is an integer");
         }
 
         const String & field_name = name_literal->value.safeGet<String>();
@@ -320,17 +321,15 @@ static DataTypePtr createExact(const ASTPtr & arguments)
         values.emplace_back(field_name, value);
     }
 
-    return std::make_shared<DataTypeEnum>(values, is_add);
+    return std::make_shared<DataTypeEnum>(values, is_add, is_relative_flag);
 }
 
-template <bool is_add = false>
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, bool is_add = false)
 {
     if (!arguments || arguments->children.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Enum data type cannot be empty");
 
-    if (!is_add)
-        autoAssignNumberForEnum(arguments);
+    bool is_relative = autoAssignNumberForEnum(arguments);
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
@@ -348,53 +347,61 @@ static DataTypePtr create(const ASTPtr & arguments)
         Int64 value = value_literal->value.safeGet<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
-            return createExact<DataTypeEnum16, is_add>(arguments);
+            return createExact<DataTypeEnum16>(arguments, is_add, false /* auto_assign*/, is_relative);
     }
 
-    return createExact<DataTypeEnum8, is_add>(arguments);
+    return createExact<DataTypeEnum8>(arguments, is_add, false /* auto_assign*/, is_relative);
 }
 
 // Used by addToEnum
 template <typename TypeBase, typename TypeAdd>
 DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeAdd> & add)
 {
-    using Values = typename DataTypeEnum<TypeBase>::Values;
-
-    Values merged = base.getValues();
+    auto merged_values = base.getValues();
     std::unordered_map<String, TypeBase> name_to_value;
     std::unordered_map<TypeBase, String> value_to_name;
+    TypeBase max_base = std::numeric_limits<TypeBase>::min();
 
-    name_to_value.reserve(merged.size());
-    value_to_name.reserve(merged.size());
+    name_to_value.reserve(merged_values.size());
+    value_to_name.reserve(merged_values.size());
 
-    for (const auto & value : merged)
+    for (const auto & [name, val] : merged_values)
     {
-        name_to_value.emplace(value.first, value.second);
-        value_to_name.emplace(value.second, value.first);
+        name_to_value.emplace(name, val);
+        value_to_name.emplace(val, name);
+        max_base = std::max(max_base, val);
     }
 
-    for (const auto & value : add.getValues())
+    for (const auto & [name, val] : add.getValues())
     {
-        auto name_it = name_to_value.find(value.first);
-        auto value_it = value_to_name.find(value.second);
+        const Int64 max_base64 = static_cast<Int64>(max_base);
+        const Int64 val64 = static_cast<Int64>(val);
+        const Int64 candidate64 = add.isRelative() ? max_base64 + val64 : val64;
+        if (candidate64 < std::numeric_limits<TypeBase>::min() || candidate64 > std::numeric_limits<TypeBase>::max())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                toString(val), name, EnumName<TypeBase>::value);
 
-        if (name_it != name_to_value.end() && name_it->second != value.second)
+        const auto val_base_type = static_cast<TypeBase>(candidate64);
+        auto name_it = name_to_value.find(name);
+        auto value_it = value_to_name.find(val_base_type);
+
+        if (name_it != name_to_value.end() && name_it->second != val_base_type)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enum element '{}' has old value {}, but new value is {}",
-                value.first, name_it->second, value.second);
+                name, name_it->second, val_base_type);
 
-        if (value_it != value_to_name.end() && value_it->second != value.first)
+        if (value_it != value_to_name.end() && value_it->second != name)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Enum value {} already used by '{}', cannot use it for '{}'",
-                value.second, value_it->second, value.first);
+                val_base_type, value_it->second, name);
 
         if (name_it == name_to_value.end() && value_it == value_to_name.end())
         {
-            merged.push_back(value);
-            name_to_value.emplace(value.first, value.second);
-            value_to_name.emplace(value.second, value.first);
+            merged_values.push_back({name, val_base_type});
+            name_to_value.emplace(name, val_base_type);
+            value_to_name.emplace(val_base_type, name);
         }
     }
 
-    return std::make_shared<DataTypeEnum<TypeBase>>(merged);
+    return std::make_shared<DataTypeEnum<TypeBase>>(merged_values);
 }
 
 template DataTypePtr mergeEnumTypes(const DataTypeEnum8 & base, const DataTypeEnum8 & add);
@@ -404,20 +411,23 @@ template DataTypePtr mergeEnumTypes(const DataTypeEnum16 & base, const DataTypeE
 DataTypePtr createAddToEnumType(const String & family_name, const ASTPtr & arguments)
 {
     if (family_name == "addToEnum8")
-        return createExact<DataTypeEnum8, true /*is_add*/>(arguments);
+        return createExact<DataTypeEnum8>(arguments, true /*is_add*/);
     if (family_name == "addToEnum16")
-        return createExact<DataTypeEnum16, true>(arguments);
+        return createExact<DataTypeEnum16>(arguments, true /*is_add*/);
     if (family_name == "addToEnum")
-        return create<true>(arguments);
+        return create(arguments, true /*is_add*/);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Enum type '{}'", family_name);
 }
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
-    factory.registerDataType("Enum8", createExact<DataTypeEnum8, false /*is_add */>);
-    factory.registerDataType("Enum16", createExact<DataTypeEnum16, false>);
-    factory.registerDataType("Enum", create<false>);
+    factory.registerDataType("Enum8", [](const ASTPtr & arguments)
+    {
+        return createExact<DataTypeEnum8>(arguments, false);
+    });
+    factory.registerDataType("Enum16", [](const ASTPtr & arguments){return createExact<DataTypeEnum16>(arguments, false);});
+    factory.registerDataType("Enum", [](const ASTPtr & arguments){return create(arguments, false);});
 
     /// MySQL
     factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);

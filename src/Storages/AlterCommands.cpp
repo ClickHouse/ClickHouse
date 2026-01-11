@@ -1382,9 +1382,32 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                     command.default_expression = column_from_table.default_desc.expression;
                 }
 
-                if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum*>(command.data_type.get()))
+                struct EnumTypeInfo
                 {
-                    const auto * column_enum_type = dynamic_cast<const IDataTypeEnum*>(column_from_table.type.get());
+                    const IDataTypeEnum * enum_type = nullptr;
+                    bool is_nullale = false;
+                };
+
+
+                auto get_enum_type = [](const IDataType * dt) -> EnumTypeInfo
+                {
+                    const auto * column_enum_type = dynamic_cast<const IDataTypeEnum *>(dt);
+                    if (column_enum_type)
+                        return {column_enum_type};
+                    const auto * column_nullable_type = dynamic_cast<const DataTypeNullable *>(dt);
+                    if (column_nullable_type)
+                    {
+                        const auto * column_nullable_enum_type = dynamic_cast<const IDataTypeEnum *>(column_nullable_type->getNestedType().get());
+                        if (column_nullable_enum_type)
+                            return {column_nullable_enum_type, true};
+                    }
+                    return {};
+                };
+
+                if (const auto * alter_enum_type = dynamic_cast<const IDataTypeEnum *>(command.data_type.get()))
+                {
+                    EnumTypeInfo eti = get_enum_type(column_from_table.type.get());
+                    const auto * column_enum_type = eti.enum_type;
                     if (alter_enum_type->isAdd())
                     {
                         if (column_enum_type)
@@ -1392,7 +1415,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                             if (const auto * base_enum8 = typeid_cast<const DataTypeEnum8 *>(column_enum_type))
                             {
                                 if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
-                                    command.data_type = mergeEnumTypes(*base_enum8, *add_enum8);
+                                    command.data_type = mergeEnumTypes<Int8, Int8>(*base_enum8, *add_enum8);
                                 else if (typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
                                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add Enum16 values to Enum8 column");
                                 else
@@ -1401,11 +1424,15 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                             else if (const auto * base_enum16 = typeid_cast<const DataTypeEnum16 *>(column_enum_type))
                             {
                                 if (const auto * add_enum8 = typeid_cast<const DataTypeEnum8 *>(command.data_type.get()))
-                                    command.data_type = mergeEnumTypes(*base_enum16, *add_enum8);
+                                    command.data_type = mergeEnumTypes<Int16, Int8>(*base_enum16, *add_enum8);
                                 else if (const auto * add_enum16 = typeid_cast<const DataTypeEnum16 *>(command.data_type.get()))
-                                    command.data_type = mergeEnumTypes(*base_enum16, *add_enum16);
+                                    command.data_type = mergeEnumTypes<Int16, Int16>(*base_enum16, *add_enum16);
                                 else
                                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong Enum type");
+                            }
+                            if (eti.is_nullale)
+                            {
+                                command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
                             }
                         }
                         else
