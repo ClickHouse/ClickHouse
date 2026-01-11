@@ -50,6 +50,7 @@ def get_status(dictionary_name):
 
 def test_get_data(started_cluster):
     query = instance.query
+    instance.restart_clickhouse()
 
     # dictionaries_lazy_load == false, so these dictionary are not loaded.
     assert get_status("dep_x") == "NOT_LOADED"
