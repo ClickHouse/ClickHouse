@@ -235,6 +235,8 @@ public:
          */
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
+
+    virtual std::string getDescription() const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;

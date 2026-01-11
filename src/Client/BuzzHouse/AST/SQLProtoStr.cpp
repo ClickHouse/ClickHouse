@@ -1850,13 +1850,11 @@ CONV_FN(JoinConstraint, jc)
         const UsingExpr & uexpr = jc.using_expr();
 
         ret += " USING (";
-        for (int i = 0; i < uexpr.columns_size(); i++)
+        ExprColumnToString(ret, uexpr.column());
+        for (int i = 0; i < uexpr.other_columns_size(); i++)
         {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ExprColumnToString(ret, uexpr.columns(i));
+            ret += ", ";
+            ExprColumnToString(ret, uexpr.other_columns(i));
         }
         ret += ")";
     }
@@ -2394,6 +2392,18 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += "')";
 }
 
+CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
+{
+    ret += "mergeTreeAnalyzeIndexes(";
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
+    if (mfunc.has_pred())
+    {
+        ret += ", ";
+        ExprToString(ret, mfunc.pred());
+    }
+    ret += ")";
+}
+
 CONV_FN(GenerateRandomFunc, grfunc)
 {
     ret += "generateRandom(";
@@ -2520,6 +2530,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kMtanindex:
+            MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
             break;
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());
