@@ -43,3 +43,14 @@ def test_select(started_cluster):
     assert (name == "zookeeper\n")
     indices = node1.query("SELECT index FROM system.zookeeper_info")
     assert (indices == "0\n1\n2\n")
+def test_leader_metrics(started_cluster):
+    leader_count = int(node1.query("SELECT count() FROM system.zookeeper_info WHERE is_leader = 1").strip())
+    assert leader_count == 1
+
+    followers = int(node1.query("SELECT followers FROM system.zookeeper_info WHERE is_leader = 1").strip())
+    synced = int(node1.query("SELECT synced_followers FROM system.zookeeper_info WHERE is_leader = 1").strip())
+    pending = int(node1.query("SELECT pending_syncs FROM system.zookeeper_info WHERE is_leader = 1").strip())
+
+    assert followers >= 0
+    assert 0 <= synced <= followers
+    assert 0 <= pending <= followers
