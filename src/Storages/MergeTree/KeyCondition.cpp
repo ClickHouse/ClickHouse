@@ -2999,7 +2999,54 @@ void KeyCondition::rebuildPreparedRangeForRefs()
     prepared.ranges.clear();
     prepared.ranges.resize(rpn.size());
 
-    auto make_prepared_value = [](const FieldRef & value, const DataTypePtr & type) -> PreparedRangeForRefs::PreparedValue
+    const auto type_uint16 = std::make_shared<DataTypeUInt16>();
+    const auto type_uint32 = std::make_shared<DataTypeUInt32>();
+    const auto type_int32 = std::make_shared<DataTypeInt32>();
+
+    auto is_negative_numeric_field = [](const FieldRef & value) -> bool
+    {
+        switch (value.getType())
+        {
+            case Field::Types::Int64:
+                return value.safeGet<Int64>() < 0;
+            case Field::Types::Int128:
+                return value.safeGet<Int128>() < 0;
+            case Field::Types::Int256:
+                return value.safeGet<Int256>() < 0;
+            case Field::Types::Float64:
+                return value.safeGet<Float64>() < 0;
+            case Field::Types::Decimal32:
+                return value.safeGet<DecimalField<Decimal32>>().getValue().value < 0;
+            case Field::Types::Decimal64:
+                return value.safeGet<DecimalField<Decimal64>>().getValue().value < 0;
+            case Field::Types::Decimal128:
+                return value.safeGet<DecimalField<Decimal128>>().getValue().value < 0;
+            case Field::Types::Decimal256:
+                return value.safeGet<DecimalField<Decimal256>>().getValue().value < 0;
+            default:
+                return false;
+        }
+    };
+
+    auto try_convert_field_to_range_type = [&](const FieldRef & value, const DataTypePtr & type) -> Field
+    {
+        DataTypePtr conversion_type = recursiveRemoveLowCardinality(type);
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(conversion_type.get()))
+            conversion_type = nullable_type->getNestedType();
+
+        WhichDataType which(*conversion_type);
+
+        if (which.isDate())
+            return tryConvertFieldToType(value, *type_uint16);
+        if (which.isDateTime())
+            return tryConvertFieldToType(value, *type_uint32);
+        if (which.isDate32())
+            return tryConvertFieldToType(value, *type_int32);
+
+        return tryConvertFieldToType(value, *conversion_type);
+    };
+
+    auto make_prepared_value = [&](const FieldRef & value, const DataTypePtr & type) -> PreparedRangeForRefs::PreparedValue
     {
         PreparedRangeForRefs::PreparedValue out;
 
@@ -3014,8 +3061,15 @@ void KeyCondition::rebuildPreparedRangeForRefs()
             return out;
         }
 
+        Field converted = try_convert_field_to_range_type(value, type);
+        if (converted.isNull())
+        {
+            out.ref = is_negative_numeric_field(value) ? ColumnValueRef::negativeInfinity() : ColumnValueRef::positiveInfinity();
+            return out;
+        }
+
         auto col = type->createColumn();
-        col->insert(value);
+        col->insert(converted);
         col->protect();
         out.column = std::move(col);
         out.ref = ColumnValueRef::normal(out.column.get(), 0);
