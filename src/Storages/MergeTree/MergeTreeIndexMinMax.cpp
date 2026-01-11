@@ -329,14 +329,14 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     {
         auto min_granules = n * index_granularity;
         auto threshold = queue.top();
-        for(size_t i = 0; i < min_granules && !queue.empty(); ++i)
+        for (size_t i = 0; i < min_granules && !queue.empty(); ++i)
         {
             threshold = queue.top();
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
             queue.pop();
         }
 
-        while(!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
+        while (!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
         {
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
             queue.pop();
@@ -399,7 +399,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     {
         auto min_granules = n * index_granularity;
         auto threshold = queue.top();
-        for(size_t i = 0; i < min_granules && !queue.empty(); ++i)
+        for (size_t i = 0; i < min_granules && !queue.empty(); ++i)
         {
             const auto & item = queue.top();
             threshold = queue.top();
@@ -407,7 +407,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
             queue.pop();
         }
 
-        while(!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
+        while (!queue.empty() && queue.top().min_or_max_value == threshold.min_or_max_value)
         {
             const auto & item = queue.top();
             result[item.part_index].push_back({item.granule_num, item.granule_num + 1});
