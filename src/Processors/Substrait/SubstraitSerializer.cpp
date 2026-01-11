@@ -313,6 +313,33 @@ private:
         return ref_id;
     }
     
+    /// Find column index by name in a Block header, throws if not found
+    int findColumnIndex(const Block & header, const String & column_name, const String & context_message) const
+    {
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            if (header.getByPosition(i).name == column_name)
+                return static_cast<int>(i);
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} not found in input header", context_message);
+    }
+
+    /// Build a field selection expression for the given field index
+    void buildFieldSelection(substrait::Expression * expr, int field_index) const
+    {
+        auto * selection = expr->mutable_selection();
+        auto * direct_ref = selection->mutable_direct_reference();
+        direct_ref->mutable_struct_field()->set_field(field_index);
+    }
+
+    /// Build a field selection expression and return it
+    substrait::Expression makeFieldSelection(int field_index) const
+    {
+        substrait::Expression expr;
+        buildFieldSelection(&expr, field_index);
+        return expr;
+    }
+
     // Add extensions to the plan using extension_urns
     void addExtensionsToPlan(substrait::Plan & substrait_plan)
     {
@@ -530,26 +557,9 @@ private:
             case ActionsDAG::ActionType::INPUT:
             {
                 // Column reference - find column index in input
-                auto * selection = expr.mutable_selection();
-                auto * direct_ref = selection->mutable_direct_reference();
-                auto * struct_field = direct_ref->mutable_struct_field();
-                
-                // Find column index by name
-                int field_index = -1;
-                for (size_t i = 0; i < input_header.columns(); ++i)
-                {
-                    if (input_header.getByPosition(i).name == node->result_name)
-                    {
-                        field_index = static_cast<int>(i);
-                        break;
-                    }
-                }
-                
-                if (field_index < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
-                        "Column {} not found in input header", node->result_name);
-                
-                struct_field->set_field(field_index);
+                int field_index = findColumnIndex(input_header, node->result_name, 
+                    fmt::format("Column {}", node->result_name));
+                buildFieldSelection(&expr, field_index);
                 break;
             }
             
@@ -814,26 +824,10 @@ private:
         {
             auto * sort_field = sort_rel->add_sorts();
             
-            // Find column index by name
-            int field_index = -1;
-            for (size_t i = 0; i < input_header.columns(); ++i)
-            {
-                if (input_header.getByPosition(i).name == sort_col.column_name)
-                {
-                    field_index = static_cast<int>(i);
-                    break;
-                }
-            }
+            int field_index = findColumnIndex(input_header, sort_col.column_name,
+                fmt::format("Sort column {}", sort_col.column_name));
             
-            if (field_index < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, 
-                    "Sort column {} not found in input header", sort_col.column_name);
-            
-            // Create field selection expression
-            auto * expr = sort_field->mutable_expr();
-            auto * selection = expr->mutable_selection();
-            auto * direct_ref = selection->mutable_direct_reference();
-            direct_ref->mutable_struct_field()->set_field(field_index);
+            buildFieldSelection(sort_field->mutable_expr(), field_index);
             
             // Map sort direction and nulls handling
             // direction: 1 = ASC, -1 = DESC
@@ -881,25 +875,11 @@ private:
         // Convert grouping keys
         for (const auto & key : params.keys)
         {
+            int field_index = findColumnIndex(input_header, key,
+                fmt::format("Grouping key {}", key));
+            
             auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
-            
-            // Find the column index for the grouping key
-            int field_index = -1;
-            for (size_t i = 0; i < input_header.columns(); ++i)
-            {
-                if (input_header.getByPosition(i).name == key)
-                {
-                    field_index = static_cast<int>(i);
-                    break;
-                }
-            }
-            
-            if (field_index < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping key {} not found in input", key);
-            
-            auto * selection = grouping_expr->mutable_selection();
-            auto * direct_ref = selection->mutable_direct_reference();
-            direct_ref->mutable_struct_field()->set_field(field_index);
+            buildFieldSelection(grouping_expr, field_index);
         }
         
         // Convert aggregate functions
@@ -918,26 +898,11 @@ private:
             // Convert aggregate arguments
             for (const auto & arg_column : aggregate.argument_names)
             {
-                // Find the column index
-                int field_index = -1;
-                for (size_t i = 0; i < input_header.columns(); ++i)
-                {
-                    if (input_header.getByPosition(i).name == arg_column)
-                    {
-                        field_index = static_cast<int>(i);
-                        break;
-                    }
-                }
-                
-                if (field_index < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
-                        "Aggregate argument {} not found in input", arg_column);
+                int field_index = findColumnIndex(input_header, arg_column,
+                    fmt::format("Aggregate argument {}", arg_column));
                 
                 auto * arg = agg_func->add_arguments();
-                auto * arg_expr = arg->mutable_value();
-                auto * selection = arg_expr->mutable_selection();
-                auto * direct_ref = selection->mutable_direct_reference();
-                direct_ref->mutable_struct_field()->set_field(field_index);
+                buildFieldSelection(arg->mutable_value(), field_index);
             }
         }
     }
@@ -987,15 +952,6 @@ private:
         const Block & right_header = *right_header_ptr;
         size_t left_fields = left_header.columns();
 
-        // Helper: build field selection expression for joined tuple (left + right fields)
-        auto buildFieldSelection = [&](int field_index) -> substrait::Expression {
-            substrait::Expression expr;
-            auto * sel = expr.mutable_selection();
-            auto * dr = sel->mutable_direct_reference();
-            dr->mutable_struct_field()->set_field(field_index);
-            return expr;
-        };
-
         // Build join condition from TableJoin clauses
         const auto & clauses = table_join.getClauses();
         std::vector<substrait::Expression> clause_expressions;
@@ -1010,38 +966,15 @@ private:
                 const auto & left_key = clause.key_names_left[i];
                 const auto & right_key = clause.key_names_right[i];
 
-                // Find left key column index
-                int left_idx = -1;
-                for (size_t j = 0; j < left_header.columns(); ++j)
-                {
-                    if (left_header.getByPosition(j).name == left_key)
-                    {
-                        left_idx = static_cast<int>(j);
-                        break;
-                    }
-                }
-                if (left_idx < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
-                        "Join key {} not found in left input", left_key);
-
-                // Find right key column index
-                int right_idx = -1;
-                for (size_t j = 0; j < right_header.columns(); ++j)
-                {
-                    if (right_header.getByPosition(j).name == right_key)
-                    {
-                        right_idx = static_cast<int>(j);
-                        break;
-                    }
-                }
-                if (right_idx < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, 
-                        "Join key {} not found in right input", right_key);
+                int left_idx = findColumnIndex(left_header, left_key,
+                    fmt::format("Join key {}", left_key));
+                int right_idx = findColumnIndex(right_header, right_key,
+                    fmt::format("Join key {}", right_key));
 
                 // Create equality expression: left_key = right_key
                 // Right fields are offset by left_fields in the joined tuple
-                auto left_sel = buildFieldSelection(left_idx);
-                auto right_sel = buildFieldSelection(static_cast<int>(left_fields + right_idx));
+                auto left_sel = makeFieldSelection(left_idx);
+                auto right_sel = makeFieldSelection(static_cast<int>(left_fields + right_idx));
 
                 substrait::Expression eq_expr;
                 auto * scalar_func = eq_expr.mutable_scalar_function();
@@ -1200,8 +1133,7 @@ private:
             for (size_t i = 0; i < input_header.columns(); ++i)
             {
                 auto * grouping_expr = grouping->add_grouping_expressions();
-                auto * selection = grouping_expr->mutable_selection();
-                selection->mutable_direct_reference()->mutable_struct_field()->set_field(static_cast<int>(i));
+                buildFieldSelection(grouping_expr, static_cast<int>(i));
             }
         }
         else
@@ -1209,21 +1141,11 @@ private:
             // DISTINCT on specific columns
             for (const auto & col_name : columns)
             {
-                int field_index = -1;
-                for (size_t i = 0; i < input_header.columns(); ++i)
-                {
-                    if (input_header.getByPosition(i).name == col_name)
-                    {
-                        field_index = static_cast<int>(i);
-                        break;
-                    }
-                }
-                if (field_index < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distinct column {} not found in input header", col_name);
-
+                int field_index = findColumnIndex(input_header, col_name,
+                    fmt::format("Distinct column {}", col_name));
+                
                 auto * grouping_expr = grouping->add_grouping_expressions();
-                auto * selection = grouping_expr->mutable_selection();
-                selection->mutable_direct_reference()->mutable_struct_field()->set_field(field_index);
+                buildFieldSelection(grouping_expr, field_index);
             }
         }
         // No measures - this produces distinct rows via grouping only
