@@ -588,7 +588,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             columns,
             ConstraintsDescription{},
             nullptr,
-            context_);
+            context_,
+            /* is_table_function */false);
 
         storage_cluster->startup();
         return storage_cluster;

@@ -165,7 +165,6 @@ add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
-add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
