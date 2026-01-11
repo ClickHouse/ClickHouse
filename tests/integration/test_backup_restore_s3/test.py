@@ -121,7 +121,7 @@ def setup_minio_users(cluster):
             )
         )
 
-    start_s3_mock(cluster, "broken_s3", "8083")
+    start_s3_mock(cluster, "broken_s3", "8084")
     node = cluster.instances["node"]
     node.stop_clickhouse()
     node.copy_file_to_container(
@@ -564,7 +564,7 @@ def test_backup_to_s3_native_copy_multipart(cluster):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_s3_mock(cluster, "broken_s3", "8084")
 
 
 @pytest.fixture(scope="function")

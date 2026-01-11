@@ -115,7 +115,7 @@ def create_table(node, table_name, **additional_settings):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_s3_mock(cluster, "broken_s3", "8085")
 
 
 @pytest.fixture(scope="function")
