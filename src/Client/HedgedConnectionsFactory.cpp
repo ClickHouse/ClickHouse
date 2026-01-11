@@ -3,6 +3,7 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {

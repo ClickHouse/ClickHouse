@@ -113,7 +113,7 @@ String withOrdinalEnding(size_t i)
 }
 
 void validateArgumentsImpl(
-    const IFunction & func,
+    const String & function_name,
     const ColumnsWithTypeAndName & arguments,
     size_t argument_offset,
     const FunctionArgumentDescriptors & descriptors)
@@ -132,7 +132,7 @@ void validateArgumentsImpl(
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
                 withOrdinalEnding(argument_offset + i),
                 descriptor.name,
-                func.getName(),
+                function_name,
                 descriptor.type_name,
                 arg.type ? arg.type->getName() : "<?>");
     }
@@ -156,6 +156,15 @@ int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const Col
 
 void validateFunctionArguments(
     const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    const FunctionArgumentDescriptors & mandatory_args,
+    const FunctionArgumentDescriptors & optional_args)
+{
+    validateFunctionArguments(func.getName(), arguments, mandatory_args, optional_args);
+}
+
+void validateFunctionArguments(
+    const String & function_name,
     const ColumnsWithTypeAndName & arguments,
     const FunctionArgumentDescriptors & mandatory_args,
     const FunctionArgumentDescriptors & optional_args)
@@ -184,14 +193,14 @@ void validateFunctionArguments(
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
-            func.getName(),
+            function_name,
             expected_args_string,
             fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
     }
 
-    validateArgumentsImpl(func, arguments, 0, mandatory_args);
+    validateArgumentsImpl(function_name, arguments, 0, mandatory_args);
     if (!optional_args.empty())
-        validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
+        validateArgumentsImpl(function_name, arguments, mandatory_args.size(), optional_args);
 }
 
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>

@@ -6,7 +6,7 @@
 	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
-	url = https://github.com/facebook/zstd
+	url = https://github.com/ClickHouse/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
 	url = https://github.com/lz4/lz4
@@ -45,7 +45,7 @@
 	url = https://github.com/ClickHouse/arrow
 [submodule "contrib/thrift"]
 	path = contrib/thrift
-	url = https://github.com/apache/thrift
+	url = https://github.com/ClickHouse/thrift
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
 	url = https://github.com/ClickHouse/libhdfs3
@@ -124,7 +124,7 @@
 	url = https://github.com/anrieff/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
-	url = https://github.com/ClickHouse/openldap
+	url = https://github.com/openldap/openldap
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse/AMQP-CPP
@@ -218,18 +218,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/qpl"]
-	path = contrib/qpl
-	url = https://github.com/intel/qpl
-[submodule "contrib/idxd-config"]
-	path = contrib/idxd-config
-	url = https://github.com/ClickHouse/idxd-config.git
-[submodule "contrib/QAT-ZSTD-Plugin"]
-	path = contrib/QAT-ZSTD-Plugin
-	url = https://github.com/intel/QAT-ZSTD-Plugin
-[submodule "contrib/qatlib"]
-	path = contrib/qatlib
-	url = https://github.com/intel/qatlib
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -238,7 +226,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/VectorCamp/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan.git
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -296,9 +284,6 @@
 [submodule "contrib/aws-c-compression"]
 	path = contrib/aws-c-compression
 	url = https://github.com/awslabs/aws-c-compression
-[submodule "contrib/aws-s2n-tls"]
-	path = contrib/aws-s2n-tls
-	url = https://github.com/ClickHouse/s2n-tls
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
@@ -318,9 +303,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/c-ares/c-ares.git
-[submodule "contrib/incbin"]
-	path = contrib/incbin
-	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
 	url = https://github.com/ClickHouse/usearch.git
@@ -356,7 +338,7 @@
 	url = https://github.com/ClickHouse/double-conversion.git
 [submodule "contrib/mongo-cxx-driver"]
 	path = contrib/mongo-cxx-driver
-	url = https://github.com/ClickHouse/mongo-cxx-driver.git
+	url = https://github.com/mongodb/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
@@ -372,3 +354,21 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/chdig"]
+	path = contrib/chdig
+	url = https://github.com/azat/chdig.git
+[submodule "contrib/ai-sdk-cpp"]
+	path = contrib/ai-sdk-cpp
+	url = https://github.com/ClickHouse/ai-sdk-cpp
+[submodule "contrib/nlohmann-json"]
+	path = contrib/nlohmann-json
+	url = https://github.com/nlohmann/json.git
+[submodule "contrib/crc32c"]
+	path = contrib/crc32c
+	url = https://github.com/google/crc32c.git
+[submodule "contrib/StringZilla"]
+	path = contrib/StringZilla
+	url = https://github.com/ClickHouse/StringZilla.git
+[submodule "contrib/antlr4-cpp-runtime"]
+	path = contrib/antlr4-cpp-runtime
+	url = https://github.com/antlr/antlr4.git

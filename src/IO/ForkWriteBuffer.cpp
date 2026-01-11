@@ -34,6 +34,7 @@ void ForkWriteBuffer::nextImpl()
             buffer->next();
         }
         source_buffer->next();
+        set(sources.front()->buffer().begin(), sources.front()->buffer().size());
     }
     catch (Exception & exception)
     {

@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <bit>
 #include <utility>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <base/simd.h>
 
@@ -59,7 +60,7 @@ UUID parseUUID(std::span<const UInt8> src)
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
+    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
 #else
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif
@@ -1302,6 +1303,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {
@@ -1457,7 +1459,13 @@ template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char *
 
 
 template <typename ReturnType, bool dt64_mode>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
+ReturnType readDateTimeTextFallback(
+    time_t & datetime,
+    ReadBuffer & buf,
+    const DateLUTImpl & date_lut,
+    const char * allowed_date_delimiters,
+    const char * allowed_time_delimiters,
+    bool saturate_on_overflow)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1566,10 +1574,39 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if (unlikely(year == 0))
-            datetime = 0;
+        if constexpr (throw_exception)
+        {
+            if (unlikely(year == 0))
+                datetime = 0;
+            else
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        }
         else
-            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        {
+            if (saturate_on_overflow)
+            {
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if (unlikely(year == 0))
+                    datetime = 0;
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            }
+            else
+            {
+                /// Use non-saturating version - return false for out-of-range values
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return false;
+
+                if constexpr (!dt64_mode)
+                {
+                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                        return false;
+                }
+
+                datetime = *datetime_maybe;
+            }
+        }
     }
     else
     {
@@ -1604,10 +1641,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
 
 template <typename ReturnType, bool t64_mode>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
@@ -2350,5 +2387,14 @@ void readTSVFieldCRLF(String & s, ReadBuffer & buf)
     readEscapedStringIntoImpl<String, false, true>(s, buf);
 }
 
+String escapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, ".", "%2E");
+}
+
+String unescapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, "%2E", ".");
+}
 
 }

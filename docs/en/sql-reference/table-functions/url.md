@@ -4,6 +4,7 @@ sidebar_label: 'url'
 sidebar_position: 200
 slug: /sql-reference/table-functions/url
 title: 'url'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -15,26 +16,28 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](../../engines/table-engines/special/url.md) tables.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-**Parameters**
+## Parameters {#parameters}
 
-- `URL` — HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md).
-- `format` — [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
-- `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
-- `headers` - Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.
+| Parameter   | Description                                                                                                                                            |
+|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `URL`       | Single quoted HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md). |
+| `format`    | [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).                                                  |
+| `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).     |
+| `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 
-**Examples**
+## Examples {#examples}
 
-Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
+Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](/interfaces/formats/CSV) format.
 
 ```sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
@@ -61,7 +64,7 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## Hive-style partitioning {#hive-style-partitioning}
+## use_hive_partitioning setting {#hive-style-partitioning}
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
@@ -70,7 +73,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
 ```
 
 ## Storage Settings {#storage-settings}
@@ -82,7 +85,6 @@ SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _d
 
 `url` function requires `CREATE TEMPORARY TABLE` permission. As such - it'll not work for users with [readonly](/operations/settings/permissions-for-queries#readonly) = 1 setting. At least readonly = 2 is required.
 
-
-**See Also**
+## Related {#related}
 
 - [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)

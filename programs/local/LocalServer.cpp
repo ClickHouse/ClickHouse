@@ -1,9 +1,10 @@
-#include "LocalServer.h"
+#include <LocalServer.h>
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -15,7 +16,7 @@
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabasesOverlay.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -33,8 +34,12 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/Jemalloc.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SharedThreadPools.h>
@@ -96,6 +101,18 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
+    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
+    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
+    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
+    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
+    extern const ServerSettingsString text_index_header_cache_policy;
+    extern const ServerSettingsUInt64 text_index_header_cache_size;
+    extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
+    extern const ServerSettingsDouble text_index_header_cache_size_ratio;
+    extern const ServerSettingsString text_index_postings_cache_policy;
+    extern const ServerSettingsUInt64 text_index_postings_cache_size;
+    extern const ServerSettingsUInt64 text_index_postings_cache_max_entries;
+    extern const ServerSettingsDouble text_index_postings_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -126,6 +143,14 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
+    extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
+    extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 namespace ErrorCodes
@@ -161,7 +186,7 @@ void LocalServer::processError(std::string_view) const
         String message;
         if (server_exception)
         {
-            message = getExceptionMessage(*server_exception, print_stack_trace, true);
+            message = getExceptionMessageForLogging(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
         {
@@ -207,6 +232,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 
     server_settings.loadSettingsFromConfig(config());
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+#endif
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],
@@ -263,6 +296,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
+
+    getFormatParsingThreadPool().initialize(
+        server_settings[ServerSetting::max_format_parsing_thread_pool_size],
+        server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
+        server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 }
 
 
@@ -280,18 +318,24 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
     UUID default_database_uuid;
 
     fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
     if (FS::isSymlinkNoThrow(existing_path_symlink))
-        default_database_uuid = parse<UUID>(FS::readSymlink(existing_path_symlink).filename());
+    {
+        auto symlink_path = FS::readSymlink(existing_path_symlink);
+        /// If symlink ends with '/':
+        if (!symlink_path.has_filename() && symlink_path.has_parent_path())
+            symlink_path = symlink_path.parent_path();
+        default_database_uuid = parse<UUID>(symlink_path.filename());
+    }
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
-    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) / "store"
-        / DatabaseCatalog::getPathForUUID(default_database_uuid);
+    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
+        DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
@@ -357,6 +401,8 @@ void LocalServer::tryInitPath()
         path = default_path.string();
         LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
+
+    fs::create_directories(path);
 
     global_context->setPath(fs::path(path) / "");
 
@@ -564,8 +610,6 @@ void LocalServer::connect()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    thread_status.emplace();
-
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
     setupSignalHandler();
@@ -632,7 +676,8 @@ try
     /// Must be called after we stopped initializing the global context and changing its settings.
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
-    createClientContext();
+    initClientContext(Context::createCopy(global_context));
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {
@@ -648,7 +693,15 @@ try
     connect();
 
     if (!table_name.empty())
+    {
+        // Set option to false for hidden query to prevent double-printing time
+        bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
+        getClientConfiguration().setBool("print-time-to-stderr", false);
+
         processQueryText(initial_query);
+
+        getClientConfiguration().setBool("print-time-to-stderr", orig_print_time_to_stderr);
+    }
 
 #if USE_FUZZING_MODE
     runLibFuzzer();
@@ -668,10 +721,10 @@ try
 
     return Application::EXIT_OK;
 }
-catch (const DB::Exception & e)
+catch (DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
-    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
+    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
@@ -849,6 +902,39 @@ void LocalServer::processConfig()
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_count, vector_similarity_index_cache_size_ratio);
 
+    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
+    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
+    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
+    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
+    if (text_index_dictionary_block_cache_size > max_cache_size)
+    {
+        text_index_dictionary_block_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
+    }
+    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
+
+    String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
+    size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
+    size_t text_index_header_cache_max_count = server_settings[ServerSetting::text_index_header_cache_max_entries];
+    double text_index_header_cache_size_ratio = server_settings[ServerSetting::text_index_header_cache_size_ratio];
+    if (text_index_header_cache_size > max_cache_size)
+    {
+        text_index_header_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_header_cache_size));
+    }
+    global_context->setTextIndexHeaderCache(text_index_header_cache_policy, text_index_header_cache_size, text_index_header_cache_max_count, text_index_header_cache_size_ratio);
+
+    String text_index_postings_cache_policy = server_settings[ServerSetting::text_index_postings_cache_policy];
+    size_t text_index_postings_cache_size = server_settings[ServerSetting::text_index_postings_cache_size];
+    size_t text_index_postings_cache_max_count = server_settings[ServerSetting::text_index_postings_cache_max_entries];
+    double text_index_postings_cache_size_ratio = server_settings[ServerSetting::text_index_postings_cache_size_ratio];
+    if (text_index_postings_cache_size > max_cache_size)
+    {
+        text_index_postings_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_postings_cache_size));
+    }
+    global_context->setTextIndexPostingsCache(text_index_postings_cache_policy, text_index_postings_cache_size, text_index_postings_cache_max_count, text_index_postings_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -870,6 +956,10 @@ void LocalServer::processConfig()
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
 
+    Names allowed_disks_table_engines;
+    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
+    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
+
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
 
@@ -885,10 +975,13 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    NamedCollectionFactory::instance().loadIfNot();
+    FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
+
     /// NOTE: it is important to apply any overrides before
     /// `setDefaultProfiles` calls since it will copy current context (i.e.
     /// there is separate context for Buffer tables).
-    adjustSettings();
+    adjustSettings(global_context);
     applySettingsOverridesForLocal(global_context);
     applyCmdOptions(global_context);
 
@@ -901,16 +994,15 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    std::string default_database = server_settings[ServerSetting::default_database];
-    if (default_database.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
+    std::string server_default_database = server_settings[ServerSetting::default_database];
+    if (!server_default_database.empty())
     {
-        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
+        DatabasePtr database = createClickHouseLocalDatabaseOverlay(server_default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
-        DatabaseCatalog::instance().attachDatabase(default_database, database);
+        DatabaseCatalog::instance().attachDatabase(server_default_database, database);
+        global_context->setCurrentDatabase(server_default_database);
     }
-    global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
     {
@@ -962,7 +1054,24 @@ void LocalServer::processConfig()
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+
+        /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
+        /// even in temporary mode (--path not set) without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
     }
+    else
+    {
+        /// Similarly, for other cases, create background tasks for DDL operations like
+        /// DROP VIEW SYNC in temporaty mode (--path not set) without persistent storage
+        DatabaseCatalog::instance().createBackgroundTasks();
+        DatabaseCatalog::instance().startupBackgroundTasks();
+    }
+
+    std::string default_database = getClientConfiguration().getString("database", server_default_database);
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
+    global_context->setCurrentDatabase(default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
 
@@ -1039,7 +1148,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
 
 void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context->applySettingsChanges(cmd_settings->changes());
 }
 
 
@@ -1050,45 +1159,37 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::createClientContext()
-{
-    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
-    /// We can't just change the global context because it is used in background tasks (for example, in merges)
-    /// which don't expect that the global context can suddenly change.
-    client_context = Context::createCopy(global_context);
-    initClientContext();
-}
-
-
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
-    if (options.count("table"))
+    if (options.contains("path"))
+        getClientConfiguration().setString("path", options["path"].as<std::string>());
+    if (options.contains("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
-    if (options.count("file"))
+    if (options.contains("file"))
         getClientConfiguration().setString("table-file", options["file"].as<std::string>());
-    if (options.count("structure"))
+    if (options.contains("structure"))
         getClientConfiguration().setString("table-structure", options["structure"].as<std::string>());
-    if (options.count("no-system-tables"))
+    if (options.contains("no-system-tables"))
         getClientConfiguration().setBool("no-system-tables", true);
-    if (options.count("only-system-tables"))
+    if (options.contains("only-system-tables"))
         getClientConfiguration().setBool("only-system-tables", true);
 
-    if (options.count("input-format"))
+    if (options.contains("input-format"))
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
-    if (options.count("output-format"))
+    if (options.contains("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.count("logger.console"))
+    if (options.contains("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
-    if (options.count("logger.log"))
+    if (options.contains("logger.log"))
         getClientConfiguration().setString("logger.log", options["logger.log"].as<std::string>());
-    if (options.count("logger.level"))
+    if (options.contains("logger.level"))
         getClientConfiguration().setString("logger.level", options["logger.level"].as<std::string>());
-    if (options.count("send_logs_level"))
+    if (options.contains("send_logs_level"))
         getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-    if (options.count("wait_for_suggestions_to_load"))
+    if (options.contains("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.count("copy"))
+    if (options.contains("copy"))
     {
         if (!queries.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");
@@ -1102,8 +1203,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     {
         std::string_view arg = argv[arg_num];
 
-        /// Parameter arg after underline.
-        if (arg.starts_with("--param_"))
+        /// Parameter arg after underline or dash.
+        if (arg.starts_with("--param_") || arg.starts_with("--param-"))
         {
             auto param_continuation = arg.substr(strlen("--param_"));
             auto equal_pos = param_continuation.find_first_of('=');
@@ -1140,15 +1241,17 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
+    DB::MainThreadStatus::getInstance();
+
     try
     {
         DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

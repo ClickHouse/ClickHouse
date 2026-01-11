@@ -91,7 +91,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
             std::vector<DataTypes> nested_types;
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(types[0].get());
             size_t tuple_size = type_tuple->getElements().size();
-            bool have_explicit_names = type_tuple->haveExplicitNames();
+            bool has_explicit_names = type_tuple->hasExplicitNames();
             nested_types.resize(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                 nested_types[elem_idx].reserve(types.size());
@@ -131,7 +131,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
 
                 for (size_t i = 0; i != types.size(); ++i)
                 {
-                    if (have_explicit_names)
+                    if (has_explicit_names)
                         types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i], element_names);
                     else
                         types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i]);

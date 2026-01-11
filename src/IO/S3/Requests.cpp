@@ -6,6 +6,9 @@
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
+#include <string_view>
+#include <fmt/format.h>
+
 namespace DB::S3
 {
 
@@ -52,17 +55,25 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     return headers;
 }
 
+void HeadObjectRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
+{
+    // S3's HeadObject doesn't support `x-amz-server-side-encryption` headers so we skip adding them
+    // Docs: https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html
+    if (headerName != "x-amz-server-side-encryption")
+        Model::HeadObjectRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
+}
+
 void CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's CompleteMultipartUpload doesn't support metadata headers so we skip adding them
-    if (!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-") && (headerName != "x-amz-server-side-encryption"))
         Model::CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
 void UploadPartRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's UploadPart doesn't support metadata headers so we skip adding them
-    if (!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-") && (headerName != "x-amz-server-side-encryption"))
         Model::UploadPartRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
@@ -166,6 +177,61 @@ void ComposeObjectRequest::SetContentType(Aws::String value)
     content_type = std::move(value);
 }
 
+
+size_t getAttemptFromInfo(const Aws::String & request_info)
+{
+    static auto key = Aws::String("attempt=");
+
+    auto key_begin = request_info.find(key, 0);
+    if (key_begin == Aws::String::npos)
+        return 1;
+
+    auto val_begin = key_begin + key.size();
+    auto val_end = request_info.find(';', val_begin);
+    if (val_end == Aws::String::npos)
+        val_end = request_info.size();
+
+    if (val_begin == val_end)
+        return 1;
+
+    auto value = request_info.substr(val_begin, val_end - val_begin);
+    try
+    {
+        return std::stol(value, nullptr, 10);
+    }
+    catch (...)
+    {
+        return 1;
+    }
+}
+
+String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+{
+    auto it = map.find(key);
+    if (it == map.end())
+        return {};
+    return it->second;
+}
+
+void setClickhouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
+{
+    request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+}
+
+size_t getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
+{
+    return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
+}
+
+size_t getClickhouseAttemptNumber(const Aws::Http::HttpRequest & request)
+{
+    return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
+}
+
+size_t getSDKAttemptNumber(const Aws::Http::HttpRequest & request)
+{
+       return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), Aws::Http::SDK_REQUEST_HEADER));
+}
 }
 
 #endif

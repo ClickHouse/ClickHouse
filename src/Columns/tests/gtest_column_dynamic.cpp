@@ -1,7 +1,8 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
-#include <Common/Arena.h>
+#include <IO/ReadBufferFromString.h>
 #include <gtest/gtest.h>
+#include <Common/Arena.h>
 
 using namespace DB;
 
@@ -751,14 +752,16 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena1)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column->serializeValueIntoArena(0, arena, pos);
-    column->serializeValueIntoArena(1, arena, pos);
-    column->serializeValueIntoArena(2, arena, pos);
-    column->serializeValueIntoArena(3, arena, pos);
-    pos = column->deserializeAndInsertFromArena(ref1.data);
-    pos = column->deserializeAndInsertFromArena(pos);
-    pos = column->deserializeAndInsertFromArena(pos);
-    column->deserializeAndInsertFromArena(pos);
+    auto ref1 = column->serializeValueIntoArena(0, arena, pos, nullptr);
+    column->serializeValueIntoArena(1, arena, pos, nullptr);
+    column->serializeValueIntoArena(2, arena, pos, nullptr);
+    column->serializeValueIntoArena(3, arena, pos, nullptr);
+
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    column->deserializeAndInsertFromArena(in, nullptr);
+    column->deserializeAndInsertFromArena(in, nullptr);
+    column->deserializeAndInsertFromArena(in, nullptr);
+    column->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column)[column->size() - 4], 42);
     ASSERT_EQ((*column)[column->size() - 3], 42.42);
@@ -776,16 +779,17 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
 
     auto column_to = ColumnDynamic::create(254);
-    pos = column_to->deserializeAndInsertFromArena(ref1.data);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    column_to->deserializeAndInsertFromArena(pos);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 3], 42.42);
@@ -808,16 +812,17 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow1)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
 
     auto column_to = getDynamicWithManyVariants(253);
-    pos = column_to->deserializeAndInsertFromArena(ref1.data);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    column_to->deserializeAndInsertFromArena(pos);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 3], 42.42);
@@ -840,19 +845,20 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
-    column_from->serializeValueIntoArena(4, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(4, arena, pos, nullptr);
 
     auto column_to = ColumnDynamic::create(2);
     column_to->insert(Field(42.42));
-    pos = column_to->deserializeAndInsertFromArena(ref1.data);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    pos = column_to->deserializeAndInsertFromArena(pos);
-    column_to->deserializeAndInsertFromArena(pos);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
+    column_to->deserializeAndInsertFromArena(in, nullptr);
 
     ASSERT_EQ((*column_to)[column_to->size() - 5], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42.42);
@@ -876,19 +882,19 @@ TEST(ColumnDynamic, skipSerializedInArena)
 
     Arena arena;
     const char * pos = nullptr;
-    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
-    column_from->serializeValueIntoArena(1, arena, pos);
-    column_from->serializeValueIntoArena(2, arena, pos);
-    auto ref4 = column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref1 = column_from->serializeValueIntoArena(0, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(1, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(2, arena, pos, nullptr);
+    column_from->serializeValueIntoArena(3, arena, pos, nullptr);
 
-    const char * end = ref4.data + ref4.size;
     auto column_to = ColumnDynamic::create(254);
-    pos = column_to->skipSerializedInArena(ref1.data);
-    pos = column_to->skipSerializedInArena(pos);
-    pos = column_to->skipSerializedInArena(pos);
-    pos = column_to->skipSerializedInArena(pos);
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    column_to->skipSerializedInArena(in);
+    column_to->skipSerializedInArena(in);
+    column_to->skipSerializedInArena(in);
+    column_to->skipSerializedInArena(in);
 
-    ASSERT_EQ(pos, end);
+    ASSERT_TRUE(in.eof());
     ASSERT_EQ(column_to->getVariantInfo().variant_name_to_discriminator.at("SharedVariant"), 0);
     ASSERT_EQ(column_to->getVariantInfo().variant_names, Names{"SharedVariant"});
 }
@@ -937,55 +943,60 @@ TEST(ColumnDynamic, rollback)
         ASSERT_EQ(num_rows, column_variant.size());
     };
 
-    auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::vector<size_t> sizes)
+    auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::unordered_map<String, size_t> sizes)
     {
-        const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(cp).nested;
+        const auto & variants_checkpoints = assert_cast<const DynamicColumnCheckpoint &>(cp).variants_checkpoints;
         size_t num_rows = 0;
 
-        for (size_t i = 0; i < nested.size(); ++i)
+        for (const auto & [variant, checkpoint] : variants_checkpoints)
         {
-            ASSERT_EQ(nested[i]->size, sizes[i]);
-            num_rows += sizes[i];
+            ASSERT_EQ(checkpoint->size, sizes.at(variant));
+            num_rows += sizes.at(variant);
         }
 
         ASSERT_EQ(num_rows, cp.size);
     };
 
-    std::vector<std::pair<ColumnCheckpointPtr, std::vector<size_t>>> checkpoints;
+    std::vector<std::vector<size_t>> variant_checkpoints_sizes;
+    std::vector<std::pair<ColumnCheckpointPtr, std::unordered_map<String, size_t>>> dynamic_checkpoints;
 
     auto column = ColumnDynamic::create(2);
     auto checkpoint = column->getCheckpoint();
 
     column->insert(Field(42));
-
     column->updateCheckpoint(*checkpoint);
-    checkpoints.emplace_back(checkpoint, std::vector<size_t>{0, 1, 0});
-
     column->insert(Field("str1"));
     column->rollback(*checkpoint);
 
-    check_checkpoint(*checkpoint, checkpoints.back().second);
-    check_variant(column->getVariantColumn(), checkpoints.back().second);
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 0});
+    dynamic_checkpoints.emplace_back(checkpoint, std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 0}});
+
+    check_checkpoint(*checkpoint, dynamic_checkpoints.back().second);
+    check_variant(column->getVariantColumn(), variant_checkpoints_sizes.back());
 
     column->insert("str1");
-    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{0, 1, 1});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 1});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 1}});
 
     column->insert("str2");
-    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{0, 1, 2});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{0, 1, 2});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 0}, {"Int8", 1}, {"String", 2}});
 
     column->insert(Array({1, 2}));
-    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{1, 1, 2});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{1, 1, 2});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 1}, {"Int8", 1}, {"String", 2}});
 
     column->insert(Field(42.42));
-    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{2, 1, 2});
+    variant_checkpoints_sizes.emplace_back(std::vector<size_t>{2, 1, 2});
+    dynamic_checkpoints.emplace_back(column->getCheckpoint(), std::unordered_map<String, size_t>{{"SharedVariant", 2}, {"Int8", 1}, {"String", 2}});
 
-    for (const auto & [cp, sizes] : checkpoints)
+    for (size_t i = 0; i != variant_checkpoints_sizes.size(); ++i)
     {
         auto column_copy = column->clone();
-        column_copy->rollback(*cp);
+        column_copy->rollback(*dynamic_checkpoints[i].first);
 
-        check_checkpoint(*cp, sizes);
-        check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), sizes);
+        check_checkpoint(*dynamic_checkpoints[i].first, dynamic_checkpoints[i].second);
+        check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), variant_checkpoints_sizes[i]);
     }
 }
 

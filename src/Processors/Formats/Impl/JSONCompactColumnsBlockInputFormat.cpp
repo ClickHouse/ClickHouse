@@ -37,7 +37,7 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONCompactColumnsReader>(buf));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
 }

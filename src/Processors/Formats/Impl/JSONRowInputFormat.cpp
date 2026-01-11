@@ -8,12 +8,12 @@
 namespace DB
 {
 
-JSONRowInputFormat::JSONRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+JSONRowInputFormat::JSONRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : JSONRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
 }
 
-JSONRowInputFormat::JSONRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf, const DB::Block & header_, DB::IRowInputFormat::Params params_, const DB::FormatSettings & format_settings_)
+JSONRowInputFormat::JSONRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf, SharedHeader header_, DB::IRowInputFormat::Params params_, const DB::FormatSettings & format_settings_)
     : JSONEachRowRowInputFormat(*buf, header_, params_, format_settings_, false), validate_types_from_metadata(format_settings_.json.validate_types_from_metadata), peekable_buf(std::move(buf))
 {
 }
@@ -109,7 +109,7 @@ void registerInputFormatJSON(FormatFactory & factory)
                      IRowInputFormat::Params params,
                      const FormatSettings & settings)
     {
-        return std::make_shared<JSONRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSON");

@@ -36,8 +36,8 @@ private:
 
     void nextImpl() override;
 
-    void finalizeBefore() override;
-    void finalizeAfter() override;
+    void finalFlushBefore() override;
+    void finalFlushAfter() override;
 
     LZ4F_preferences_t kPrefs; /// NOLINT
     LZ4F_compressionContext_t ctx;

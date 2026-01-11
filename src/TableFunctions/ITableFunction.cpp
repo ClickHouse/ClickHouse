@@ -1,9 +1,11 @@
+#include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -11,12 +13,24 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;;
+}
+
 namespace DB
 {
 
-AccessType ITableFunction::getSourceAccessType() const
+const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
-    return StorageFactory::instance().getSourceAccessType(getStorageTypeName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+}
+
+std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
+{
+    if (isClusterFunction())
+        return StorageFactory::instance().getSourceAccessObject(getNonClusteredStorageEngineName());
+    return StorageFactory::instance().getSourceAccessObject(getStorageEngineName());
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
@@ -24,11 +38,18 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    AccessFlags required_access = getSourceAccessType();
+    if (const auto access_object = getSourceAccessObject())
+    {
+        AccessType type_to_check = AccessType::READ;
+        if (is_insert_query)
+            type_to_check = AccessType::WRITE;
+
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+    }
+
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
-        required_access |= AccessType::CREATE_TEMPORARY_TABLE;
-    context->checkAccess(required_access);
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 

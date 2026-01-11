@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, memory-engine
 
 SET database_atomic_wait_for_drop_and_detach_synchronously=1;
 SET log_queries=1;

@@ -5,6 +5,7 @@ sidebar_label: 'DateTime64'
 sidebar_position: 18
 slug: /sql-reference/data-types/datetime64
 title: 'DateTime64'
+doc_type: 'reference'
 ---
 
 # DateTime64
@@ -22,7 +23,9 @@ DateTime64(precision, [timezone])
 
 Internally, stores data as a number of 'ticks' since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed ('2020-01-01 05:00:01.000'). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](../../sql-reference/data-types/datetime.md).
 
-Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\]
+Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.999999999\]
+
+The number of digits after the decimal point depends on the precision parameter.
 
 Note: The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is `2262-04-11 23:47:16` in UTC.
 
@@ -41,8 +44,9 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from integer interpreted as number of seconds since 1970-01-01.
--- - from string,
+-- - from integer interpreted as number of microseconds (because of precision 3) since 1970-01-01,
+-- - from decimal interpreted as number of seconds before the decimal part, and based on the precision after the decimal point,
+-- - from string.
 INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
 
 SELECT * FROM dt64;
@@ -103,8 +107,8 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 
 ```sql
 SELECT
-toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
-toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
+toDateTime64(timestamp, 3, 'Europe/London') AS lon_time,
+toDateTime64(timestamp, 3, 'Asia/Istanbul') AS istanbul_time
 FROM dt64;
 ```
 

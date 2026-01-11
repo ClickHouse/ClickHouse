@@ -18,12 +18,14 @@ class JSONCompactEachRowRowOutputFormat : public RowOutputFormatWithExceptionHan
 public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
+
+    bool supportsSpecialSerializationKinds() const override { return settings.allow_special_serialization_kinds; }
 
 protected:
     void writePrefix() override;

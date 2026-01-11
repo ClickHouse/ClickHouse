@@ -20,15 +20,21 @@ struct PrometheusRequestHandlerConfig
 
         /// Handles Prometheus remote-read protocol.
         RemoteRead,
+
+        /// Handles Prometheus Query API endpoints (/api/v1/query, /api/v1/query_range, etc.)
+        QueryAPI,
     };
 
     Type type = Type::ExposeMetrics;
 
     /// Settings for type ExposeMetrics:
+    bool expose_info = false;
     bool expose_metrics = false;
     bool expose_asynchronous_metrics = false;
     bool expose_events = false;
     bool expose_errors = false;
+    bool expose_histograms = false;
+    bool expose_dimensional_metrics = false;
 
     /// Settings for types RemoteWrite, RemoteRead:
     QualifiedTableName time_series_table_name;

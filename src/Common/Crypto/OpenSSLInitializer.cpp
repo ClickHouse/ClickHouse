@@ -16,7 +16,8 @@ namespace DB
 {
 
 #if USE_SSL
-std::atomic<uint8_t> DB::OpenSSLInitializer::ref_count{0};
+std::atomic<bool> DB::OpenSSLInitializer::initialize_done{false};
+std::atomic<bool> DB::OpenSSLInitializer::cleanup_done{false};
 OSSL_PROVIDER * DB::OpenSSLInitializer::default_provider = nullptr;
 OSSL_PROVIDER * DB::OpenSSLInitializer::legacy_provider = nullptr;
 #endif
@@ -29,8 +30,16 @@ OpenSSLInitializer::OpenSSLInitializer()
 void OpenSSLInitializer::initialize()
 {
 #if USE_SSL
-    if (ref_count++ == 0)
+
+#ifndef NDEBUG
+    assert(!initialize_done);
+    assert(!cleanup_done);
+#endif
+
+    if (!initialize_done)
     {
+        initialize_done = true;
+
         // Disable OpenSSL atexit hook.
         // It may cause issues on shutdown, when some OpenSSL objects are still in use.
         auto openssl_flags = OPENSSL_INIT_NO_ATEXIT;
@@ -63,11 +72,19 @@ void OpenSSLInitializer::initialize()
 #endif
 }
 
-OpenSSLInitializer::~OpenSSLInitializer()
+void OpenSSLInitializer::cleanup()
 {
 #if USE_SSL
-    if (--ref_count == 0)
+
+#ifndef NDEBUG
+    assert(initialize_done);
+    assert(!cleanup_done);
+#endif
+
+    if (!cleanup_done)
     {
+        cleanup_done = true;
+
         if (legacy_provider)
         {
             chassert(OSSL_PROVIDER_unload(legacy_provider));
@@ -79,7 +96,23 @@ OpenSSLInitializer::~OpenSSLInitializer()
             chassert(OSSL_PROVIDER_unload(default_provider));
             default_provider = nullptr;
         }
+
+        OPENSSL_cleanup();
     }
+#endif
+}
+
+OpenSSLInitializer::~OpenSSLInitializer()
+{
+    cleanup();
+}
+
+bool OpenSSLInitializer::isFIPSEnabled() const
+{
+#if USE_SSL
+    return EVP_default_properties_is_fips_enabled(nullptr);
+#else
+    return false;
 #endif
 }
 

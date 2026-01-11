@@ -1,3 +1,5 @@
+SET allow_experimental_time_time64_type = 1;
+
 DROP TABLE IF EXISTS dt;
 
 CREATE TABLE dt

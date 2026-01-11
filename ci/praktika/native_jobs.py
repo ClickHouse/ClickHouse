@@ -1,3 +1,4 @@
+import dataclasses
 import platform
 import sys
 import traceback
@@ -15,10 +16,24 @@ from .info import Info
 from .mangle import _get_workflows
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
+from .s3 import S3
 from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
+
+
+# TODO: find the right place to not dublicate
+def _GH_Auth(workflow):
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return
+    from .gh_auth import GHAuth
+
+    if not Shell.check(f"gh auth status", verbose=True):
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        GHAuth.auth(app_id=app_id, app_key=pem)
+
 
 _workflow_config_job = Job.Config(
     name=Settings.CI_CONFIG_JOB_NAME,
@@ -35,15 +50,26 @@ _workflow_config_job = Job.Config(
     timeout=600,
 )
 
-_docker_build_job = Job.Config(
-    name=Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-    runs_on=Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+_docker_build_manifest_job = Job.Config(
+    name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+    runs_on=Settings.DOCKER_MERGE_RUNS_ON,
     job_requirements=Job.Requirements(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
     timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME}'",
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_MANIFEST_JOB_NAME}'",
+)
+
+_docker_build_amd_linux_job = Job.Config(
+    name=Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_AMD_RUNS_ON,
+    job_requirements=Job.Requirements(
+        python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
+        python_requirements_txt="",
+    ),
+    timeout=int(5.5 * 3600),
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME}'",
 )
 
 _docker_build_arm_linux_job = Job.Config(
@@ -72,8 +98,9 @@ _final_job = Job.Config(
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
-        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+        Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
         Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+        Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         Settings.FINISH_WORKFLOW_JOB_NAME,
     ):
         return True
@@ -88,6 +115,9 @@ def _build_dockers(workflow, job_name):
     job_status = Result.Status.SUCCESS
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
+    for d in dockers:
+        if isinstance(d.platforms, str):
+            d.platforms = [d.platforms]
     docker_digests = {}  # type: Dict[str, str]
     arm_only = False
     amd_only = False
@@ -117,20 +147,28 @@ def _build_dockers(workflow, job_name):
             job_info = "Failed to install docker buildx driver"
 
     if job_status == Result.Status.SUCCESS:
-        if not Docker.login(
+        if not Info().is_local_run and not Docker.login(
             Settings.DOCKERHUB_USERNAME,
             user_password=workflow.get_secret(Settings.DOCKERHUB_SECRET).get_value(),
         ):
             job_status = Result.Status.FAILED
             job_info = "Failed to login to dockerhub"
 
-    if job_status == Result.Status.SUCCESS:
+    if (
+        job_status == Result.Status.SUCCESS
+        and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
+    ):
         for docker in dockers:
             if amd_only and Docker.Platforms.AMD not in docker.platforms:
                 continue
             elif arm_only and Docker.Platforms.ARM not in docker.platforms:
                 continue
-            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
+            platforms = (
+                docker.platforms
+                if isinstance(docker.platforms, list)
+                else [docker.platforms]
+            )
+            if any(p not in Docker.Platforms.arm_amd for p in platforms):
                 Utils.raise_with_error(
                     f"TODO: add support for all docker platforms [{docker.platforms}]"
                 )
@@ -144,7 +182,7 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
-                    with_log=True,
+                    disable_push=Info().is_local_run,
                 )
             )
             if results[-1].is_ok():
@@ -155,7 +193,7 @@ def _build_dockers(workflow, job_name):
 
     if (
         job_status == Result.Status.SUCCESS
-        and job_name == Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME
+        and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
         for docker in dockers:
@@ -164,11 +202,23 @@ def _build_dockers(workflow, job_name):
                     config=docker,
                     digests=docker_digests,
                     with_log=True,
-                    add_latest=workflow.set_latest_in_dockers_build,
+                    add_latest=workflow.set_latest_for_docker_merged_manifest,
                 )
             )
 
     return Result.create_from(results=results, info=job_info)
+
+
+def _clean_buildx_volumes():
+    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
+    Shell.check(
+        "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
+        verbose=True,
+    )
+    Shell.check(
+        "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
+        verbose=True,
+    )
 
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
@@ -180,7 +230,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         commands = [
             f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            f'test -z "$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX})"',
         ]
 
         return Result.from_commands_run(
@@ -273,6 +323,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
+        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
+        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():
@@ -281,11 +333,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
         results.append(result_)
 
-    if results[-1].is_ok() and workflow.secrets:
-        result_ = _check_secrets(workflow.secrets)
-        if result_.status != Result.Status.SUCCESS:
-            print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-        results.append(result_)
+    # TODO: commented out to decrease risk of throttling:
+    #       An error occurred (ThrottlingException) when calling the GetParameter operation (reached max retries: 2): Rate exceeded
+    # if results[-1].is_ok() and workflow.secrets:
+    #     result_ = _check_secrets(workflow.secrets)
+    #     if result_.status != Result.Status.SUCCESS:
+    #         print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
+    #     results.append(result_)
 
     if results[-1].is_ok() and workflow.enable_cidb:
         result_ = _check_db(workflow)
@@ -365,12 +419,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
             for job in workflow.jobs:
                 # Skip native Praktika jobs
-                if job.name in (
-                    Settings.CI_CONFIG_JOB_NAME,
-                    Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
-                    Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-                    Settings.FINISH_WORKFLOW_JOB_NAME,
-                ):
+                if _is_praktika_job(job.name):
                     continue
 
                 is_affected = False
@@ -440,6 +489,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
+
         results.append(
             Result(
                 name="Cache Lookup",
@@ -449,7 +499,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 info=info,
             )
         )
+
+    print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
+    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
+    env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
         print("Init report")
@@ -468,6 +522,41 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
+def _check_and_link_open_issues(result: Result, job_name: str) -> bool:
+    """
+    Downloads flaky test catalog from S3 and marks matching test results as flaky
+    or infrastructure issues. Can be called on a single job result.
+
+    Args:
+        result: The result object to check and mark
+        job_name: The job name for infrastructure job pattern matching
+
+    Returns:
+        True if successful, False if catalog download failed
+    """
+    from .issue import TestCaseIssueCatalog
+
+    if result.is_ok():
+        print("Result succeeded, no flaky test check needed.")
+        return True
+
+    print("Checking for flaky tests and infrastructure issues...")
+
+    # Download catalog from S3
+    issue_catalog = TestCaseIssueCatalog.from_s3()
+    if not issue_catalog:
+        print("ERROR: Could not load issue catalog")
+        return False
+    print(f"Loaded {len(issue_catalog.active_test_issues)} active issues")
+
+    # Check all issues against the result tree
+    for issue in issue_catalog.active_test_issues:
+        issue.check_result(result, job_name)
+    result.dump()
+    print("Flaky test check and infrastructure issue check completed")
+    return True
+
+
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
@@ -481,6 +570,13 @@ def _finish_workflow(workflow, job_name):
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
+
+    if (
+        workflow.enable_merge_ready_status
+        or workflow.enable_open_issues_check
+        or workflow.post_hooks
+    ):
+        _GH_Auth(workflow)
 
     update_final_report = False
     results = []
@@ -502,7 +598,7 @@ def _finish_workflow(workflow, job_name):
     ready_for_merge_status = Result.Status.SUCCESS
     ready_for_merge_description = ""
     failed_results = []
-    skipped_results = []
+    dropped_results = []
 
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
@@ -513,11 +609,30 @@ def _finish_workflow(workflow, job_name):
         if result.status == Result.Status.SUCCESS:
             continue
         if result.status == Result.Status.SKIPPED:
-            if ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE in result.info:
-                skipped_results.append(result.name)
-            else:
-                # legally skipped job
-                continue
+            continue
+        if result.status == Result.Status.DROPPED:
+            dropped_results.append(result.name)
+            continue
+        if workflow.enable_open_issues_check and (
+            (
+                result.has_label(Result.Label.ISSUE)
+                and not result.has_label(Result.Label.BLOCKER)
+            )
+            or (
+                result.results
+                and all(
+                    (
+                        sub_result.has_label(Result.Label.ISSUE)
+                        and not sub_result.has_label(Result.Label.BLOCKER)
+                    )
+                    for sub_result in result.results
+                )
+            )
+        ):
+            print(
+                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
+            )
+            continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
@@ -537,22 +652,17 @@ def _finish_workflow(workflow, job_name):
             )
             failed_results.append(result.name)
 
-    if failed_results or skipped_results:
+    if failed_results or dropped_results:
         ready_for_merge_status = Result.Status.FAILED
         failed_jobs_csv = ",".join(failed_results)
         if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
             ready_for_merge_description = f"Failed: {len(failed_results)}"
-        if skipped_results:
-            ready_for_merge_description += f", Skipped: {len(skipped_results)}"
+        if dropped_results:
+            ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
     if workflow.enable_merge_ready_status:
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        from .gh_auth import GHAuth
-
-        GHAuth.auth(app_id=app_id, app_key=pem)
         if not GH.post_commit_status(
             name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
             or f"Ready For Merge [{workflow.name}]",
@@ -579,10 +689,12 @@ if __name__ == "__main__":
     try:
         workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
         if job_name in (
-            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
             Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
+            _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
         elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:

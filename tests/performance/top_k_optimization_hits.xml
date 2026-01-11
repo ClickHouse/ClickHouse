@@ -1,0 +1,4 @@
+<test>
+    <query>SELECT URL, EventTime FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS use_top_k_dynamic_filtering=1</query>
+    <query>SELECT URL, EventTime FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS use_top_k_dynamic_filtering=0</query>
+</test>

@@ -10,6 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <base/range.h>
 
 #include <constants.h>
@@ -20,7 +21,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool geotoh3_lon_lat_input_order;
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
 }
 namespace ErrorCodes
 {
@@ -37,14 +38,14 @@ namespace
 /// and returns h3 index of this point
 class FunctionGeoToH3 : public IFunction
 {
-    const bool geotoh3_lon_lat_input_order;
+    GeoToH3ArgumentOrder geotoh3_argument_order;
 public:
     static constexpr auto name = "geoToH3";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeoToH3>(context); }
 
     explicit FunctionGeoToH3(ContextPtr context)
-    : geotoh3_lon_lat_input_order(context->getSettingsRef()[Setting::geotoh3_lon_lat_input_order])
+    : geotoh3_argument_order(context->getSettingsRef()[Setting::geotoh3_argument_order])
     {
     }
 
@@ -94,7 +95,7 @@ public:
         const ColumnFloat64 * col_lat = nullptr;
         const ColumnFloat64 * col_lon = nullptr;
 
-        if (geotoh3_lon_lat_input_order)
+        if (geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT)
         {
             col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
             col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
@@ -146,11 +147,11 @@ public:
 
             if (res > MAX_H3_RES)
                 throw Exception(
-                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                        toString(res),
-                        getName(),
-                        MAX_H3_RES);
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
+                    static_cast<uint8_t>(res),
+                    getName(),
+                    MAX_H3_RES);
 
             LatLng coord;
             coord.lng = degsToRads(lon);
@@ -172,7 +173,38 @@ public:
 
 REGISTER_FUNCTION(GeoToH3)
 {
-    factory.registerFunction<FunctionGeoToH3>();
+    FunctionDocumentation::Description description = R"(
+Returns [H3](https://h3geo.org/docs/core-library/h3Indexing/) point index for the given latitude, longitude, and resolution.
+
+:::note
+In ClickHouse v25.4 or older, `geoToH3()` arguments are in the order `(lon, lat)`. As per ClickHouse v25.5, the input values are ordered `(lat, lon)`.
+The previous behavior can be restored using setting `geotoh3_argument_order = 'lon_lat'`.
+    )";
+    FunctionDocumentation::Syntax syntax = "geoToH3(lat, lon, resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lat", "Latitude in degrees.", {"Float64"}},
+        {"lon", "Longitude in degrees.", {"Float64"}},
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the H3 index number, or `0` in case of error.",
+        {"UInt64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Convert coordinates to H3 index",
+            "SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index",
+            R"(
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeoToH3>(documentation);
 }
 
 }

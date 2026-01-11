@@ -22,4 +22,16 @@ std::unordered_map<String, String> parseHTTPResponseHeaders(const std::string & 
 void applyHTTPResponseHeaders(Poco::Net::HTTPResponse & response, const HTTPResponseHeaderSetup & setup);
 
 void applyHTTPResponseHeaders(Poco::Net::HTTPResponse & response, const std::unordered_map<String, String> & setup);
+
+std::unordered_map<String, String> parseHTTPResponseHeadersWithCommons(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::unordered_map<String, String> & common_headers);
+
+std::unordered_map<String, String> parseHTTPResponseHeadersWithCommons(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::string & default_content_type,
+    const std::unordered_map<String, String> & common_headers);
+
 }

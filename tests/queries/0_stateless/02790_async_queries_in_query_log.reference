@@ -118,7 +118,7 @@ written_rows:   0
 written_bytes:  0
 result_rows:    0
 result_bytes:   0
-query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1, materialized_views_ignore_errors = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing','default.async_insert_target']
@@ -128,20 +128,20 @@ exception_code: 0
 
 Row 2:
 ──────
-type:           Exc*****onWhileProcessing
+type:           QueryFinish
 read_rows:      3
 read_bytes:     12
 written_rows:   3
 written_bytes:  12
-result_rows:    0
-result_bytes:   0
-query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1 FORMAT Values
+result_rows:    3
+result_bytes:   12
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 1, async_insert = 1, materialized_views_ignore_errors = 1 FORMAT Values
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing','default.async_insert_target']
 columns:        ['default.async_insert_landing.id']
 views:          ['default.async_insert_mv']
-exception_code: 395
+exception_code: 0
 
 system.query_views_log
 Row 1:

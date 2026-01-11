@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-encrypted-storage
 # Tag no-fasttest: requires S3
 # Tag no-random-settings, no-random-merge-tree-settings: to avoid creating extra files like serialization.json, this test too exocit anyway
 
@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # config for clickhouse-disks (to check leftovers)
-config="${BASH_SOURCE[0]/.sh/.yml}"
+config="${CUR_DIR}/02980_s3_plain_DROP_TABLE_MergeTree.yml"
 
 # only in Atomic ATTACH from s3_plain works
 new_database="ordinary_$CLICKHOUSE_DATABASE"
@@ -21,7 +21,7 @@ CLICKHOUSE_DATABASE="$new_database"
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by key;
+    create table data (key Int) engine=MergeTree() order by key settings write_marks_for_substreams_in_compact_parts=1, auto_statistics_types = '';
     insert into data values (1);
     select 'data after INSERT', count() from data;
 "
@@ -34,6 +34,7 @@ $CLICKHOUSE_CLIENT -m -q "
     attach table data (key Int) engine=MergeTree() order by key
     settings
         max_suspicious_broken_parts=0,
+        write_marks_for_substreams_in_compact_parts=1,
         disk=disk(type=s3_plain,
             endpoint='http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE',
             access_key_id='test',

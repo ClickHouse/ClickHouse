@@ -157,9 +157,7 @@ def check_valid_configuration(filename, password):
     for node in nodes:
         setupSsl(node, filename, password)
     start_all_clickhouse()
-    nodes[0].wait_for_log_line(
-        "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=5000
-    )
+    nodes[0].wait_for_log_line("Raft ASIO listener initiated on :::9234, SSL enabled")
     run_test()
 
 
@@ -169,9 +167,7 @@ def check_invalid_configuration(filename, password):
         setupSsl(node, filename, password)
 
     nodes[0].start_clickhouse()
-    nodes[0].wait_for_log_line(
-        "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=5000
-    )
+    nodes[0].wait_for_log_line("Raft ASIO listener initiated on :::9234, SSL enabled")
     nodes[0].wait_for_log_line("failed to connect to peer.*Connection refused")
 
 

@@ -29,6 +29,7 @@ def test_old_dirs_cleanup(start_cluster):
         CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', 'node1')
         PARTITION BY date ORDER BY id
+        SETTINGS cleanup_delay_period=3600, max_cleanup_delay_period=3600
         """
     )
 

@@ -1,8 +1,7 @@
-#include "ReadWriteBufferFromHTTP.h"
-#include <sstream>
-#include <string_view>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
 #include <IO/HTTPCommon.h>
+#include <IO/WriteHelpers.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -100,7 +99,10 @@ size_t ReadWriteBufferFromHTTP::getOffset() const
 
 void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const
 {
-    request.setHost(current_uri.getHost());
+    if (current_uri.getPort())
+        request.setHost(current_uri.getHost(), current_uri.getPort());
+    else
+        request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
         request.setChunkedTransferEncoding(true);

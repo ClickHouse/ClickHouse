@@ -60,13 +60,13 @@ increments the number of seconds in the date with time.
     FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
     FunctionDocumentation::Argument argument2 = {"y", "Right hand operand."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The sum of x and y";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the sum of x and y"};
     FunctionDocumentation::Example example1 = {"Adding two numbers", "SELECT plus(5,5)", "10"};
     FunctionDocumentation::Example example2 = {"Adding an integer and a date", "SELECT plus(toDate('2025-01-01'),5)", "2025-01-06"};
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionPlus>(documentation);
 }

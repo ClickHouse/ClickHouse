@@ -5,12 +5,6 @@
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <Loggers/Loggers.h>
-#include <Common/InterruptListener.h>
-#include <Common/StatusFile.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 
 
@@ -32,14 +26,7 @@ public:
         int err_fd_,
         std::istream & input_stream_,
         std::ostream & output_stream_,
-        std::ostream & error_stream_)
-        : ClientBase(in_fd_, out_fd_, err_fd_, input_stream_, output_stream_, error_stream_), session(std::move(session_))
-    {
-        global_context = session->makeSessionContext();
-        configuration = ConfigHelper::createEmpty();
-        layered_configuration = new Poco::Util::LayeredConfiguration();
-        layered_configuration->addWriteable(configuration, 0);
-    }
+        std::ostream & error_stream_);
 
     [[ nodiscard ]] int run(const NameToNameMap & envVars, const String & first_query);
 

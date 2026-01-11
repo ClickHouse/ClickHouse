@@ -88,13 +88,6 @@ StoragePtr StorageFactory::get(
 
         name = "View";
     }
-    else if (query.is_live_view)
-    {
-        if (query.storage)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a LiveView");
-
-        name = "LiveView";
-    }
     else if (query.is_dictionary)
     {
         if (query.storage)
@@ -148,13 +141,6 @@ StoragePtr StorageFactory::get(
                     ErrorCodes::INCORRECT_QUERY,
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
-            }
-            if (name == "LiveView")
-            {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE LiveView "
-                    "is not supported, use CREATE LIVE VIEW statement");
             }
             if (name == "WindowView")
             {
@@ -262,11 +248,13 @@ StorageFactory & StorageFactory::instance()
 }
 
 
-AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
+std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
 {
-    auto it = storages.find(table_engine);
+    if (table_engine.empty())
+        return {};
+    const auto it = storages.find(table_engine);
     if (it == storages.end())
-        return AccessType::NONE;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine '{}' when checking for access type", table_engine);
     return it->second.features.source_access_type;
 }
 

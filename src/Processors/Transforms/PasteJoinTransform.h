@@ -29,7 +29,7 @@ using JoinPtr = std::shared_ptr<IJoin>;
 class PasteJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    explicit PasteJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
+    explicit PasteJoinAlgorithm(JoinPtr table_join, const SharedHeaders & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "PasteJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -38,17 +38,12 @@ public:
     MergedStats getMergedStats() const override;
 
 private:
-    Chunk createBlockWithDefaults(size_t source_num);
-    Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
-
     /// For `USING` join key columns should have values from right side instead of defaults
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::array<Chunk, 2> chunks;
 
     JoinPtr table_join;
-
-    size_t max_block_size;
 
     struct Statistic
     {
@@ -72,8 +67,8 @@ class PasteJoinTransform final : public IMergingTransform<PasteJoinAlgorithm>
 public:
     PasteJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint = 0);
 

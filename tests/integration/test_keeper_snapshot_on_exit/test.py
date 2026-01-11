@@ -37,7 +37,9 @@ def test_snapshot_on_exit(started_cluster):
     zk_conn = None
     try:
         zk_conn = get_fake_zk(node1)
-        zk_conn.create("/some_path", b"some_data")
+
+        if not zk_conn.exists("/some_path"):
+            zk_conn.create("/some_path", b"some_data")
 
         zk_conn.stop()
         zk_conn.close()
@@ -58,7 +60,3 @@ def test_snapshot_on_exit(started_cluster):
         if zk_conn:
             zk_conn.stop()
             zk_conn.close()
-
-        zk_conn = get_fake_zk(node1)
-        if zk_conn.exists("/some_path"):
-            zk_conn.delete("/some_path")

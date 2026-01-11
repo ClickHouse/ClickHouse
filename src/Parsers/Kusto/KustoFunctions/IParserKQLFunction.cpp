@@ -1,4 +1,4 @@
-#include "KQLFunctionFactory.h"
+#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>

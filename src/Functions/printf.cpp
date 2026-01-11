@@ -30,7 +30,6 @@ namespace
 class FunctionPrintf : public IFunction
 {
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr function_concat;
 
     struct Instruction
@@ -85,11 +84,9 @@ private:
                 T a = data[i];
                 s = fmt::sprintf(format, static_cast<NearestFieldType<T>>(a));
 
-                res_chars.resize(curr_offset + s.size() + 1);
+                res_chars.resize(curr_offset + s.size());
                 memcpy(&res_chars[curr_offset], s.data(), s.size());
-                res_chars[curr_offset + s.size()] = 0;
-
-                curr_offset += s.size() + 1;
+                curr_offset += s.size();
                 res_offsets[i] = curr_offset;
             }
             return true;
@@ -106,14 +103,12 @@ private:
             size_t curr_offset = 0;
             for (size_t i = 0; i < concrete_column->size(); ++i)
             {
-                auto a = concrete_column->getDataAt(i).toView();
+                auto a = concrete_column->getDataAt(i);
                 s = fmt::sprintf(format, a);
 
-                res_chars.resize(curr_offset + s.size() + 1);
+                res_chars.resize(curr_offset + s.size());
                 memcpy(&res_chars[curr_offset], s.data(), s.size());
-                res_chars[curr_offset + s.size()] = 0;
-
-                curr_offset += s.size() + 1;
+                curr_offset += s.size();
                 res_offsets[i] = curr_offset;
             }
             return true;
@@ -161,8 +156,9 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionPrintf>(context); }
 
-    explicit FunctionPrintf(ContextPtr context_)
-        : context(context_), function_concat(FunctionFactory::instance().get("concat", context)) { }
+    explicit FunctionPrintf(ContextPtr context)
+        : function_concat(FunctionFactory::instance().get("concat", context))
+    {}
 
     String getName() const override { return name; }
 
@@ -223,7 +219,7 @@ public:
             {
                 concat_args[i] = instruction.execute();
             }
-            catch (const fmt::v11::format_error & e)
+            catch (const fmt::v12::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(
@@ -345,14 +341,34 @@ private:
 
 REGISTER_FUNCTION(Printf)
 {
-    factory.registerFunction<FunctionPrintf>(
-        FunctionDocumentation{.description=R"(
+    FunctionDocumentation::Description description = R"(
 The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
 The format string can contain format specifiers starting with `%` character.
 Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
-Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .category = FunctionDocumentation::Category::StringReplacement
-});
+Literal `%` character can be escaped by `%%`.
+)";
+    FunctionDocumentation::Syntax syntax = "printf(format[, sub1, sub2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"format", "The format string with `%` specifiers.", {"String"}},
+        {"sub1, sub2, ...", "Optional. Zero or more values to substitute into the format string.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a formatted string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "C++-style formatting",
+        "SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);",
+        R"(
+┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
+│ %Hello World 2024                            │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
+    factory.registerFunction<FunctionPrintf>(documentation);
 }
 
 }

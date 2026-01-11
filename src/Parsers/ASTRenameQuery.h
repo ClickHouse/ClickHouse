@@ -158,19 +158,18 @@ protected:
     {
         if (database)
         {
-            ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
+            ostr << "RENAME DATABASE ";
 
             if (elements.at(0).if_exists)
-                ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+                ostr << "IF EXISTS ";
 
             elements.at(0).from.database->format(ostr, settings, state, frame);
-            ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+            ostr << " TO ";
             elements.at(0).to.database->format(ostr, settings, state, frame);
             formatOnCluster(ostr, settings);
             return;
         }
 
-        ostr << (settings.hilite ? hilite_keyword : "");
         if (exchange && dictionary)
             ostr << "EXCHANGE DICTIONARIES ";
         else if (exchange)
@@ -180,15 +179,13 @@ protected:
         else
             ostr << "RENAME TABLE ";
 
-        ostr << (settings.hilite ? hilite_none : "");
-
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
             if (it != elements.cbegin())
                 ostr << ", ";
 
             if (it->if_exists)
-                ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+                ostr << "IF EXISTS ";
 
 
             if (it->from.database)
@@ -200,7 +197,7 @@ protected:
             chassert(it->from.table);
             it->from.table->format(ostr, settings, state, frame);
 
-            ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
+            ostr << (exchange ? " AND " : " TO ");
 
             if (it->to.database)
             {

@@ -6,6 +6,7 @@ import string
 import time
 import uuid
 from multiprocessing.dummy import Pool
+from datetime import datetime
 
 import pytest
 from kazoo.exceptions import NoNodeError
@@ -58,7 +59,11 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "instance",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
@@ -71,7 +76,11 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
+            ],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -268,7 +277,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
 def test_upgrade(started_cluster):
     node = started_cluster.instances["instance_23.12"]
     if "23.12" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
 
     table_name = f"test_upgrade"
     dst_table_name = f"{table_name}_dst"
@@ -375,6 +384,8 @@ def test_commit_on_limit(started_cluster, processing_threads):
         started_cluster, f"{files_path}/test_999999.csv", correct_values_csv
     )
 
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     create_mv(node, table_name, dst_table_name)
 
     expected_files = files_to_generate + 4
@@ -424,6 +435,25 @@ def test_commit_on_limit(started_cluster, processing_threads):
         )
     )
 
+    finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    node.query("system flush logs")
+    commit_id = node.query(
+        f"SELECT commit_id FROM system.s3queue_log WHERE file_name = '{files_path}/test_999999.csv'"
+    ).strip()
+    assert len(commit_id) > 0
+    commit_id_count = int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE commit_id = {commit_id}"
+        ).strip()
+    )
+    assert files_to_generate + 5 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE transaction_start_time >= toDateTime('{start_time}') and transaction_start_time <= toDateTime('{finish_time}')"
+        ).strip()
+    )
+    # 11 and not 10, because failed file is not accounted in
+    # current_processed_files which is compared to max_processed_files.
+    assert commit_id_count <= 11
     expected_processed = ["test_" + str(i) + ".csv" for i in range(files_to_generate)]
     processed = get_processed_files()
     for value in expected_processed:
@@ -452,7 +482,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
     if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+        node.restart_with_original_version(clear_data_dir=True)
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"

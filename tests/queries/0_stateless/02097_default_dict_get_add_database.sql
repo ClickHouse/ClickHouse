@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, log-engine
 
 DROP DATABASE IF EXISTS db_02097;
 CREATE DATABASE db_02097;

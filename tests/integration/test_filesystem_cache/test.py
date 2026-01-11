@@ -2,6 +2,7 @@ import logging
 import os
 import random
 import time
+import uuid
 
 import pytest
 
@@ -20,6 +21,7 @@ def cluster():
             "node",
             main_configs=[
                 "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -43,6 +45,7 @@ def cluster():
             main_configs=[
                 "config.d/storage_conf.xml",
                 "config.d/force_read_through_cache_for_merges.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -132,7 +135,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         SYSTEM DROP FILESYSTEM CACHE;
-        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
         SELECT * FROM test FORMAT Null;
         """
     )
@@ -299,7 +302,7 @@ def test_custom_cached_disk(non_shared_cluster):
         DROP TABLE IF EXISTS test SYNC;
         CREATE TABLE test (a Int32)
         ENGINE = MergeTree() ORDER BY tuple()
-        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 1, disk = 'hdd_blob');
+        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 10, disk = 'hdd_blob');
         """
     )
 
@@ -321,7 +324,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -357,7 +360,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test2 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -377,7 +380,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test3 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -388,11 +391,11 @@ def test_custom_cached_disk(non_shared_cluster):
         ).strip()
     )
 
-    assert "Filesystem cache path must lie inside" in node.query_and_get_error(
+    assert "Filesystem cache absolute path must lie inside" in node.query_and_get_error(
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -400,7 +403,7 @@ def test_custom_cached_disk(non_shared_cluster):
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
-    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 1, disk = 'hdd_blob');
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 10, disk = 'hdd_blob');
     """
     )
 
@@ -458,8 +461,7 @@ def test_force_filesystem_cache_on_merges(cluster):
         node.query(
             """
             SYSTEM DROP FILESYSTEM CACHE;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
             """
         )
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
@@ -506,14 +508,16 @@ def test_force_filesystem_cache_on_merges(cluster):
 def test_system_sync_filesystem_cache(cluster):
     node = cluster.instances["node"]
     node.query(
-        """
+        f"""
 DROP TABLE IF EXISTS test;
+SYSTEM DROP FILESYSTEM CACHE;
 
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
             max_size = '10Gi',
-            path = "test_system_sync_filesystem_cache",
+            path = "test_system_sync_filesystem_cache_{uuid.uuid4()}",
+            cache_policy = 'lru',
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
     """
@@ -527,7 +531,7 @@ INSERT INTO test SELECT 1, 'test';
     """
     )
 
-    query_id = "system_sync_filesystem_cache_1"
+    query_id = f"system_sync_filesystem_cache_1_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -555,7 +559,7 @@ INSERT INTO test SELECT 1, 'test';
     node.query("SELECT * FROM test FORMAT Null")
     assert key not in node.query("SYSTEM SYNC FILESYSTEM CACHE")
 
-    query_id = "system_sync_filesystem_cache_2"
+    query_id = f"system_sync_filesystem_cache_2_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -574,6 +578,7 @@ INSERT INTO test SELECT 1, 'test';
     cache_path = node.query(
         f"SELECT cache_path FROM system.filesystem_cache WHERE key = '{key}' and file_segment_range_begin = {offset}"
     )
+    assert len(cache_path) > 0
 
     node.exec_in_container(["bash", "-c", f"echo -n 'fff' > {cache_path}"])
 
@@ -825,6 +830,9 @@ SETTINGS disk = disk(type = cache,
     """
     )
 
+    wait_for_cache_initialized(node, "test_filesystem_cache_log")
+    
+
     node.query(
         """
 INSERT INTO test SELECT 1, 'test';
@@ -927,12 +935,35 @@ def test_max_size_ratio(cluster):
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
         ORDER BY value
+        SETTINGS disk = 'cache_with_max_size_ratio'
+        """
+    )
+    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space on path /var/log/clickhouse/fs-cache/max_size_ratio")
+
+
+def test_finished_download_time(cluster):
+    node = cluster.instances["node"]
+    name = f"test_finished_download_time_{uuid.uuid4()}"
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS test SYNC;
+        CREATE TABLE test (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
         SETTINGS disk = disk(
             type = cache,
-            name = 'test_max_size_ratio',
-            path = 'test_max_size_ratio/',
-            max_size_ratio_to_total_space=0.7,
+            name = '{name}',
+            path = '{name}/',
+            max_size = '100Mi',
             disk = 'hdd_blob');
         """
     )
-    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space")
+    node.query("INSERT INTO test SELECT number, toString(number) FROM numbers(100)")
+    node.query("SELECT * FROM test FORMAT Null")
+    time.sleep(2)
+    elapsed_time = node.query(
+        f"SELECT now() - finished_download_time FROM system.filesystem_cache WHERE cache_name = '{name}' and state = 'DOWNLOADED' ORDER BY finished_download_time DESC LIMIT 1"
+    )
+    assert len(elapsed_time) > 0
+    assert int(elapsed_time) > 1
+    assert int(elapsed_time) < 5

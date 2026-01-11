@@ -1,4 +1,4 @@
-#include "ExecutablePoolDictionarySource.h"
+#include <Dictionaries/ExecutablePoolDictionarySource.h>
 
 #include <filesystem>
 
@@ -77,30 +77,34 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadAll()
+BlockIO ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
+BlockIO ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
 QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
@@ -135,7 +139,8 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
         command = std::move(script_path);
     }
 
-    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto header = std::make_shared<const Block>(block);
+    auto source = std::make_shared<SourceFromSingleChunk>(header);
     auto shell_input_pipe = Pipe(std::move(source));
 
     ShellCommandSourceConfiguration command_configuration;
@@ -154,7 +159,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
         command_configuration);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
 
     return QueryPipeline(std::move(pipe));
 }

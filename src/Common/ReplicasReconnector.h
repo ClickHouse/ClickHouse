@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <list>
 #include <functional>

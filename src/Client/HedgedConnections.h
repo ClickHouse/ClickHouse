@@ -95,7 +95,7 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
-    void sendReadTaskResponse(const String &) override
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }

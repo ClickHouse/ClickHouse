@@ -1,10 +1,6 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined(OS_DARWIN) || defined(OS_FREEBSD)
-#   include <sys/mount.h>
-#else
-#   include <sys/statfs.h>
-#endif
+#include <sys/statvfs.h>
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -37,7 +33,7 @@
 #   include <sys/sysctl.h>
 #endif
 
-#include "types.h"
+#include <types.h>
 
 /// decompress part
 int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
@@ -216,10 +212,10 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
 
     /// Check free space
-    struct statfs fs_info;
-    if (0 != fstatfs(input_fd, &fs_info))
+    struct statvfs fs_info;
+    if (0 != fstatvfs(input_fd, &fs_info))
     {
-        perror("fstatfs");
+        perror("fstatvfs");
         if (0 != munmap(input, info_in.st_size))
                 perror("munmap");
         return 1;

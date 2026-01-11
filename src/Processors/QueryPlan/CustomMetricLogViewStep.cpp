@@ -25,12 +25,15 @@ namespace DB
 
 namespace
 {
+
 /// Transpose structure with metrics/events as rows to
 /// to columnar view.
 class CustomMetricLogViewTransform : public IInflatingTransform
 {
-    HashMap<StringRef, size_t> mapping;
+private:
+    HashMap<std::string_view, size_t> mapping;
     Names column_names;
+
 public:
     static constexpr size_t SECONDS_IN_HOUR = 3600;
     String getName() const override { return "CustomMetricLogViewTransform"; }
@@ -51,14 +54,14 @@ public:
     bool need_hostname = false;
     bool need_date = false;
 
-    CustomMetricLogViewTransform(Block input_header, Block output_header)
+    CustomMetricLogViewTransform(SharedHeader input_header, SharedHeader output_header)
         : IInflatingTransform(input_header, output_header)
     {
         size_t counter = 0;
-        column_names.reserve(output_header.columns());
+        column_names.reserve(output_header->columns());
 
         /// Preserve memory for each column
-        for (const auto & column : output_header)
+        for (const auto & column : *output_header)
         {
             column_names.push_back(column.name);
             const auto & column_name = column_names.back();
@@ -66,7 +69,7 @@ public:
             {
                 mapping[column_name] = counter;
                 buffer[counter].resize(SECONDS_IN_HOUR);
-                counter++;
+                ++counter;
             }
             else if (column_name == TransposedMetricLog::HOSTNAME_NAME)
             {
@@ -277,9 +280,9 @@ public:
                 dates[second_in_hour] = date_column.getUInt(i);
 
             if (need_hostname)
-                hostnames[second_in_hour] = hostname_column.getDataAt(i).toString();
+                hostnames[second_in_hour] = hostname_column.getDataAt(i);
 
-            StringRef metric_name = metric_column.getDataAt(i);
+            std::string_view metric_name = metric_column.getDataAt(i);
             auto * it = mapping.find(metric_name);
             if (it == mapping.end())
                 continue;
@@ -295,7 +298,7 @@ public:
 }
 
 CustomMetricLogViewStep::CustomMetricLogViewStep(
-    Block input_header_, Block output_header_)
+    SharedHeader input_header_, SharedHeader output_header_)
      : ITransformingStep(
          input_header_, output_header_,
          ITransformingStep::Traits
@@ -310,7 +313,7 @@ CustomMetricLogViewStep::CustomMetricLogViewStep(
 void CustomMetricLogViewStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
-    pipeline.addTransform(std::make_shared<CustomMetricLogViewTransform>(input_headers[0], *output_header));
+    pipeline.addTransform(std::make_shared<CustomMetricLogViewTransform>(input_headers[0], output_header));
 }
 
 const SortDescription & CustomMetricLogViewStep::getSortDescription() const

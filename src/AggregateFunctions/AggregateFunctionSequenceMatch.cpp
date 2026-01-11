@@ -5,14 +5,14 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
-#include "Functions/array/length.h"
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/array/length.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+#include <Common/assert_cast.h>
 
 #include <bitset>
 #include <cstddef>

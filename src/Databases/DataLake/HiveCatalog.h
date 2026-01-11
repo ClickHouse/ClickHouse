@@ -50,7 +50,13 @@ private:
     std::shared_ptr<apache::thrift::transport::TTransport> socket;
     std::shared_ptr<apache::thrift::transport::TTransport> transport;
     std::shared_ptr<apache::thrift::protocol::TBinaryProtocol> protocol;
-    mutable Apache::Hadoop::Hive::ThriftHiveMetastoreClient client;
+     /// Somehow API of apache::thrift::transport::TBufferBase is not thread-safe.
+     /// Database Datalake can call this function from multiple threads, so we need to protect
+     /// access to the client.
+    mutable std::mutex client_mutex;
+
+    mutable Apache::Hadoop::Hive::ThriftHiveMetastoreClient client TSA_GUARDED_BY(client_mutex);
+
 };
 
 }

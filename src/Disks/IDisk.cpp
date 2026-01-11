@@ -1,9 +1,9 @@
-#include "IDisk.h"
-#include <Core/Field.h>
+#include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Storages/PartitionCommands.h>
@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+
 
 namespace CurrentMetrics
 {
@@ -76,11 +77,10 @@ void IDisk::copyFile( /// NOLINT
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (existsFile(path))
-        return readFile(path, settings, read_hint, file_size);
+        return readFile(path, settings, read_hint);
     else
         return {};
 }
@@ -139,7 +139,7 @@ void asyncCopy(
 {
     if (from_disk.existsFile(from_path))
     {
-        runner(
+        runner.enqueueAndKeepTrack(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
                 from_disk.copyFile(
                     from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);
@@ -163,7 +163,7 @@ void IDisk::copyThroughBuffers(
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, "AsyncCopy");
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, ThreadName::ASYNC_COPY);
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
@@ -192,17 +192,12 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-bool IDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
-}
-
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
 }
 
-void IDisk::startup(ContextPtr context, bool skip_access_check)
+void IDisk::startup(bool skip_access_check)
 {
     if (!skip_access_check)
     {
@@ -215,7 +210,7 @@ void IDisk::startup(ContextPtr context, bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl(context);
+    startupImpl();
 }
 
 void IDisk::checkAccess()
@@ -234,10 +229,12 @@ try
 {
     const std::string_view payload("test", 4);
     const auto read_settings = getReadSettings();
+    auto write_settings = getWriteSettings();
+    write_settings.is_initial_access_check = true;
 
     /// write
     {
-        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
         try
         {
             file->write(payload.data(), payload.size());

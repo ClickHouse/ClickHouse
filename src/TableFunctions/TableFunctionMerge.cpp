@@ -55,7 +55,7 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "Merge"; }
+    const char * getStorageEngineName() const override { return "Merge"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
@@ -158,7 +158,16 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMerge>();
+    factory.registerFunction<TableFunctionMerge>(
+        {
+            .documentation = {
+                .description = "Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.",
+                .examples = {{"merge", "SELECT * FROM merge(db, '^table_.*')", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
+            .allow_readonly = true,
+        }
+    );
 }
 
 }

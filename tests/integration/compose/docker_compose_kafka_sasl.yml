@@ -27,3 +27,5 @@ services:
       - label:disable
     sysctls:
       net.ipv4.ip_local_port_range: '55000 65535'
+    stop_grace_period: 5s
+    cpus: 3

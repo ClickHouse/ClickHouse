@@ -4,6 +4,7 @@ sidebar_label: 'SHOW'
 sidebar_position: 37
 slug: /sql-reference/statements/show
 title: 'SHOW Statements'
+doc_type: 'reference'
 ---
 
 :::note
@@ -434,7 +435,7 @@ SHOW USERS
 
 The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
 To view other parameters, 
-see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
+see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role_grants).
 
 ### Syntax {#syntax-14}
 
@@ -688,7 +689,6 @@ All merges are listed in the [`system.merges`](../../operations/system-tables/me
 | `size_compressed`   | The total size of the compressed data of the merged parts. |
 | `memory_usage`      | Memory consumption of the merge process.                   |
 
-
 ### Syntax {#syntax-25}
 
 ```sql title="Syntax"
@@ -717,3 +717,12 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 └────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
 
+## SHOW CREATE MASKING POLICY {#show-create-masking-policy}
+
+The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [masking policy creation](../../sql-reference/statements/create/masking-policy.md).
+
+### Syntax {#syntax-26}
+
+```sql title="Syntax"
+SHOW CREATE MASKING POLICY name ON [database.]table
+```
