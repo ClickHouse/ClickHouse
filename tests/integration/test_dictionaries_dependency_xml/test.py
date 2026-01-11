@@ -37,6 +37,8 @@ def test_get_data(started_cluster):
     instance.restart_clickhouse()
     instance.query(
         """
+        DROP TABLE IF EXISTS default.join;
+        DROP DATABASE IF EXISTS a;
         DROP DATABASE IF EXISTS dict;
         DROP DATABASE IF EXISTS test;
         CREATE DATABASE dict ENGINE=Dictionary;
