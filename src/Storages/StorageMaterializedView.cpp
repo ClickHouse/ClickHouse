@@ -131,7 +131,7 @@ StorageMaterializedView::StorageMaterializedView(
     auto to_table_id = query.getTargetTableID(ViewTarget::To);
     has_inner_table = to_table_id.empty();
     auto to_inner_uuid = query.getTargetInnerUUID(ViewTarget::To);
-    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+    auto * to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
 
     if (has_inner_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -200,7 +200,7 @@ StorageMaterializedView::StorageMaterializedView(
             String inner_engine;
             if (has_inner_table)
             {
-                auto storage = query.getTargetInnerEngine(ViewTarget::To);
+                auto * storage = query.getTargetInnerEngine(ViewTarget::To);
                 if (storage && storage->engine)
                     inner_engine = storage->engine->name;
             }

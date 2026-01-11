@@ -170,7 +170,7 @@ void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
 
 ASTStorage * ASTViewTargets::getInnerEngine(ViewTarget::Kind kind) const
 {
-    if (const auto * target = tryGetTarget(kind))
+    if (const auto * target = tryGetTarget(kind); target && target->inner_engine)
         return target->inner_engine->as<ASTStorage>();
     return nullptr;
 }

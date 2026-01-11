@@ -1270,7 +1270,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (create.is_materialized_view_with_external_target())
             return;
 
-        if (auto to_engine = create.getTargetInnerEngine(ViewTarget::To))
+        if (auto * to_engine = create.getTargetInnerEngine(ViewTarget::To))
         {
             /// This materialized view already has a storage definition.
             if (!to_engine->engine)

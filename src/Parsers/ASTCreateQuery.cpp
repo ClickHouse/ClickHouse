@@ -509,13 +509,13 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (storage)
         storage->format(ostr, settings, state, frame);
 
-    if (auto inner_storage = getTargetInnerEngine(ViewTarget::Inner))
+    if (auto * inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {
         ostr << " " << toStringView(Keyword::INNER);
         inner_storage->format(ostr, settings, state, frame);
     }
 
-    if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
+    if (auto * to_storage = getTargetInnerEngine(ViewTarget::To))
         to_storage->format(ostr, settings, state, frame);
 
     if (targets)

@@ -1253,7 +1253,7 @@ StorageWindowView::StorageWindowView(
     /// If the target table is not set, use inner target table
     auto to_table_id = query.getTargetTableID(ViewTarget::To);
     has_inner_target_table = to_table_id.empty();
-    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+    auto * to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
 
     if (has_inner_target_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -1270,7 +1270,7 @@ StorageWindowView::StorageWindowView(
 
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
-    if (auto inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
+    if (auto * inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
         inner_table_engine = inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);

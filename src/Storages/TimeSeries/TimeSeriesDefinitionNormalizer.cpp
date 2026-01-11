@@ -375,7 +375,7 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEnginesFromAsTable(ASTCreate
                 backQuoteIfNeed(as_table.database), backQuoteIfNeed(as_table.table));
         }
 
-        auto inner_table_engine = create.getTargetInnerEngine(target_kind);
+        auto * inner_table_engine = create.getTargetInnerEngine(target_kind);
         if (!inner_table_engine)
         {
             /// Copy an inner engine's definition from the other table.
