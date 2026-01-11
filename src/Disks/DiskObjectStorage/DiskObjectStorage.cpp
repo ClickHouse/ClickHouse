@@ -705,7 +705,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
+    return !metadata_storage->isWriteOnce();
 }
 
 template <class Settings>
