@@ -135,7 +135,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     if (is_async_insert && isQuorumEnabled() && !quorum_parallel)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Should be checked earlier: async inserts with quorum inserts are only have sense with enabled quorum_parallel setting");
+            "Should be checked earlier: async inserts with quorum only make sense with enabled insert_quorum_parallel setting");
 
     LOG_DEBUG(log, "Create ReplicatedMergeTreeSink {} async_insert={}, deduplicate={}, quorum_size={}, max_parts_per_block={}, quorum_parallel={}, is_attach={}",
         storage.getStorageID().getNameForLogs(),
