@@ -552,7 +552,7 @@ struct CheckRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + sizeof(version) + (stat_to_check.has_value() ? sizeof(Stat) : 0); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
 };
 
 struct CheckResponse : virtual Response
