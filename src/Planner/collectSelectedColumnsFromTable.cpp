@@ -67,7 +67,7 @@ public:
         return column_source->getNodeType() == QueryTreeNodeType::TABLE;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &)
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
     {
         /// Don't go inside alias column expression.
         return !isAliasColumn(parent_node);
