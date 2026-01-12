@@ -124,12 +124,16 @@ def cluster_factory(request):
         except Exception:
             pass
         try:
-            cluster, nodes = builder.build(topology=topology, backend=backend, opts=opts)
+            cluster, nodes = builder.build(
+                topology=topology, backend=backend, opts=opts
+            )
         except Exception as e:
             try:
                 base = pathlib.Path(__file__).parent
                 inst_dirs = sorted(
-                    base.glob("_instances-*"), key=lambda p: p.stat().st_mtime, reverse=True
+                    base.glob("_instances-*"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
                 )
                 if inst_dirs:
                     inst = inst_dirs[0]
@@ -141,19 +145,31 @@ def cluster_factory(request):
                         if cfg_root:
                             cfg = cfg_root / f"keeper_config_keeper{i}.xml"
                             if cfg.exists():
-                                print(f"==== keeper{i} config ====\n{cfg.read_text()[:800]}")
+                                print(
+                                    f"==== keeper{i} config ====\n{cfg.read_text()[:800]}"
+                                )
                         err = inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
                         if err.exists():
                             try:
                                 txt = err.read_text()
-                                print("==== keeper" + str(i) + " err ====\n" + "\n".join(txt.splitlines()[-200:]))
+                                print(
+                                    "==== keeper"
+                                    + str(i)
+                                    + " err ====\n"
+                                    + "\n".join(txt.splitlines()[-200:])
+                                )
                             except Exception:
                                 pass
                         lg = inst / f"keeper{i}" / "logs" / "clickhouse-server.log"
                         if lg.exists():
                             try:
                                 txt = lg.read_text()
-                                print("==== keeper" + str(i) + " log ====\n" + "\n".join(txt.splitlines()[-200:]))
+                                print(
+                                    "==== keeper"
+                                    + str(i)
+                                    + " log ====\n"
+                                    + "\n".join(txt.splitlines()[-200:])
+                                )
                             except Exception:
                                 pass
             except Exception:

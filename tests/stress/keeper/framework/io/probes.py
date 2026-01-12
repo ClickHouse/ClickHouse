@@ -8,7 +8,9 @@ def four(node, cmd):
     # Prefer nc when available
     try:
         if has_bin(node, "nc"):
-            out = sh(node, f"printf '{cmd}\\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)["out"]
+            out = sh(
+                node, f"printf '{cmd}\\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5
+            )["out"]
             if str(out).strip():
                 return out
     except Exception:
@@ -163,7 +165,9 @@ def srvr_kv(node):
 
 
 def prom_metrics(node):
-    return sh(node, f"curl -sf --max-time 2 http://127.0.0.1:{PROM_PORT}/metrics", timeout=4)["out"]
+    return sh(
+        node, f"curl -sf --max-time 2 http://127.0.0.1:{PROM_PORT}/metrics", timeout=4
+    )["out"]
 
 
 def ready(node):

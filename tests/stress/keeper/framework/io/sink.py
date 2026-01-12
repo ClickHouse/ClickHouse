@@ -13,12 +13,11 @@ def _sanitize_filename_component(x: object) -> str:
     except Exception:
         s = ""
     s = s.strip().replace(" ", "_")
-    allowed = set(
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
-    )
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
     res = [ch if ch in allowed else "_" for ch in s]
     name = "".join(res) or "unknown"
     return name[:80]
+
 
 def _autocreate_enabled() -> bool:
     try:
@@ -143,7 +142,9 @@ def sink_clickhouse(_url_ignored, table, rows):
         pass
     split = False
     try:
-        split = (os.environ.get("KEEPER_METRICS_SPLIT_PER_TEST", "0").strip().lower() in ("1", "true", "yes", "on"))
+        split = os.environ.get(
+            "KEEPER_METRICS_SPLIT_PER_TEST", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
     except Exception:
         split = False
     if split:

@@ -68,7 +68,9 @@ def main():
         type=int,
         default=int(os.environ.get("KEEPER_SHARD_INDEX", "0") or "0"),
     )
-    ap.add_argument("--matrix-backends", default=os.environ.get("KEEPER_MATRIX_BACKENDS", ""))
+    ap.add_argument(
+        "--matrix-backends", default=os.environ.get("KEEPER_MATRIX_BACKENDS", "")
+    )
     # TLS dimension removed
     ap.add_argument(
         "--matrix-topologies", default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", "")

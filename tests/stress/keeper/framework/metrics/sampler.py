@@ -11,7 +11,7 @@ from ..io.sink import sink_clickhouse
 def _ts_ms_str():
     t = time.time()
     lt = time.gmtime(t)
-    return time.strftime('%Y-%m-%d %H:%M:%S', lt) + f'.{int((t - int(t))*1000):03d}'
+    return time.strftime("%Y-%m-%d %H:%M:%S", lt) + f".{int((t - int(t))*1000):03d}"
 
 
 class MetricsSampler:
@@ -68,7 +68,9 @@ class MetricsSampler:
             if len(self.prom_name_allowlist) == 0:
                 self.prom_name_allowlist = None
         self.prom_exclude_label_keys = (
-            tuple(prom_exclude_label_keys) if prom_exclude_label_keys else DEFAULT_EXCL_LABEL_KEYS
+            tuple(prom_exclude_label_keys)
+            if prom_exclude_label_keys
+            else DEFAULT_EXCL_LABEL_KEYS
         )
         try:
             self._prom_every_n = max(1, int(prom_every_n))

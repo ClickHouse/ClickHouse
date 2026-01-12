@@ -5,7 +5,14 @@ import random
 from ..framework.core.registry import fault_registry
 from ..framework.core.settings import RAFT_PORT, CLIENT_PORT, DEFAULT_FAULT_DURATION_S
 from ..framework.core.util import resolve_targets, wait_until, sh
-from ..framework.io.probes import count_leaders, four, is_leader, ready, wchs_total, mntr
+from ..framework.io.probes import (
+    count_leaders,
+    four,
+    is_leader,
+    ready,
+    wchs_total,
+    mntr,
+)
 
 
 def apply_step(step, nodes, leader, ctx):
@@ -97,7 +104,14 @@ def apply_step(step, nodes, leader, ctx):
             if now >= deadline:
                 break
             try:
-                sleep_s = max(0.0, min(float(pmax), float(pmin) + (random.random() * max(0.0, float(pmax) - float(pmin)))))
+                sleep_s = max(
+                    0.0,
+                    min(
+                        float(pmax),
+                        float(pmin)
+                        + (random.random() * max(0.0, float(pmax) - float(pmin))),
+                    ),
+                )
             except Exception:
                 sleep_s = float(pmin)
             time.sleep(min(sleep_s, max(0.0, deadline - now)))
@@ -106,10 +120,11 @@ def apply_step(step, nodes, leader, ctx):
         paths = [str(p).strip() for p in (step.get("paths") or []) if str(p).strip()]
         if not paths:
             return
+
         def _mk_one(node, p):
             full = "/"
             for seg in [s for s in str(p).split("/") if s]:
-                full = (full.rstrip("/") + "/" + seg)
+                full = full.rstrip("/") + "/" + seg
                 try:
                     sh(
                         node,
@@ -131,6 +146,7 @@ def apply_step(step, nodes, leader, ctx):
                     )
                 except Exception:
                     pass
+
         for t in resolve_targets(step.get("on", "leader"), nodes, leader):
             for p in paths:
                 _mk_one(t, p)

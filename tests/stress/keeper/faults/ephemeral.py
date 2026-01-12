@@ -39,7 +39,8 @@ def _f_create_ephemerals(ctx, nodes, leader, step):
         ctx["_ephem_clients"] = arr
     except Exception:
         try:
-            zk.stop(); zk.close()
+            zk.stop()
+            zk.close()
         except Exception:
             pass
 
@@ -58,7 +59,8 @@ def _f_stop_ephemeral_client(ctx, nodes, leader, step):
             clients = [arr.pop(0)]
         for zk in clients:
             try:
-                zk.stop(); zk.close()
+                zk.stop()
+                zk.close()
             except Exception:
                 pass
         ctx["_ephem_clients"] = arr
