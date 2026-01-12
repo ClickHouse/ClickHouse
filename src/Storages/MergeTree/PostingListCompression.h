@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <config.h>
 #include <Common/Exception.h>
 
@@ -23,16 +24,15 @@ namespace impl
 {
 
 template <bool has_simdcomp>
-struct BlockCodecImpl;
+struct BitpackingBlockCodecImpl;
 
 #if USE_SIMDCOMP
 
 static constexpr bool has_simdcomp = true;
 
 template<>
-struct BlockCodecImpl<true>
+struct BitpackingBlockCodecImpl<true>
 {
-
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
     static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
@@ -78,7 +78,7 @@ static constexpr bool has_simdcomp = false;
 /// Generic implementation on non-x86/SSE platforms (simdcomp sadly requires SSE2 and provides no fallback on its own).
 /// It aims to be 100% bit-compatible to simdcomp's output.
 template<>
-struct BlockCodecImpl<false>
+struct BitpackingBlockCodecImpl<false>
 {
     /// A portable replacement for SSE's __m128i.
     /// We only rely on its *layout* (16 bytes total, 4 lanes of 32-bit words),
@@ -108,436 +108,436 @@ struct BlockCodecImpl<false>
         }
 
         // Tail
-            for (uint32_t k = offset; k < n; ++k)
-                xored_in |= in[k];
+        for (uint32_t k = offset; k < n; ++k)
+            xored_in |= in[k];
 
-            // Bits(xored_in): 0 -> 0, else 32 - clz(xored_in)
-            if (xored_in == 0)
-                return 0u;
-            else
-                return 32u - static_cast<uint32_t>(__builtin_clz(xored_in));
+        // Bits(xored_in): 0 -> 0, else 32 - clz(xored_in)
+        if (xored_in == 0)
+            return 0u;
+        else
+            return 32u - static_cast<uint32_t>(__builtin_clz(xored_in));
+    }
+
+    [[maybe_unused]] static size_t bitpackingCompressedBytes(int length, uint32_t bit) noexcept
+    {
+        if (bit == 0)
+            return 0;
+        if (bit == 32)
+            return length * sizeof(uint32_t);
+
+        size_t groups = (length + 3) / 4;
+        size_t words32 = (groups * static_cast<size_t>(bit) + 31) / 32;
+
+        return words32 * sizeof(m128i);
+    }
+
+    /// Returns {compressed_bytes, bits} where bits is the max bit-width required
+    /// to represent all values in [0..n).
+    [[maybe_unused]] static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(const std::span<uint32_t> & data) noexcept
+    {
+        size_t n = data.size();
+        size_t bits = maxbitsLength(data);
+        size_t bytes = bitpackingCompressedBytes(n, bits);
+        return {bytes, bits};
+    }
+
+    /// Encodes (packs) a sequence of 32-bit integers into the SIMDComp-compatible bitpacked byte stream.
+    /// - `in`: input values to compress.
+    /// - `max_bits`: bit-width used for each value (0..32). Must match the decoder.
+    /// - `out`: destination buffer; the function writes the packed stream into it
+    ///          and advances `out` to point past the written bytes.
+    /// Returns: number of bytes written into `out` (the packed payload size).
+    [[maybe_unused]] static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
+    {
+        if (max_bits > 32)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
+        auto * m128_out = reinterpret_cast<m128i *>(out.data());
+        auto * m128_out_end = packingLength(in.data(), in.size(), m128_out, max_bits);
+        auto used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(m128i);
+        out = out.subspan(used);
+        return used;
+    }
+
+    /// Decodes (unpacks) a SIMDComp-compatible bitpacked byte stream back into 32-bit integers.
+    /// - `in`: source byte stream; the function consumes exactly the bytes needed
+    ///         to decode `n` integers and advances `in` past the consumed bytes.
+    /// - `n`: number of integers to decode.
+    /// - `max_bits`: bit-width that was used during encoding (0..32). Must match
+    ///               the encoder's `max_bits`.
+    /// - `out`: destination span for decoded integers; must have at least `n` slots.
+    /// Returns: number of bytes consumed from `in` (the packed payload size).
+    [[maybe_unused]] static size_t decode(std::span<const std::byte> & in, size_t n, uint32_t max_bits, std::span<uint32_t> & out)
+    {
+        if (max_bits > 32)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
+        const auto * m128i_in = reinterpret_cast<const m128i *>(in.data());
+        const auto * m128i_in_end = unpackingLength(m128i_in, n, out.data(), max_bits);
+        auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(m128i);
+        in = in.subspan(used);
+        return used;
+    }
+
+    /// Pack `groups` groups of 4x32-bit integers (total = groups*4 values) into the
+    /// SIMDComp-compatible "horizontal 4-lane" bitpacked layout.
+    /// SIMDComp uses “groups of 4×32-bit integers” because its on-wire/on-disk format is
+    /// built around a 128-bit word (__m128i) viewed as four 32-bit lanes. To be fully format-compatible,
+    /// we must preserve that exact layout.
+    ///
+    /// Special cases:
+    /// - Bits == 0  : nothing is written.
+    /// - Bits == 32 : values are copied as raw uint32_t (no bitpacking), still grouped as 4 words per m128i.
+    ///
+    /// Parameters:
+    /// - in     : pointer to input uint32_t values (must have at least groups*4 elements).
+    /// - groups : number of 4-value groups to pack.
+    /// - out    : output pointer to m128i words.
+    ///
+    /// Returns:
+    /// - Pointer to the first m128i *after* the written output.
+    template<uint32_t Bits>
+    [[maybe_unused]] static m128i * packFixed(const uint32_t * in, size_t groups, m128i * out) noexcept
+    {
+        static_assert(Bits <= 32, "Bits must be 0..32");
+
+        if constexpr (Bits == 0)
+            return out;
+
+        if (groups == 0)
+            return out;
+
+        /// Bits==32: store raw 32-Bits words (4 per m128i). This matches SIMDComp's
+        /// special-case behavior for full blocks.
+        if constexpr (Bits == 32)
+        {
+            std::memcpy(out, in, groups * 4 * sizeof(uint32_t));
+            return out + groups;
         }
 
-        [[maybe_unused]] static size_t bitpackingCompressedBytes(int length, uint32_t bit) noexcept
+        /// Mask to keep only the lowest Bits bits (Bits in 1..31 here).
+        const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((static_cast<uint32_t>(1) << Bits) - 1u);
+
+        /// Per-lane bit accumulators. We use 64-bit so we can append bits and flush
+        /// 32-bit words without losing leftover bits.
+        uint64_t acc0 = 0;
+        uint64_t acc1 = 0;
+        uint64_t acc2 = 0;
+        uint64_t acc3 = 0;
+        /// How many valid bits currently in each accumulator.
+        uint32_t acc_bits = 0;
+
+        m128i * p = out;
+
+        for (size_t i = 0; i < groups; ++i)
         {
-            if (bit == 0)
-                return 0;
-            if (bit == 32)
-                return length * sizeof(uint32_t);
+            /// Load one group (4 lanes) and keep only Bits bits.
+            const uint32_t v0 = in[4 * i + 0] & mask;
+            const uint32_t v1 = in[4 * i + 1] & mask;
+            const uint32_t v2 = in[4 * i + 2] & mask;
+            const uint32_t v3 = in[4 * i + 3] & mask;
 
-            size_t groups = (length + 3) / 4;
-            size_t words32 = (groups * static_cast<size_t>(bit) + 31) / 32;
+            /// Append this group's bits at the current bit offset.
+            acc0 |= (static_cast<uint64_t>(v0) << acc_bits);
+            acc1 |= (static_cast<uint64_t>(v1) << acc_bits);
+            acc2 |= (static_cast<uint64_t>(v2) << acc_bits);
+            acc3 |= (static_cast<uint64_t>(v3) << acc_bits);
+            acc_bits += Bits;
 
-            return words32 * sizeof(m128i);
-        }
-
-        /// Returns {compressed_bytes, bits} where bits is the max bit-width required
-        /// to represent all values in [0..n).
-        [[maybe_unused]] static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(const std::span<uint32_t> & data) noexcept
-        {
-            size_t n = data.size();
-            size_t bits = maxbitsLength(data);
-            size_t bytes = bitpackingCompressedBytes(n, bits);
-            return {bytes, bits};
-        }
-
-        /// Encodes (packs) a sequence of 32-bit integers into the SIMDComp-compatible bitpacked byte stream.
-        /// - `in`: input values to compress.
-        /// - `max_bits`: bit-width used for each value (0..32). Must match the decoder.
-        /// - `out`: destination buffer; the function writes the packed stream into it
-        ///          and advances `out` to point past the written bytes.
-        /// Returns: number of bytes written into `out` (the packed payload size).
-        [[maybe_unused]] static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
-        {
-            if (max_bits > 32)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-            auto * m128_out = reinterpret_cast<m128i *>(out.data());
-            auto * m128_out_end = packingLength(in.data(), in.size(), m128_out, max_bits);
-            auto used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(m128i);
-            out = out.subspan(used);
-            return used;
-        }
-
-        /// Decodes (unpacks) a SIMDComp-compatible bitpacked byte stream back into 32-bit integers.
-        /// - `in`: source byte stream; the function consumes exactly the bytes needed
-        ///         to decode `n` integers and advances `in` past the consumed bytes.
-        /// - `n`: number of integers to decode.
-        /// - `max_bits`: bit-width that was used during encoding (0..32). Must match
-        ///               the encoder's `max_bits`.
-        /// - `out`: destination span for decoded integers; must have at least `n` slots.
-        /// Returns: number of bytes consumed from `in` (the packed payload size).
-        [[maybe_unused]] static size_t decode(std::span<const std::byte> & in, size_t n, uint32_t max_bits, std::span<uint32_t> & out)
-        {
-            if (max_bits > 32)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-            const auto * m128i_in = reinterpret_cast<const m128i *>(in.data());
-            const auto * m128i_in_end = unpackingLength(m128i_in, n, out.data(), max_bits);
-            auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(m128i);
-            in = in.subspan(used);
-            return used;
-        }
-
-        /// Pack `groups` groups of 4x32-bit integers (total = groups*4 values) into the
-        /// SIMDComp-compatible "horizontal 4-lane" bitpacked layout.
-        /// SIMDComp uses “groups of 4×32-bit integers” because its on-wire/on-disk format is
-        /// built around a 128-bit word (__m128i) viewed as four 32-bit lanes. To be fully format-compatible,
-        /// we must preserve that exact layout.
-        ///
-        /// Special cases:
-        /// - Bits == 0  : nothing is written.
-        /// - Bits == 32 : values are copied as raw uint32_t (no bitpacking), still grouped as 4 words per m128i.
-        ///
-        /// Parameters:
-        /// - in     : pointer to input uint32_t values (must have at least groups*4 elements).
-        /// - groups : number of 4-value groups to pack.
-        /// - out    : output pointer to m128i words.
-        ///
-        /// Returns:
-        /// - Pointer to the first m128i *after* the written output.
-        template<uint32_t Bits>
-        [[maybe_unused]] static m128i * packFixed(const uint32_t * in, size_t groups, m128i * out) noexcept
-        {
-            static_assert(Bits <= 32, "Bits must be 0..32");
-
-            if constexpr (Bits == 0)
-                return out;
-
-            if (groups == 0)
-                return out;
-
-            /// Bits==32: store raw 32-Bits words (4 per m128i). This matches SIMDComp's
-            /// special-case behavior for full blocks.
-            if constexpr (Bits == 32)
-            {
-                std::memcpy(out, in, groups * 4 * sizeof(uint32_t));
-                return out + groups;
-            }
-
-            /// Mask to keep only the lowest Bits bits (Bits in 1..31 here).
-            const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((static_cast<uint32_t>(1) << Bits) - 1u);
-
-            /// Per-lane bit accumulators. We use 64-bit so we can append bits and flush
-            /// 32-bit words without losing leftover bits.
-            uint64_t acc0 = 0;
-            uint64_t acc1 = 0;
-            uint64_t acc2 = 0;
-            uint64_t acc3 = 0;
-            /// How many valid bits currently in each accumulator.
-            uint32_t acc_bits = 0;
-
-            m128i * p = out;
-
-            for (size_t i = 0; i < groups; ++i)
-            {
-                /// Load one group (4 lanes) and keep only Bits bits.
-                const uint32_t v0 = in[4 * i + 0] & mask;
-                const uint32_t v1 = in[4 * i + 1] & mask;
-                const uint32_t v2 = in[4 * i + 2] & mask;
-                const uint32_t v3 = in[4 * i + 3] & mask;
-
-                /// Append this group's bits at the current bit offset.
-                acc0 |= (static_cast<uint64_t>(v0) << acc_bits);
-                acc1 |= (static_cast<uint64_t>(v1) << acc_bits);
-                acc2 |= (static_cast<uint64_t>(v2) << acc_bits);
-                acc3 |= (static_cast<uint64_t>(v3) << acc_bits);
-                acc_bits += Bits;
-
-                /// When we've accumulated at least 32 bits, flush one 32-bit word per lane
-                /// into one output m128i.
-                if (acc_bits >= 32)
-                {
-                    p->u32[0] = static_cast<uint32_t>(acc0);
-                    p->u32[1] = static_cast<uint32_t>(acc1);
-                    p->u32[2] = static_cast<uint32_t>(acc2);
-                    p->u32[3] = static_cast<uint32_t>(acc3);
-                    ++p;
-
-                    /// Keep leftover bits (at most 31 bits remain because Bits<=31).
-                    acc0 >>= 32;
-                    acc1 >>= 32;
-                    acc2 >>= 32;
-                    acc3 >>= 32;
-                    acc_bits -= 32;
-                }
-            }
-
-            /// Flush any remaining partial word at the end.
-            if (acc_bits != 0)
+            /// When we've accumulated at least 32 bits, flush one 32-bit word per lane
+            /// into one output m128i.
+            if (acc_bits >= 32)
             {
                 p->u32[0] = static_cast<uint32_t>(acc0);
                 p->u32[1] = static_cast<uint32_t>(acc1);
                 p->u32[2] = static_cast<uint32_t>(acc2);
                 p->u32[3] = static_cast<uint32_t>(acc3);
                 ++p;
-            }
 
-            return p;
+                /// Keep leftover bits (at most 31 bits remain because Bits<=31).
+                acc0 >>= 32;
+                acc1 >>= 32;
+                acc2 >>= 32;
+                acc3 >>= 32;
+                acc_bits -= 32;
+            }
         }
 
-
-        /// Unpack `groups` groups of 4 integers (total = groups*4 values) from a
-        /// SIMDComp-compatible "horizontal 4-lane" bitpacked stream.
-        ///
-        /// Behavior by Bits:
-        /// - Bits == 0  : no bits were stored; values are implicit zeros (no input consumed).
-        /// - Bits == 32 : values are stored as raw uint32_t; copy directly and advance by groups*4 words.
-        /// - Bits 1..31 : use four 64-bit lane accumulators (acc0..acc3) as bit reservoirs.
-        ///               We refill by reading one m128i (32 bits per lane) whenever the
-        ///               reservoir has fewer than BIT bits, then extract one group.
-        ///
-        /// Parameters:
-        /// - in     : pointer to the compressed input (m128i words).
-        /// - groups : number of 4-value groups to decode.
-        /// - out    : destination for decoded integers (must have at least groups*4 elements).
-        ///
-        /// Returns:
-        /// - Pointer to the first m128i *after* the consumed input words.
-        template<uint32_t Bits>
-        [[maybe_unused]] static const m128i * unpackFixed(const m128i *in, size_t groups, uint32_t *out) noexcept
+        /// Flush any remaining partial word at the end.
+        if (acc_bits != 0)
         {
-            static_assert(Bits <= 32, "Bits must be 0..32");
-            if (groups == 0) return in;
-
-            /// Bits==0: no payload in the stream;
-            if constexpr (Bits == 0)
-                return in;
-
-            /// Bits==32: stream stores raw uint32_t values (4 per group / per m128i).
-            if constexpr (Bits == 32)
-            {
-                std::memcpy(out, in, groups * 4 * sizeof(uint32_t));
-                return reinterpret_cast<const m128i *>(reinterpret_cast<const uint32_t *>(in) + groups * 4);
-            }
-
-            /// Bits=1..31: mask to keep only the lowest Bits bits from each extracted value.
-            const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((static_cast<uint32_t>(1) << Bits) - 1u);
-
-            /// Per-lane bit reservoirs (64-bit to hold leftover bits across word boundaries).
-            uint64_t acc0 = 0;
-            uint64_t acc1 = 0;
-            uint64_t acc2 = 0;
-            uint64_t acc3 = 0;
-
-            uint32_t acc_bits = 0;
-
-            const m128i * p = in;
-            size_t produced_groups = 0;
-
-            while (produced_groups < groups)
-            {
-                /// Refill reservoirs if there aren't enough bits to extract one Bits-bit value.
-                /// Reading one m128i adds 32 bits per lane.
-                if (acc_bits < Bits)
-                {
-                    const uint32_t w0 = p->u32[0];
-                    const uint32_t w1 = p->u32[1];
-                    const uint32_t w2 = p->u32[2];
-                    const uint32_t w3 = p->u32[3];
-                    ++p;
-
-                    acc0 |= (static_cast<uint64_t>(w0) << acc_bits);
-                    acc1 |= (static_cast<uint64_t>(w1) << acc_bits);
-                    acc2 |= (static_cast<uint64_t>(w2) << acc_bits);
-                    acc3 |= (static_cast<uint64_t>(w3) << acc_bits);
-                    acc_bits += 32;
-                    continue;
-                }
-
-                /// Extract one value per lane (LSB-first), forming one 4-integer group.
-                /// SIMDComp’s fastpack1_32 is a classic example of LSB-first.
-                out[4 * produced_groups + 0] = static_cast<uint32_t>(acc0) & mask;
-                out[4 * produced_groups + 1] = static_cast<uint32_t>(acc1) & mask;
-                out[4 * produced_groups + 2] = static_cast<uint32_t>(acc2) & mask;
-                out[4 * produced_groups + 3] = static_cast<uint32_t>(acc3) & mask;
-
-                /// Consume Bits bits from each lane reservoir.
-                acc0 >>= Bits;
-                acc1 >>= Bits;
-                acc2 >>= Bits;
-                acc3 >>= Bits;
-                acc_bits -= Bits;
-
-                ++produced_groups;
-            }
-
-            return p;
+            p->u32[0] = static_cast<uint32_t>(acc0);
+            p->u32[1] = static_cast<uint32_t>(acc1);
+            p->u32[2] = static_cast<uint32_t>(acc2);
+            p->u32[3] = static_cast<uint32_t>(acc3);
+            ++p;
         }
 
-        /// Pack a tail segment (0 < tail < BLOCK_SIZE) into the SIMDComp-compatible
-        /// horizontal 4-lane bitpacked format.
-        /// This function is used for the last partial block when the total length is
-        /// not a multiple of 128 integers. It must preserve SIMDComp's exact byte layout.
-        ///
-        /// Parameters:
-        /// - in   : pointer to the input integers (at least `tail` elements).
-        /// - tail : number of integers to pack (0..127 typically).
-        /// - out  : destination pointer to the compressed stream.
-        ///
-        /// Returns:
-        /// - Pointer to the first output position after the written data.
-        template<uint32_t Bits>
-        [[maybe_unused]] static m128i * packTail(const uint32_t * in, size_t tail, m128i * out) noexcept
+        return p;
+    }
+
+
+    /// Unpack `groups` groups of 4 integers (total = groups*4 values) from a
+    /// SIMDComp-compatible "horizontal 4-lane" bitpacked stream.
+    ///
+    /// Behavior by Bits:
+    /// - Bits == 0  : no bits were stored; values are implicit zeros (no input consumed).
+    /// - Bits == 32 : values are stored as raw uint32_t; copy directly and advance by groups*4 words.
+    /// - Bits 1..31 : use four 64-bit lane accumulators (acc0..acc3) as bit reservoirs.
+    ///               We refill by reading one m128i (32 bits per lane) whenever the
+    ///               reservoir has fewer than BIT bits, then extract one group.
+    ///
+    /// Parameters:
+    /// - in     : pointer to the compressed input (m128i words).
+    /// - groups : number of 4-value groups to decode.
+    /// - out    : destination for decoded integers (must have at least groups*4 elements).
+    ///
+    /// Returns:
+    /// - Pointer to the first m128i *after* the consumed input words.
+    template<uint32_t Bits>
+    [[maybe_unused]] static const m128i * unpackFixed(const m128i *in, size_t groups, uint32_t *out) noexcept
+    {
+        static_assert(Bits <= 32, "Bits must be 0..32");
+        if (groups == 0) return in;
+
+        /// Bits==0: no payload in the stream;
+        if constexpr (Bits == 0)
+            return in;
+
+        /// Bits==32: stream stores raw uint32_t values (4 per group / per m128i).
+        if constexpr (Bits == 32)
         {
-            static_assert(Bits <= 32, "Bits must be 0..32");
-            if (tail == 0) return out;
+            std::memcpy(out, in, groups * 4 * sizeof(uint32_t));
+            return reinterpret_cast<const m128i *>(reinterpret_cast<const uint32_t *>(in) + groups * 4);
+        }
 
-            /// Bits==0: no payload is written;
-            if constexpr (Bits == 0)
-                return out;
+        /// Bits=1..31: mask to keep only the lowest Bits bits from each extracted value.
+        const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((static_cast<uint32_t>(1) << Bits) - 1u);
 
-            /// Bits==32: store raw 32-bit words tightly (SIMDComp's special-case behavior).
-            if constexpr (Bits == 32)
+        /// Per-lane bit reservoirs (64-bit to hold leftover bits across word boundaries).
+        uint64_t acc0 = 0;
+        uint64_t acc1 = 0;
+        uint64_t acc2 = 0;
+        uint64_t acc3 = 0;
+
+        uint32_t acc_bits = 0;
+
+        const m128i * p = in;
+        size_t produced_groups = 0;
+
+        while (produced_groups < groups)
+        {
+            /// Refill reservoirs if there aren't enough bits to extract one Bits-bit value.
+            /// Reading one m128i adds 32 bits per lane.
+            if (acc_bits < Bits)
             {
-                auto *out32 = reinterpret_cast<uint32_t *>(out);
-                std::memcpy(out32, in, tail * sizeof(uint32_t));
-                out32 += tail;
-                return reinterpret_cast<m128i *>(out32);
+                const uint32_t w0 = p->u32[0];
+                const uint32_t w1 = p->u32[1];
+                const uint32_t w2 = p->u32[2];
+                const uint32_t w3 = p->u32[3];
+                ++p;
+
+                acc0 |= (static_cast<uint64_t>(w0) << acc_bits);
+                acc1 |= (static_cast<uint64_t>(w1) << acc_bits);
+                acc2 |= (static_cast<uint64_t>(w2) << acc_bits);
+                acc3 |= (static_cast<uint64_t>(w3) << acc_bits);
+                acc_bits += 32;
+                continue;
             }
 
-            /// Bits=1..31: mask keeps only the lowest Bits bits of each input value.
-            const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((static_cast<uint32_t>(1) << Bits) - 1u);
+            /// Extract one value per lane (LSB-first), forming one 4-integer group.
+            /// SIMDComp’s fastpack1_32 is a classic example of LSB-first.
+            out[4 * produced_groups + 0] = static_cast<uint32_t>(acc0) & mask;
+            out[4 * produced_groups + 1] = static_cast<uint32_t>(acc1) & mask;
+            out[4 * produced_groups + 2] = static_cast<uint32_t>(acc2) & mask;
+            out[4 * produced_groups + 3] = static_cast<uint32_t>(acc3) & mask;
 
-            /// Per-lane bit reservoirs. We maintain four independent accumulators
-            /// (one per lane) and flush 32-bit words when enough bits are available.
-            uint64_t acc0 = 0;
-            uint64_t acc1 = 0;
-            uint64_t acc2 = 0;
-            uint64_t acc3 = 0;
-            uint32_t acc_bits = 0;
+            /// Consume Bits bits from each lane reservoir.
+            acc0 >>= Bits;
+            acc1 >>= Bits;
+            acc2 >>= Bits;
+            acc3 >>= Bits;
+            acc_bits -= Bits;
 
-            m128i * p = out;
+            ++produced_groups;
+        }
 
-            const size_t full_groups = tail / 4;
-            const size_t rem = tail % 4;
+        return p;
+    }
 
-            /// Process complete 4-value groups first.
-            for (size_t i = 0; i < full_groups; ++i)
-            {
-                /// Load one group (4 lanes), keep only Bits bits.
-                const uint32_t v0 = in[4 * i + 0] & mask;
-                const uint32_t v1 = in[4 * i + 1] & mask;
-                const uint32_t v2 = in[4 * i + 2] & mask;
-                const uint32_t v3 = in[4 * i + 3] & mask;
+    /// Pack a tail segment (0 < tail < BLOCK_SIZE) into the SIMDComp-compatible
+    /// horizontal 4-lane bitpacked format.
+    /// This function is used for the last partial block when the total length is
+    /// not a multiple of 128 integers. It must preserve SIMDComp's exact byte layout.
+    ///
+    /// Parameters:
+    /// - in   : pointer to the input integers (at least `tail` elements).
+    /// - tail : number of integers to pack (0..127 typically).
+    /// - out  : destination pointer to the compressed stream.
+    ///
+    /// Returns:
+    /// - Pointer to the first output position after the written data.
+    template<uint32_t Bits>
+    [[maybe_unused]] static m128i * packTail(const uint32_t * in, size_t tail, m128i * out) noexcept
+    {
+        static_assert(Bits <= 32, "Bits must be 0..32");
+        if (tail == 0) return out;
 
-                /// Append this group's Bits bits to each lane's accumulator at the current offset.
-                acc0 |= (static_cast<uint64_t>(v0) << acc_bits);
-                acc1 |= (static_cast<uint64_t>(v1) << acc_bits);
-                acc2 |= (static_cast<uint64_t>(v2) << acc_bits);
-                acc3 |= (static_cast<uint64_t>(v3) << acc_bits);
-                acc_bits += Bits;
+        /// Bits==0: no payload is written;
+        if constexpr (Bits == 0)
+            return out;
 
-                /// Flush one 32-bit word per lane into one output m128i when possible.
-                if (acc_bits >= 32)
-                {
-                    p->u32[0] = static_cast<uint32_t>(acc0);
-                    p->u32[1] = static_cast<uint32_t>(acc1);
-                    p->u32[2] = static_cast<uint32_t>(acc2);
-                    p->u32[3] = static_cast<uint32_t>(acc3);
-                    ++p;
+        /// Bits==32: store raw 32-bit words tightly (SIMDComp's special-case behavior).
+        if constexpr (Bits == 32)
+        {
+            auto *out32 = reinterpret_cast<uint32_t *>(out);
+            std::memcpy(out32, in, tail * sizeof(uint32_t));
+            out32 += tail;
+            return reinterpret_cast<m128i *>(out32);
+        }
 
-                    acc0 >>= 32;
-                    acc1 >>= 32;
-                    acc2 >>= 32;
-                    acc3 >>= 32;
-                    acc_bits -= 32;
-                }
-            }
+        /// Bits=1..31: mask keeps only the lowest Bits bits of each input value.
+        const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((static_cast<uint32_t>(1) << Bits) - 1u);
 
-            /// If there is a partial last group (1..3 values), pad missing lanes with 0
-            /// and treat it as a complete group for packing purposes.
-            if (rem != 0)
-            {
-                const size_t base = full_groups * 4;
-                const uint32_t v0 = (rem > 0 ? in[base + 0] : 0u) & mask;
-                const uint32_t v1 = (rem > 1 ? in[base + 1] : 0u) & mask;
-                const uint32_t v2 = (rem > 2 ? in[base + 2] : 0u) & mask;
-                const uint32_t v3 = 0u;
+        /// Per-lane bit reservoirs. We maintain four independent accumulators
+        /// (one per lane) and flush 32-bit words when enough bits are available.
+        uint64_t acc0 = 0;
+        uint64_t acc1 = 0;
+        uint64_t acc2 = 0;
+        uint64_t acc3 = 0;
+        uint32_t acc_bits = 0;
 
-                acc0 |= (static_cast<uint64_t>(v0) << acc_bits);
-                acc1 |= (static_cast<uint64_t>(v1) << acc_bits);
-                acc2 |= (static_cast<uint64_t>(v2) << acc_bits);
-                acc3 |= (static_cast<uint64_t>(v3) << acc_bits);
-                acc_bits += Bits;
+        m128i * p = out;
 
-                if (acc_bits >= 32)
-                {
-                    p->u32[0] = uint32_t(acc0);
-                    p->u32[1] = uint32_t(acc1);
-                    p->u32[2] = uint32_t(acc2);
-                    p->u32[3] = uint32_t(acc3);
-                    ++p;
+        const size_t full_groups = tail / 4;
+        const size_t rem = tail % 4;
 
-                    acc0 >>= 32;
-                    acc1 >>= 32;
-                    acc2 >>= 32;
-                    acc3 >>= 32;
-                    acc_bits -= 32;
-                }
-            }
+        /// Process complete 4-value groups first.
+        for (size_t i = 0; i < full_groups; ++i)
+        {
+            /// Load one group (4 lanes), keep only Bits bits.
+            const uint32_t v0 = in[4 * i + 0] & mask;
+            const uint32_t v1 = in[4 * i + 1] & mask;
+            const uint32_t v2 = in[4 * i + 2] & mask;
+            const uint32_t v3 = in[4 * i + 3] & mask;
 
-            /// Flush the final partial output word if any bits remain.
-            if (acc_bits != 0)
+            /// Append this group's Bits bits to each lane's accumulator at the current offset.
+            acc0 |= (static_cast<uint64_t>(v0) << acc_bits);
+            acc1 |= (static_cast<uint64_t>(v1) << acc_bits);
+            acc2 |= (static_cast<uint64_t>(v2) << acc_bits);
+            acc3 |= (static_cast<uint64_t>(v3) << acc_bits);
+            acc_bits += Bits;
+
+            /// Flush one 32-bit word per lane into one output m128i when possible.
+            if (acc_bits >= 32)
             {
                 p->u32[0] = static_cast<uint32_t>(acc0);
                 p->u32[1] = static_cast<uint32_t>(acc1);
                 p->u32[2] = static_cast<uint32_t>(acc2);
                 p->u32[3] = static_cast<uint32_t>(acc3);
                 ++p;
-            }
 
-            return p;
+                acc0 >>= 32;
+                acc1 >>= 32;
+                acc2 >>= 32;
+                acc3 >>= 32;
+                acc_bits -= 32;
+            }
         }
 
-        /// Unpack (decode) a tail segment (0 < tail < BLOCK_SIZE) from the SIMDComp-compatible
-        /// horizontal 4-lane bitpacked stream.
-        /// This is the counterpart of packTail<Bits>(). It decodes the last partial block
-        /// when the total number of integers is not a multiple of 128.
-        ///
-        /// Special cases:
-        /// - Bits == 0  : no payload;
-        /// - Bits == 32 : values are stored as raw uint32_t, tightly packed (no 16-byte padding).
-        ///
-        /// Parameters:
-        /// - in   : pointer to the compressed input stream (m128i words).
-        /// - tail : number of integers to decode (0..127 typically).
-        /// - out  : destination buffer (must have at least `tail` elements).
-        ///
-        /// Returns:
-        /// - Pointer to the first m128i *after* the consumed input words.
-        template<uint32_t Bits>
-        [[maybe_unused]] static const m128i * unpackTail(const m128i * in, size_t tail, uint32_t * out) noexcept
+        /// If there is a partial last group (1..3 values), pad missing lanes with 0
+        /// and treat it as a complete group for packing purposes.
+        if (rem != 0)
         {
-            static_assert(Bits <= 32, "Bits must be 0..32");
-            if (tail == 0) return in;
+            const size_t base = full_groups * 4;
+            const uint32_t v0 = (rem > 0 ? in[base + 0] : 0u) & mask;
+            const uint32_t v1 = (rem > 1 ? in[base + 1] : 0u) & mask;
+            const uint32_t v2 = (rem > 2 ? in[base + 2] : 0u) & mask;
+            const uint32_t v3 = 0u;
 
-            /// Bits==0: no stored bits;
-            if constexpr (Bits == 0)
-                return in;
+            acc0 |= (static_cast<uint64_t>(v0) << acc_bits);
+            acc1 |= (static_cast<uint64_t>(v1) << acc_bits);
+            acc2 |= (static_cast<uint64_t>(v2) << acc_bits);
+            acc3 |= (static_cast<uint64_t>(v3) << acc_bits);
+            acc_bits += Bits;
 
-            /// Bits==32: raw uint32_t values are stored tightly (SIMDComp's special-case behavior).
-            if constexpr (Bits == 32)
+            if (acc_bits >= 32)
             {
-                std::memcpy(out, in, tail * sizeof(uint32_t));
-                return reinterpret_cast<const m128i *>(reinterpret_cast<const uint32_t *>(in) + tail);
+                p->u32[0] = uint32_t(acc0);
+                p->u32[1] = uint32_t(acc1);
+                p->u32[2] = uint32_t(acc2);
+                p->u32[3] = uint32_t(acc3);
+                ++p;
+
+                acc0 >>= 32;
+                acc1 >>= 32;
+                acc2 >>= 32;
+                acc3 >>= 32;
+                acc_bits -= 32;
             }
+        }
 
-            // Bits = 1..31
-            const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((uint32_t(1) << Bits) - 1u);
+        /// Flush the final partial output word if any bits remain.
+        if (acc_bits != 0)
+        {
+            p->u32[0] = static_cast<uint32_t>(acc0);
+            p->u32[1] = static_cast<uint32_t>(acc1);
+            p->u32[2] = static_cast<uint32_t>(acc2);
+            p->u32[3] = static_cast<uint32_t>(acc3);
+            ++p;
+        }
 
-            /// Number of 4-lane groups that were packed for this tail:
-            /// packing pads the last incomplete group (if any) with zeros, so we must decode
-            /// ceil(tail/4) groups from the stream.
-            const size_t groups = (tail + 3) / 4;
-            const size_t full_groups = tail / 4;
-            const size_t rem = tail % 4;
+        return p;
+    }
 
-            /// Per-lane bit reservoirs (accumulators). We refill by reading one m128i (32 bits per lane)
-            /// whenever we don't have enough bits to extract one Bits-bit value.
-            uint64_t acc0 = 0;
-            uint64_t acc1 = 0;
-            uint64_t acc2 = 0;
-            uint64_t acc3 = 0;
-            uint32_t acc_bits = 0;
+    /// Unpack (decode) a tail segment (0 < tail < BLOCK_SIZE) from the SIMDComp-compatible
+    /// horizontal 4-lane bitpacked stream.
+    /// This is the counterpart of packTail<Bits>(). It decodes the last partial block
+    /// when the total number of integers is not a multiple of 128.
+    ///
+    /// Special cases:
+    /// - Bits == 0  : no payload;
+    /// - Bits == 32 : values are stored as raw uint32_t, tightly packed (no 16-byte padding).
+    ///
+    /// Parameters:
+    /// - in   : pointer to the compressed input stream (m128i words).
+    /// - tail : number of integers to decode (0..127 typically).
+    /// - out  : destination buffer (must have at least `tail` elements).
+    ///
+    /// Returns:
+    /// - Pointer to the first m128i *after* the consumed input words.
+    template<uint32_t Bits>
+    [[maybe_unused]] static const m128i * unpackTail(const m128i * in, size_t tail, uint32_t * out) noexcept
+    {
+        static_assert(Bits <= 32, "Bits must be 0..32");
+        if (tail == 0) return in;
+
+        /// Bits==0: no stored bits;
+        if constexpr (Bits == 0)
+            return in;
+
+        /// Bits==32: raw uint32_t values are stored tightly (SIMDComp's special-case behavior).
+        if constexpr (Bits == 32)
+        {
+            std::memcpy(out, in, tail * sizeof(uint32_t));
+            return reinterpret_cast<const m128i *>(reinterpret_cast<const uint32_t *>(in) + tail);
+        }
+
+        // Bits = 1..31
+        const uint32_t mask = (Bits == 31) ? 0x7FFFFFFFu : ((uint32_t(1) << Bits) - 1u);
+
+        /// Number of 4-lane groups that were packed for this tail:
+        /// packing pads the last incomplete group (if any) with zeros, so we must decode
+        /// ceil(tail/4) groups from the stream.
+        const size_t groups = (tail + 3) / 4;
+        const size_t full_groups = tail / 4;
+        const size_t rem = tail % 4;
+
+        /// Per-lane bit reservoirs (accumulators). We refill by reading one m128i (32 bits per lane)
+        /// whenever we don't have enough bits to extract one Bits-bit value.
+        uint64_t acc0 = 0;
+        uint64_t acc1 = 0;
+        uint64_t acc2 = 0;
+        uint64_t acc3 = 0;
+        uint32_t acc_bits = 0;
 
         const m128i * p = in;
 
@@ -842,18 +842,17 @@ struct BlockCodecImpl<false>
         /// Decode the remaining tail (0..BLOCK_SIZE-1 ints), if any.
         size_t tail = length % BLOCK_SIZE;
         if (tail == 0)
-        return in;
+            return in;
 
-    /// Select the tail (short-length) decoder for this bit width.
-    func = getUnpackTailFunc(bit);
-    return func(in, tail, out);
-}
-
+        /// Select the tail (short-length) decoder for this bit width.
+        func = getUnpackTailFunc(bit);
+        return func(in, tail, out);
+    }
 };
 
 }
 
-using BlockCodec = impl::BlockCodecImpl<impl::has_simdcomp>;
+using BitpackingBlockCodec = impl::BitpackingBlockCodecImpl<impl::has_simdcomp>;
 
 }
 

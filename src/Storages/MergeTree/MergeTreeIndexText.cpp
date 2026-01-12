@@ -1383,7 +1383,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     String posting_list_codec_name = extractOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
     static std::vector<String> allowed_codecs
         = { PostingListCodecNone::getName(),
-            PostingListCodecSIMDComp::getName(),
+            PostingListCodecBitpacking::getName(),
         };
     auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, allowed_codecs, index.name);
 

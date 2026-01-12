@@ -16,10 +16,8 @@ class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
 
-/// IPostingListCodec defines the text index posting list codec interface.
-/// The encode method encodes a posting list and writes it to a WriteBuffer.
-/// The decode method reads an encoded posting list from a ReadBuffer, decodes it, and produces a posting list instance.
-struct IPostingListCodec
+/// IPostingListCodec is an interface for compressing text index posting list.
+class IPostingListCodec
 {
 public:
     enum class Type
@@ -42,6 +40,7 @@ public:
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
     virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
+    /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
 private:
     Type type;

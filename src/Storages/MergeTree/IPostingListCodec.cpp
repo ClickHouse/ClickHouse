@@ -25,7 +25,7 @@ void PostingListCodecFactory::isAllowedCodec(std::string_view codec, const std::
                 buf << "and '" << allowed_codecs[i] << "'";
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index '{}' supports only codec {}, received '{}'", caller_name, buf.str(), codec);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index '{}' supports only codec {}, received '{}'", caller_name, buf.str(), codec);
     }
 }
 
@@ -40,8 +40,8 @@ std::unique_ptr<IPostingListCodec> PostingListCodecFactory::createPostingListCod
     if (codec_name == "none")
         return std::make_unique<PostingListCodecNone>();
 
-    if (codec_name == PostingListCodecSIMDComp::getName())
-        return std::make_unique<PostingListCodecSIMDComp>();
+    if (codec_name == PostingListCodecBitpacking::getName())
+        return std::make_unique<PostingListCodecBitpacking>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown posting list codec: '{}' for index '{}'", codec_name, caller_name);
 }

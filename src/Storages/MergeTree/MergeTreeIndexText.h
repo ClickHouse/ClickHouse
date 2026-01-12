@@ -70,7 +70,7 @@ namespace DB
   * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
   */
 
-struct IPostingListCodec;
+class IPostingListCodec;
 using PostingListCodecPtr = const IPostingListCodec *;
 
 struct MergeTreeIndexTextParams

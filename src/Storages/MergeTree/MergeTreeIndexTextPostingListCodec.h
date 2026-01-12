@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Compression/ICompressionCodec.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -12,29 +13,26 @@ struct TokenPostingsInfo;
 class WriteBuffer;
 class ReadBuffer;
 using PostingList = roaring::Roaring;
-struct PostingListBuilder;
 
 
-/// A serializer/deserializer for a postings list (sorted row ids) stored in a compact
-/// block-compressed format.
+/// A codec for a postings list stored in a compact block-compressed format.
 ///
-/// High-level idea:
-/// - Input row ids are strictly increasing.
-/// - Values are encoded as deltas (gaps) and compressed in fixed-size blocks (BLOCK_SIZE).
-/// - Each compressed block is stored as: [1 byte: bits-width][bitpacked payload].
-/// - A posting list may be split into "segments" (logical chunks, controlled by postings_list_block_size)
-///   to simplify metadata and to support multiple ranges per token (min/max row id per segment).
+/// Values are first delta-compressed then bigpacked, each within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE).
+/// Each compressed block is stored as: [1 byte: bits-width][payload].
 ///
-class PostingListCodecSIMDCompImpl
+/// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
+/// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
+///
+/// Assumes that input row ids are strictly increasing.
+class PostingListCodecBitpackingImpl
 {
-    /// Per-segment header written before each segment payload.
+    /// Header written at the beginning of each segment before the payload.
     struct Header
     {
         Header() = default;
 
-        Header(uint16_t codec_type_, size_t payload_bytes_, uint32_t cardinality_, uint32_t base_value_)
-            : codec_type(codec_type_)
-            , payload_bytes(payload_bytes_)
+        Header(size_t payload_bytes_, uint32_t cardinality_, uint32_t base_value_)
+            : payload_bytes(payload_bytes_)
             , cardinality(cardinality_)
             , first_row_id(base_value_)
         {
@@ -42,7 +40,7 @@ class PostingListCodecSIMDCompImpl
 
         void write(WriteBuffer & out) const
         {
-            writeVarUInt(codec_type, out);
+            writeVarUInt(static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking), out);
             writeVarUInt(payload_bytes, out);
             writeVarUInt(cardinality, out);
             writeVarUInt(first_row_id, out);
@@ -52,7 +50,8 @@ class PostingListCodecSIMDCompImpl
         {
             UInt64 v = 0;
             readVarUInt(v, in);
-            codec_type = static_cast<uint8_t>(v);
+            if (v != static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected codec type Bitpacking, got {}", v);
 
             readVarUInt(v, in);
             payload_bytes = static_cast<uint64_t>(v);
@@ -64,8 +63,6 @@ class PostingListCodecSIMDCompImpl
             first_row_id = static_cast<uint32_t>(v);
         }
 
-        /// The codec type (None, Bitpacking, ...)
-        uint8_t codec_type = 0;
         /// Number of compressed bytes (per segment) following this header
         uint64_t payload_bytes = 0;
         /// Number of postings (row ids) in this segment
@@ -86,30 +83,23 @@ class PostingListCodecSIMDCompImpl
         /// Row range covered by this segment.
         uint32_t row_id_begin = 0;
         uint32_t row_id_end = 0;
-
-        SegmentDescriptor() = default;
     };
 
 public:
-    PostingListCodecSIMDCompImpl() = default;
-    explicit PostingListCodecSIMDCompImpl(size_t postings_list_block_size);
-
-    size_t size() const { return total_rows; }
-    bool empty() const { return size() == 0; }
-
-    size_t getSizeInBytes() const { return compressed_data.size(); }
+    PostingListCodecBitpackingImpl() = default;
+    explicit PostingListCodecBitpackingImpl(size_t postings_list_block_size);
 
     /// Add a single increasing row id.
     ///
     /// Internally we store deltas (gaps) in `current_segment` until reaching BLOCK_SIZE,
     /// then compress the full block into `compressed_data`.
-    /// When the segment reaches `posting_list_block_size`, flush it.
+    /// When the segment reaches `max_rowids_in_segment`, flush it.
     void insert(uint32_t row_id);
 
-    /// Add exactly one full block of BLOCK_SIZE-many rows.
+    /// Add a block of BLOCK_SIZE-many row ids.
     ///
     /// Assumes:
-    /// - rows.size() == BLOCK_SIZE
+    /// - row_ids.size() == BLOCK_SIZE
     /// - total is aligned by BLOCK_SIZE
     ///
     /// It computes deltas in-place using adjacent_difference for better throughput.
@@ -117,12 +107,12 @@ public:
 
     /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
     ///
-    /// This flushes any pending partial block and writes per-segment headers
+    /// Flushes any pending partial block and writes per-segment headers
     /// followed by the segment payload bytes.
     void encode(WriteBuffer & out, TokenPostingsInfo & info)
     {
         if (!current_segment.empty())
-            compressBlock(current_segment);
+            encodeBlock(current_segment);
 
         serializeTo(out, info);
     }
@@ -136,20 +126,20 @@ public:
     /// to reconstruct absolute row ids.
     void decode(ReadBuffer & in, PostingList & postings);
 
+private:
     void clear()
     {
         resetCurrentSegment();
 
-        total_rows = 0;
+        total_row_ids = 0;
         compressed_data.clear();
         segment_descriptors.clear();
     }
 
-private:
     void resetCurrentSegment()
     {
         current_segment.clear();
-        rows_in_current_segment = 0;
+        row_ids_in_current_segment = 0;
         prev_row_id = 0;
     }
 
@@ -158,10 +148,10 @@ private:
     /// - reset block state so a new segment can start
     void flushCurrentSegment()
     {
-       chassert(rows_in_current_segment <= posting_list_block_size);
+       chassert(row_ids_in_current_segment <= max_rowids_in_segment);
 
        if (!current_segment.empty())
-           compressBlock(current_segment);
+           encodeBlock(current_segment);
 
         resetCurrentSegment();
     }
@@ -171,7 +161,7 @@ private:
     /// - ranges: [row_begin, row_end] row range for each segment
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
-    /// Compress one block of delta values and append it to `compressed_data`.
+    /// Encode one block of delta values and append it to `compressed_data`.
     ///
     /// Block layout:
     ///   [1 byte bits][payload]
@@ -180,7 +170,7 @@ private:
     /// - payload: Codec::encode(...) bitpacked bytes
     ///
     /// Also updates current segment metadata (count, max, payload size).
-    void compressBlock(std::span<uint32_t> segment);
+    void encodeBlock(std::span<uint32_t> segment);
 
     /// Decode one compressed block into `current_segment` and reconstruct absolute row ids.
     ///
@@ -192,32 +182,45 @@ private:
 
     /// All segments
     std::string compressed_data;
+    /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
-    /// Number of values added in the current segment.
-    size_t rows_in_current_segment = 0;
+    /// Row ids in the current segment
     std::vector<uint32_t> current_segment;
-    const size_t posting_list_block_size = 1024 * 1024;
+    /// Each segment has an in-memory descriptor
     std::vector<SegmentDescriptor> segment_descriptors;
     /// Total number of postings added across all segments.
-    size_t total_rows = 0;
-    /// Used as the globally unique identifier for a codec, and it is defined in IPostingListCodec.
-    IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
+    size_t total_row_ids = 0;
+    /// Number of values added in the current segment.
+    size_t row_ids_in_current_segment = 0;
+    /// Segment size
+    const size_t max_rowids_in_segment = 1024 * 1024;
 };
 
 /// Codec for serializing/deserializing a postings list to/from a binary stream.
-struct PostingListCodecSIMDComp : public  IPostingListCodec
+/// A codec for a postings list stored in a compact block-compressed format.
+///
+/// Values are first delta-compressed then bigpacked, each within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE).
+/// Each compressed block is stored as: [1 byte: bits-width][payload].
+///
+/// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
+/// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
+///
+/// Assumes that input row ids are strictly increasing.
+class PostingListCodecBitpacking : public  IPostingListCodec
 {
+public:
     static const char * getName() { return "bitpacking"; }
 
-    PostingListCodecSIMDComp() : IPostingListCodec(Type::Bitpacking) {}
+    PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
 /// A posting list codec that doesn't compress (no-op).
-struct PostingListCodecNone : public IPostingListCodec
+class PostingListCodecNone : public IPostingListCodec
 {
+public:
     static const char * getName() { return "none"; }
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
