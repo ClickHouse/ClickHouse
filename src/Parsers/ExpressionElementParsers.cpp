@@ -1,7 +1,7 @@
 #include <cerrno>
-#include <cmath>
 #include <cstdlib>
 #include <Poco/String.h>
+#include <cmath>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -14,35 +14,35 @@
 
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
-#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -54,28 +54,24 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int SYNTAX_ERROR;
-extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
-/// Helper to record literal token position if the map is set in Expected.
-/// Extracts raw char* positions from TokenIterator - these point into the query buffer.
+/// Helper to record literal token positions in the map stored in Expected.
+/// The char* pointers reference the original query string buffer.
 ///
-/// Why insert_or_assign: When parsing nested literals like tuples `(1, 2)` or arrays `[1, 2]`,
-/// the parser creates intermediate ASTLiteral nodes for elements (e.g., `1`, `2`) and then
-/// a final ASTLiteral for the whole structure. Due to make_shared's small object optimization
-/// and memory reuse, the final composite literal may get the same address as an earlier
-/// element literal that was already recorded. We want the token info for the final literal
-/// (which is what survives in the AST), so insert_or_assign overwrites earlier entries.
+/// Why insert_or_assign: When parsing nested literals like tuples `(1, 2)`,
+/// the parser may reuse memory addresses due to make_shared's small object optimization.
+/// The final composite literal may get the same address as an earlier element.
+/// We want the token info for the final literal, so insert_or_assign overwrites earlier entries.
 inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
 {
     if (expected.literal_token_map)
     {
-        /// begin points to first token of literal, end points to one-past-last token.
-        /// We need the char* range: [first_token.begin, last_token.end)
         --end;
         expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
     }
@@ -154,8 +150,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ASTPtr explained_query = explain_query.getExplainedQuery())
             if (const auto * explained_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(explained_query.get()))
                 if (explained_query_with_output->hasOutputOptions())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have output options, such as FORMAT or INTO OUTFILE");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have output options, such as FORMAT or INTO OUTFILE");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
@@ -225,7 +220,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
             readDoubleQuotedStringWithSQLStyle(s, buf);
 
-        if (s.empty()) /// Identifiers "empty string" are not allowed.
+        if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
         node = make_intrusive<ASTIdentifier>(s);
@@ -362,12 +357,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
-    delimiter_parsers.emplace_back(
-        std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}),
-        SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
-    delimiter_parsers.emplace_back(
-        std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}),
-        SpecialDelimiter::JSON_PATH_PREFIX);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -547,7 +538,8 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return res;
 }
 
-static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos, Expected & expected)
+static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
+    Expected & expected)
 {
     ParserKeyword keyword_rows(Keyword::ROWS);
     ParserKeyword keyword_groups(Keyword::GROUPS);
@@ -617,7 +609,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             node->frame_begin_preceding = false;
             if (node->frame_begin_type == WindowFrame::BoundaryType::Unbounded)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Frame start cannot be UNBOUNDED FOLLOWING");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start cannot be UNBOUNDED FOLLOWING");
             }
         }
         else
@@ -660,7 +653,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 node->frame_end_preceding = true;
                 if (node->frame_end_type == WindowFrame::BoundaryType::Unbounded)
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Frame end cannot be UNBOUNDED PRECEDING");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame end cannot be UNBOUNDED PRECEDING");
                 }
             }
             else if (keyword_following.ignore(pos, expected))
@@ -679,10 +673,12 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 }
 
 // All except parent window name.
-static bool parseWindowDefinitionParts(IParser::Pos & pos, ASTWindowDefinition & node, Expected & expected)
+static bool parseWindowDefinitionParts(IParser::Pos & pos,
+    ASTWindowDefinition & node, Expected & expected)
 {
     ParserKeyword keyword_partition_by(Keyword::PARTITION_BY);
-    ParserNotEmptyExpressionList columns_partition_by(false /* we don't allow declaring aliases here*/);
+    ParserNotEmptyExpressionList columns_partition_by(
+        false /* we don't allow declaring aliases here*/);
     ParserKeyword keyword_order_by(Keyword::ORDER_BY);
     ParserOrderByExpressionList columns_order_by;
 
@@ -810,8 +806,8 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserCodecDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserIdentifierWithOptionalParameters>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
+    return ParserList(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
 }
 
 bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -842,8 +838,8 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserList stat_type_parser(
-        std::make_unique<ParserIdentifierWithOptionalParameters>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false);
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
@@ -877,8 +873,11 @@ bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     // check the collation name is valid
     const String name = getIdentifierName(collation);
 
-    bool valid_collation
-        = name == "binary" || endsWith(name, "_bin") || endsWith(name, "_ci") || endsWith(name, "_cs") || endsWith(name, "_ks");
+    bool valid_collation = name == "binary" ||
+                           endsWith(name, "_bin") ||
+                           endsWith(name, "_ci") ||
+                           endsWith(name, "_cs") ||
+                           endsWith(name, "_ks");
 
     if (!valid_collation)
         return false;
@@ -890,7 +889,7 @@ bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-template <TokenType... tokens>
+template <TokenType ...tokens>
 static bool isOneOf(TokenType token)
 {
     return ((token == tokens) || ...);
@@ -989,7 +988,8 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
 
     ASTPtr type_ast;
-    if (ParserToken(DoubleColon).ignore(pos, expected) && ParserDataType().parse(pos, type_ast, expected))
+    if (ParserToken(DoubleColon).ignore(pos, expected)
+        && ParserDataType().parse(pos, type_ast, expected))
     {
         size_t data_size = data_end - data_begin;
         if (string_literal)
@@ -1009,8 +1009,6 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Note: NULL literals are intentionally NOT recorded in the token map.
-    /// They are treated as tokens (not templated) because Nullable(Nothing) templates are useless.
     ParserKeyword nested_parser(Keyword::NULL_KEYWORD);
     if (nested_parser.parse(pos, node, expected))
     {
@@ -1023,8 +1021,6 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Note: Bool literals are intentionally NOT recorded in the token map.
-    /// The ConstantExpressionTemplate system does not support Bool type for templating.
     if (ParserKeyword(Keyword::TRUE_KEYWORD).parse(pos, node, expected))
     {
         node = make_intrusive<ASTLiteral>(true);
@@ -1040,7 +1036,7 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
-    errno = 0; /// Functions strto* don't clear errno.
+    errno = 0;    /// Functions strto* don't clear errno.
 
     char * pos_integer = buffer;
     UInt64 uint_value = std::strtoull(buffer, &pos_integer, base);
@@ -1072,7 +1068,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
         negative = true;
     }
-    else if (pos->type == TokenType::Plus) /// Leading plus is simply ignored.
+    else if (pos->type == TokenType::Plus)  /// Leading plus is simply ignored.
         ++pos;
 
     Field res;
@@ -1084,17 +1080,16 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
         char * str_end;
-        errno = 0; /// Functions strto* don't clear errno.
+        errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
         bool overflow = (errno == ERANGE && !std::isfinite(float_value));
         if (str_end == buf.c_str() + buf.size() && !overflow)
         {
             if (float_value < 0)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Token number cannot begin with minus, "
-                    "but parsed float number is less than zero.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Token number cannot begin with minus, "
+                                "but parsed float number is less than zero.");
 
             if (negative)
                 float_value = -float_value;
@@ -1228,6 +1223,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!pos.isValid())
         return false;
 
+    auto literal_begin = pos;
     UInt64 x = 0;
     ReadBufferFromMemory in(pos->begin, pos->size());
     if (!tryReadIntText(x, in) || in.count() != pos->size())
@@ -1238,7 +1234,6 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     res = x;
     auto literal = make_intrusive<ASTLiteral>(res);
-    IParser::Pos literal_begin = pos;
     ++pos;
     recordLiteralTokens(literal.get(), literal_begin, pos, expected);
     node = literal;
@@ -1247,8 +1242,8 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str, Expected & expected)
 {
+    auto literal_begin = pos;
     auto literal = make_intrusive<ASTLiteral>(str);
-    IParser::Pos literal_begin = pos;
     ++pos;
     recordLiteralTokens(literal.get(), literal_begin, pos, expected);
     node = literal;
@@ -1340,8 +1335,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 template <typename Collection>
 struct CollectionOfLiteralsLayer
 {
-    explicit CollectionOfLiteralsLayer(IParser::Pos & pos)
-        : literal_begin(pos)
+    explicit CollectionOfLiteralsLayer(IParser::Pos & pos) : literal_begin(pos)
     {
         ++pos;
     }
@@ -1373,9 +1367,9 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return false;
 
                 boost::intrusive_ptr<ASTLiteral> literal = make_intrusive<ASTLiteral>(std::move(layers.back().arr));
-                IParser::Pos literal_begin = layers.back().literal_begin;
+                auto layer_begin = layers.back().literal_begin;
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
+                recordLiteralTokens(literal.get(), layer_begin, pos, expected);
 
                 layers.pop_back();
                 pos.decreaseDepth();
@@ -1443,10 +1437,7 @@ template <class Container, TokenType end_token>
 class CommonCollection : public ICollection
 {
 public:
-    explicit CommonCollection(const IParser::Pos & pos)
-        : begin(pos)
-    {
-    }
+    explicit CommonCollection(const IParser::Pos & pos) : begin(pos) {}
 
     bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
 
@@ -1458,10 +1449,7 @@ private:
 class MapCollection : public ICollection
 {
 public:
-    explicit MapCollection(const IParser::Pos & pos)
-        : begin(pos)
-    {
-    }
+    explicit MapCollection(const IParser::Pos & pos) : begin(pos) {}
 
     bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
 
@@ -1486,8 +1474,7 @@ bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Exp
 }
 
 template <class Container, TokenType end_token>
-bool CommonCollection<Container, end_token>::parse(
-    IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map)
+bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map)
 {
     if (node)
     {
@@ -1614,13 +1601,52 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-const char * ParserAlias::restricted_keywords[]
-    = {"ALL",    "ANTI",     "ANY",      "ARRAY",  "ASOF",      "BETWEEN", "CROSS",    "PASTE", "FINAL",
-       "FORMAT", "FROM",     "FULL",     "GLOBAL", "GROUP",     "HAVING",  "ILIKE",    "INNER", "INTO",
-       "JOIN",   "LEFT",     "LIKE",     "LIMIT",  "NOT",       "OFFSET",  "ON",
-       "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
-       "ORDER",  "PARALLEL", "PREWHERE", "RIGHT",  "SAMPLE",    "SEMI",    "SETTINGS", "UNION", "USING",
-       "WHERE",  "WINDOW",   "QUALIFY",  "WITH",   "INTERSECT", "EXCEPT",  "ELSE",     nullptr};
+const char * ParserAlias::restricted_keywords[] =
+{
+    "ALL",
+    "ANTI",
+    "ANY",
+    "ARRAY",
+    "ASOF",
+    "BETWEEN",
+    "CROSS",
+    "PASTE",
+    "FINAL",
+    "FORMAT",
+    "FROM",
+    "FULL",
+    "GLOBAL",
+    "GROUP",
+    "HAVING",
+    "ILIKE",
+    "INNER",
+    "INTO",
+    "JOIN",
+    "LEFT",
+    "LIKE",
+    "LIMIT",
+    "NOT",
+    "OFFSET",
+    "ON",
+    "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
+    "ORDER",
+    "PARALLEL",
+    "PREWHERE",
+    "RIGHT",
+    "SAMPLE",
+    "SEMI",
+    "SETTINGS",
+    "UNION",
+    "USING",
+    "WHERE",
+    "WINDOW",
+    "QUALIFY",
+    "WITH",
+    "INTERSECT",
+    "EXCEPT",
+    "ELSE",
+    nullptr
+};
 
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1681,9 +1707,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
                 if (!isASTLambdaFunction(*func))
-                    throw Exception(
-                        ErrorCodes::SYNTAX_ERROR,
-                        "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
 
                 const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
@@ -1924,8 +1948,7 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 /// Parse (columns_list) or ('REGEXP').
-static bool parseColumnsMatcherBody(
-    IParser::Pos & pos, ASTPtr & node, Expected & expected, ParserColumnsTransformers::ColumnTransformers allowed_transformers)
+static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected & expected, ParserColumnsTransformers::ColumnTransformers allowed_transformers)
 {
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
@@ -2373,7 +2396,7 @@ bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Ex
     if (pos.get().type != TokenType::OpeningRoundBracket)
     {
         if (!brackets_can_be_omitted)
-            return false;
+             return false;
     }
     else
     {
@@ -2427,7 +2450,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// 2: MODIFY TTL timestamp + 123, MATERIALIZE TTL
     /// In the first case, materialize belongs to the list of TTL expressions, so it is the part of TTLElement.
     /// In the second case, MATERIALIZE TTL is a separate element of the alter, so it can't be parsed as a TTLElement.
-    if (s_materialize_ttl.checkWithoutMoving(pos, expected) || s_remove_ttl.checkWithoutMoving(pos, expected)
+    if (s_materialize_ttl.checkWithoutMoving(pos, expected)
+        || s_remove_ttl.checkWithoutMoving(pos, expected)
         || s_modify_ttl.checkWithoutMoving(pos, expected))
         return false;
 
@@ -2488,7 +2512,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_set.ignore(pos, expected))
         {
-            ParserList parser_assignment_list(std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+            ParserList parser_assignment_list(
+                std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
 
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
