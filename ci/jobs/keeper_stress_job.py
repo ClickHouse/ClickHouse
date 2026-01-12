@@ -23,7 +23,6 @@ except Exception:
 
 from praktika.result import Result
 from praktika.utils import Shell, Utils
-from praktika.settings import Settings
 from praktika.info import Info
 
 
@@ -55,17 +54,6 @@ def main():
     except Exception:
         pass
 
-    # Ensure weekly selection defaults depend on workflow: PR disables weekly, Nightly enables
-    wf = os.environ.get("WORKFLOW_NAME", "")
-    jn = os.environ.get("JOB_NAME", "")
-    ghe = os.environ.get("GITHUB_EVENT_NAME", "")
-    ref = os.environ.get("GITHUB_REF", "")
-    is_pr = (
-        (wf == "PR")
-        or ("(PR)" in jn)
-        or ghe.startswith("pull_request")
-        or ref.startswith("refs/pull/")
-    )
     # Same suite and defaults for PR and nightly
     os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
     os.environ.setdefault("KEEPER_SCENARIO_FILE", "all")
@@ -181,19 +169,15 @@ def main():
     # Respect optional duration override from CLI first, then env
     dur_cli = args.duration
     dur_env = os.environ.get("KEEPER_DURATION")
-    dur_arg = (
-        f" --duration={int(dur_cli)}"
-        if dur_cli
-        else (f" --duration={int(dur_env)}" if dur_env else "")
-    )
+    try:
+        duration_value = (
+            int(dur_cli) if dur_cli else (int(dur_env) if dur_env else None)
+        )
+    except Exception:
+        duration_value = None
 
     # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
-    install_cmd = (
-        # Ensure deterministic pytest stack compatible with --report-log
-        "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt "
-        "&& PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir 'pytest<9' pytest-xdist pytest-timeout pytest-reportlog boto3 PyGithub unidiff "
-        "|| PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir pyyaml requests 'pytest<9' pytest-timeout pytest-xdist pytest-reportlog boto3 PyGithub unidiff"
-    )
+    install_cmd = "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt pytest-reportlog"
     results.append(
         Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
     )
@@ -289,11 +273,7 @@ def main():
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
     extra.append(f"--timeout={timeout_val}")
     extra.append("--timeout-method=signal")
-    try:
-        cpus = os.cpu_count() or 8
-        heuristic_workers = "16"
-    except Exception:
-        heuristic_workers = "16"
+    heuristic_workers = "16"
     _xd_env = (os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or "").lower()
     if _xd_env in ("", "auto"):
         # Use default heuristic unless explicitly overridden
@@ -308,7 +288,9 @@ def main():
     report_file = f"{temp_dir}/pytest.jsonl"
     junit_file = f"{temp_dir}/keeper_junit.xml"
     extra.append(f"--junitxml={junit_file}")
-    base = ["-vv", tests_target, f"--durations=0{dur_arg}"]
+    if duration_value is not None:
+        extra.append(f"--duration={duration_value}")
+    base = ["-vv", tests_target, "--durations=0"]
     if is_parallel:
         # Reduce report size/noise: disable pytest logging plugin and stdout capture for workers
         extra.extend(
@@ -754,10 +736,6 @@ def main():
     # CI-agnostic: no direct CIDB verification here; praktika handles reporting
     # Collect debug artifacts on failure
     try:
-        files_to_attach
-    except NameError:
-        files_to_attach = []
-    try:
         if "summary_txt" in locals() and summary_txt:
             sp = Path(summary_txt)
             if sp.exists():
@@ -844,13 +822,6 @@ def main():
     except Exception:
         pass
 
-    try:
-        if "cidb_txt" in locals():
-            p = Path(cidb_txt)
-            if p.exists() and str(p) not in files_to_attach:
-                files_to_attach.append(str(p))
-    except Exception:
-        pass
     # Post-run docker prune to free space for subsequent jobs
     results.append(
         Result.from_commands_run(

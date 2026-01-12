@@ -39,5 +39,4 @@ echo '{
 # but on SIGINT dockerd will exit, so we spawn new session to ignore SIGINT by
 # docker.
 # Note, that if you will run it via runner, it will send SIGINT to docker anyway.
-ulimit -n 262144 || true
-setsid dockerd --host=unix:///var/run/docker.sock --tls=false --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 --default-ulimit nofile=262144:262144
+setsid dockerd --host=unix:///var/run/docker.sock --tls=false --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24
