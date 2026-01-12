@@ -11,7 +11,6 @@
 namespace DB
 {
 
-struct PostingListBuilder;
 struct TokenPostingsInfo;
 class ReadBuffer;
 class WriteBuffer;
