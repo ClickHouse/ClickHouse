@@ -496,43 +496,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         */
 
     QueryTreeNodePtr result_expression;
-    bool match_full_identifier = false;
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    ColumnNodePtr result_column_node;
-    bool can_resolve_directly_from_storage = false;
     if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
     {
-        can_resolve_directly_from_storage = true;
-        result_column_node = it->second;
+        result_expression = it->second;
     }
-    /// Check if it's a dynamic subcolumn
-    else if (table_expression_data.supports_subcolumns)
-    {
-        auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
-        auto jt = table_expression_data.column_name_to_column_node.find(column_name);
-        if (jt != table_expression_data.column_name_to_column_node.end() && jt->second->getColumnType()->hasDynamicSubcolumns())
-        {
-            if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
-            {
-                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
-                can_resolve_directly_from_storage = true;
-            }
-        }
-    }
-
-
-    if (can_resolve_directly_from_storage)
-    {
-        match_full_identifier = true;
-        result_expression = result_column_node;
-    }
+    /// Check if it's a subcolumn
     else
     {
-        auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
-        if (it != table_expression_data.column_name_to_column_node.end())
-            result_expression = it->second;
+        if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
+        {
+            if (table_expression_data.supports_subcolumns)
+                result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
+            else
+                result_expression = wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
+        }
     }
 
     bool clone_is_needed = true;
@@ -540,20 +520,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     String table_expression_source = table_expression_data.table_expression_description;
     if (!table_expression_data.table_expression_name.empty())
         table_expression_source += " with name " + table_expression_data.table_expression_name;
-
-    if (result_expression && !match_full_identifier && identifier_without_column_qualifier.isCompound())
-    {
-        size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
-        result_expression = tryResolveIdentifierFromCompoundExpression(identifier,
-            identifier_bind_size,
-            result_expression,
-            table_expression_source,
-            scope,
-            can_be_not_found);
-        if (can_be_not_found && !result_expression)
-            return {};
-        clone_is_needed = false;
-    }
 
     if (!result_expression)
     {
