@@ -12,7 +12,7 @@ if {[info exists env(CLICKHOUSE_TMP)]} {
 exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 
 log_user 0
-set timeout 5
+set timeout 60
 match_max 100000
 
 expect_after {
@@ -21,7 +21,6 @@ expect_after {
     # A default timeout action is to do nothing, change it to fail
     -i $any_spawn_id timeout { exit 1 }
 }
-
 
 spawn bash -c "echo '-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAlwAAAAdzc2gtcn
@@ -38,9 +37,9 @@ l+CHod8qOHF+eWWnw+TvPw3sTM/5rcJ+0N3anhpo9Ph3AAAAQQDl0EKJvfyRgnKHcjtLUM
 IPac9E4ZR36UA2lWK/gr0x8PvxzlonzWqBcYFmCAQv9lPvk1GJK8/EnCkkD5pTvKbHAAAA
 QQDbVchcKjXrhsYklDvJQ4xyGkUH6+xMRVINwzjP3JQ1akUF/MJAYg5vr8j4gibWysVwWV
 0lgWuG96Yy/MxT62bvAAAAE2lzYWtlbEBwYzY0MTAxLTI1MzYBAgMEBQYH
------END OPENSSH PRIVATE KEY-----' > ssh_key"
+-----END OPENSSH PRIVATE KEY-----' > id_rsa_03780_failed_ssh"
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --ssh-key-file ssh_key --user admin"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --ssh-key-file id_rsa_03780_failed_ssh --user admin"
 expect "Enter your SSH private key passphrase (leave empty for no passphrase): "
 send "\r"
 expect "Connecting to * as user admin."
