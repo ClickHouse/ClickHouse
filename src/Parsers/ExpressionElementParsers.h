@@ -21,7 +21,7 @@ class ASTLiteral;
 struct LiteralTokenInfo
 {
     const char * begin; /// Start of literal in query string
-    const char * end; /// End of literal in query string
+    const char * end;   /// End of literal in query string
 
     LiteralTokenInfo(const char * begin_, const char * end_)
         : begin(begin_)
