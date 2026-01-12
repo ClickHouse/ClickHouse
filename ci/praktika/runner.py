@@ -473,6 +473,7 @@ class Runner:
                 info=f"Failed to read Result json, ex: [{e}]",
             ).dump()
 
+        print(f"####REMOVEME {result.is_completed()}")
         if not result.is_completed():
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
