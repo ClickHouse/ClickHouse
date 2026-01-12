@@ -14,6 +14,10 @@ class WriteBuffer;
 class ReadBuffer;
 using PostingList = roaring::Roaring;
 
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 /// A codec for a postings list stored in a compact block-compressed format.
 ///

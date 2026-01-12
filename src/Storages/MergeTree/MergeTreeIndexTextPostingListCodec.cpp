@@ -6,10 +6,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CORRUPTED_DATA;
-}
 
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.
 /// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
