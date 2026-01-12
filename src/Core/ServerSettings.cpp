@@ -52,7 +52,7 @@ namespace
 
 // clang-format off
 
-#define LIST_OF_SIMPLE_SERVER_SETTINGS(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -1460,7 +1460,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     )", 0)
 
-#define LIST_OF_NESTED_SERVER_SETTINGS(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
     DECLARE(UInt64, query_cache_max_entry_size_in_bytes, 1048576, R"(The maximum size in bytes SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_bytes") \
@@ -1532,16 +1532,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, hdfs_libhdfs3_conf, "", R"(Points libhdfs3 to the right location for its config.)", 0, "hdfs.libhdfs3_conf") \
     DECLARE(String, config_file, "config.xml", R"(Points to the server config file.)", 0, "config-file")
 
-#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-    LIST_OF_SIMPLE_SERVER_SETTINGS(DECLARE, ALIAS) \
-    LIST_OF_NESTED_SERVER_SETTINGS(DECLARE, ALIAS) \
-
 // clang-format on
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
-DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS_WITH_NESTED_SETTINGS(ServerSettingsTraits, LIST_OF_SIMPLE_SERVER_SETTINGS, LIST_OF_NESTED_SERVER_SETTINGS)
+DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
+IMPLEMENT_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
+
+#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
+    LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
+    LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
 
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
@@ -1773,5 +1773,55 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         res_columns[6]->insert(is_changeable ? changeable_settings_it->second.second : ChangeableWithoutRestart::No);
         res_columns[7]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
     }
+}
+
+void ServerSettings::dumpNonRegisteredConfigToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
+{
+    MutableColumns & res_columns = params.res_columns;
+    ContextPtr context = params.context;
+
+    const auto & config = context->getConfigRef();
+
+    std::unordered_set<String> excluded_prefixes = {
+        "application",
+        "system",
+        "users"
+    };
+
+    std::function<void(const std::string &)> process_config_path = [&](const std::string & prefix)
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(prefix, keys);
+        
+        for (const auto & key : keys)
+        {
+            std::string full_path = prefix.empty() ? key : prefix + "." + key;
+
+            if (excluded_prefixes.contains(full_path)) {
+                continue;
+            }
+            
+            Poco::Util::AbstractConfiguration::Keys sub_keys;
+            config.keys(full_path, sub_keys);
+            
+            if (sub_keys.empty()) {
+                if (!ServerSettingsImpl::hasBuiltinPath(full_path)) {
+                    res_columns[0]->insert(full_path);
+                    res_columns[1]->insert(config.getString(full_path, ""));
+                    res_columns[2]->insert("");
+                    res_columns[3]->insert(true);
+                    res_columns[4]->insert("");
+                    res_columns[5]->insert("");
+                    res_columns[6]->insert(ChangeableWithoutRestart::No);
+                    res_columns[7]->insert(false);
+                }
+                continue;    
+            } 
+
+            process_config_path(full_path);
+        }
+    };
+
+    process_config_path("");
 }
 }

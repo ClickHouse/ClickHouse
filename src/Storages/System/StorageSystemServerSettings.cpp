@@ -51,6 +51,7 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
 
     ServerSettingColumnsParams params{res_columns, context};
     settings.dumpToSystemServerSettingsColumns(params);
+    settings.dumpNonRegisteredConfigToSystemServerSettingsColumns(params);
 }
 
 }
