@@ -220,7 +220,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
 {
     auto res_group = std::make_shared<ThreadGroup>(context, parent);
-    res_group->memory_tracker.setDescription("AsyncInsertQueue");
+    res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
 
