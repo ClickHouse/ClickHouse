@@ -260,7 +260,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d) + daynum_offset_epoch);
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -314,7 +314,7 @@ public:
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
-    static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
+    static auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 
@@ -969,7 +969,7 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
+    Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
@@ -980,7 +980,7 @@ public:
     }
 
     template <typename DateOrTime>
-    ALWAYS_INLINE Time toRelativeHourNum(DateOrTime v) const
+    Time toRelativeHourNum(DateOrTime v) const
     {
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }

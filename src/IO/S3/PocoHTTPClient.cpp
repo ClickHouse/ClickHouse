@@ -23,7 +23,6 @@
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
-#include <smithy/tracing/NoopTelemetryProvider.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
@@ -67,11 +66,14 @@ namespace ProfileEvents
     extern const Event DiskS3WriteRequestsThrottling;
     extern const Event DiskS3WriteRequestsRedirects;
 
+    extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerSleepMicroseconds;
+    extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerSleepMicroseconds;
+
     extern const Event DiskS3GetRequestThrottlerCount;
-    extern const Event DiskS3GetRequestThrottlerBlocked;
     extern const Event DiskS3GetRequestThrottlerSleepMicroseconds;
     extern const Event DiskS3PutRequestThrottlerCount;
-    extern const Event DiskS3PutRequestThrottlerBlocked;
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
 }
 
@@ -89,14 +91,6 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace HistogramMetrics
-{
-    extern MetricFamily & S3Connect;
-    extern MetricFamily & DiskS3Connect;
-    extern MetricFamily & S3FirstByte;
-    extern MetricFamily & DiskS3FirstByte;
-}
-
 namespace DB::S3
 {
 
@@ -112,7 +106,8 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     bool for_disk_s3_,
     std::optional<std::string> opt_disk_name_,
     bool s3_use_adaptive_timeouts_,
-    const HTTPRequestThrottler & request_throttler_,
+    const ThrottlerPtr & get_request_throttler_,
+    const ThrottlerPtr & put_request_throttler_,
     std::function<void(const ProxyConfiguration &)> error_report_)
     : per_request_configuration(per_request_configuration_)
     , force_region(force_region_)
@@ -124,7 +119,8 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
     , opt_disk_name(opt_disk_name_)
-    , request_throttler(request_throttler_)
+    , get_request_throttler(get_request_throttler_)
+    , put_request_throttler(put_request_throttler_)
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
@@ -136,25 +132,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     {
         LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
         retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
-    }
-
-    /// NOTE: In some places AWS SDK expects it to be non-null.
-    telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
-
-    /// NOTE: Without these settings AWS SDK enable transfer-encoding: chunked and content-encoding: aws-chunked
-    /// We don't use them and MinIO server doesn't support them.
-    checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
-    checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
-
-    // Make sure throttlers update DiskS3* profile events if necessary
-    if (for_disk_s3)
-    {
-        request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
-        request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
-        request_throttler.disk_get_sleep_us = ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds;
-        request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
-        request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
-        request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
     }
 }
 
@@ -212,7 +189,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
-    , request_throttler(client_configuration.request_throttler)
+    , get_request_throttler(client_configuration.get_request_throttler)
+    , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
 }
@@ -294,9 +272,6 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
     {
         case Aws::Http::HttpMethod::HTTP_GET:
         case Aws::Http::HttpMethod::HTTP_HEAD:
-        case Aws::Http::HttpMethod::HTTP_TRACE:
-        case Aws::Http::HttpMethod::HTTP_OPTIONS:
-        case Aws::Http::HttpMethod::HTTP_CONNECT:
             return S3MetricKind::Read;
         case Aws::Http::HttpMethod::HTTP_POST:
         case Aws::Http::HttpMethod::HTTP_DELETE:
@@ -309,8 +284,7 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
-    {
+    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
         {ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors},
@@ -318,8 +292,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
     };
 
-    static const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
-    {
+    static const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {ProfileEvents::DiskS3ReadMicroseconds, ProfileEvents::DiskS3WriteMicroseconds},
         {ProfileEvents::DiskS3ReadRequestsCount, ProfileEvents::DiskS3WriteRequestsCount},
         {ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors},
@@ -334,20 +307,31 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
-void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const
+void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency) const
 {
     if (latency == 0)
         return;
 
     if (type == S3LatencyType::Connect)
     {
-        static HistogramMetrics::Metric & s3_connect_metric = HistogramMetrics::S3Connect.withLabels({});
-        s3_connect_metric.observe(latency);
+        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
+        static Histogram::MetricFamily & s3_connect = Histogram::Factory::instance().registerMetric(
+            "s3_connect_microseconds",
+            "Time to establish connection with S3, in microseconds.",
+            connect_buckets,
+            {}
+        );
+        s3_connect.withLabels({}).observe(latency);
 
         if (for_disk_s3)
         {
-            static HistogramMetrics::Metric & disk_s3_connect_metric = HistogramMetrics::DiskS3Connect.withLabels({});
-            disk_s3_connect_metric.observe(latency);
+            static Histogram::MetricFamily & disk_s3_connect = Histogram::Factory::instance().registerMetric(
+                "disk_s3_connect_microseconds",
+                "Time to establish connection with DiskS3, in microseconds.",
+                connect_buckets,
+                {}
+            );
+            disk_s3_connect.withLabels({}).observe(latency);
         }
         return;
     }
@@ -367,27 +351,36 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     {
         switch (m)
         {
-            case Aws::Http::HttpMethod::HTTP_GET:      return "GET";
-            case Aws::Http::HttpMethod::HTTP_HEAD:     return "HEAD";
-            case Aws::Http::HttpMethod::HTTP_POST:     return "POST";
-            case Aws::Http::HttpMethod::HTTP_DELETE:   return "DELETE";
-            case Aws::Http::HttpMethod::HTTP_PUT:      return "PUT";
-            case Aws::Http::HttpMethod::HTTP_PATCH:    return "PATCH";
-            case Aws::Http::HttpMethod::HTTP_CONNECT:  return "CONNECT";
-            case Aws::Http::HttpMethod::HTTP_TRACE:    return "TRACE";
-            case Aws::Http::HttpMethod::HTTP_OPTIONS:  return "OPTIONS";
+            case Aws::Http::HttpMethod::HTTP_GET:    return "GET";
+            case Aws::Http::HttpMethod::HTTP_HEAD:   return "HEAD";
+            case Aws::Http::HttpMethod::HTTP_POST:   return "POST";
+            case Aws::Http::HttpMethod::HTTP_DELETE: return "DELETE";
+            case Aws::Http::HttpMethod::HTTP_PUT:    return "PUT";
+            case Aws::Http::HttpMethod::HTTP_PATCH:  return "PATCH";
         }
     }(request.GetMethod());
 
-    const HistogramMetrics::LabelValues first_byte_label_values = {http_method_label, attempt_label};
+    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
+    const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
+    const Histogram::LabelValues first_byte_label_values = {http_method_label, attempt_label};
 
-    HistogramMetrics::observe(
-        HistogramMetrics::S3FirstByte, first_byte_label_values, latency);
+    static Histogram::MetricFamily & s3_first_byte = Histogram::Factory::instance().registerMetric(
+        "s3_first_byte_microseconds",
+        "Time to receive the first byte from an S3 request, in microseconds.",
+        first_byte_buckets,
+        first_byte_labels
+    );
+    s3_first_byte.withLabels(first_byte_label_values).observe(latency);
 
     if (for_disk_s3)
     {
-        HistogramMetrics::observe(
-            HistogramMetrics::DiskS3FirstByte, first_byte_label_values, latency);
+        static Histogram::MetricFamily & disk_s3_first_byte = Histogram::Factory::instance().registerMetric(
+            "disk_s3_first_byte_microseconds",
+            "Time to receive the first byte from a DiskS3 request, in microseconds.",
+            first_byte_buckets,
+            first_byte_labels
+        );
+        disk_s3_first_byte.withLabels(first_byte_label_values).observe(latency);
     }
 }
 
@@ -424,12 +417,6 @@ String getMethod(const Aws::Http::HttpRequest & request)
             return Poco::Net::HTTPRequest::HTTP_HEAD;
         case Aws::Http::HttpMethod::HTTP_PATCH:
             return Poco::Net::HTTPRequest::HTTP_PATCH;
-        case Aws::Http::HttpMethod::HTTP_CONNECT:
-            return Poco::Net::HTTPRequest::HTTP_CONNECT;
-        case Aws::Http::HttpMethod::HTTP_TRACE:
-            return Poco::Net::HTTPRequest::HTTP_TRACE;
-        case Aws::Http::HttpMethod::HTTP_OPTIONS:
-            return Poco::Net::HTTPRequest::HTTP_OPTIONS;
     }
 }
 
@@ -476,23 +463,33 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         case Aws::Http::HttpMethod::HTTP_GET:
         case Aws::Http::HttpMethod::HTTP_HEAD:
-        case Aws::Http::HttpMethod::HTTP_TRACE:
-        case Aws::Http::HttpMethod::HTTP_OPTIONS:
-        case Aws::Http::HttpMethod::HTTP_CONNECT:
-            /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
-            /// (i.e. throttles GetObject, HeadObject)
-            request_throttler.throttleHTTPGet();
+            if (get_request_throttler)
+            {
+                Stopwatch sleep_watch;
+                bool blocked = get_request_throttler->throttle(1);
+                if (blocked && for_disk_s3)
+                {
+                    ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerCount);
+                    ProfileEvents::increment(ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds, sleep_watch.elapsedMicroseconds());
+                }
+            }
             break;
         case Aws::Http::HttpMethod::HTTP_PUT:
         case Aws::Http::HttpMethod::HTTP_POST:
         case Aws::Http::HttpMethod::HTTP_PATCH:
-            /// Limits put request per second rate for PUT, COPY, POST, LIST requests
-            /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
-            request_throttler.throttleHTTPPut();
+            if (put_request_throttler)
+            {
+                Stopwatch sleep_watch;
+                bool blocked = put_request_throttler->throttle(1);
+                if (blocked && for_disk_s3)
+                {
+                    ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerCount);
+                    ProfileEvents::increment(ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds, sleep_watch.elapsedMicroseconds());
+                }
+            }
             break;
         case Aws::Http::HttpMethod::HTTP_DELETE:
-            /// DELETE and CANCEL requests are not throttled by either put or get throttler
-            break;
+            break; // Not throttled
     }
 
     addMetric(request, S3MetricType::Count);

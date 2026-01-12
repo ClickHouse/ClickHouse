@@ -1,4 +1,3 @@
-import dataclasses
 import platform
 import sys
 import traceback
@@ -16,7 +15,6 @@ from .info import Info
 from .mangle import _get_workflows
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
-from .s3 import S3
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -115,9 +113,6 @@ def _build_dockers(workflow, job_name):
     job_status = Result.Status.SUCCESS
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
-    for d in dockers:
-        if isinstance(d.platforms, str):
-            d.platforms = [d.platforms]
     docker_digests = {}  # type: Dict[str, str]
     arm_only = False
     amd_only = False
@@ -147,7 +142,7 @@ def _build_dockers(workflow, job_name):
             job_info = "Failed to install docker buildx driver"
 
     if job_status == Result.Status.SUCCESS:
-        if not Info().is_local_run and not Docker.login(
+        if not Docker.login(
             Settings.DOCKERHUB_USERNAME,
             user_password=workflow.get_secret(Settings.DOCKERHUB_SECRET).get_value(),
         ):
@@ -163,12 +158,7 @@ def _build_dockers(workflow, job_name):
                 continue
             elif arm_only and Docker.Platforms.ARM not in docker.platforms:
                 continue
-            platforms = (
-                docker.platforms
-                if isinstance(docker.platforms, list)
-                else [docker.platforms]
-            )
-            if any(p not in Docker.Platforms.arm_amd for p in platforms):
+            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
                 Utils.raise_with_error(
                     f"TODO: add support for all docker platforms [{docker.platforms}]"
                 )
@@ -182,7 +172,6 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
-                    disable_push=Info().is_local_run,
                 )
             )
             if results[-1].is_ok():
@@ -207,18 +196,6 @@ def _build_dockers(workflow, job_name):
             )
 
     return Result.create_from(results=results, info=job_info)
-
-
-def _clean_buildx_volumes():
-    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
-    Shell.check(
-        "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
-        verbose=True,
-    )
-    Shell.check(
-        "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
-        verbose=True,
-    )
 
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
@@ -323,8 +300,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
-        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
-        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():
@@ -500,10 +475,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
+    print(f"Write config to GH's job output")
+    with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+        print(
+            f"DATA={workflow_config.to_json()}",
+            file=f,
+        )
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
-    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
-    env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
         print("Init report")
@@ -522,41 +501,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
-def _check_and_link_open_issues(result: Result, job_name: str) -> bool:
-    """
-    Downloads flaky test catalog from S3 and marks matching test results as flaky
-    or infrastructure issues. Can be called on a single job result.
-
-    Args:
-        result: The result object to check and mark
-        job_name: The job name for infrastructure job pattern matching
-
-    Returns:
-        True if successful, False if catalog download failed
-    """
-    from .issue import TestCaseIssueCatalog
-
-    if result.is_ok():
-        print("Result succeeded, no flaky test check needed.")
-        return True
-
-    print("Checking for flaky tests and infrastructure issues...")
-
-    # Download catalog from S3
-    issue_catalog = TestCaseIssueCatalog.from_s3()
-    if not issue_catalog:
-        print("ERROR: Could not load issue catalog")
-        return False
-    print(f"Loaded {len(issue_catalog.active_test_issues)} active issues")
-
-    # Check all issues against the result tree
-    for issue in issue_catalog.active_test_issues:
-        issue.check_result(result, job_name)
-    result.dump()
-    print("Flaky test check and infrastructure issue check completed")
-    return True
-
-
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
@@ -570,13 +514,6 @@ def _finish_workflow(workflow, job_name):
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
-
-    if (
-        workflow.enable_merge_ready_status
-        or workflow.enable_open_issues_check
-        or workflow.post_hooks
-    ):
-        _GH_Auth(workflow)
 
     update_final_report = False
     results = []
@@ -612,27 +549,6 @@ def _finish_workflow(workflow, job_name):
             continue
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
-            continue
-        if workflow.enable_open_issues_check and (
-            (
-                result.has_label(Result.Label.ISSUE)
-                and not result.has_label(Result.Label.BLOCKER)
-            )
-            or (
-                result.results
-                and all(
-                    (
-                        sub_result.has_label(Result.Label.ISSUE)
-                        and not sub_result.has_label(Result.Label.BLOCKER)
-                    )
-                    for sub_result in result.results
-                )
-            )
-        ):
-            print(
-                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
-            )
-            continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
@@ -662,16 +578,19 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
-    if workflow.enable_merge_ready_status:
-        if not GH.post_commit_status(
-            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
-            or f"Ready For Merge [{workflow.name}]",
-            status=ready_for_merge_status,
-            description=ready_for_merge_description,
-            url="",
-        ):
-            print(f"ERROR: failed to set ReadyForMerge status")
-            env.add_info(ResultInfo.GH_STATUS_ERROR)
+    if workflow.enable_merge_ready_status or workflow.enable_gh_summary_comment:
+        _GH_Auth(workflow)
+
+        if workflow.enable_merge_ready_status:
+            if not GH.post_commit_status(
+                name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+                or f"Ready For Merge [{workflow.name}]",
+                status=ready_for_merge_status,
+                description=ready_for_merge_description,
+                url="",
+            ):
+                print(f"ERROR: failed to set ReadyForMerge status")
+                env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
@@ -694,7 +613,6 @@ if __name__ == "__main__":
             Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
-            _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
         elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:

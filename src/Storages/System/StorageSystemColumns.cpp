@@ -27,7 +27,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+}
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -65,7 +68,6 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-        { "statistics",                 std::make_shared<DataTypeString>(), "The types of statistics created in this columns."}
     });
 
     description.setAliases({
@@ -132,7 +134,7 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
-            SerializationInfoByName serialization_hints{{}};
+            SerializationInfoByName serialization_hints;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -144,16 +146,24 @@ protected:
                     continue;
                 }
 
-                auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 columns = metadata_snapshot->getColumns();
-                if (auto hints = storage->tryGetSerializationHints())
-                    serialization_hints = std::move(*hints);
+                serialization_hints = storage->getSerializationHints();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
                 {
-                    if (auto sizes = storage->tryGetColumnSizes())
-                        column_sizes = std::move(*sizes);
+                    /// Can throw UNKNOWN_DATABASE in case of Merge table
+                    try
+                    {
+                        column_sizes = storage->getColumnSizes();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                            throw;
+                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
+                    }
                 }
 
                 if (columns_mask[11])
@@ -315,16 +325,9 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
-                        res_columns[res_index++]->insert(ISerialization::kindStackToString(it->second->getKindStack()));
+                        res_columns[res_index++]->insert(ISerialization::kindToString(it->second->getKind()));
                     else
                         res_columns[res_index++]->insertDefault();
-                }
-
-                /// statistics
-                if (columns_mask[src_index++])
-                {
-                    const ColumnStatisticsDescription & stats = column.statistics;
-                    res_columns[res_index++]->insert(stats.getNameForLogs());
                 }
 
                 ++rows_count;
@@ -395,7 +398,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
         block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
 
-        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
 
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)
@@ -438,9 +441,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
 
-        const auto & context = getContext();
-        const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+        const auto databases = DatabaseCatalog::instance().getDatabases();
         for (const auto & [database_name, database] : databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
