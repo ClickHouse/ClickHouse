@@ -63,7 +63,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     auto split_result = filter_expression.split(prewhere_nodes, true, true);
 
     /// This is the leak of abstraction.
-    /// Split actions may have inputs which are needed only for PREWHERE.
+    /// Splited actions may have inputs which are needed only for PREWHERE.
     /// This is fine for ActionsDAG to have such a split, but it breaks defaults calculation.
     ///
     /// See 00950_default_prewhere for example.
@@ -171,7 +171,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node)
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
 
-    const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
+    Names queried_columns = source_step_with_filter->requiredSourceColumns();
 
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),

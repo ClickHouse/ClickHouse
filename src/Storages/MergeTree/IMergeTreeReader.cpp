@@ -361,9 +361,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
-        DB::performRequiredConversions(copy_block, getColumns(),
-            data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+        DB::performRequiredConversions(copy_block, getColumns(), data_part_info_for_read->getContext());
 
         /// Move columns from block.
         name_and_type = getColumns().begin();
@@ -543,17 +541,15 @@ MergeTreeReaderPtr createMergeTreeReader(
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    const NamesAndTypesList & columns_to_read);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark)
+    const NamesAndTypesList & columns_to_read)
 {
     if (index.index->index.type == "text")
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, can_skip_mark);
+        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
 }

@@ -6,6 +6,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <base/StringRef.h>
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
 #include <theta_intersection.hpp>
@@ -44,9 +45,9 @@ public:
     ~ThetaSketchData() = default;
 
     /// Insert original value without hash, as `datasketches::update_theta_sketch.update` will do the hash internal.
-    void insertOriginal(std::string_view value)
+    void insertOriginal(StringRef value)
     {
-        getSkUpdate()->update(value.data(), value.size());
+        getSkUpdate()->update(value.data, value.size);
     }
 
     /// Note that `datasketches::update_theta_sketch.update` will do the hash again.

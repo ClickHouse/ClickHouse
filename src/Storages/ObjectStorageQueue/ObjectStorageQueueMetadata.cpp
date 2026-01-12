@@ -137,8 +137,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
-    size_t keeper_multiread_batch_size_,
-    bool is_path_with_hive_partitioning_)
+    size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
@@ -151,7 +150,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
-    , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
 {
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
@@ -209,7 +207,7 @@ void ObjectStorageQueueMetadata::startup()
     if (!task && (need_cleanup_for_unordered || need_cleanup_for_ordered))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
-            StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
+            "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
         task->activate();
@@ -253,7 +251,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                is_path_with_hive_partitioning,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -273,11 +270,6 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 }
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
-{
-    return getBucketForPath(path, buckets_num);
-}
-
-ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path, size_t buckets_num)
 {
     return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num);
 }
@@ -401,7 +393,8 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.buckets == value)
             {
-                LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
+                LOG_TRACE(log, "Setting `buckets` already equals {}. "
+                        "Will do nothing", value);
                 continue;
             }
             if (table_metadata.buckets > 1)
@@ -437,12 +430,9 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
-
-    LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
-
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
+    buckets_num = value;
     table_metadata.buckets = value;
-    buckets_num = table_metadata.getBucketsNum();
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
@@ -452,7 +442,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const std::string & format,
     const ContextPtr & context,
     bool is_attach,
-    bool is_path_with_hive_partitioning,
     LoggerPtr log)
 {
     ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
@@ -487,7 +476,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
-        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log);
@@ -547,7 +535,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
-                    is_path_with_hive_partitioning,
                     log).prepareProcessedAtStartRequests(requests);
             }
 
@@ -677,25 +664,16 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         Coordination::Requests requests;
         Coordination::Responses responses;
 
-        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log);
             bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
             {
+                created_new_metadata = false;
+
                 Strings registered;
                 splitInto<','>(registered, registry_str);
-
-                if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
-                {
-                    LOG_TRACE(log, "Table {} is already registered after retry", self.table_id);
-                    created_new_metadata = true;
-                    code = Coordination::Error::ZOK;
-                    return;
-                }
-
-                created_new_metadata = false;
 
                 for (const auto & elem : registered)
                 {
@@ -705,7 +683,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                     auto info = Info::deserialize(elem);
                     if (info == self)
                     {
-                        LOG_TRACE(log, "Table {} is already registered ({})", self.table_id, registered.size());
+                        LOG_TRACE(log, "Table {} is already registered", self.table_id);
                         code = Coordination::Error::ZOK;
                         return;
                     }
@@ -828,15 +806,9 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (!node_exists)
             {
-                if (is_retry)
-                {
-                    LOG_TRACE(log, "Table is unregistered after retry");
-                }
-                else
-                {
-                    LOG_WARNING(log, "Cannot unregister: registry does not exist");
+                LOG_WARNING(log, "Cannot unregister: registry does not exist");
+                if (!is_retry)
                     chassert(false);
-                }
                 return;
             }
 
@@ -1187,7 +1159,6 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     }
 
     Strings failed_nodes;
-    zk_retries.resetFailures();
     zk_retries.retryLoop([&]
     {
         code = getZooKeeper(log)->tryGetChildren(zookeeper_failed_path, failed_nodes);
@@ -1240,13 +1211,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     {
         auto get_paths = [&]
         {
-            LOG_TEST(log, "Fetching info for {} paths", paths.size());
-
             zkutil::ZooKeeper::MultiTryGetResponse response;
-            zk_retries.resetFailures();
             zk_retries.retryLoop([&]
             {
-                response = getZooKeeper(log)->tryGet(paths);
+                response = zk_client->tryGet(paths);
             });
 
             for (size_t i = 0; i < response.size(); ++i)
@@ -1275,10 +1243,6 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             get_paths();
     };
 
-    LOG_TRACE(
-        log, "Processed nodes to remove: {}, failed nodes to remove: {}, multiread batch size: {}",
-        processed_nodes.size(), failed_nodes.size(), keeper_multiread_batch_size);
-
     fetch_nodes(processed_nodes, zookeeper_processed_path);
     fetch_nodes(failed_nodes, zookeeper_failed_path);
 
@@ -1303,10 +1267,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     const auto remove_nodes = [&](bool node_limit)
     {
-        zk_retries.retryLoop([&]
-        {
-            code = getZooKeeper(log)->tryMulti(remove_requests, remove_responses);
-        });
+        code = zk_client->tryMulti(remove_requests, remove_responses);
 
         if (code == Coordination::Error::ZOK)
         {
@@ -1326,7 +1287,6 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                 {
                     /// requests with ZRUNTIMEINCONSISTENCY were not processed because the multi request was aborted before
                     /// so we try removing it again without multi requests
-                    zk_retries.resetFailures();
                     zk_retries.retryLoop([&]
                     {
                         code = getZooKeeper(log)->tryRemove(remove_requests[i]->getPath());
@@ -1451,7 +1411,6 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     auto get_paths = [&]
     {
         zkutil::ZooKeeper::MultiTryGetResponse response;
-        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             response = getZooKeeper(log)->tryGet(get_batch);
@@ -1501,7 +1460,6 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     for (const auto & node : nodes_to_remove)
     {
-        zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             code = getZooKeeper(log)->tryRemove(node);

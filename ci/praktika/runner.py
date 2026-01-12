@@ -11,12 +11,11 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
-from .event import EventFeed
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
-from .native_jobs import _check_and_link_open_issues, _is_praktika_job
+from .native_jobs import _is_praktika_job
 from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
@@ -407,20 +406,6 @@ class Runner:
                     ).set_info("---")
             result.dump()
 
-        # When running Docker containers as root (non-rootless mode), any files created
-        # by the job will be owned by root. This causes issues when:
-        # 1. Files need to be read/compressed/uploaded by subsequent steps
-        # 2. Root-owned files remain in the repository working directory
-        # The ownership fix below ensures all root-owned files are changed to the current user
-        if job.run_in_docker and not no_docker and from_root:
-            print(f"--- Fixing file ownership after running docker as root")
-            # Get host user's UID and GID (not from inside the container)
-            uid = os.getuid()
-            gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
-            print(f"--- Run ownership fix command [{chown_cmd}]")
-            Shell.check(chown_cmd, verbose=True)
-
         return exit_code
 
     def _post_run(
@@ -478,8 +463,16 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
+        elif (
+            not result.is_ok()
+            and workflow.enable_merge_ready_status
+            and not job.allow_merge_on_failure
+        ):
+            print("set required label")
+            result.set_required_label()
 
         result.update_duration()
+        # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
         job_outputs = env.JOB_KV_DATA
@@ -600,15 +593,9 @@ class Runner:
                                 "cidb",
                                 ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
-                                    failure_patterns=Settings.TEST_FAILURE_PATTERNS,
-                                    test_output=test_case_result.info,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
-                                    pr_base_branches=[
-                                        env.BASE_BRANCH,
-                                        Settings.MAIN_BRANCH,
-                                    ],
                                 ),
                             )
                     result.dump()
@@ -629,30 +616,13 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
-        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
-        if workflow.enable_open_issues_check:
-            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
-            #   to upload updated job and workflow results to S3
-            try:
-                if is_final_job:
-                    # re-check entire workflow in the final job as some new issues may appear
-                    workflow_result = Result.from_fs(workflow.name)
-                    _check_and_link_open_issues(workflow_result, job_name="")
-                else:
-                    _check_and_link_open_issues(result, job_name=job.name)
-            except Exception as e:
-                print(f"ERROR: failed to check open issues: {e}")
-                traceback.print_exc()
-                if is_final_job:
-                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
-
-        # Always run report generation at the end to finalize workflow status with latest job result
+        workflow_result = None
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
             workflow_result = Result.from_fs(workflow.name)
-            if is_final_job and ci_db:
+
+            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
                 workflow_storage_usage = StorageUsage.from_dict(
                     workflow_result.ext.get("storage_usage", {})
@@ -677,7 +647,6 @@ class Runner:
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
             _GH_Auth(workflow)
-            workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
                     workflow_result
@@ -710,7 +679,7 @@ class Runner:
 
         if (
             workflow.enable_automerge
-            and is_final_job
+            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
             and workflow.is_event_pull_request()
         ):
             try:
@@ -740,32 +709,6 @@ class Runner:
                 f"pipeline_status={pipeline_status}",
                 file=f,
             )
-
-        # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
-        # Updates are sent on initial job and final job
-        if (
-            workflow.enable_slack_feed
-            and env.COMMIT_AUTHORS
-            and (is_final_job or is_initial_job or not result.is_ok())
-        ):
-            for commit_author in env.COMMIT_AUTHORS:
-                try:
-                    pr_status = "open" if env.PR_NUMBER else "merged"
-                    EventFeed.update(
-                        commit_author,
-                        workflow_result.to_event(
-                            sha=env.SHA,
-                            pr_number=env.LINKED_PR_NUMBER or env.PR_NUMBER,
-                            branch=env.BRANCH,
-                            pr_status=pr_status,
-                            pr_title=env.PR_TITLE,
-                        ),
-                        s3_path=Settings.EVENTS_S3_PATH,
-                        notify_slack=True,
-                    )
-                except Exception as e:
-                    traceback.print_exc()
-                    print(f"ERROR: failed to update events for {commit_author}: {e}")
 
         return is_ok
 

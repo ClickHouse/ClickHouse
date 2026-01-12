@@ -20,7 +20,6 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
@@ -62,7 +61,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -170,21 +169,13 @@ public:
         {
             auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
             scan = KernelUtils::unwrapResult(
-                ffi::scan(
-                    kernel_snapshot_state->snapshot.get(),
-                    kernel_snapshot_state->engine.get(),
-                    predicate.get(),
-                    /* schema */nullptr),
+                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
                 "scan");
         }
         else
         {
             scan = KernelUtils::unwrapResult(
-                ffi::scan(
-                    kernel_snapshot_state->snapshot.get(),
-                    kernel_snapshot_state->engine.get(),
-                    /* predicate */nullptr,
-                    /* schema */nullptr),
+                ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), nullptr),
                 "scan");
         }
 
@@ -319,7 +310,6 @@ public:
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
         int64_t size,
-        int64_t /*mod_time*/,
         const ffi::Stats * stats,
         const ffi::CDvInfo * dv_info,
         const ffi::Expression * transform,
@@ -433,6 +423,8 @@ private:
     ThreadFromGlobalPool thread;
 };
 
+static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
+
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
@@ -512,9 +504,7 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
             "snapshot");
     }
     snapshot_version = ffi::version(snapshot.get());
-    scan = KernelUtils::unwrapResult(
-        ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
-        "scan");
+    scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 }
 
 void TableSnapshot::initSnapshotImpl() const

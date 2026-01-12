@@ -104,7 +104,7 @@
             --selection-background-color: #FF8;
         }
 
-        ::selection {
+        :root::selection {
             color: var(--selection-color);
             background-color: var(--selection-background-color);
         }
@@ -568,7 +568,6 @@
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
-            border-collapse: collapse;
         }
 
         #data-table.fixed
@@ -708,7 +707,6 @@
             white-space: pre-wrap;
             max-width: none;
             outline: 2px solid var(--border-color-selected);
-            outline-offset: -2px;
         }
 
         td.empty-result
@@ -794,8 +792,6 @@
             text-align: center;
             margin-top: 5em;
             line-height: 0.75;
-            position: sticky;
-            left: 0;
         }
 
         #chart
@@ -1067,22 +1063,6 @@ async function loadDatabases(server_address, user, password) {
     let databases_elem = document.getElementById('databases');
     while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
 
-    // Use natural order for database names
-    json.data.sort((a, b) => {
-        // Maintain original order for default, system, information_schema
-        const getPriority = (name) => {
-            switch (name) {
-                case 'default': return 0;
-                case 'system': return 2;
-                case 'information_schema': return 3
-                default: return 1;
-            }
-        }
-
-        return getPriority(a.database) - getPriority(b.database)
-            || a.database.localeCompare(b.database, undefined, { numeric: true });
-    });
-
     for (let elem of json.data) {
         let database = document.createElement('div');
         database.className = 'database';
@@ -1133,9 +1113,6 @@ async function loadTables(server_address, user, password, database, container) {
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
-
-    // Use natural order for table names
-    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
 
     for (let elem of json.data) {
         let table = document.createElement('div');
@@ -1649,44 +1626,6 @@ query_area.onkeydown = (e) => {
         elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
         elem.selectionStart = cursor_pos + lead_spaces.length + 1;
         elem.selectionEnd = elem.selectionStart;
-
-        e.preventDefault();
-        return false;
-    } else if ((e.ctrlKey || e.metaKey) && e.key === '/' && !e.shiftKey) {
-        // Comment/uncomment selected lines on Ctrl+/ or Cmd+/
-        const elem = e.target;
-        const start = elem.selectionStart;
-        const end = elem.selectionEnd;
-        const value = elem.value;
-
-        let lineStart = value.lastIndexOf('\n', start - 1) + 1;
-        let lineEnd = value.indexOf('\n', end);
-        if (lineEnd === -1) lineEnd = value.length;
-
-        let selectedText = value.substring(lineStart, lineEnd);
-        let lines = selectedText.split('\n');
-
-        // Comment out each line, or uncomment if all lines are already commented
-        const allCommented = lines.every(line => /^\s*--/.test(line));
-
-        // If all lines are commented out, uncomment them
-        if (allCommented) {
-            lines = lines.map(line => line.replace(/^(\s*)-- ?/, '$1'));
-        } else {
-            lines = lines.map(line => {
-                if (/^\s*$/.test(line)) {
-                    return line;
-                }
-                return line.replace(/^(\s*)/, '$1-- ');
-            });
-        }
-
-        const replacedText = lines.join('\n');
-        elem.value = value.slice(0, lineStart) + replacedText + value.slice(lineEnd);
-
-        // Adjust selection to keep the user in flow and enable quick reversal 
-        elem.selectionStart = lineStart;
-        elem.selectionEnd = lineStart + replacedText.length;
 
         e.preventDefault();
         return false;
@@ -2542,6 +2481,15 @@ async function getQueryUnderCursor() {
     return all_queries;
 }
 
+/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+let theme = current_url.searchParams.get('theme');
+if (['dark', 'light'].indexOf(theme) === -1) {
+    theme = window.localStorage.getItem('theme');
+}
+if (!theme) {
+    theme = 'light';
+}
+
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;
     if (update_preference) {
@@ -2549,11 +2497,6 @@ function setColorTheme(new_theme, update_preference) {
     }
     document.documentElement.setAttribute('data-theme', theme);
     redrawChart();
-}
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
 }
 
 if (theme) {
@@ -2563,8 +2506,6 @@ if (theme) {
     const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
     if (media_query_list.matches) {
         setColorTheme('dark');
-    } else {
-        setColorTheme('light');
     }
 
     /// There is a rumor that on some computers, the theme is changing automatically on day/night.

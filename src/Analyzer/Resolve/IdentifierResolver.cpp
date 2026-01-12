@@ -354,25 +354,26 @@ bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLook
   */
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    if (!scope.table_expression_data_for_alias_resolution || !identifier_lookup.isExpressionLookup())
+    if (scope.column_name_to_column_node.empty() || !identifier_lookup.isExpressionLookup())
         return {};
 
     const auto & identifier = identifier_lookup.identifier;
-    auto identifier_full_name = identifier.getFullName();
-    auto it = scope.table_expression_data_for_alias_resolution->column_name_to_column_node.find(identifier_full_name);
-    if (it != scope.table_expression_data_for_alias_resolution->column_name_to_column_node.end())
-        return it->second;
+    auto it = scope.column_name_to_column_node.find(identifier.getFullName());
+    bool full_column_name_match = it != scope.column_name_to_column_node.end();
 
-    /// Check if it's a subcolumn
-    if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
+    if (!full_column_name_match)
     {
-        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns)
-            return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
-
-        return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
+        it = scope.column_name_to_column_node.find(identifier_lookup.identifier[0]);
+        if (it == scope.column_name_to_column_node.end())
+            return {};
     }
 
-    return {};
+    QueryTreeNodePtr result = it->second;
+
+    if (!full_column_name_match && identifier.isCompound())
+        return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
+
+    return result;
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
@@ -1062,27 +1063,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     {
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
         auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
-        if (using_column_node_it == using_column_name_to_column_node.end())
-            return;
-
-        auto current_type = resolved_column.getColumnType();
-        auto result_type = using_column_node_it->second->getColumnType();
-
-        /// If current column is Nullable because it comes from previous OUTER JOIN, keep nullability,
-        /// even if USING column itself is not Nullable (for LEFT/RIGHT JOIN).
-        if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
-            result_type = makeNullableOrLowCardinalityNullable(current_type);
-
-        if (!result_type->equals(*current_type))
+        if (using_column_node_it != using_column_name_to_column_node.end() &&
+            !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
         {
+            // std::cerr << "... fixing type for " << resolved_column.dumpTree() << std::endl;
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
-
-            resolved_column_clone->setColumnType(result_type);
+            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
 
             auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
             if (projection_name_it != projection_name_mapping.end())
             {
                 projection_name_mapping[resolved_column_clone] = projection_name_it->second;
+                // std::cerr << ".. upd name " << projection_name_it->second << " for col " << resolved_column_clone->dumpTree() << std::endl;
             }
 
             resolve_result = std::move(resolved_column_clone);

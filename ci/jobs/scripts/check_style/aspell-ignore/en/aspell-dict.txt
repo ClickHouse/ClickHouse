@@ -313,7 +313,6 @@ Doxygen
 Dresseler
 Durre
 ECMA
-EntryAndExit
 ETag
 EachRow
 Ecto
@@ -327,7 +326,6 @@ Encodings
 Enum
 Enums
 Eoan
-epilog
 EphemeralNode
 EscapingRule
 Ethereum
@@ -417,8 +415,6 @@ HNSW
 HSTS
 HTTPConnection
 HTTPThreads
-HTTPs
-HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
@@ -490,7 +486,6 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
-InterserverSecureThreads
 intExp
 intHash
 IntN
@@ -615,8 +610,6 @@ Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
-KeeperTCPSecureThreads
-KeeperTCPThreads
 Kerberos
 Khanna
 Kibana
@@ -922,7 +915,6 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
-Perfetto
 PhpStorm
 PlantUML
 Poess
@@ -962,7 +954,6 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
-prolog
 PromHouse
 PromQL
 Promql
@@ -974,6 +965,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+QATlib
 QBit
 QEMU
 QTCreator
@@ -1169,7 +1161,6 @@ TAVG
 TCPConnection
 TCPHandler
 TCPThreads
-TCPSecureThreads
 TDigest
 TINYINT
 TLSv
@@ -1337,11 +1328,11 @@ YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 ZCurve
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
-ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -1406,8 +1397,6 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
-areaCartesian
-areaSpherical
 argMax
 argMin
 argmax
@@ -1877,7 +1866,6 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
-dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID
@@ -1938,7 +1926,6 @@ enqueued
 enum
 enum's
 enums
-ephemerals
 erfc
 errorCodeToName
 estimateCompressionRatio
@@ -2148,7 +2135,6 @@ gtid
 gunzip
 gzip
 gzipped
-GRPCThreads
 hackernews
 hadoop
 halfMD
@@ -2692,8 +2678,6 @@ pclmulqdq
 pcre
 perf
 performant
-perimeterCartesian
-perimeterSpherical
 perkey
 perl
 persistency
@@ -2790,7 +2774,6 @@ proleptic
 prometheus
 prometheusQuery
 prometheusQueryRange
-PrometheusThreads
 proportionsZTest
 proto
 protobuf
@@ -2884,7 +2867,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-readWkt
 readahead
 readline
 readme
@@ -3557,8 +3539,6 @@ xeus
 xkcd
 xlarge
 xml
-XRay
-xray
 xxHash
 xz
 yaml
@@ -3574,8 +3554,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-zxid
-readWKT
-readWKB
-WKT
-WKB

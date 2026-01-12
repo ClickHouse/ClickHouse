@@ -65,11 +65,6 @@ int64_t RandomGenerator::nextRandomInt64()
     return ints64(generator);
 }
 
-uint64_t RandomGenerator::nextInFullRange()
-{
-    return full_range(generator);
-}
-
 uint32_t RandomGenerator::nextStrlen()
 {
     return strlens(generator);
@@ -130,7 +125,7 @@ String RandomGenerator::nextTime(const String & separator, const bool allow_func
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("addSeconds(now(), {})", offset_seconds);
+        return fmt::format("addSeconds(now(), {})::Time", offset_seconds);
     }
     else
     {
@@ -148,7 +143,7 @@ String RandomGenerator::nextTime64(const String & separator, const bool allow_fu
     {
         const int32_t offset_seconds = second_offsets(generator);
 
-        return fmt::format("addSeconds(now(), {})", offset_seconds);
+        return fmt::format("addSeconds(now(), {})::Time64", offset_seconds);
     }
     else
     {
@@ -255,7 +250,9 @@ double RandomGenerator::randomZeroOne()
 
 String RandomGenerator::nextJSONCol()
 {
-    return pickRandomly(jcols);
+    const String & pick = pickRandomly(jcols);
+
+    return pick;
 }
 
 String RandomGenerator::nextTokenString()
@@ -285,7 +282,7 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         {
             ret += pick;
             /// A few times, generate a large string
-            if (this->nextMediumNumber() < 11)
+            if (this->nextLargeNumber() < 4)
             {
                 uint32_t i = 0;
                 uint32_t len = static_cast<uint32_t>(pick.size());

@@ -46,7 +46,7 @@ def cluster():
             with_minio=True,
             stay_alive=True,
             tmpfs=[
-                "/test_merge_tree_s3_jbod1:size=2M",
+                "/jbod1:size=2M",
             ],
         )
 
@@ -115,7 +115,7 @@ def create_table(node, table_name, **additional_settings):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8085")
+    yield start_s3_mock(cluster, "broken_s3", "8083")
 
 
 @pytest.fixture(scope="function")
@@ -508,7 +508,7 @@ def test_table_manipulations(cluster, node_name):
 
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
-    assert node.query("CHECK TABLE s3_test FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
+    assert node.query("CHECK TABLE s3_test FORMAT Values") == "(1)"
 
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")
@@ -808,7 +808,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
         [
             "/usr/bin/dd",
             "if=/dev/zero",
-            "of=/test_merge_tree_s3_jbod1/dummy",
+            "of=/jbod1/dummy",
             "bs=1000",
             "count=2000",
         ]
@@ -981,7 +981,7 @@ def test_s3_engine_heavy_write_check_mem(
         " ("
         "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
         " )"
-        " ENGINE S3('http://resolver:8085/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
+        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
     )
 
     broken_s3.setup_fake_multpartuploads()
