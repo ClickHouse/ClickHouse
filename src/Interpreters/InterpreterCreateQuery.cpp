@@ -58,7 +58,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 
 #include <Access/Common/AccessRightsElement.h>
 

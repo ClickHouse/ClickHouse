@@ -7,7 +7,6 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>

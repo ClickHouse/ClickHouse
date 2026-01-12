@@ -4,7 +4,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>

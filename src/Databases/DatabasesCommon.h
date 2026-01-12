@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/IAST_fwd.h>
@@ -23,6 +24,9 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path);
 void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata);
+
+bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const String & db_name, const ContextPtr & context);
+void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db);
 
 /// TODO: move more common code to here
 class DatabaseWithAltersOnDiskBase : public IDatabase

@@ -6,7 +6,6 @@
 #include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/AlterCommands.h>

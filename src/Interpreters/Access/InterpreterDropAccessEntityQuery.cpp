@@ -1,5 +1,4 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -11,6 +10,7 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Databases/DatabasesCommon.h>
 
 namespace DB
 {

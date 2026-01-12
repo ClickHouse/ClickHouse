@@ -3,9 +3,9 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
+#include <Databases/DatabasesCommon.h>
 
 #include "config.h"
 

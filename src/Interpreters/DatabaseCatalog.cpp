@@ -610,7 +610,7 @@ bool DatabaseCatalog::checkDatabaseOptions(
     const DatabasePtr & db,
     const String & database_name, // we can't use db->getDatabaseName() because it locks db and can cause deadlock
     const GetDatabasesOptions & options,
-    const ContextPtr & context_) const
+    const ContextPtr & context_)
 {
     if (!options.with_datalake_catalogs && db->isDatalakeCatalog())
         return false;
@@ -619,9 +619,7 @@ bool DatabaseCatalog::checkDatabaseOptions(
     {
         if (!options.with_temporaries)
             return false;
-        if (options.skip_temporary_owner_check)
-            return true;
-        if (context_->hasSessionContext() && !context_->getSessionContext()->hasTemporaryDatabase(database_name))
+        if (!(context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(database_name)) && !options.skip_temporary_owner_check)
             return false;
     }
 
@@ -654,6 +652,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         if (!db)
             throw makeUnknownDatabaseException(database_name);
+        assert(!db->isTemporary() || drop);
 
         UUID db_uuid = db->getUUID();
         if (db_uuid != UUIDHelpers::Nil)

@@ -331,12 +331,8 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+    static bool checkDatabaseOptions(const DatabasePtr & db, const String & database_name, const GetDatabasesOptions & options, const ContextPtr & context_);
 
-    bool checkDatabaseOptions(
-        const DatabasePtr & db,
-        const String & database_name,
-        const GetDatabasesOptions & options,
-        const ContextPtr & context_) const TSA_REQUIRES(databases_mutex);
     void shutdownImpl(std::function<void()> shutdown_system_logs);
     String getPathForTableMetadata(const StorageID & table_id) const;
 

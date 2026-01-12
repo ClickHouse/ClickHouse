@@ -336,6 +336,29 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
+bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const String & db_name, const ContextPtr & context)
+{
+    if (db_name.empty())
+        return false;
+
+    const auto & db = DatabaseCatalog::instance().tryGetDatabase(db_name, context);
+    if (db && db->isTemporary())
+    {
+        // todo: duplicates in result?
+        // we could skip check here at all because access already granted if the temporary database presents in context, but permissions may be changed since creation.
+        required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE, db_name);
+        return true;
+    }
+
+    return false;
+}
+
+void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db)
+{
+    if (db && db->isTemporary())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
+}
+
 void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
 {
     if (!command.comment)

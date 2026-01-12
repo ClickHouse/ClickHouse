@@ -19,7 +19,6 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 
 
 namespace DB

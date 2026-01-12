@@ -1,6 +1,5 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -11,6 +10,7 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Databases/DatabasesCommon.h>
 #include <boost/range/algorithm/sort.hpp>
 
 

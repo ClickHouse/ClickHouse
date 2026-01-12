@@ -5,11 +5,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Databases/DatabasesCommon.h>
 
 #include <Interpreters/processColumnTransformers.h>
 

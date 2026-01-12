@@ -1,6 +1,5 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
-#include <Interpreters/Access/requireTemporaryDatabaseAccessIfNeeded.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
@@ -31,6 +30,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Databases/DatabasesCommon.h>
 #include <base/range.h>
 #include <base/sort.h>
 
