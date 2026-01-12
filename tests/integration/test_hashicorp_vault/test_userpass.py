@@ -17,7 +17,6 @@ def started_cluster():
         cluster.set_hashicorp_vault_startup_command(vault_startup_command_userpass)
         cluster.start()
         yield cluster
-
     finally:
         cluster.shutdown()
 

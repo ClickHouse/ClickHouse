@@ -37,6 +37,19 @@ def vault_startup_command(cluster):
     send_post_request(cluster, "secret/data/username", payload)
 
 
+def vault_startup_command_codecs(cluster):
+    vault_startup_command(cluster)
+
+    # write secret
+    payload = {
+        "data": {
+            "key": "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF",
+            "nonce_key": "ABCDEFABCDEFABCDEFABCDEF",
+        }
+    }
+    send_post_request(cluster, "secret/data/aes_256", payload)
+
+
 def update_default_policy(cluster):
     # update default policy to manage secrets
     payload = {"policy": 'path "*" {capabilities = ["create", "read"]}'}
