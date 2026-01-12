@@ -36,37 +36,18 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each columns.
   */
 
+DECLARE_MULTITARGET_CODE(
+
 struct RandImpl
 {
     /// Fill memory with random data. The memory region must be 15-bytes padded.
-    ALWAYS_INLINE static void execute(char * output, size_t size)
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            executeAVX512BW(output, size);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            executeAVX2(output, size);
-            return;
-        }
-#endif
-        executeGeneric(output, size);
-    }
-
-#if USE_MULTITARGET_CODE
-    /// Assumes isArchSupported has been verified before calling
-    static void executeAVX2(char * output, size_t size);
-    static void executeAVX512BW(char * output, size_t size);
-#endif
-    static void executeGeneric(char * output, size_t size);
+    static void execute(char * output, size_t size);
 };
 
-template <typename ToType, typename Name>
-class FunctionRandom : public IFunction
+) // DECLARE_MULTITARGET_CODE
+
+template <typename RandImpl, typename ToType, typename Name>
+class FunctionRandomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -96,14 +77,46 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto col_to = ColumnVector<ToType>::create(input_rows_count);
+        auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
+
+        vec_to.resize(input_rows_count);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;
     }
+};
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandom<ToType, Name>>(); }
+template <typename ToType, typename Name>
+class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
+{
+public:
+    explicit FunctionRandom(ContextPtr context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+
+        selector.registerImplementation<TargetArch::AVX512BW,
+            FunctionRandomImpl<TargetSpecific::AVX512BW::RandImpl, ToType, Name>>();
+    #endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionRandom<ToType, Name>>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 }

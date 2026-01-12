@@ -69,7 +69,7 @@ public:
 
         /// Fill random bytes.
         data_to.resize(total_size);
-        RandImpl::execute(reinterpret_cast<char *>(data_to.data()), total_size);
+        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(data_to.data()), total_size);
 
         return col_to;
     }

@@ -12,7 +12,7 @@ namespace
 
 void generateUUID4Generic(ColumnVector<UUID>::Container & vec_to)
 {
-    RandImpl::executeGeneric(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
+    TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
     for (UUID & uuid : vec_to)
     {
         /// https://tools.ietf.org/html/rfc4122#section-4.4
@@ -25,7 +25,7 @@ void generateUUID4Generic(ColumnVector<UUID>::Container & vec_to)
 
 AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE generateUUID4AVX2(ColumnVector<UUID>::Container & vec_to)
 {
-    RandImpl::executeAVX2(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
+    TargetSpecific::AVX2::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
     for (UUID & uuid : vec_to)
     {
         UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
@@ -35,7 +35,7 @@ AVX2_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE generateUUID4AVX2(ColumnVector<U
 
 AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE generateUUID4AVX512BW(ColumnVector<UUID>::Container & vec_to)
 {
-    RandImpl::executeAVX512BW(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
+    TargetSpecific::AVX512BW::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
     for (UUID & uuid : vec_to)
     {
         UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;

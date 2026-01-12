@@ -87,7 +87,7 @@ public:
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
-        RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
+        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
         return col_to;
     }
 
