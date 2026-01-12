@@ -81,7 +81,8 @@ struct ManifestFileEntry : public boost::noncopyable
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
-    // Constructor
+    String dumpDeletesMatchingInfo() const;
+
     ManifestFileEntry(
         const String& file_path_from_metadata_,
         const String& file_path_,

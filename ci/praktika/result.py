@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .event import Event
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -864,6 +865,29 @@ class Result(MetaClasses.Serializable):
         else:
             raise RuntimeError("Not implemented")
         return self
+
+    def to_event(
+        self,
+    ):
+        pr_number = self.ext.get("pr_number", -1)
+        return Event(
+            type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
+            timestamp=int(time.time()),
+            sha=self.ext.get("commit_sha", ""),
+            pr_number=pr_number,
+            pr_status="open" if pr_number > 0 else "merged",
+            pr_title=self.ext.get("pr_title", ""),
+            branch=self.ext.get("git_branch", ""),
+            ci_status=self.status,
+            result=Result.to_dict(self),
+            ext={
+                "commit_message": self.ext.get("commit_message", ""),
+                "related_prs": self.ext.get("related_prs", []),
+                "repo_name": self.ext.get("repo_name", ""),
+                "report_url": self.ext.get("report_url", ""),
+                "change_url": self.ext.get("change_url", ""),
+            },
+        )
 
 
 class ResultInfo:
