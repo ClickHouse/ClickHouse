@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/PostingListCompression.h>
+#include <Storages/MergeTree/BitpackingBlockCodec.h>
 
 #include <roaring/roaring.hh>
 
