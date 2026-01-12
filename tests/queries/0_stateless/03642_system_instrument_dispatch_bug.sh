@@ -6,7 +6,7 @@
 # - The ordered_non_unique index sorts elements by (function_id, id)
 # - find(func_id) returns an iterator to the first matching element
 # - The loop continues until end(), processing ALL subsequent elements
-# - This means calling a function with a lowerfunction_id incorrectly triggers
+# - This means calling a function with a lower function_id incorrectly triggers
 #   handlers for functions with higher function_ids
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
