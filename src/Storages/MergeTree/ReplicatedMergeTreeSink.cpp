@@ -8,7 +8,6 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -16,18 +15,14 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
-#include <fmt/core.h>
 #include <fmt/format.h>
 
 
@@ -571,15 +566,35 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         int error = 0;
         String error_message;
         /// Set a special error code if the block is duplicate
-        /// And remove attaching_ prefix
         if (deduplicate && deduplicated)
         {
             error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
             error_message = "The part was deduplicated";
-            if (!endsWith(part->getDataPartStorage().getRelativePath(), "detached/attaching_" + part->name + "/"))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a deduplicated part: {}", part->getDataPartStorage().getRelativePath());
-            fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
-            part->renameTo(new_relative_path, false);
+
+            const auto & relative_path = part->getDataPartStorage().getRelativePath();
+            const auto part_dir = fs::path(relative_path).parent_path().filename().string();
+
+            if (relative_path.ends_with("detached/attaching_" + part->name + "/"))
+            {
+                /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
+                fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
+                part->renameTo(new_relative_path, false);
+            }
+            else if (part_dir.starts_with("tmp_restore_" + part->name))
+            {
+                /// Part came from RESTORE with a temporary directory.
+                /// Just remove the temporary part since it's a duplicate.
+                LOG_DEBUG(log, "Removing deduplicated part {} from temporary path {}", part->name, relative_path);
+                part->removeIfNeeded();
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected deduplicated part with relative path '{}' and part directory '{}'. "
+                    "Expected relative path to end with 'detached/attaching_{}/' or part directory to start with 'tmp_restore_{}'.",
+                    relative_path, part_dir, part->name, part->name);
+            }
         }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), {block_id}, ExecutionStatus(error, error_message));
         return deduplicated;

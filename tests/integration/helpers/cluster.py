@@ -3938,6 +3938,13 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
+                # Collect exit codes for later inspection
+                if instance.with_dolor:
+                    container = self.docker_client.containers.get(instance.docker_id)
+                    res = container.wait()
+                    exit_code = res["StatusCode"]
+                    logging.info(f"The server {name} exited with code: {exit_code}")
+
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -5559,6 +5566,7 @@ class ClickHouseInstance:
             use_distributed_plan = self.use_distributed_plan
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)

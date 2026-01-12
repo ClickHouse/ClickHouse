@@ -94,6 +94,45 @@ def _get_workflows(
     return res
 
 
+def _get_infra_config():
+    """
+    Returns the infra config which is imported as: Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH import CLOUD
+    """
+    from pathlib import Path
+
+    config_path = Path(Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH)
+
+    if not config_path.exists():
+        Utils.raise_with_error(
+            f"Infrastructure config file does not exist [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+        )
+
+    module_name = config_path.stem
+    spec = importlib.util.spec_from_file_location(module_name, config_path)
+
+    if not spec or not spec.loader:
+        Utils.raise_with_error(
+            f"Failed to load infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+        )
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    try:
+        cloud_config = getattr(module, "CLOUD")
+        cloud_config._settings = Settings
+        print(
+            f"Loaded infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+        )
+        return cloud_config
+    except AttributeError:
+        Utils.raise_with_error(
+            f"CLOUD variable not found in [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+        )
+
+    return None
+
+
 def _get_artifact_to_providing_job_map(workflow):
     artifact_job = {}
     for job in workflow.jobs:

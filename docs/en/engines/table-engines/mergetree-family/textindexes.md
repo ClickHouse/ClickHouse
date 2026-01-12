@@ -66,9 +66,9 @@ ORDER BY key
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
 - `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)).
   Unless specified explicitly, `min_length` and `max_length` default to 3 and 100.
-  If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are stored in the index.
+  If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned.
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
-  For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are stored in the index.
+  For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
 
 :::note

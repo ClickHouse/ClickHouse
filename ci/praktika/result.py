@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .event import Event
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -869,6 +870,20 @@ class Result(MetaClasses.Serializable):
         else:
             raise RuntimeError("Not implemented")
         return self
+
+    def to_event(self, sha, pr_number, branch, pr_title, pr_status):
+        return Event(
+            type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
+            timestamp=int(time.time()),
+            sha=sha,
+            pr_number=pr_number,
+            pr_status=pr_status,
+            pr_title=pr_title,
+            branch=branch,
+            ci_status=self.status,
+            result=Result.to_dict(self),
+            ext={},
+        )
 
 
 class ResultInfo:

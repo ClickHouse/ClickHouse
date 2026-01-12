@@ -410,7 +410,7 @@ def main():
             f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
-            # f"cp -r ./tests/performance {perf_right}",
+            f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
