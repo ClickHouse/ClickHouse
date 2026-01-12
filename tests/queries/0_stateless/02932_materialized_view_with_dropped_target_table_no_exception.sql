@@ -1,5 +1,4 @@
 set ignore_materialized_views_with_dropped_target_table = 1;
-set send_logs_level='error';
 drop table if exists from_table;
 drop table if exists to_table;
 drop table if exists mv;
@@ -19,3 +18,4 @@ select * from from_table;
 
 drop table from_table;
 drop view mv;
+

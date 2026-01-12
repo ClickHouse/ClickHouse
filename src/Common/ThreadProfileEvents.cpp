@@ -1,10 +1,10 @@
-#include <Common/ThreadProfileEvents.h>
+#include "ThreadProfileEvents.h"
 
 #if defined(OS_LINUX)
 
-#include <Common/NetlinkMetricsProvider.h>
-#include <Common/ProcfsMetricsProvider.h>
-#include <Common/hasLinuxCapability.h>
+#include "NetlinkMetricsProvider.h"
+#include "ProcfsMetricsProvider.h"
+#include "hasLinuxCapability.h"
 
 #include <fstream>
 #include <optional>
@@ -22,7 +22,7 @@
 
 #include <base/errnoToString.h>
 #include <Common/logger_useful.h>
-#include <Core/AccurateComparison.h>
+
 
 namespace ProfileEvents
 {
@@ -124,12 +124,8 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
                 };
         break;
     case MetricsProvider::Procfs:
-        /// Note that in the case of Procfs we are always reading the same files over an over
-        /// In order to avoid opening and closing them for every task we use a ThreadLocal variable so we'll keep
-        /// the files under this thread until the thread exits
-        stats_getter = [tid]()
+        stats_getter = [metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid)]()
                 {
-                    thread_local auto metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid);
                     ::taskstats result{};
                     metrics_provider->getTaskStats(result);
                     return result;
@@ -560,12 +556,8 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // deltas from old values.
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
-        const auto scaled_value = static_cast<Float64>(current_value.value - previous_value.value) * static_cast<Float64>(enabled) / std::max(1., static_cast<Float64>(running));
-
-        UInt64 delta = 0;
-
-        // If no overflow happens, then the value is converted to UInt64
-        accurate::convertNumeric<Float64, UInt64, false>(scaled_value, delta);
+        const UInt64 delta = static_cast<UInt64>(
+            (current_value.value - previous_value.value) * enabled / std::max(1.f, float(running)));
 
         if (min_enabled_time > enabled)
         {

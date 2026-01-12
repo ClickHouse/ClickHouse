@@ -11,7 +11,6 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -49,7 +48,6 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const final { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    std::span<char> insertRawUninitialized(size_t count) override;
 
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
@@ -97,15 +95,15 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     Float64 getFloat64(size_t n) const final;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
@@ -123,13 +121,11 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
+    Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
-        if (options.notFull(name_buf))
-            name_buf << FieldVisitorToString()(data[n], scale);
-        return FieldToDataType()(data[n], scale);
+        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
     }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
@@ -137,7 +133,6 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const IColumn::Filter & filt) override;
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
@@ -155,8 +150,6 @@ public:
             return scale == rhs_concrete->scale;
         return false;
     }
-
-    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     ColumnPtr compress(bool force_compression) const override;
 
@@ -208,7 +201,6 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
-extern template class ColumnDecimal<Time64>;
 
 
 }
