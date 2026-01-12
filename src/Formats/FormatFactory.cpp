@@ -182,6 +182,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
+    format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
@@ -411,7 +413,10 @@ InputFormatPtr FormatFactory::getInput(
     FormatFilterInfoPtr format_filter_info,
     bool is_remote_fs,
     CompressionMethod compression,
-    bool need_only_count) const
+    bool need_only_count,
+    const std::optional<UInt64> & max_block_size_bytes,
+    const std::optional<UInt64> & min_block_size_rows,
+    const std::optional<UInt64> & min_block_size_bytes) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
@@ -434,8 +439,10 @@ InputFormatPtr FormatFactory::getInput(
             /*num_streams_=*/1);
 
     RowInputFormatParams row_input_format_params;
-    row_input_format_params.max_block_size = max_block_size;
-    row_input_format_params.max_block_size_bytes = format_settings.max_block_size_bytes;
+    row_input_format_params.max_block_size_rows = max_block_size;
+    row_input_format_params.max_block_size_bytes = max_block_size_bytes.value_or(format_settings.max_block_size_bytes);
+    row_input_format_params.min_block_size_rows = min_block_size_rows.value_or(0);
+    row_input_format_params.min_block_size_bytes = min_block_size_bytes.value_or(0);
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];

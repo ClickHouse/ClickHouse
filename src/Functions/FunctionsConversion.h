@@ -2722,7 +2722,7 @@ inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
     return false;
 }
 
-template<typename Name, typename ToDataType>
+template <typename Name, typename ToDataType>
 inline bool isTime64(const ColumnsWithTypeAndName & arguments)
 {
     if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
@@ -2734,6 +2734,11 @@ inline bool isTime64(const ColumnsWithTypeAndName & arguments)
 
     return false;
 }
+
+#if USE_EMBEDDED_COMPILER
+bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type);
+llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
+#endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
@@ -2954,6 +2959,18 @@ public:
             throw;
         }
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        return convertIsCompilableImpl(types, result_type);
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        return convertCompileImpl(builder, arguments, result_type);
+    }
+#endif
 
     bool hasInformationAboutMonotonicity() const override
     {
@@ -4219,6 +4236,13 @@ public:
     {
         return monotonicity_for_range(type, left, right);
     }
+
+#if USE_EMBEDDED_COMPILER
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const override { return {1}; }
+
+    bool isCompilable() const override;
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override;
+#endif
 
 private:
     const FunctionConvertSettings settings;

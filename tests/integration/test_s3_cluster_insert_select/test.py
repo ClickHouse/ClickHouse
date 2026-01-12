@@ -208,7 +208,11 @@ def test_distributed_insert_select_to_rmt_where(started_cluster):
     INSERT INTO {table} SELECT * FROM s3Cluster(
         '{cluster_name}',
         'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
-    ) WHERE b = 100 SETTINGS parallel_distributed_insert_select=2;
+    ) WHERE b = 100
+    SETTINGS
+        parallel_distributed_insert_select=2,
+        -- disable deduplication since all rows identical, and if the batch size will be the same size on different nodes it will be deduplicated
+        insert_deduplicate=0;
         """
     )
 

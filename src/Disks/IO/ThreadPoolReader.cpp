@@ -39,7 +39,7 @@
     #elif defined(__loongarch64)
         #define SYS_preadv2 286
     #elif defined(__e2k__)
-        #define SYS_preadv2 286
+        #define SYS_preadv2 395
     #else
         #error "Unsupported architecture"
     #endif

@@ -26,6 +26,7 @@ curl https://clickhouse.com/ | sh
 * [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
+* [ClickHouse Theater](https://presentations.clickhouse.com/) contains presentations and videos about ClickHouse.
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Bluesky](https://bsky.app/profile/clickhouse.com) and [X](https://x.com/ClickHouseDB) for short news.
@@ -34,9 +35,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Join us for the [ClickHouse **25.11** Community Call](https://clickhouse.com/company/events/v25-11-community-release-call) happening on November 25.
+ClickHouse release 25.12, 2025-12-18. [Presentation](https://presentations.clickhouse.com/2025-release-25.12/), [Video](https://www.youtube.com/watch?v=UdxLygnjsRY)
 
-ClickHouse **Release 25.10** is published! This release included the new QBit data type, as well as negative LIMIT and OFFSET. [Presentation](https://presentations.clickhouse.com/2025-release-25.10/), [Video](https://www.youtube.com/watch?v=cV2hiOCzDG4), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#2510).
+Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
 ## Upcoming Events
 
@@ -46,13 +47,19 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
+* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/312621832/) - January 10th, 2026
 * [Iceberg Meetup Menlo Park](https://luma.com/abggijbh) - January 21st, 2026
 * [Data & AI Paris Meetup](https://luma.com/3szhmv9h) - January 22nd, 2026
 * [Iceberg Meetup New York](https://luma.com/ifxnj82q) - January 23rd, 2026
+* [ClickHouse France Meetup](https://www.meetup.com/clickhouse-france-user-group/events/312295018/) - January 28th, 2026
+* [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/312679894/) - January 29th, 2026
 * [Iceberg Meetup Brussels](https://luma.com/yx3lhqu9) - January 30th, 2026
+* [ClickHouse Dinner at FOSDEM](https://luma.com/czvs584m) - January 31st, 2026
+* [ClickHouse Barcelona Meetup](https://www.meetup.com/clickhouse-barcelona-user-group/events/312714616/) - February 5th, 2026
+* [ClickHouse London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/312314505/) - February 10th, 2026
 
 Recent meetups
+* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
 * [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/311974739/) - December 15, 2025
 * [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/311988089/) - December 9, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/312075592) - December 8, 2025
@@ -68,15 +75,11 @@ Recent meetups
 ## Recent Recordings
 
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. 
-* **Recording available**: [**v25.3 LTS Release Call**](https://www.youtube.com/watch?v=iCKEzp0_Z2Q) All the features of 25.3 LTS, one convenient video! Watch it now!
 
- ## Interested in joining ClickHouse and making it your full-time job?
+## Interested in joining ClickHouse and making it your full-time job?
 
-We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics.
-Here, you will have an opportunity to solve some of the technical challenges and have direct ownership of your work and vision.
-If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
+ClickHouse is a nice DBMS, and it's a good place to work.
 
 Check out our **current openings** here: https://clickhouse.com/company/careers
 
-Can't find what you are looking for, but want to let us know you are interested in joining ClickHouse?
-Email careers@clickhouse.com!
+Email: careers@clickhouse.com!

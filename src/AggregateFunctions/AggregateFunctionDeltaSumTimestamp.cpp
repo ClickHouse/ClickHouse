@@ -250,9 +250,43 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
 
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Adds the difference between consecutive rows.
+If the difference is negative, it is ignored.
+
+This function is primarily for [materialized views](/sql-reference/statements/create/view#materialized-view) that store data ordered by some time bucket-aligned timestamp, for example, a `toStartOfMinute` bucket.
+Because the rows in such a materialized view will all have the same timestamp, it is impossible for them to be merged in the correct order, without storing the original, unrounded timestamp value.
+The `deltaSumTimestamp` function keeps track of the original `timestamp` of the values it's seen, so the values (states) of the function are correctly computed during merging of parts.
+
+To calculate the delta sum across an ordered collection you can simply use the [`deltaSum`](/sql-reference/aggregate-functions/reference/deltasum) function.
+    )";
+    FunctionDocumentation::Syntax syntax = "deltaSumTimestamp(value, timestamp)";
+    FunctionDocumentation::Arguments arguments = {
+        {"value", "Input values.", {"(U)Int*", "Float*", "Date", "DateTime"}},
+        {"timestamp", "The parameter for order values.", {"(U)Int*", "Float*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns accumulated differences between consecutive values, ordered by the `timestamp` parameter.", {"(U)Int*", "Float*", "Date", "DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage with timestamp ordering",
+        R"(
+SELECT deltaSumTimestamp(value, timestamp)
+FROM (SELECT number AS timestamp, [0, 4, 8, 3, 0, 0, 0, 1, 3, 5][number] AS value FROM numbers(1, 10))
+        )",
+        R"(
+┌─deltaSumTimestamp(value, timestamp)─┐
+│                                  13 │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, properties });
+    factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, properties, documentation });
 }
 
 }

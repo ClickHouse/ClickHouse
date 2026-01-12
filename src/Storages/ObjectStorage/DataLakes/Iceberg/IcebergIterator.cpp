@@ -79,8 +79,8 @@ using namespace Iceberg;
 
 namespace
 {
-std::span<const ManifestFileEntry>
-defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFileEntry> & deletes_objects, bool is_equality_delete)
+std::span<const ManifestFileEntryPtr>
+defineDeletesSpan(ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete)
 {
     ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
@@ -95,10 +95,10 @@ defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFile
         deletes_objects.begin(),
         deletes_objects.end(),
         data_object_,
-        [](const ManifestFileEntry & lhs, const ManifestFileEntry & rhs)
+        [](const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs)
         {
-            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
-                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
+            return std::tie(lhs->common_partition_specification, lhs->partition_key_value)
+                < std::tie(rhs->common_partition_specification, rhs->partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {
@@ -115,7 +115,7 @@ defineDeletesSpan(ManifestFileEntry data_object_, const std::vector<ManifestFile
 
 }
 
-std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
+std::optional<ManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
 {
     if (!data_snapshot)
     {
@@ -145,10 +145,10 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
         while (internal_data_index < files.size())
         {
             const auto & manifest_file_entry = files[internal_data_index++];
-            if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
+            if ((manifest_file_entry->schema_id != previous_entry_schema) && (use_partition_pruning))
             {
-                previous_entry_schema = manifest_file_entry.schema_id;
-                if (previous_entry_schema > manifest_file_entry.schema_id)
+                previous_entry_schema = manifest_file_entry->schema_id;
+                if (previous_entry_schema > manifest_file_entry->schema_id)
                 {
                     LOG_WARNING(
                         log,
@@ -158,7 +158,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                 current_pruner.emplace(
                     *persistent_components.schema_processor,
                     table_snapshot->schema_id,
-                    manifest_file_entry.schema_id,
+                    manifest_file_entry->schema_id,
                     filter_dag.get(),
                     *current_manifest_file_content,
                     local_context);
@@ -170,7 +170,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                 DB::IcebergMetadataLogLevel::ManifestFileEntry,
                 persistent_components.table_path,
                 current_manifest_file_content->getPathToManifestFile(),
-                manifest_file_entry.row_number,
+                manifest_file_entry->row_number,
                 pruning_status);
             switch (pruning_status)
             {
@@ -281,7 +281,7 @@ IcebergIterator::IcebergIterator(
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
     {
-        if (delete_file->equality_ids.has_value())
+        if (delete_file.value()->equality_ids.has_value())
         {
             equality_deletes_files.emplace_back(std::move(delete_file.value()));
         }
@@ -298,7 +298,7 @@ IcebergIterator::IcebergIterator(
         {
             while (!blocking_queue.isFinished())
             {
-                std::optional<ManifestFileEntry> entry;
+                std::optional<ManifestFileEntryPtr> entry;
                 try
                 {
                     entry = data_files_iterator.next();
@@ -330,7 +330,7 @@ IcebergIterator::IcebergIterator(
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
-    Iceberg::ManifestFileEntry manifest_file_entry;
+    Iceberg::ManifestFileEntryPtr manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
         IcebergDataObjectInfoPtr object_info
