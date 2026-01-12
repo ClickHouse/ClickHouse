@@ -64,13 +64,14 @@ public:
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
+        bool access_denied = false;
         if (!allowed_client_hosts.empty() && !allowed_client_hosts.contains(socket.peerAddress().host()))
-            throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", socket.peerAddress().toString());
+            access_denied = true;
 
         try
         {
-            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
-            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name);
+            LOG_TRACE(log, "TCP Request. Address: {}. {}", socket.peerAddress().toString(), access_denied ? "Access denied." : "Allowed.");
+            return new TCPProtocolStackHandler(server, tcp_server, socket, stack, conf_name, access_denied);
         }
         catch (const Poco::Net::NetException &)
         {

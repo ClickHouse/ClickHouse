@@ -1,0 +1,10 @@
+<clickhouse>
+    <tcp_port_secure>9440</tcp_port_secure>
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/certs/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/server-key.pem</privateKeyFile>
+            <verificationMode>none</verificationMode>
+        </server>
+    </openSSL>
+</clickhouse>
