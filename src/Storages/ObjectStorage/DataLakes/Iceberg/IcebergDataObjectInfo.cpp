@@ -42,29 +42,15 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 
 #if USE_AVRO
 
-IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
-    : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_->file_path))
-    , info{
-          data_manifest_file_entry_->file_path_from_metadata,
-          data_manifest_file_entry_->file_path_from_metadata,  // absolute path
-          data_manifest_file_entry_->schema_id,
-          schema_id_relevant_to_iterator_,
-          data_manifest_file_entry_->added_sequence_number,
-          data_manifest_file_entry_->file_format,
-          /* position_deletes_objects */ {},
-          /* equality_deletes_objects */ {}}
-{
-}
-
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     const Iceberg::ManifestFileEntry & data_manifest_file_entry_,
     Int32 schema_id_relevant_to_iterator_,
     ObjectStoragePtr resolved_storage_,
     const String & resolved_key_)
-    : ObjectInfo(RelativePathWithMetadata(resolved_key_))
+    : ObjectInfo(RelativePathWithMetadata(resolved_key_.empty() ? data_manifest_file_entry_.file_path : resolved_key_))
     , info{
         data_manifest_file_entry_.file_path_from_metadata,
-        data_manifest_file_entry_.file_path,  // absolute path
+        resolved_storage_ ? data_manifest_file_entry_.file_path : data_manifest_file_entry_.file_path_from_metadata,  // absolute path
         data_manifest_file_entry_.schema_id,
         schema_id_relevant_to_iterator_,
         data_manifest_file_entry_.added_sequence_number,

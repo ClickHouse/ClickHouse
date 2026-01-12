@@ -47,16 +47,15 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// Full path to the data object file
     /// It is used to filter position deletes objects by data file path.
     /// It is also used to create a filter for the data object in the position delete transform.
-    explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
-
-    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
-
-    /// Sometimes data files are located outside the table location and even in a different storage.
+    /// If resolved_storage_ and resolved_key_ are provided, the file may be located
+    /// outside the table location (possibly in a different storage).
     explicit IcebergDataObjectInfo(
         const Iceberg::ManifestFileEntry & data_manifest_file_entry_,
         Int32 schema_id_relevant_to_iterator_,
-        ObjectStoragePtr resolved_storage_,
-        const String & resolved_key_);
+        ObjectStoragePtr resolved_storage_ = nullptr,
+        const String & resolved_key_ = "");
+
+    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
