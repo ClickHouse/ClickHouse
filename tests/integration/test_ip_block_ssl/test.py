@@ -35,7 +35,7 @@ def test_ip_block_message_ssl():
         # But wait, if we are blocked, the server might close immediately after handshake.
         # Let's try to read immediately.
         
-        data = wrapped_socket.read(1024)
+        data = wrapped_socket.recv(1024)
         error_msg = data.decode('utf-8', errors='ignore')
         
         # We expect our specific error message
@@ -51,3 +51,26 @@ def test_ip_block_message_ssl():
         pytest.fail(f"An unexpected error occurred: {e}")
     finally:
         wrapped_socket.close()
+
+def test_ip_block_message_plain():
+    # Connect to the insecure port (usually 9000)
+    # The behavior should be similar: connection accepted -> error message sent -> closed.
+    
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(5)
+    
+    try:
+        s.connect((instance.ip_address, 9000))
+        
+        # Should receive error message immediately
+        data = s.recv(1024)
+        error_msg = data.decode('utf-8', errors='ignore')
+        
+        # We expect our specific error message
+        assert "IP address not allowed" in error_msg
+        assert "Code: 195" in error_msg
+        
+    except Exception as e:
+        pytest.fail(f"Connection failed or no message received: {e}")
+    finally:
+        s.close()

@@ -5,11 +5,16 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackData.h>
-
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int IP_ADDRESS_NOT_ALLOWED;
+}
 
 class TCPProtocolStackHandler : public Poco::Net::TCPServerConnection
 {
@@ -21,10 +26,11 @@ private:
     std::vector<TCPServerConnectionFactory::Ptr> stack;
     std::string conf_name;
     bool access_denied;
+    LoggerPtr log;
 
 public:
     TCPProtocolStackHandler(IServer & server_, TCPServer & tcp_server_, const StreamSocket & socket, const std::vector<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_, bool access_denied_ = false)
-        : TCPServerConnection(socket), server(server_), tcp_server(tcp_server_), stack(stack_), conf_name(conf_name_), access_denied(access_denied_)
+        : TCPServerConnection(socket), server(server_), tcp_server(tcp_server_), stack(stack_), conf_name(conf_name_), access_denied(access_denied_), log(getLogger("TCPProtocolStackHandler"))
     {}
 
     void run() override
@@ -51,12 +57,13 @@ public:
                 /// We should send an error message and close the connection.
                 try
                 {
-                    /// Mimic standard ClickHouse exception message for ErrorCodes::IP_ADDRESS_NOT_ALLOWED (195)
-                    std::string message = "Code: 195. DB::Exception: IP address not allowed.\n";
+                    /// Mimic standard ClickHouse exception message for ErrorCodes::IP_ADDRESS_NOT_ALLOWED
+                    std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
                     socket().sendBytes(message.data(), static_cast<int>(message.size()));
                 }
                 catch (...)
                 {
+                    LOG_ERROR(log, "Failed to send error message to blocked client: {}", getCurrentExceptionMessage(false));
                 }
                 return;
             }
