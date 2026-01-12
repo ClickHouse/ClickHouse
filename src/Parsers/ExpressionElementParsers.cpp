@@ -61,15 +61,11 @@ extern const int LOGICAL_ERROR;
 
 namespace
 {
-/// Thread-local storage for literal token positions.
-/// Used by ValuesBlockInputFormat to capture token positions for ConstantExpressionTemplate.
-thread_local LiteralTokenMap * g_literal_token_map = nullptr;
-
-/// Helper to record literal token position if the thread-local map is set.
+/// Helper to record literal token position if the map is set in Expected.
 /// Extracts raw char* positions from TokenIterator - these point into the query buffer.
-inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end)
+inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
 {
-    if (g_literal_token_map)
+    if (expected.literal_token_map)
     {
         /// Store the character positions, not the iterators.
         /// begin points to first token of literal, end points to one-past-last token.
@@ -78,19 +74,9 @@ inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, 
         /// Use insert_or_assign to handle memory reuse - the parser may reuse the same
         /// memory address for different ASTLiteral objects. The final AST will have
         /// the last literal created at each address, so we want the last token info.
-        g_literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
+        expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
     }
 }
-}
-
-void setLiteralTokenMap(LiteralTokenMap * map)
-{
-    g_literal_token_map = map;
-}
-
-LiteralTokenMap * getLiteralTokenMap()
-{
-    return g_literal_token_map;
 }
 
 /*
@@ -1114,7 +1100,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             auto literal = make_intrusive<ASTLiteral>(res);
             ++pos;
-            recordLiteralTokens(literal.get(), literal_begin, pos);
+            recordLiteralTokens(literal.get(), literal_begin, pos, expected);
             node = literal;
 
             return true;
@@ -1176,7 +1162,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 auto literal = make_intrusive<ASTLiteral>(res);
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos);
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
                 node = literal;
 
                 return true;
@@ -1193,7 +1179,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 auto literal = make_intrusive<ASTLiteral>(res);
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos);
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
                 node = literal;
 
                 return true;
@@ -1211,7 +1197,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 auto literal = make_intrusive<ASTLiteral>(res);
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos);
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
                 node = literal;
 
                 return true;
@@ -1222,7 +1208,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         auto literal = make_intrusive<ASTLiteral>(res);
         ++pos;
-        recordLiteralTokens(literal.get(), literal_begin, pos);
+        recordLiteralTokens(literal.get(), literal_begin, pos, expected);
         node = literal;
 
         return true;
@@ -1251,27 +1237,27 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto literal = make_intrusive<ASTLiteral>(res);
     IParser::Pos literal_begin = pos;
     ++pos;
-    recordLiteralTokens(literal.get(), literal_begin, pos);
+    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
     node = literal;
     return true;
 }
 
-inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str)
+inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str, Expected & expected)
 {
     auto literal = make_intrusive<ASTLiteral>(str);
     IParser::Pos literal_begin = pos;
     ++pos;
-    recordLiteralTokens(literal.get(), literal_begin, pos);
+    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
     node = literal;
     return true;
 }
 
-inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, bool hex, size_t word_size)
+inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, bool hex, size_t word_size, Expected & expected)
 {
     const char * str_begin = pos->begin + 2;
     const char * str_end = pos->end - 1;
     if (str_begin == str_end)
-        return makeStringLiteral(pos, node, "");
+        return makeStringLiteral(pos, node, "", expected);
 
     PODArray<UInt8> res;
     res.resize((str_end - str_begin + word_size - 1) / word_size);
@@ -1287,7 +1273,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()), expected);
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -1304,19 +1290,19 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         if (first_char == 'x' || first_char == 'X')
         {
             constexpr size_t word_size = 2;
-            return makeHexOrBinStringLiteral(pos, node, true, word_size);
+            return makeHexOrBinStringLiteral(pos, node, true, word_size, expected);
         }
 
         if (first_char == 'b' || first_char == 'B')
         {
             constexpr size_t word_size = 8;
-            return makeHexOrBinStringLiteral(pos, node, false, word_size);
+            return makeHexOrBinStringLiteral(pos, node, false, word_size, expected);
         }
 
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
         if (first_char == '\xE2' && pos->size() >= 6)
         {
-            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3));
+            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3), expected);
         }
 
         ReadBufferFromMemory in(pos->begin, pos->size());
@@ -1345,7 +1331,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
-    return makeStringLiteral(pos, node, s);
+    return makeStringLiteral(pos, node, s, expected);
 }
 
 template <typename Collection>
@@ -1386,7 +1372,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 boost::intrusive_ptr<ASTLiteral> literal = make_intrusive<ASTLiteral>(std::move(layers.back().arr));
                 IParser::Pos literal_begin = layers.back().literal_begin;
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos);
+                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
 
                 layers.pop_back();
                 pos.decreaseDepth();
@@ -1516,7 +1502,7 @@ bool CommonCollection<Container, end_token>::parse(
         if (end_p.ignore(pos, expected))
         {
             auto result = make_intrusive<ASTLiteral>(std::move(container));
-            recordLiteralTokens(result.get(), begin, pos);
+            recordLiteralTokens(result.get(), begin, pos, expected);
 
             node = std::move(result);
             break;
@@ -1553,7 +1539,7 @@ bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr 
         if (end_p.ignore(pos, expected))
         {
             auto result = make_intrusive<ASTLiteral>(std::move(container));
-            recordLiteralTokens(result.get(), begin, pos);
+            recordLiteralTokens(result.get(), begin, pos, expected);
 
             node = std::move(result);
             break;

@@ -866,13 +866,12 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
-    /// Look up token position from thread-local map (set during parsing when highlighting is enabled)
-    LiteralTokenMap * token_map = getLiteralTokenMap();
-    if (!token_map)
+    /// Look up token position from the map stored in Expected
+    if (!expected.literal_token_map)
         return;
 
-    auto it = token_map->find(literal);
-    if (it == token_map->end())
+    auto it = expected.literal_token_map->find(literal);
+    if (it == expected.literal_token_map->end())
         return;
 
     /// Use the stored char* positions directly for highlighting
@@ -2440,18 +2439,27 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Set up thread-local map to capture literal token positions for regex highlighting.
+    /// Set up map to capture literal token positions for regex highlighting.
     /// Only needed when highlighting is enabled and no map is already set (e.g., by ValuesBlockInputFormat).
-    std::optional<LiteralTokenMapScope> token_scope;
-    if (expected.enable_highlighting && !getLiteralTokenMap())
-        token_scope.emplace();
+    std::optional<LiteralTokenMap> local_token_map;
+    if (expected.enable_highlighting && !expected.literal_token_map)
+    {
+        local_token_map.emplace();
+        expected.literal_token_map = &*local_token_map;
+    }
 
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
         highlightRegexps(node, expected, 0);
+        /// Clear the map pointer if we created it locally
+        if (local_token_map)
+            expected.literal_token_map = nullptr;
         return true;
     }
+    /// Clear the map pointer if we created it locally
+    if (local_token_map)
+        expected.literal_token_map = nullptr;
     return false;
 }
 

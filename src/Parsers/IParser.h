@@ -4,6 +4,7 @@
 #include <set>
 #include <algorithm>
 #include <memory>
+#include <unordered_map>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
@@ -15,6 +16,29 @@
 
 namespace DB
 {
+
+class ASTLiteral;
+
+/// Token position info for literals - stores raw character pointers into the query string.
+/// Used for ConstantExpressionTemplate construction and LIKE/REGEXP syntax highlighting.
+/// Stored externally to reduce ASTLiteral size by ~48 bytes per literal.
+///
+/// IMPORTANT: These are raw pointers into the original query string. They are only valid
+/// during parsing while the query buffer exists. Do not store or access after parsing.
+struct LiteralTokenInfo
+{
+    const char * begin; /// Start of literal in query string
+    const char * end;   /// End of literal in query string
+
+    LiteralTokenInfo(const char * begin_, const char * end_)
+        : begin(begin_)
+        , end(end_)
+    {
+    }
+};
+
+/// Map from ASTLiteral pointer to its token position in the query string.
+using LiteralTokenMap = std::unordered_map<const ASTLiteral *, LiteralTokenInfo>;
 
 namespace ErrorCodes
 {
@@ -61,6 +85,12 @@ struct Expected
 
     bool enable_highlighting = false;
     std::set<HighlightedRange> highlights;
+
+    /// Optional map for capturing literal token positions during parsing.
+    /// Used by ValuesBlockInputFormat for ConstantExpressionTemplate construction
+    /// and for LIKE/REGEXP syntax highlighting.
+    /// The caller must allocate and manage the map's lifetime.
+    LiteralTokenMap * literal_token_map = nullptr;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
