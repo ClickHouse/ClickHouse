@@ -599,7 +599,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 }
                 catch (const Exception & e)
                 {
-                    LOG_WARNING(log, "Failed to parse host_id {} in zookeeper, error {}", host_id, e.what());
+                    LOG_WARNING(log, "Failed to parse host_id {} in zookeeper, error {}", replica_host_id, e.what());
                 }
 
                 if (uuid_in_keeper != db_uuid)
