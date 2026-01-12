@@ -180,6 +180,7 @@ protected:
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
 
+    ActionsDAG::NodeRawConstPtrs right_type_changes = {};
     /// These are the nodes which are used to split expressions calculated before and after join
     /// Nodes from this list are used as inputs for ActionsDAG executed after join operation
     /// It can be input or node with toNullable function applied to input
