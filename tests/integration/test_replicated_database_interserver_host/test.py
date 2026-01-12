@@ -137,7 +137,13 @@ def test_replicated_database_uses_interserver_host_changed(started_cluster):
         node.query("SYSTEM FLUSH LOGS")
         assert (
             node.query(
-                "SELECT count() FROM system.text_log WHERE (level='Error') AND (logger_name='DatabaseReplicated (test_db)') AND (message LIKE '%replicated database at /clickhouse/databases/test_db already exists%')"
+                """
+                SELECT count()
+                FROM system.text_log
+                WHERE (level='Error')
+                  AND (logger_name='DatabaseReplicated (test_db)')
+                  AND (message LIKE '%replicated database at /clickhouse/databases/test_db already exists%')
+                """
             ).strip()
             == "0"
         )
