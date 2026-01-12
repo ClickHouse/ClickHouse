@@ -1935,6 +1935,26 @@ class TestCase:
             )
 
         if self.reference_file is None:
+            # If --record is enabled, create a new reference file
+            if self.testcase_args.record:
+                import shutil
+                # Use the same logic as get_reference_file to determine the correct path
+                name = removesuffix(self.name, ".gen")
+                # Determine the appropriate extension based on analyzer mode
+                if is_old_analyzer_used(self.testcase_args):
+                    ext = ".oldanalyzer.reference"
+                else:
+                    ext = ".reference"
+                self.reference_file = os.path.join(self.suite.suite_path, name) + ext
+                shutil.copy2(self.stdout_file, self.reference_file)
+                description += "\tReference file created\n"
+                return TestResult(
+                    self.name,
+                    TestStatus.OK,
+                    None,
+                    total_time,
+                    description,
+                )
             return TestResult(
                 self.name,
                 TestStatus.UNKNOWN,
