@@ -46,8 +46,7 @@ CREATE TABLE tab
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
-                                [, max_cardinality_for_embedded_postings = M]
-                                [, bloom_filter_false_positive_rate = R]
+                                [, posting_list_block_size = C]
                             )
 )
 ENGINE = MergeTree
@@ -150,7 +149,7 @@ SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
 
 **Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
-However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
+However, unlike other skipping indexes, text indexes have an infinite granularity, i.e. the text index is created for the entire part and explicitly specified index granularities are ignored.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
 Advanced users can specify a different index granularity (we do not recommend this).
 
@@ -183,7 +182,7 @@ If no index exists, below string search functions will fall back to slow brute-f
 
 ### Supported functions {#functions-support}
 
-The text index can be used if text functions are used in the `WHERE` clause or `PREWHERE` clause of a SELECT query:
+The text index can be used if text functions are used in the `WHERE` clause or `PREWHERE` clauses:
 
 ```sql
 SELECT [...]
@@ -205,7 +204,7 @@ The text index supports `=` and `!=`, yet equality and inequality search only ma
 
 #### `IN` and `NOT IN` {#functions-example-in-notin}
 
-`IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` but they match all (`IN`) or none (`NOT IN`) of the search terms.
+`IN` ([in](/sql-reference/functions/in-functions)) and `NOT IN` ([notIn](/sql-reference/functions/in-functions)) are similar to functions `equals` and `notEquals` but they match all (`IN`) or no (`NOT IN`) search terms
 
 Example:
 
@@ -243,7 +242,8 @@ The spaces left and right of `support` make sure that the term can be extracted 
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
-Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term. For text index with `ngrams` tokenizer, it is the case if the searched prefix or suffix is longer or equal to the ngram length.
+Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
+For text index with `ngrams` tokenizer, it is the case if the searched prefix or suffix is longer or equal to the ngram length.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -311,7 +311,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is effective only if it is created on `mapKeys(map)` expression.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is only used if it is created on `mapKeys(map)` expression.
 
 Example:
 
@@ -323,7 +323,7 @@ SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
 
 #### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
-Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapcontainsvalue) matches against tokens extracted from the searched string in the values of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is effective only if it is created on `mapValues(map)` expression.
+Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapcontainsvalue) matches against tokens extracted from the searched string in the values of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is only used if it is created on `mapValues(map)` expression.
 
 Example:
 
@@ -333,7 +333,7 @@ SELECT count() FROM tab WHERE mapContainsValue(map, 'clickhouse');
 
 #### `operator[]` {#functions-example-access-operator}
 
-Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values. The text index is effective if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both.
+Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values. The text index is only used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both.
 
 Example:
 
@@ -461,10 +461,9 @@ Also, the text index must be fully materialized to use direct reading (use `ALTE
 **Supported functions**
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-These functions can also be combined by AND, OR, and NOT operators.
-The `WHERE` clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
-
 If text index is created with an `array` tokenizer, the direct read is also supported for functions `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
+These functions can also be combined by AND, OR, and NOT operators.
+The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
 To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
 As an example, a query with disabled direct read
