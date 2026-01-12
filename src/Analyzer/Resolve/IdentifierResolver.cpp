@@ -172,11 +172,27 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     /// For DataLakeCatalog databases, apply table prefix from USE db.prefix
     String current_database = context->getCurrentDatabase();
-    if (database_name.empty() && DatabaseCatalog::instance().isDatalakeCatalog(current_database))
+    if (DatabaseCatalog::instance().isDatalakeCatalog(current_database))
     {
-        String table_prefix = context->getCurrentTablePrefix();
-        if (!table_prefix.empty())
-            table_name = table_prefix + "." + table_name;
+        if (database_name.empty())
+        {
+            /// Single-part identifier: apply table prefix if set
+            String table_prefix = context->getCurrentTablePrefix();
+            if (!table_prefix.empty())
+                table_name = table_prefix + "." + table_name;
+        }
+        else
+        {
+            /// Two-part identifier in DataLakeCatalog context:
+            /// Try to resolve as namespace.table in current catalog first
+            String combined_table_name = database_name + "." + table_name;
+            auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
+            if (current_db && current_db->tryGetTable(combined_table_name, context))
+            {
+                table_name = combined_table_name;
+                database_name.clear();
+            }
+        }
     }
 
     StorageID storage_id(database_name, table_name);

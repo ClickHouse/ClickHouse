@@ -796,3 +796,7 @@ def test_use_database_with_namespace(started_cluster):
     # check that prefix is cleared when switching to regular db
     _, error = node.query_and_get_answer_with_error(f"USE {CATALOG_NAME}.{namespace}; USE default; SELECT 1 FROM {table_name}")
     assert "UNKNOWN_TABLE" in error or "doesn't exist" in error, f"Expected UNKNOWN_TABLE error, got: {error}"
+
+    # Test USE catalog (without prefix) and then query with namespace.table
+    count_ns = int(node.query(f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}"))
+    assert count_ns == 5, f"Expected 5 rows with namespace.table after USE catalog, got {count_ns}"
