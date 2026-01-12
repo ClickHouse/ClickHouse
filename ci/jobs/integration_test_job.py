@@ -543,6 +543,7 @@ def main():
         else:
             R.set_success()
 
+    force_ok_exit = False
     if is_llvm_coverage:
         print("Collecting and merging LLVM coverage files...")
         profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
@@ -576,10 +577,12 @@ def main():
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
                 
+            force_ok_exit = True        
+            print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         else:
             print("No .profraw files found for coverage")
     
-    R.sort().complete_job()
+    R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

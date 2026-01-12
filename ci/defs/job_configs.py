@@ -464,7 +464,7 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"llvm coverage, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
@@ -614,18 +614,6 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    # functional_tests_jobs_llvm_coverage = common_ft_job_config.parametrize(
-    #     *[
-    #         Job.ParamSet(
-    #             parameter=f"llvm coverage, {batch}/{total_batches}",
-    #             runs_on=RunnerLabels.AMD_MEDIUM,
-    #             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-    #             provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
-    #         )
-    #         for total_batches in (LLVM_FT_NUM_BATCHES,)
-    #         for batch in range(1, total_batches + 1)
-    #     ]
-    # )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             Job.ParamSet(
@@ -677,7 +665,7 @@ class JobConfigs:
             requires=[ArtifactNames.UNITTEST_AMD_UBSAN],
         ),
         Job.ParamSet( # Probably this should be in a separate job, but for now keep it here
-            parameter="llvm coverage",
+            parameter="amd_llvm_coverage",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE],
@@ -830,7 +818,7 @@ class JobConfigs:
         common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"llvm coverage, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],

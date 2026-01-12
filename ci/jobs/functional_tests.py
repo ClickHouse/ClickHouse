@@ -156,9 +156,7 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             pass
         elif (
-            to.startswith("amd_")
-            or to.startswith("arm_")
-            or "llvm coverage" in to
+            to.startswith("amd_") or to.startswith("arm_")
         ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
@@ -186,7 +184,7 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "llvm coverage" in to:
+        elif "amd_llvm_coverage" in to:
             is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
@@ -689,6 +687,10 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )
             force_ok_exit = True
+    if is_llvm_coverage and test_result:
+        # do not block pipeline on llvm coverage job failures
+        print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+        force_ok_exit = True
 
     if test_result:
         test_result.sort()
