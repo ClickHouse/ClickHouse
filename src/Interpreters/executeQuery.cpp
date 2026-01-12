@@ -1520,7 +1520,7 @@ static BlockIO executeQueryImpl(
             if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_PARAMETER,
-                    "Async inserts with quorum inserts are only have sense with enabled quorum_parallel setting, either disable quorum or set quorum_parallel=1 or do not use async inserts");
+                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
 
             quota = context->getQuota();
             if (quota)
