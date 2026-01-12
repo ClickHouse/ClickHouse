@@ -263,7 +263,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, Instrumentatio
         {
             const auto it = instrumented_points.get<Id>().find(info.id);
             if (it == instrumented_points.get<Id>().end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Instrumentation point {} does not exist", it->toString());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Instrumentation point {} does not exist", info.toString());
             LOG_INFO(logger, "Removing instrumented function {}", it->toString());
             unpatchFunctionIfNeeded(it->function_id);
             instrumented_points.erase(it);
