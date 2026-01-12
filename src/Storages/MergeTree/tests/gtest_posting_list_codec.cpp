@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <config.h>
-#include <Storages/MergeTree/PostingListCompression.h>
+#include <Storages/MergeTree/BitpackingBlockCodec.h>
 
 #include <cstddef>
 #include <random>
