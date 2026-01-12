@@ -136,12 +136,10 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
         """
         SELECT
             name,
-            status,
+            load_status,
             loading_error_message,
-            last_loading_time > 0 AS has_loading_time,
-            last_successful_update_time > 0 AS has_update_time,
-            loading_duration >= 0 AS has_duration,
-            error_count,
+            last_successful_update_time IS NOT NULL AS has_update_time,
+            loading_duration_ms >= 0 AS has_duration,
             type,
             command,
             format,
@@ -161,15 +159,18 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     print("Executable UDF with all system fields:")
     print(result)
 
-    expected = "test_working_udf\tSUCCESS\t\t1\t1\t1\t0\texecutable\tworking_script.sh\tTabSeparated\tString\tresult\t0\t5\t2000\t1500\t300"
-    assert result.strip() == expected.strip()
+    assert TSV(result) == TSV([[
+        "test_working_udf", "Success", "", 1, 1,
+        "executable", "working_script.sh", "TabSeparated",
+        "String", "result", 0, 5, 2000, 1500, 300
+    ]])
 
     # Test pool UDF configuration with all relevant fields
     result = node.query(
         """
         SELECT
             name,
-            status,
+            load_status,
             type,
             format,
             return_type,
@@ -178,8 +179,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
             pool_size,
             max_command_execution_time,
             send_chunk_header,
-            deterministic,
-            error_count
+            deterministic
         FROM system.user_defined_functions
         WHERE name = 'test_working_pool_udf'
         FORMAT TSV
@@ -189,7 +189,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     print("\nPool UDF configuration:")
     print(result)
 
-    assert TSV(result) == TSV([["test_working_pool_udf", "SUCCESS", "executable_pool", "JSONEachRow", "String", "['UInt64']", "['value']", 4, 30, 1, 1, 0]])
+    assert TSV(result) == TSV([["test_working_pool_udf", "Success", "executable_pool", "JSONEachRow", "String", "['UInt64']", "['value']", 4, 30, 1, 1]])
 
 
 def test_system_user_defined_functions_failed_status(started_cluster):
@@ -201,8 +201,7 @@ def test_system_user_defined_functions_failed_status(started_cluster):
         """
         SELECT
             name,
-            status,
-            error_count > 0 AS has_errors,
+            load_status,
             position(loading_error_message, 'InvalidTypeName123') > 0 OR position(loading_error_message, 'UNKNOWN_TYPE') > 0 AS has_error_info
         FROM system.user_defined_functions
         WHERE name = 'test_failed_udf_invalid_type'
@@ -213,8 +212,7 @@ def test_system_user_defined_functions_failed_status(started_cluster):
     print("FAILED UDF result:")
     print(result)
 
-    expected = "test_failed_udf_invalid_type\tFAILED\t1\t1"
-    assert result.strip() == expected.strip()
+    assert TSV(result) == TSV([["test_failed_udf_invalid_type", "Failed", 1]])
 
 
 def test_system_user_defined_functions_list_all_statuses(started_cluster):
@@ -225,11 +223,11 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
     result = node.query(
         """
         SELECT
-            status,
+            load_status,
             count() as cnt
         FROM system.user_defined_functions
-        GROUP BY status
-        ORDER BY status
+        GROUP BY load_status
+        ORDER BY load_status
         FORMAT TSV
         """
     )
@@ -237,24 +235,24 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
     print("UDFs by status:")
     print(result)
 
-    # Should have both SUCCESS (2 working UDFs) and FAILED (1 broken UDF)
-    # Note: ORDER BY status sorts by enum value: SUCCESS(0) < FAILED(1)
-    assert TSV(result) == TSV([["SUCCESS", 2], ["FAILED", 1]])
+    # Should have both Success (2 working UDFs) and Failed (1 broken UDF)
+    # Note: ORDER BY load_status sorts by enum value: Success(0) < Failed(1)
+    assert TSV(result) == TSV([["Success", 2], ["Failed", 1]])
 
     # List all failed UDFs
     result = node.query(
         """
         SELECT name
         FROM system.user_defined_functions
-        WHERE status = 'FAILED'
+        WHERE load_status = 'Failed'
         FORMAT TSV
         """
     )
 
-    print("\nAll FAILED UDFs:")
+    print("\nAll Failed UDFs:")
     print(result)
 
-    assert result.strip() == "test_failed_udf_invalid_type"
+    assert TSV(result) == TSV([["test_failed_udf_invalid_type"]])
 
 
 def test_system_user_defined_functions_columns(started_cluster):
@@ -278,12 +276,10 @@ def test_system_user_defined_functions_columns(started_cluster):
     expected_columns_in_order = [
         # System/Non-Config Fields
         "name",
-        "status",
+        "load_status",
         "loading_error_message",
-        "last_loading_time",
         "last_successful_update_time",
-        "loading_duration",
-        "error_count",
+        "loading_duration_ms",
         # UDF Configuration Fields
         "type",
         "command",

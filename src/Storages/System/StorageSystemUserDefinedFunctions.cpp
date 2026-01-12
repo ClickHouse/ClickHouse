@@ -29,25 +29,21 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
     {
         // ===== System/Non-Config Fields (External Loader metadata) =====
         {"name", std::make_shared<DataTypeString>(),
-            "Function name (UDF identifier)."},
-        {"status", std::make_shared<DataTypeEnum8>(
+            "UDF name."},
+        {"load_status", std::make_shared<DataTypeEnum8>(
             DataTypeEnum8::Values{
-                {"SUCCESS", 0},
-                {"FAILED", 1}
+                {"Success", 0},
+                {"Failed", 1}
             }),
             "Loading status. Possible values: "
-            "SUCCESS — UDF loaded and ready to use, "
-            "FAILED — UDF failed to load (see loading_error_message for details)."},
+            "Success — UDF loaded and ready to use, "
+            "Failed — UDF failed to load (see field 'loading_error_message' for details)."},
         {"loading_error_message", std::make_shared<DataTypeString>(),
-            "Detailed error message when loading fails. Empty if loaded successfully."},
-        {"last_loading_time", std::make_shared<DataTypeDateTime>(),
-            "Timestamp when the last loading attempt started."},
-        {"last_successful_update_time", std::make_shared<DataTypeDateTime>(),
-            "Timestamp of last successful load or update."},
-        {"loading_duration", std::make_shared<DataTypeFloat32>(),
-            "Time spent loading the UDF, in seconds."},
-        {"error_count", std::make_shared<DataTypeUInt64>(),
-            "Number of errors since last successful load."},
+            "Detailed error message when loading failed. Empty if loaded successfully."},
+        {"last_successful_update_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+            "Timestamp of the last successful update. NULL if never succeeded."},
+        {"loading_duration_ms", std::make_shared<DataTypeUInt64>(),
+            "Time spent loading the UDF, in milliseconds."},
 
         // ===== UDF Configuration Fields (from XML config) =====
         {"type", std::make_shared<DataTypeEnum8>(
@@ -85,7 +81,7 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
         {"lifetime", std::make_shared<DataTypeUInt64>(),
             "Reload interval in seconds. 0 means reload is disabled."},
         {"deterministic", std::make_shared<DataTypeUInt8>(),
-            "Whether function produces consistent results for same inputs (boolean)."}
+            "Whether function returns the same result for the same arguments (boolean)."}
     };
 }
 
@@ -101,9 +97,9 @@ void StorageSystemUserDefinedFunctions::fillData(
         // ===== System/Non-Config Fields =====
         res_columns[i++]->insert(load_result.name);
 
-        // Map ExternalLoaderStatus to simplified SUCCESS/FAILED enum
-        // SUCCESS (0): LOADED, LOADED_AND_RELOADING
-        // FAILED (1): All other states (NOT_LOADED, FAILED, LOADING, FAILED_AND_RELOADING, NOT_EXIST)
+        // Map ExternalLoaderStatus to simplified Success/Failed enum
+        // Success (0): LOADED, LOADED_AND_RELOADING
+        // Failed (1): All other states (NOT_LOADED, FAILED, LOADING, FAILED_AND_RELOADING, NOT_EXIST)
         Int8 simplified_status = (load_result.status == ExternalLoaderStatus::LOADED ||
                                   load_result.status == ExternalLoaderStatus::LOADED_AND_RELOADING) ? 0 : 1;
         res_columns[i++]->insert(simplified_status);
@@ -113,15 +109,20 @@ void StorageSystemUserDefinedFunctions::fillData(
         else
             res_columns[i++]->insertDefault();
 
-        res_columns[i++]->insert(static_cast<UInt64>(
-            std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
+        // last_successful_update_time - NULL if never succeeded
+        if (simplified_status == 0)  // Success
+        {
+            res_columns[i++]->insert(static_cast<UInt64>(
+                std::chrono::system_clock::to_time_t(load_result.last_successful_update_time)));
+        }
+        else
+        {
+            res_columns[i++]->insertDefault();  // NULL
+        }
 
-        // Loading statistics available even when load failed
-        res_columns[i++]->insert(static_cast<UInt64>(
-            std::chrono::system_clock::to_time_t(load_result.last_successful_update_time)));
+        // loading_duration_ms - convert to milliseconds
         res_columns[i++]->insert(
-            std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
-        res_columns[i++]->insert(load_result.error_count);
+            std::chrono::duration_cast<std::chrono::milliseconds>(load_result.loading_duration).count());
 
         // ===== UDF Configuration Fields =====
         const auto udf_ptr = std::dynamic_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
