@@ -2,8 +2,8 @@
 
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
 
 namespace DB

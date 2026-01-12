@@ -1,13 +1,13 @@
 #pragma once
 
 #include <absl/container/inlined_vector.h>
-#include <set>
 #include <algorithm>
 #include <memory>
-#include <unordered_map>
+#include <set>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -16,29 +16,6 @@
 
 namespace DB
 {
-
-class ASTLiteral;
-
-/// Token position info for literals - stores raw character pointers into the query string.
-/// Used for ConstantExpressionTemplate construction and LIKE/REGEXP syntax highlighting.
-/// Stored externally to reduce ASTLiteral size by ~48 bytes per literal.
-///
-/// IMPORTANT: These are raw pointers into the original query string. They are only valid
-/// during parsing while the query buffer exists. Do not store or access after parsing.
-struct LiteralTokenInfo
-{
-    const char * begin; /// Start of literal in query string
-    const char * end;   /// End of literal in query string
-
-    LiteralTokenInfo(const char * begin_, const char * end_)
-        : begin(begin_)
-        , end(end_)
-    {
-    }
-};
-
-/// Map from ASTLiteral pointer to its token position in the query string.
-using LiteralTokenMap = std::unordered_map<const ASTLiteral *, LiteralTokenInfo>;
 
 namespace ErrorCodes
 {
