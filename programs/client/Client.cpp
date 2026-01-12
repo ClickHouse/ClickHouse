@@ -1059,7 +1059,7 @@ void Client::readArguments(
                 // intentionally ignored. argv[1] is not a uri, but could be a query.
             }
 
-            if (isCloudEndpoint(hostname))
+            if (isCloudEndpoint(hostname) && !has_auth_in_connection_string)
             {
                 is_hostname_argument = true;
 
