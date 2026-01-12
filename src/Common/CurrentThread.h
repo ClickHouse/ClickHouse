@@ -119,7 +119,7 @@ public:
 
         static QueryScope create(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
         static QueryScope create(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        static QueryScope createFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent);
+        static QueryScope createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent);
 
         ~QueryScope();
 
