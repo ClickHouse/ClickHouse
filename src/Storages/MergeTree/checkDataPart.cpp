@@ -310,6 +310,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
+    const auto & projections_description = data_part->storage.getInMemoryMetadataPtr()->projections;
     std::string broken_projections_message;
     for (const auto & [name, projection] : data_part->getProjectionParts())
     {
@@ -322,9 +323,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             bool noop;
+
+            /// We cannot get the list of columns from a "potentially broken" projeciton part as it won't be loaded and initialized.
+            auto projection_columns = projections_description.get(name).metadata->getColumns().getAll();
             projection_checksums = checkDataPart(
                 projection, *data_part_storage.getProjection(projection_file),
-                projection->getColumns(), projection->getType(),
+                projection_columns, projection->getType(),
                 projection->getFileNamesWithoutChecksums(),
                 read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
         }
