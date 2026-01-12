@@ -2572,7 +2572,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
-            create.select = query->as<ASTSelectWithUnionQuery>();
+            create.set(create.select, query);
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
