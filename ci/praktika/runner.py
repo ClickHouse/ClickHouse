@@ -474,18 +474,15 @@ class Runner:
                 info=f"Failed to read Result json, ex: [{e}]",
             ).dump()
 
-        print(f"####REMOVEME {result.is_completed()}")
-        from dataclasses import asdict
-        print("\n".join(f"{k}={v!r}" for k, v in asdict(result).items()))
-
         if not result.is_completed():
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-            if result.get_on_error_hook():
-                print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
-                # Add hook timeout once it's needed
-                Shell.check(result.get_on_error_hook(), verbose=True)
+
+        if result.is_error():
+            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
+            # Add hook timeout once it's needed
+            Shell.check(result.get_on_error_hook(), verbose=True)
 
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
