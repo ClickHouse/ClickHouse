@@ -63,17 +63,20 @@ namespace
 {
 /// Helper to record literal token position if the map is set in Expected.
 /// Extracts raw char* positions from TokenIterator - these point into the query buffer.
+///
+/// Why insert_or_assign: When parsing nested literals like tuples `(1, 2)` or arrays `[1, 2]`,
+/// the parser creates intermediate ASTLiteral nodes for elements (e.g., `1`, `2`) and then
+/// a final ASTLiteral for the whole structure. Due to make_shared's small object optimization
+/// and memory reuse, the final composite literal may get the same address as an earlier
+/// element literal that was already recorded. We want the token info for the final literal
+/// (which is what survives in the AST), so insert_or_assign overwrites earlier entries.
 inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
 {
     if (expected.literal_token_map)
     {
-        /// Store the character positions, not the iterators.
         /// begin points to first token of literal, end points to one-past-last token.
         /// We need the char* range: [first_token.begin, last_token.end)
-        --end; /// end was pointing past the literal, go back to last token of literal
-        /// Use insert_or_assign to handle memory reuse - the parser may reuse the same
-        /// memory address for different ASTLiteral objects. The final AST will have
-        /// the last literal created at each address, so we want the last token info.
+        --end;
         expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
     }
 }
