@@ -172,7 +172,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     /// For DataLakeCatalog databases, apply table prefix from USE db.prefix
     String current_database = context->getCurrentDatabase();
-    if (DatabaseCatalog::instance().isDatalakeCatalog(current_database))
+    bool is_datalake_context = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
+    String original_database_name = database_name;
+    String original_table_name = table_name;
+
+    if (is_datalake_context)
     {
         if (database_name.empty())
         {
@@ -181,17 +185,12 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             if (!table_prefix.empty())
                 table_name = table_prefix + "." + table_name;
         }
-        else
+        else if (!DatabaseCatalog::instance().isDatabaseExist(database_name))
         {
-            /// Two-part identifier in DataLakeCatalog context:
-            /// Try to resolve as namespace.table in current catalog first
-            String combined_table_name = database_name + "." + table_name;
-            auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
-            if (current_db && current_db->tryGetTable(combined_table_name, context))
-            {
-                table_name = combined_table_name;
-                database_name.clear();
-            }
+            /// Two-part identifier where first part is not a real database:
+            /// Interpret as namespace.table in current catalog
+            table_name = database_name + "." + table_name;
+            database_name.clear();
         }
     }
 
@@ -221,6 +220,17 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         if (database)
             storage = database->tryGetTable(table_name, context);
     }
+
+    /// For DataLakeCatalog: if standard resolution failed and we had a 2-part identifier
+    /// try interpreting it as namespace.table within the current catalog
+    if (!storage && is_datalake_context && !original_database_name.empty())
+    {
+        String combined_table_name = original_database_name + "." + original_table_name;
+        auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
+        if (current_db)
+            storage = current_db->tryGetTable(combined_table_name, context);
+    }
+
     if (!storage)
         return {};
 
