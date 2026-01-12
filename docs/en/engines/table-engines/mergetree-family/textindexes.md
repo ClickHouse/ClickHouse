@@ -149,7 +149,7 @@ SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
 
 **Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
-However, unlike other skipping indexes, text indexes have an infinite granularity, i.e. the text index is created for the entire part and explicitly specified index granularities are ignored.
+However, unlike other skipping indexes, text indexes have an infinite granularity, i.e. the text index is created for the entire part and explicitly specified index granularity is ignored.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
 Advanced users can specify a different index granularity (we do not recommend this).
 
