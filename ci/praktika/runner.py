@@ -475,7 +475,8 @@ class Runner:
             ).dump()
 
         print(f"####REMOVEME {result.is_completed()}")
-        print("\n".join(f"{k}={v!r}" for k, v in result.items()))
+        import asdict
+        print("\n".join(f"{k}={v!r}" for k, v in asdict(result).items()))
 
         if not result.is_completed():
             info = f"ERROR: {ResultInfo.KILLED}"
