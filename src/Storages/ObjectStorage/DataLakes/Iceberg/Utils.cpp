@@ -114,7 +114,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path, const ObjectStoragePtr & object_storage)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path, const ObjectStoragePtr & object_storage, bool need_add_last_modify_time = true)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
@@ -136,13 +136,18 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
-    RelativePathsWithMetadata files;
-    object_storage->listObjects(path, files, 1);
+    UInt64 last_modify_time = 0;
+    if (need_add_last_modify_time)
+    {
+        RelativePathsWithMetadata files;
+        object_storage->listObjects(path, files, 1);
 
-    if (files.size() != 1 || !files[0]->metadata)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name path: '{}'. Path size is {}.", file_name, files.size());
+        if (files.size() != 1 || !files[0]->metadata)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name path: '{}'. Path size is {}.", file_name, files.size());
 
-    UInt64 last_modify_time = files[0]->metadata->last_modified.epochTime();
+        last_modify_time = files[0]->metadata->last_modified.epochTime();
+    }
+
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
         .path = path,
@@ -222,8 +227,8 @@ bool writeMetadataFileAndVersionHint(
                 write_if_none_match.clear();
             }
 
-            auto [old_version, _1, _2, _3] = getMetadataFileAndVersion(version_hint_value, object_storage);
-            auto [new_version, _4, _5, _6] = getMetadataFileAndVersion(version_hint_content, object_storage);
+            auto [old_version, _1, _2, _3] = getMetadataFileAndVersion(version_hint_value, object_storage, false);
+            auto [new_version, _4, _5, _6] = getMetadataFileAndVersion(version_hint_content, object_storage, false);
             if (old_version < new_version)
             {
                 try
