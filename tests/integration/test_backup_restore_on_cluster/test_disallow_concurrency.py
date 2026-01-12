@@ -1,5 +1,3 @@
-import concurrent
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
