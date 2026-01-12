@@ -315,7 +315,6 @@ struct FormatSettings
         size_t local_read_min_bytes_for_seek = 8192;
         size_t memory_low_watermark = 2ul << 20;
         size_t memory_high_watermark = 4ul << 30;
-        std::optional<std::pair<std::string, std::string>> metadata_cache_key;
 
         /// Write.
         UInt64 row_group_rows = 1000000;
