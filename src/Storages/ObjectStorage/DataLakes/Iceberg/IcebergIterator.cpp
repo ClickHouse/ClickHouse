@@ -322,8 +322,7 @@ IcebergIterator::IcebergIterator(
         }
         delete_file = deletes_iterator.next();
     }
-    LOG_DEBUG(logger, "Taken {} position deletes files in iceberg iterator", position_deletes_files.size());
-    LOG_DEBUG(logger, "Taken {} equality deletes files in iceberg iterator", equality_deletes_files.size());
+    LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
     producer_task.emplace(
