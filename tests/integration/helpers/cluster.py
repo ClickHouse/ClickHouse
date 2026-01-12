@@ -4281,10 +4281,10 @@ class ClickHouseInstance:
         if mem_limit is not None:
             self.mem_limit = f"mem_limit: {mem_limit}"
         else:
-            self.mem_limit = "mem_limit: 10g"
+            self.mem_limit = "mem_limit: 12g"
 
         if cpu_limit is None:
-            self.cpu_limit = "cpus: 3"
+            self.cpu_limit = "cpus: 5"
         elif cpu_limit == False:
             self.cpu_limit = ""
         else:
@@ -5552,6 +5552,7 @@ class ClickHouseInstance:
             use_distributed_plan = self.use_distributed_plan
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)

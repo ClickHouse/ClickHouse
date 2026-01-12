@@ -284,10 +284,11 @@ void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) 
     store->set_storage_name(rg.pickRandomly(fc.disks));
 }
 
-void StatementGenerator::setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu) const
+void StatementGenerator::setClusterClause(
+    RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu, const bool force) const
 {
     if ((cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 9))
-        || (!fc.clusters.empty() && rg.nextMediumNumber() < 19))
+        || (!fc.clusters.empty() && (force || rg.nextMediumNumber() < 19)))
     {
         clu->set_cluster(
             (cluster.has_value() && (!this->allow_not_deterministic || fc.clusters.empty() || rg.nextSmallNumber() < 7))
@@ -948,7 +949,7 @@ bool StatementGenerator::tableOrFunctionRef(
         if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
         {
             ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-            setClusterClause(rg, cluster, ufunc->mutable_cluster());
+            setClusterClause(rg, cluster, ufunc->mutable_cluster(), true);
         }
         else
         {
@@ -1116,6 +1117,7 @@ void StatementGenerator::generateInsertToTable(
     if (hardcoded_insert && (nopt < hardcoded_insert + 1))
     {
         const bool allow_cast = rg.nextSmallNumber() < 3;
+        const bool can_use_default = rg.nextLargeNumber() < 6;
 
         for (uint64_t i = 0; i < nrows; i++)
         {
@@ -1134,7 +1136,7 @@ void StatementGenerator::generateInsertToTable(
                     buf += ", ";
                 }
                 if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
+                    || (entry.path.size() == 1 && can_use_default && rg.nextMediumNumber() < 11))
                 {
                     buf += "DEFAULT";
                 }

@@ -1699,33 +1699,35 @@ enum SQLTableFunc {
     TFjdbc = 25;
     TFloop = 26;
     TFmerge = 27;
-    TFmergeTreeIndex = 28;
-    TFmergeTreeProjection = 29;
-    TFmongodb = 30;
-    TFmysql = 31;
-    TFnull = 32;
-    TFnumbers = 33;
-    TFodbc = 34;
-    TFpaimon = 35;
-    TFpaimonCluster = 36;
-    TFpostgresql = 37;
-    TFprometheusQuery = 38;
-    TFprometheusQueryRange = 39;
-    TFredis = 40;
-    TFremote = 41;
-    TFremoteSecure = 42;
-    TFs3 = 43;
-    TFs3Cluster = 44;
-    TFsqlite = 45;
-    TFtimeSeriesData = 46;
-    TFtimeSeriesMetrics = 47;
-    TFtimeSeriesSelector = 48;
-    TFtimeSeriesTags = 49;
-    TFurl = 50;
-    TFurlCluster = 51;
-    TFvalues = 52;
-    TFview = 53;
-    TFytsaurus = 54;
+    TFmergeTreeAnalyzeIndexes = 28;
+    TFmergeTreeAnalyzeIndexesUUID = 29;
+    TFmergeTreeIndex = 30;
+    TFmergeTreeProjection = 31;
+    TFmongodb = 32;
+    TFmysql = 33;
+    TFnull = 34;
+    TFnumbers = 35;
+    TFodbc = 36;
+    TFpaimon = 37;
+    TFpaimonCluster = 38;
+    TFpostgresql = 39;
+    TFprometheusQuery = 40;
+    TFprometheusQueryRange = 41;
+    TFredis = 42;
+    TFremote = 43;
+    TFremoteSecure = 44;
+    TFs3 = 45;
+    TFs3Cluster = 46;
+    TFsqlite = 47;
+    TFtimeSeriesData = 48;
+    TFtimeSeriesMetrics = 49;
+    TFtimeSeriesSelector = 50;
+    TFtimeSeriesTags = 51;
+    TFurl = 52;
+    TFurlCluster = 53;
+    TFvalues = 54;
+    TFview = 55;
+    TFytsaurus = 56;
 }
 
 message Database {
@@ -2523,7 +2525,8 @@ enum InOutFormat {
 }
 
 message UsingExpr {
-    repeated ExprColumn columns = 1;
+    required ExprColumn column = 1;
+    repeated ExprColumn other_columns = 2;
 }
 
 message JoinConstraint {
@@ -2778,6 +2781,11 @@ message MergeTreeProjectionFunc {
     required Projection proj = 2;
 }
 
+message MergeTreeAnalyzeIndexesFunc {
+    required ExprSchemaTable est = 1;
+    optional Expr pred = 2;
+}
+
 message GenerateRandomFunc {
     required Expr structure = 1;
     optional uint64 random_seed = 2;
@@ -2820,7 +2828,8 @@ message TableFunction {
         MergeTreeProjectionFunc mtproj = 21;
         Expr nullf = 22;
         ArrowFlightFunc flight = 23;
-        SQLTableFuncCall func = 24;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 24;
+        SQLTableFuncCall func = 25;
     }
 }
 
