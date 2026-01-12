@@ -202,7 +202,47 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
 
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("simpleLinearRegression", createAggregateFunctionSimpleLinearRegression);
+    FunctionDocumentation::Description description_simpleLinearRegression = R"(
+Performs simple (unidimensional) linear regression.
+    )";
+    FunctionDocumentation::Syntax syntax_simpleLinearRegression = R"(
+simpleLinearRegression(x, y)
+    )";
+    FunctionDocumentation::Parameters parameters_simpleLinearRegression = {};
+    FunctionDocumentation::Arguments arguments_simpleLinearRegression = {
+        {"x", "Column with explanatory variable values.", {"Float64"}},
+        {"y", "Column with dependent variable values.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_simpleLinearRegression = {"Returns constants `(k, b)` of the resulting line `y = k*x + b`.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples_simpleLinearRegression = {
+    {
+        "Perfect linear fit",
+        R"(
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3]);
+        )",
+        R"(
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Linear fit with offset",
+        R"(
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
+        )",
+        R"(
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_simpleLinearRegression = {20, 1};
+    FunctionDocumentation::Category category_simpleLinearRegression = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_simpleLinearRegression = {description_simpleLinearRegression, syntax_simpleLinearRegression, arguments_simpleLinearRegression, parameters_simpleLinearRegression, returned_value_simpleLinearRegression, examples_simpleLinearRegression, introduced_in_simpleLinearRegression, category_simpleLinearRegression};
+
+    factory.registerFunction("simpleLinearRegression", {createAggregateFunctionSimpleLinearRegression, {}, documentation_simpleLinearRegression});
 }
 
 }

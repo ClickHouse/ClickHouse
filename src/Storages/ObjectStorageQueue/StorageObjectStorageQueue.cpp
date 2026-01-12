@@ -971,81 +971,61 @@ void StorageObjectStorageQueue::commit(
         source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
     ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
 
-    size_t retry_count = 0;
-    constexpr size_t retry_limit = 5;
-
-    while (true)
+    if (requests.empty())
     {
-        if (requests.empty())
+        LOG_TEST(log, "Nothing to commit");
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
+
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+    {
+        postProcess(successful_objects);
+    }
+
+    auto context = getContext();
+    const auto & settings = context->getSettingsRef();
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
+    std::optional<Coordination::Error> code;
+    Coordination::Responses responses;
+    size_t try_num = 0;
+    zk_retry.retryLoop([&]
+    {
+        if (zk_retry.isRetry())
         {
-            LOG_TEST(log, "Nothing to commit");
-            return;
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
         }
-
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
-
-        if (!successful_objects.empty()
-            && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
-        {
-            postProcess(successful_objects);
-        }
-
-        auto context = getContext();
-        const auto & settings = context->getSettingsRef();
-        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-
-        std::optional<Coordination::Error> code;
-        Coordination::Responses responses;
-        size_t try_num = 0;
-        zk_retry.retryLoop([&]
-        {
-            if (zk_retry.isRetry())
-            {
-                LOG_TRACE(
-                    log, "Failed to commit processed files at try {}/{}, will retry",
-                    try_num, toString(settings[Setting::keeper_max_retries].value));
-            }
-            ++try_num;
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
-
-            auto zk_client = getZooKeeper();
-            code = zk_client->tryMulti(requests, responses);
+        ++try_num;
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+        });
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
         });
 
-        if (!code.has_value())
-        {
-            throw Exception(
-                ErrorCodes::KEEPER_EXCEPTION,
-                "Failed to commit files with {} retries, last error message: {}",
-                settings[Setting::keeper_max_retries].value,
-                zk_retry.getLastKeeperErrorMessage());
-        }
+        auto zk_client = getZooKeeper();
+        code = zk_client->tryMulti(requests, responses);
+    });
 
-        if (code.value() == Coordination::Error::ZBADVERSION && retry_count < retry_limit)
-        {
-            ++retry_count;
-            LOG_INFO(log, "Keeper Bad Version error, other node wrote something, retry {}", retry_count);
-            /// Need to recreate requests list based on new keeper state
-            requests.clear();
-            for (auto & source : sources)
-                source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
-            ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
-            continue;
-        }
+    if (!code.has_value())
+    {
+        throw Exception(
+            ErrorCodes::KEEPER_EXCEPTION,
+            "Failed to commit files with {} retries, last error message: {}",
+            settings[Setting::keeper_max_retries].value,
+            zk_retry.getLastKeeperErrorMessage());
+    }
 
-        chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
-        if (code.value() != Coordination::Error::ZOK)
-        {
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-            throw zkutil::KeeperMultiException(code.value(), requests, responses);
-        }
-
-        break;
+    chassert(code.value() == Coordination::Error::ZOK || Coordination::isUserError(code.value()));
+    if (code.value() != Coordination::Error::ZOK)
+    {
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        throw zkutil::KeeperMultiException(code.value(), requests, responses);
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
@@ -1384,18 +1364,27 @@ void StorageObjectStorageQueue::alter(
         }
         if (requires_detached_mv)
         {
+            LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
+
             for (auto & task : streaming_tasks)
                 task->deactivate();
+
+            LOG_TRACE(log, "Deactivated streaming tasks");
         }
         SCOPE_EXIT({
             if (requires_detached_mv)
             {
                 for (auto & task : streaming_tasks)
                     task->activateAndSchedule();
+
+                LOG_TRACE(log, "Re-activated streaming tasks");
             }
         });
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
+        LOG_TRACE(
+            log, "New settings changes: {} (requires_detached_mv: {}, changed settings ({}):  {})",
+            new_metadata.settings_changes->formatForLogging(),
+            requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
         /// Alter settings which are stored in keeper.
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -1453,6 +1442,9 @@ void StorageObjectStorageQueue::alter(
         }
 
         files_metadata->updateSettings(changed_settings);
+        /// Reset streaming_iterator as it can hold state which we could have just altered.
+        if (requires_detached_mv)
+            streaming_file_iterator.reset();
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         setInMemoryMetadata(new_metadata);

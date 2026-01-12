@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
@@ -310,7 +311,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 break;
 
             if (i == num_tries - 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to take alter setting lock after 5 seconds");
 
             sleepForMilliseconds(50);
         }
@@ -401,8 +402,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.buckets == value)
             {
-                LOG_TRACE(log, "Setting `buckets` already equals {}. "
-                        "Will do nothing", value);
+                LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
             if (table_metadata.buckets > 1)
@@ -438,9 +438,12 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
+
+    LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
+
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
-    buckets_num = value;
     table_metadata.buckets = value;
+    buckets_num = table_metadata.getBucketsNum();
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(

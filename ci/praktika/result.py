@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .event import Event
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -58,6 +59,8 @@ class Result(MetaClasses.Serializable):
     class Label:
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
+        BLOCKER = "blocker"
+        ISSUE = "issue"
 
     name: str
     status: str
@@ -79,6 +82,7 @@ class Result(MetaClasses.Serializable):
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
+        labels=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -151,7 +155,7 @@ class Result(MetaClasses.Serializable):
             results=results or [],
             files=files or [],
             links=links or [],
-        )
+        ).set_label(labels or [])
 
     @staticmethod
     def get():
@@ -196,6 +200,9 @@ class Result(MetaClasses.Serializable):
 
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
+
+    def is_dropped(self):
+        return self.status in (Result.Status.DROPPED,)
 
     def set_status(self, status) -> "Result":
         self.status = status
@@ -310,7 +317,11 @@ class Result(MetaClasses.Serializable):
     def set_label(self, label):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
-        self.ext["labels"].append(label)
+        if isinstance(label, list):
+            self.ext["labels"].extend(label)
+        else:
+            self.ext["labels"].append(label)
+        return self
 
     def get_labels(self):
         return self.ext.get("labels", [])
@@ -855,6 +866,29 @@ class Result(MetaClasses.Serializable):
             raise RuntimeError("Not implemented")
         return self
 
+    def to_event(
+        self,
+    ):
+        pr_number = self.ext.get("pr_number", -1)
+        return Event(
+            type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
+            timestamp=int(time.time()),
+            sha=self.ext.get("commit_sha", ""),
+            pr_number=pr_number,
+            pr_status="open" if pr_number > 0 else "merged",
+            pr_title=self.ext.get("pr_title", ""),
+            branch=self.ext.get("git_branch", ""),
+            ci_status=self.status,
+            result=Result.to_dict(self),
+            ext={
+                "commit_message": self.ext.get("commit_message", ""),
+                "related_prs": self.ext.get("related_prs", []),
+                "repo_name": self.ext.get("repo_name", ""),
+                "report_url": self.ext.get("report_url", ""),
+                "change_url": self.ext.get("change_url", ""),
+            },
+        )
+
 
 class ResultInfo:
     SETUP_ENV_JOB_FAILED = (
@@ -984,30 +1018,40 @@ class _ResultS3:
                 unique_files[file_str] = file  # Keep original file reference
 
         for file_str, file in unique_files.items():
-            if not Path(file).is_file():
-                print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: File [{file}] was not found")
-                file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
-            elif file in _uploaded_file_link:
-                # in case different sub results have the same file for upload
-                file_link = _uploaded_file_link[file]
-            else:
-                is_text = False
-                for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
-                    if file.endswith(text_file_suffix):
-                        print(
-                            f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
-                        )
-                        is_text = True
-                        break
-                file_link = S3._upload_file_to_s3(
-                    file,
-                    upload_to_s3=True,
-                    text=is_text,
-                    s3_subprefix=s3_subprefix,
+            try:
+                if not Path(file).is_file():
+                    print(
+                        f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload"
+                    )
+                    result.set_info(f"WARNING: File [{file}] was not found")
+                    file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
+                elif file in _uploaded_file_link:
+                    # in case different sub results have the same file for upload
+                    file_link = _uploaded_file_link[file]
+                else:
+                    is_text = False
+                    for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
+                        if file.endswith(text_file_suffix):
+                            print(
+                                f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
+                            )
+                            is_text = True
+                            break
+                    file_link = S3._upload_file_to_s3(
+                        file,
+                        upload_to_s3=True,
+                        text=is_text,
+                        s3_subprefix=s3_subprefix,
+                    )
+                    _uploaded_file_link[file] = file_link
+
+                result.links.append(file_link)
+            except Exception as e:
+                traceback.print_exc()
+                print(
+                    f"ERROR: Failed to upload file [{file}] for result [{result.name}]"
                 )
-                _uploaded_file_link[file] = file_link
-            result.links.append(file_link)
+                result.set_info(f"ERROR: Failed to upload file [{file}]: {e}")
         result.files = []
 
         if result.results:
