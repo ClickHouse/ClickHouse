@@ -43,7 +43,7 @@ public:
 
 protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;
-    void doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override
     {
@@ -535,12 +535,14 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 }
 
 template <typename T, bool full>
-void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
+UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
 {
     using MinMaxType = std::conditional_t<is_signed_v<T>, Int64, UInt64>;
 
     static constexpr const UInt32 matrix_size = 64;
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
+
+    const char * const original_dst = dst;
 
     if (bytes_size < header_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
@@ -569,7 +571,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
         T min_value = static_cast<T>(min);
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
             unalignedStore<T>(dst, min_value);
-        return;
+        return dst - original_dst;
     }
 
     UInt32 src_shift = sizeof(UInt64) * num_bits;
@@ -620,7 +622,10 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
         reverseTranspose<T, full>(src, buf, num_bits, tail);
         restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
         store<T>(buf, dst, tail);
+        dst += tail * sizeof(T);
     }
+
+    return dst - original_dst;
 }
 
 template <typename T>
@@ -632,12 +637,12 @@ UInt32 compressData(const char * src, UInt32 src_size, char * dst, Variant varia
 }
 
 template <typename T>
-void decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size, Variant variant)
+UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size, Variant variant)
 {
     if (variant == Variant::Bit)
-        decompressData<T, true>(src, src_size, dst, uncompressed_size);
+        return decompressData<T, true>(src, src_size, dst, uncompressed_size);
     else
-        decompressData<T, false>(src, src_size, dst, uncompressed_size);
+        return decompressData<T, false>(src, src_size, dst, uncompressed_size);
 }
 
 }
@@ -674,7 +679,7 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
     throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec");
 }
 
-void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
+UInt32 CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
 {
     if (!src_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
@@ -689,34 +694,24 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int16:
-            decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int32:
-            decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int64:
-            decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt8:
-            decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt16:
-            decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt32:
-            decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt64:
-            decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
-            return;
+            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
         default:
-            break;
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
     }
-
-    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data");
 }
 
 uint8_t CompressionCodecT64::getMethodByte() const
