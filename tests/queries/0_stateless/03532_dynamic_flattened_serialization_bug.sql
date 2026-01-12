@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 SET type_json_skip_duplicated_paths=1;
+SET allow_suspicious_primary_key=1;
 
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Variant(Int,JSON(max_dynamic_paths=3, max_dynamic_types=13))) ENGINE = SummingMergeTree() ORDER BY tuple();

@@ -77,7 +77,7 @@ private:
         const siginfo_t & info,
         ucontext_t * context,
         const StackTrace & stack_trace,
-        const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
+        const std::vector<FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         DB::ThreadStatus * thread_ptr) const;
 };

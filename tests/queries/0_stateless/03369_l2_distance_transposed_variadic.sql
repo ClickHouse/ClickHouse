@@ -9,7 +9,8 @@ INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
 
--- Use rounding to avoid minor precision differences between different architectures
+-- Use rounding to avoid minor precision differences between different architectures.
+-- The type of reference vector must match the original element type of QBit by design.
 WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, vec.9, vec.10, vec.11, vec.12, vec.13, vec.14, vec.15, vec.16, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
 WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, vec.5, vec.6, vec.7, vec.8, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
 WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
@@ -47,7 +48,7 @@ SELECT 'Difficult test';
 
 CREATE TABLE qbit (id UInt32, vec QBit(Float32, 3)) ENGINE = Memory;
 
-INSERT INTO qbit SELECT number + 1 AS id, arrayMap(i -> toFloat32(i + number), range(3)) AS vec FROM numbers(3);
+INSERT INTO qbit SELECT number + 1 AS id, arrayMap(i -> i + number, range(3)) AS vec FROM numbers(3);
 
 WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, 3, reference_vec), 5) AS dist FROM qbit ORDER BY id;
 WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, round(L2DistanceTransposed(vec.1, vec.2, vec.3, vec.4, 3.1, reference_vec), 5) AS dist FROM qbit ORDER BY id; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }

@@ -349,7 +349,7 @@ void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
             { {}, std::make_shared<DataTypeString>(), StorageMergeTreeIndex::part_name_column.name },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
@@ -439,7 +439,7 @@ MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const
     auto part_names = filtered_block.getByPosition(0).column;
     const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
 
-    HashSet<StringRef> part_names_set;
+    HashSet<std::string_view> part_names_set;
     for (size_t i = 0; i < part_names_str.size(); ++i)
         part_names_set.insert(part_names_str.getDataAt(i));
 

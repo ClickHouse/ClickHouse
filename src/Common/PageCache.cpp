@@ -151,7 +151,7 @@ void PageCache::Shard::onEntryRemoval(const size_t weight_loss, const MappedPtr 
     UNUSED(mapped_ptr);
 }
 
-void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
+bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
     /// Avoid recursion when called from MemoryTracker.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
@@ -187,10 +187,16 @@ void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     target_size = std::clamp(target_size, min_size_in_bytes, max_size_in_bytes);
 
     size_t size_per_shard = (target_size + shards.size() - 1) / shards.size();
+    size_t new_cache_size = 0;
     for (const auto & shard : shards)
+    {
         shard->setMaxSizeInBytes(size_per_shard);
+        new_cache_size += shard->sizeInBytes();
+    }
 
     ProfileEvents::increment(ProfileEvents::PageCacheResized);
+
+    return memory_usage_signed - Int64(cache_size) + Int64(new_cache_size) <= Int64(memory_limit);
 }
 
 void PageCache::clear()

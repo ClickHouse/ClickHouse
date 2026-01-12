@@ -32,7 +32,7 @@ constexpr bool isPodLayout()
         return false;
     if constexpr (std::is_same_v<V, Decimal32> || std::is_same_v<V, Decimal64> || std::is_same_v<V, Decimal128> || std::is_same_v<V, Decimal256>)
         return false;
-    if constexpr (std::is_same_v<V, StringRef>)
+    if constexpr (std::is_same_v<V, std::string_view>)
         return false;
     if constexpr (std::is_same_v<V, IPv6> || std::is_same_v<V, IPv4>)
         return false;
@@ -180,7 +180,7 @@ struct HashedDictionaryMapType<dictionary_key_type, /* sparse= */ false, Key, Va
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
-        HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
+        HashMapWithSavedHash<std::string_view, Value, DefaultHash<std::string_view>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
 };
 
 /// Implementations for SPARSE_HASHED layout.
@@ -205,7 +205,7 @@ struct HashedDictionarySparseMapType<dictionary_key_type, Key, Value, /* use_spa
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         google::sparse_hash_map<UInt64, Value, DefaultHash<Key>>,
-        google::sparse_hash_map<StringRef, Value, DefaultHash<Key>>>;
+        google::sparse_hash_map<std::string_view, Value, DefaultHash<Key>>>;
 };
 
 /// Implementation based on PackedHashMap for SPARSE_HASHED.
@@ -215,7 +215,7 @@ struct HashedDictionarySparseMapType<dictionary_key_type, Key, Value, /* use_spa
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         PackedHashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
-        PackedHashMap<StringRef, Value, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
+        PackedHashMap<std::string_view, Value, DefaultHash<std::string_view>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
 };
 template <DictionaryKeyType dictionary_key_type, typename Key, typename Value>
 struct HashedDictionaryMapType<dictionary_key_type, /* sparse= */ true, Key, Value>
@@ -239,7 +239,7 @@ struct HashedDictionarySetType<dictionary_key_type, /* sparse= */ false, Key>
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
-        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
+        HashSetWithSavedHash<std::string_view, DefaultHash<std::string_view>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
 };
 
 /// Implementation for SPARSE_HASHED.
@@ -253,7 +253,7 @@ struct HashedDictionarySetType<dictionary_key_type, /* sparse= */ true, Key>
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashSet<UInt64, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
-        HashSet<StringRef, DefaultHash<StringRef>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
+        HashSet<std::string_view, DefaultHash<std::string_view>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
 };
 
 }

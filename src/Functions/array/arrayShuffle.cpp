@@ -192,7 +192,7 @@ This function will not materialize constants.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 
@@ -234,7 +234,7 @@ The value of `limit` should be in the range `[1..N]`. Values outside of that ran
 └──────────────────────────┴──────────────────────────┘
     )"}
     };
-    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 }
 

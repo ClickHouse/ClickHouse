@@ -12,18 +12,31 @@ namespace DB
 {
 
 class Block;
+class ColumnReplicated;
+
+struct ColumnsInfo
+{
+    explicit ColumnsInfo(Columns && columns_);
+
+    Columns columns;
+    /// Sometimes we need to insert rows into a regular column from a Replicated column.
+    /// And to avoid virtual calls and casts per each row insertion we store pointer
+    /// to the replicated column for each column in the list above.
+    /// If columns is not Replicated, pointer will be nullptr.
+    std::vector<const ColumnReplicated *> replicated_columns;
+};
 
 /// Reference to the row in block.
 struct RowRef
 {
     using SizeT = uint32_t; /// Do not use size_t cause of memory economy
 
-    const Columns * columns = nullptr;
+    const ColumnsInfo * columns_info = nullptr;
     SizeT row_num = 0;
 
     RowRef() = default;
-    RowRef(const Columns * columns_, size_t row_num_)
-        : columns(columns_)
+    RowRef(const ColumnsInfo * columns_, size_t row_num_)
+        : columns_info(columns_)
         , row_num(static_cast<SizeT>(row_num_))
     {}
 };
@@ -115,8 +128,8 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const Columns * columns_, size_t row_num_) : RowRef(columns_, row_num_), rows(1) {}
-    RowRefList(const Columns * columns_, size_t row_start_, size_t rows_) : RowRef(columns_, row_start_), rows(static_cast<SizeT>(rows_)) {}
+    RowRefList(const ColumnsInfo * columns_, size_t row_num_) : RowRef(columns_, row_num_), rows(1) {}
+    RowRefList(const ColumnsInfo * columns_, size_t row_start_, size_t rows_) : RowRef(columns_, row_start_), rows(static_cast<SizeT>(rows_)) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 
@@ -160,7 +173,7 @@ struct SortedLookupVectorBase
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    virtual void insert(const IColumn &, const Columns *, size_t) = 0;
+    virtual void insert(const IColumn &, const ColumnsInfo *, size_t) = 0;
 
     // This needs to be synchronized internally
     virtual RowRef * findAsof(const IColumn &, size_t) = 0;

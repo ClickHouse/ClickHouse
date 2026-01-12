@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/Statistics/Statistics.h>
-#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -22,7 +21,7 @@ public:
     Float64 getMax() const { return max; }
 
     Float64 estimateLess(const Field & val) const override;
-    String getNameForLogs() const override { return "MinMax : (" + toString(min) + ", " + toString(max); }
+    String getNameForLogs() const override;
 private:
     Float64 min = std::numeric_limits<Float64>::max();
     Float64 max = std::numeric_limits<Float64>::min();

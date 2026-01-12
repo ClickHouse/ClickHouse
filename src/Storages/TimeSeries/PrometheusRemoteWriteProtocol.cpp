@@ -4,7 +4,6 @@
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <algorithm>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -54,7 +53,7 @@ namespace ErrorCodes
 namespace
 {
     /// Checks that a specified set of labels is sorted and has no duplications, and there is one label named "__name__".
-    void checkLabels(const ::google::protobuf::RepeatedPtrField<::prometheus::Label> & labels)
+    void checkLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> & labels)
     {
         bool metric_name_found = false;
         for (size_t i = 0; i != static_cast<size_t>(labels.size()); ++i)
@@ -134,7 +133,8 @@ namespace
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header_with_id.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
             ExpressionActionsSettings(context, CompileExpressions::yes));

@@ -326,8 +326,6 @@ public:
     }
 };
 
-/// NOLINTBEGIN(bugprone-sizeof-expression)
-
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
@@ -781,8 +779,6 @@ public:
         return !operator==(rhs);
     }
 };
-
-/// NOLINTEND(bugprone-sizeof-expression)
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs) /// NOLINT

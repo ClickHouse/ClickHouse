@@ -4,14 +4,14 @@ description: 'Creates a ClickHouse table with an initial data dump of a PostgreS
 sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 130
 slug: /engines/table-engines/integrations/materialized-postgresql
-title: 'MaterializedPostgreSQL'
+title: 'MaterializedPostgreSQL table engine'
 doc_type: 'guide'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MaterializedPostgreSQL
+# MaterializedPostgreSQL table engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -24,6 +24,7 @@ Creates ClickHouse table with an initial data dump of PostgreSQL table and start
 
 :::note
 This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
+
 ```sql
 SET allow_experimental_materialized_postgresql_table=1
 ```

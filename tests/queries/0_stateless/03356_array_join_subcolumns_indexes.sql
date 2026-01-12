@@ -4,8 +4,6 @@ set enable_json_type=1;
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 set enable_analyzer=1;
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-set use_skip_indexes_on_data_read=0;
 
 drop table if exists test;
 create table test (json JSON(a Array(UInt32), b Array(UInt32), c UInt32), index idx1 json.a type set(0), index idx2 json.c type minmax) engine=MergeTree order by tuple() settings index_granularity=1;

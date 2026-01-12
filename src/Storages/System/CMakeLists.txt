@@ -16,6 +16,10 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(storages_system .)
 list (APPEND storages_system_sources StorageSystemBuildOptions.generated.cpp)
 
+if (NOT TARGET ch_contrib::icu)
+    list(REMOVE_ITEM storages_system_sources StorageSystemUnicode.cpp)
+endif()
+
 add_custom_target(generate-contributors
     ./StorageSystemContributors.sh
     SOURCES StorageSystemContributors.sh
@@ -52,3 +56,8 @@ target_link_libraries(clickhouse_storages_system PRIVATE
     clickhouse_parsers
     Poco::JSON
 )
+
+if (TARGET ch_contrib::icu)
+    target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::icu)
+    target_compile_definitions(clickhouse_storages_system PRIVATE U_HIDE_DEPRECATED_API)
+endif()

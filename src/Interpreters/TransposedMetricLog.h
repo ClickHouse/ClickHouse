@@ -10,6 +10,7 @@
 
 #include <ctime>
 
+
 namespace DB
 {
 
@@ -52,7 +53,6 @@ public:
     static constexpr auto METRIC_NAME = "metric";
     static constexpr auto VALUE_NAME = "value";
 
-
     static constexpr std::string_view PROFILE_EVENT_PREFIX = "ProfileEvent_";
     static constexpr std::string_view CURRENT_METRIC_PREFIX = "CurrentMetric_";
 
@@ -71,7 +71,7 @@ public:
 
     void prepareTable() override;
 
-    /// We need to create view at startup, otherwise util first flush view will not exist
+    /// We need to create view at startup, otherwise, until first flush view will not exist
     /// even if transposed table itself exists
     bool mustBePreparedAtStartup() const override { return !view_name.empty(); }
 
@@ -83,7 +83,6 @@ public:
         , view_name(settings_.view_name_for_transposed_metric_log)
     {
     }
-
 
 protected:
     void stepFunction(TimePoint current_time) override;

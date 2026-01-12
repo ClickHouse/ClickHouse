@@ -93,6 +93,7 @@ public:
 
     const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
 
+    size_t getRowCount() const override { return data_part->rows_count; }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;

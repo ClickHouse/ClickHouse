@@ -48,6 +48,11 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & types) const override
+    {
+        return function->getArgumentsThatDontParticipateInCompilation(types);
+    }
+
     bool isCompilable() const override { return function->isCompilable(getArgumentTypes(), getResultType()); }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & compile_arguments) const override

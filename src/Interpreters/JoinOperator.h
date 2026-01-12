@@ -100,6 +100,7 @@ struct JoinSettings
     bool allow_dynamic_type_in_join_keys;
 
     bool use_join_disjunctions_push_down;
+    bool enable_lazy_columns_replication;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

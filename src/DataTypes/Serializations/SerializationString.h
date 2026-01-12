@@ -19,7 +19,7 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
 class SerializationString final : public ISerialization
 {
 public:
-    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::DEFAULT);
+    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

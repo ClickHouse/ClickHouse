@@ -279,6 +279,7 @@ extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
     return res;
 }
 
+#if !defined(OS_FREEBSD)
 extern "C" void * __wrap_valloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
@@ -292,6 +293,7 @@ extern "C" void * __wrap_valloc(size_t size) // NOLINT
     trace.onAlloc(res, actual_size);
     return res;
 }
+#endif
 
 extern "C" void * __wrap_reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
 {
@@ -310,7 +312,7 @@ extern "C" void __wrap_free(void * ptr) // NOLINT
     __real_free(ptr);
 }
 
-#if !defined(OS_DARWIN)
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;

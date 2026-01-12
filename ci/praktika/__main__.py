@@ -92,6 +92,14 @@ def create_parser():
         default="",
     )
     run_parser.add_argument(
+        "--workers",
+        help=(
+            "Integer parameter forwarded to the job script (commonly used as number of parallel workers) (job script defines semantics). Useful for local tests"
+        ),
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
         "--pr",
         help=(
             "PR number to fetch required artifacts from its CI run (for local runs). Optional"
@@ -186,6 +194,7 @@ def main():
                 debug=args.debug,
                 path=args.path,
                 path_1=args.path_1,
+                workers=args.workers,
             )
     else:
         parser.print_help()

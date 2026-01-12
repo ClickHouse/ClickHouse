@@ -60,7 +60,8 @@ public:
 
     ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
 
-    ReadBufferPtr selectRows(const String & cypress_path);
+    ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
+    ReadBufferPtr selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns);
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
 
@@ -72,7 +73,7 @@ public:
 
     SchemaDescription getTableSchema(const String & cypress_path);
 
-    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason);
+    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable);
 private:
     Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
 

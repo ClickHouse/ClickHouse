@@ -29,7 +29,7 @@ Positions: 4 1 0 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -120,7 +120,7 @@ Positions: 4 1 0 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -211,7 +211,7 @@ Positions: 4 1 0 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -313,7 +313,7 @@ Positions: 4 1 0 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
@@ -417,7 +417,7 @@ Positions: 4 1 0 2
              INPUT :: 2 -> __table2.id UInt64 : 2
              INPUT :: 3 -> __table2.value String : 3
     Positions: 0 1 2 3
-      Join
+      Join (JOIN FillRightFirst)
       Header: __table1.id UInt64
               __table1.value String
               __table2.id UInt64
@@ -515,14 +515,14 @@ Positions: 4 1 0 2
              INPUT :: 2 -> __table2.id UInt64 : 2
              INPUT :: 3 -> __table2.value String : 3
     Positions: 0 1 2 3
-      Join
+      Join (JOIN FillRightFirst)
       Header: __table1.id UInt64
               __table1.value String
               __table2.id UInt64
               __table2.value String
       Type: RIGHT
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
@@ -600,14 +600,14 @@ Positions: 4 1 0 2
            INPUT :: 2 -> __table2.id UInt64 : 2
            INPUT :: 3 -> __table2.value String : 3
   Positions: 0 1 2 3
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.id UInt64
             __table1.value String
             __table2.id UInt64
             __table2.value String
     Type: RIGHT
     Strictness: ALL
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
       Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
@@ -704,14 +704,14 @@ Positions: 4 1 0 2
              INPUT :: 2 -> __table2.id UInt64 : 2
              INPUT :: 3 -> __table2.value String : 3
     Positions: 0 1 2 3
-      Join
+      Join (JOIN FillRightFirst)
       Header: __table1.id UInt64
               __table1.value String
               __table2.id UInt64
               __table2.value String
       Type: FULL
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
@@ -802,14 +802,14 @@ Positions: 4 1 0 2
              INPUT :: 2 -> __table2.id UInt64 : 2
              INPUT :: 3 -> __table2.value String : 3
     Positions: 0 1 2 3
-      Join
+      Join (JOIN FillRightFirst)
       Header: __table1.id UInt64
               __table1.value String
               __table2.id UInt64
               __table2.value String
       Type: FULL
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
@@ -907,14 +907,14 @@ Positions: 4 1 0 2
              INPUT :: 2 -> __table2.id UInt64 : 2
              INPUT :: 3 -> __table2.value String : 3
     Positions: 0 1 2 3
-      Join
+      Join (JOIN FillRightFirst)
       Header: __table1.id UInt64
               __table1.value String
               __table2.id UInt64
               __table2.value String
       Type: FULL
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
