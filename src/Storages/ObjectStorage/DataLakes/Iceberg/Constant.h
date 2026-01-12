@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/types.h>
 namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.
@@ -138,4 +139,6 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
+
+static constexpr Int32 data_file_column_id_in_position_delete_file = 2147483545;
 }
