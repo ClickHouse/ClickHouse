@@ -2,7 +2,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Passes/L2DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -28,10 +28,10 @@ extern const SettingsBool optimize_qbit_distance_function_reads;
 namespace
 {
 
-class L2DistanceTransposedPartialReadsPassVisitor : public InDepthQueryTreeVisitorWithContext<L2DistanceTransposedPartialReadsPassVisitor>
+class DistanceTransposedPartialReadsPassVisitor : public InDepthQueryTreeVisitorWithContext<DistanceTransposedPartialReadsPassVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<L2DistanceTransposedPartialReadsPassVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<DistanceTransposedPartialReadsPassVisitor>;
     using Base::Base;
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -41,7 +41,13 @@ public:
 
         /// Check if we can apply the optimization
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "L2DistanceTransposed")
+        if (!function_node)
+            return;
+
+        const auto & function_name = function_node->getFunctionName();
+        bool is_distance_function = (function_name == "L2DistanceTransposed" || function_name == "cosineDistanceTransposed");
+
+        if (!is_distance_function)
             return;
 
         auto & function_arguments_nodes = function_node->getArguments().getNodes();
@@ -127,13 +133,13 @@ public:
 
         /// Re-resolve function with new arguments
         function_node->getArguments().getNodes() = std::move(new_args);
-        auto function_builder = FunctionFactory::instance().get("L2DistanceTransposed", getContext());
+        auto function_builder = FunctionFactory::instance().get(function_name, getContext());
         function_node->resolveAsFunction(function_builder->build(function_node->getArgumentColumns()));
 
         if (!function_node->getResultType()->equals(*original_result_type))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "{} query tree node does not have a valid source node after running L2DistanceTransposedPartialReadsPass. Before: {}, "
+                "{} query tree node does not have a valid source node after running DistanceTransposedPartialReadsPass. Before: {}, "
                 "after: {}",
                 node->getNodeTypeName(),
                 original_result_type->getName(),
@@ -143,9 +149,9 @@ public:
 
 }
 
-void L2DistanceTransposedPartialReadsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void DistanceTransposedPartialReadsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    L2DistanceTransposedPartialReadsPassVisitor visitor(std::move(context));
+    DistanceTransposedPartialReadsPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 
