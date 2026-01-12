@@ -222,6 +222,11 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
+    def add_files(self, files) -> "Result":
+        self.files = list(set(self.files) | set(files))
+        self.dump()
+        return self
+
     def set_files(self, files) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]

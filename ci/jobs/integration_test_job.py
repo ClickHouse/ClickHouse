@@ -175,13 +175,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
   ./ci/tmp/*.jsonl 2>/dev/null || true
 dmesg -T > ./ci/tmp/dmesg.log
 """
-    ).set_files(
+    ).add_files(
         [
             "./ci/tmp/logs.tar.gz",
             "./ci/tmp/dmesg.log",
             "./ci/tmp/docker-in-docker.log",
         ]
-    ).dump()
+    )
 
     if args.param:
         for item in args.param.split(","):
