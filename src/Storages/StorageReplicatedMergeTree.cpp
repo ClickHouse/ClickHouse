@@ -1952,9 +1952,9 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     bool insane = uncovered_unexpected_parts_rows > total_rows_on_filesystem * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
-                                               "{} rows of {} total rows in filesystem are suspicious. "
-                                               "There are {} uncovered unexpected parts with {} rows ({} of them is not just-written with {} rows), "
-                                               "{} missing parts (with {} blocks), {} covered unexpected parts (with {} rows).";
+        "{} rows of {} total rows in filesystem are suspicious. "
+        "There are {} uncovered unexpected parts with {} rows ({} of them is not just-written with {} rows), "
+        "{} missing parts (with {} blocks), {} covered unexpected parts (with {} rows).";
 
     constexpr auto sanity_report_debug_fmt = "Uncovered unexpected parts: {}. Restorable unexpected parts: {}. Missing parts: {}. Covered unexpected parts: {}. Expected parts: {}.";
 

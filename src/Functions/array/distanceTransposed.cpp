@@ -33,20 +33,112 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
+/// Base kernel pattern for distance functions.
+/// Each kernel must provide:
+///   - static constexpr auto name: function name
+///   - static void distance<T>(...): main distance calculation using simsimd
+///   - static void distanceScalar<InputType, AccumulatorType>(...): fallback scalar implementation
+
 struct L2DistanceTransposed
 {
     static constexpr auto name = "L2DistanceTransposed";
-    struct ConstParams
+
+    template <typename T>
+    static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-        UInt8 groups;
-    };
+#if USE_SIMSIMD
+        if constexpr (std::is_same_v<T, BFloat16>)
+            simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            simsimd_l2_f32(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            simsimd_l2_f64(x, y, array_size, result);
+        return;
+#endif
+        if constexpr (std::is_same_v<T, BFloat16>)
+            distanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            distanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            distanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType d2 = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            d2 += (xi - yi) * (xi - yi);
+        }
+        *result = static_cast<Float64>(sqrt(d2));
+    }
 };
 
-/** L2DistanceTransposed has two calling conventions:
-  * 1. User-facing (documented): L2DistanceTransposed(qbit, ref_vec, precision)
-  * 2. Internal (undocumented): L2DistanceTransposed(vec.1, ..., vec.precision, qbit_size, ref_vec)
+struct CosineDistanceTransposed
+{
+    static constexpr auto name = "cosineDistanceTransposed";
+
+    template <typename T>
+    static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
+    {
+#if USE_SIMSIMD
+        if constexpr (std::is_same_v<T, BFloat16>)
+            simsimd_cos_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            simsimd_cos_f32(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            simsimd_cos_f64(x, y, array_size, result);
+        return;
+#endif
+        /// Fallback to scalar implementation if simsimd is not available. Algorithms also originate from simsimd, but are decoupled
+        if constexpr (std::is_same_v<T, BFloat16>)
+            distanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            distanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            distanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType ab = 0;
+        AccumulatorType a2 = 0;
+        AccumulatorType b2 = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            ab += xi * yi;
+            a2 += xi * xi;
+            b2 += yi * yi;
+        }
+        if (a2 == 0 && b2 == 0)
+        {
+            *result = 0;
+        }
+        else if (ab == 0)
+        {
+            *result = 1;
+        }
+        else
+        {
+            const auto unclipped_result = AccumulatorType(1) - ab / (sqrt(a2) * sqrt(b2));
+            *result = unclipped_result > 0 ? unclipped_result : 0;
+        }
+    }
+};
+
+/** Each [L2/cosine/...]DistanceTransposed has two calling conventions:
+  * 1. User-facing (documented): DistanceTransposed(qbit, ref_vec, precision)
+  * 2. Internal (undocumented): DistanceTransposed(vec.1, ..., vec.precision, qbit_size, ref_vec)
   *
-  * The second form is generated by L2DistanceTransposedPartialReadsPass for partial column reads.
+  * The second form is generated by ...DistanceTransposedPartialReadsPass for partial column reads.
   * It is not exposed in documentation and users should not call it directly.
   *
   * IMPORTANT: In the second form, ref_vec type must match the original QBit element type
@@ -66,43 +158,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    template <typename T>
-    static void l2Distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
-    {
-        /// Benchmarks show simsimd has great performance. We do not need CPU dispatch because SimSimd provides it's own dynamic dispatch
-#if USE_SIMSIMD
-        if constexpr (std::is_same_v<T, BFloat16>)
-            simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
-        else if constexpr (std::is_same_v<T, Float32>)
-            simsimd_l2_f32(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float64>)
-            simsimd_l2_f64(x, y, array_size, result);
-        return;
-#endif
-
-        /// Fallback to scalar implementation if simsimd is not available. It also originates from simsimd, but is decoupled
-        if constexpr (std::is_same_v<T, BFloat16>)
-            l2DistanceScalar<BFloat16, Float32>(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float32>)
-            l2DistanceScalar<Float32, Float32>(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float64>)
-            l2DistanceScalar<Float64, Float64>(x, y, array_size, result);
-    }
-
-    template <typename InputType, typename AccumulatorType>
-    static void l2DistanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
-    {
-        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
-        AccumulatorType d2 = 0;
-        for (size_t i = 0; i != array_size; ++i)
-        {
-            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
-            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
-            d2 += (xi - yi) * (xi - yi);
-        }
-        *result = static_cast<Float64>(sqrt(d2));
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
@@ -112,8 +167,8 @@ public:
                 getName(),
                 arguments.size());
 
-        /// Check if we are in optimised L2DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec) case. If something goes wrong, we
-        /// fallback to the original L2DistanceTransposed(qbit, ref_vec, p) handling. The arguments in optimised case are generated by us
+        /// Check if we are in optimised DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec) case. If something goes wrong, we
+        /// fallback to the original DistanceTransposed(qbit, ref_vec, p) handling. The arguments in optimised case are generated by us
         /// and are almost certainly correct. It is extremely unlikely that user will write optimised case manually. Thus, any error in
         /// arguments is treated as user error from the original case.
         if (validateOptimizedArguments(arguments))
@@ -169,7 +224,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    /// Validates arguments for optimised L2DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec) case
+    /// Validates arguments for optimised DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec) case
     bool validateOptimizedArguments(const ColumnsWithTypeAndName & arguments) const
     {
         constexpr size_t max_precision = 64;
@@ -216,12 +271,12 @@ public:
     {
         const auto & last_arg = arguments.back();
 
-        /// If last argument is UInt, we are in L2DistanceTransposed(qbit, ref_vec, p) case
+        /// If last argument is UInt, we are in DistanceTransposed(qbit, ref_vec, p) case
         WhichDataType which_last(last_arg.type);
         if (which_last.isUInt8())
             return executeWithQBitColumnConverted(arguments, input_rows_count);
 
-        /// Otherwise, L2DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec)
+        /// Otherwise, DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec)
 
         /// First, check that the reference vector sizes match qbit size
         const ColumnArray & reference_vector = *assert_cast<const ColumnArray *>(extractFromConst(arguments.back().column).get());
@@ -316,7 +371,7 @@ private:
         return column->isConst() ? assert_cast<const ColumnConst *>(column.get())->getDataColumnPtr() : column;
     }
 
-    /// L2DistanceTransposed(qbit, ref_vec, p) case. Convert arguments to [qbit.1, ..., qbit.p, ref_vec] format before executing
+    /// DistanceTransposed(qbit, ref_vec, p) case. Convert arguments to [qbit.1, ..., qbit.p, ref_vec] format before executing
     ColumnPtr executeWithQBitColumnConverted(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName converted_arguments;
@@ -418,7 +473,7 @@ private:
                 }
             }
 
-            /// Calculate L2 distance
+            /// Calculate distance
             for (size_t r = 0; r < rows_in_block; ++r)
             {
                 /// The branching in `else` is fine performance-wise since multiple reference vectors per QBit is rare
@@ -432,14 +487,7 @@ private:
 
                 auto * dst = block_row(r);
 
-                if constexpr (std::is_same_v<CalcT, BFloat16>)
-                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
-                else if constexpr (std::is_same_v<CalcT, Float32>)
-                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
-                else if constexpr (std::is_same_v<CalcT, Float64>)
-                    l2Distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
-                else
-                    UNREACHABLE();
+                Kernel::distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
             }
         }
 
@@ -451,5 +499,10 @@ private:
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<L2DistanceTransposed>::create(context_);
+}
+
+FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
+{
+    return FunctionArrayDistance<CosineDistanceTransposed>::create(context_);
 }
 }

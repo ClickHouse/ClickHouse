@@ -984,7 +984,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     initializeFromParsedArguments(std::move(parsed_arguments));
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
-        String path = object_storage_disk->getObjectsKeyPrefix();
+        String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
         keys = {String(root / suffix)};

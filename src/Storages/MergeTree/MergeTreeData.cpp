@@ -8065,7 +8065,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
         buf << ".";
         if (!detached_precommitted_parts.empty())
         {
-            buf << " Rollbacking parts state to temporary and removing from working set:";
+            buf << " Rolling back parts state to temporary and removing from working set:";
             for (const auto & part : detached_precommitted_parts)
                 buf << " " << part->getDataPartStorage().getPartDirectory();
             buf << ".";
