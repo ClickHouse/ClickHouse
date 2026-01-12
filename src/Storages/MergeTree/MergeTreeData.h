@@ -35,6 +35,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/AggregateDescription.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -503,6 +504,26 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
+        const ActionsDAG * filter_dag,
+        const RangesInDataParts & parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        ContextPtr query_context) const;
+
+    /// Mapping from aggregate column_name to hyperrectangle index in skip index
+    using AggColumnToHyperrectIdx = std::unordered_map<String, size_t>;
+
+    /// Mapping from query GROUP BY key name to partition key index
+    using GroupByKeyToPartitionIdx = std::vector<std::pair<String, size_t>>;
+
+    /// Build a block of aggregated values from skip index data.
+    /// This enables aggregate functions (min, max, uniq) to be satisfied
+    /// directly from index files without reading data.
+    Block getSkipIndexAggregationBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const IndexDescription & index_desc,
+        const AggregateDescriptions & aggregate_descriptions,
+        const AggColumnToHyperrectIdx & agg_col_to_hyperrect_idx,
+        const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
         const ActionsDAG * filter_dag,
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,

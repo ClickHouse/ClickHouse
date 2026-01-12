@@ -54,6 +54,7 @@ struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
     Block block_for_reading;
     Serializations serializations;
     bool empty = true;
+    bool has_empty_granule = false;
 };
 
 

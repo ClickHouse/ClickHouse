@@ -55,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
             {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
+            {"allow_skip_index_aggregation_optimize", false, true, "New setting to enable skip index aggregation optimization for min/max/uniq queries"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
         });

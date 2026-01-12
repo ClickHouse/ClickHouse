@@ -241,31 +241,74 @@ MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String 
     , store_map(store_map_)
 {
     const DataTypePtr & type = index_sample_block.getByPosition(0).type;
-    serialization = type->getDefaultSerialization();
+    serializations.push_back(type->getDefaultSerialization());
     granules.reserve(size_hint_);
+}
+
+MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const Block & index_sample_block_) :
+    index_name(index_sample_block_.getByPosition(0).name)
+    , index_sample_block(index_sample_block_)
+    , mode(Mode::Aggregate)
+{
+    /// Aggregate mode: need all columns' serializations
+    size_t num_columns = index_sample_block.columns();
+    serializations.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        serializations.push_back(type->getDefaultSerialization());
+    }
 }
 
 void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    Field value;
-    Field scratch;
+    if (mode == Mode::TopK)
+    {
+        Field value;
+        Field scratch;
 
-    /// The order in which values are read depends on 'direction':
-    /// If direction == ASC, we need only min value, discard max value
-    /// If direction == DESC, we need only max value, discard min value
-    if (direction == 1)
-    {
-        serialization->deserializeBinary(value, istr, format_settings);
-        serialization->deserializeBinary(scratch, istr, format_settings);
+        /// The order in which values are read depends on 'direction':
+        /// If direction == ASC, we need only min value, discard max value
+        /// If direction == DESC, we need only max value, discard min value
+        if (direction == 1)
+        {
+            serializations[0]->deserializeBinary(value, istr, format_settings);
+            serializations[0]->deserializeBinary(scratch, istr, format_settings);
+        }
+        else
+        {
+            serializations[0]->deserializeBinary(scratch, istr, format_settings);
+            serializations[0]->deserializeBinary(value, istr, format_settings);
+        }
+        granules.emplace_back(MinMaxGranule{granule_num, value});
+        if (store_map)
+            granules_map.emplace(granule_num, granules.size() - 1);
     }
-    else
+    else if (mode == Mode::Aggregate)
     {
-        serialization->deserializeBinary(scratch, istr, format_settings);
-        serialization->deserializeBinary(value, istr, format_settings);
+        /// Read min/max for all columns and aggregate into hyperrectangle
+        size_t num_columns = serializations.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            Field min_val;
+            Field max_val;
+            serializations[i]->deserializeBinary(min_val, istr, format_settings);
+            serializations[i]->deserializeBinary(max_val, istr, format_settings);
+
+            if (hyperrectangle.size() <= i)
+            {
+                hyperrectangle.emplace_back(min_val, true, max_val, true);
+            }
+            else
+            {
+                if (accurateLess(min_val, hyperrectangle[i].left))
+                    hyperrectangle[i].left = min_val;
+                if (accurateLess(hyperrectangle[i].right, max_val))
+                    hyperrectangle[i].right = max_val;
+            }
+        }
     }
-    granules.emplace_back(MinMaxGranule{granule_num, value});
-    if (store_map)
-        granules_map.emplace(granule_num, granules.size() - 1);
+
     empty = false;
 }
 

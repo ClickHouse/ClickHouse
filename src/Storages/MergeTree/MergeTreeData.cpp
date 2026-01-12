@@ -4,6 +4,7 @@
 
 #include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -21,16 +22,15 @@
 #include <Common/escapeForFileName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -69,8 +69,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -95,6 +93,9 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexSet.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -8255,6 +8256,71 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     return false;
 }
 
+/// Result of filtering/pruning parts based on virtual columns, partition pruning, and minmax index conditions.
+struct PartsPruningResult
+{
+    Block virtual_columns_block;
+    size_t rows = 0;
+    ColumnPtr part_name_column;
+    std::optional<PartitionPruner> partition_pruner;
+    std::optional<KeyCondition> minmax_idx_condition;
+    DataTypes minmax_columns_types;
+    bool valid = true;  /// False if filtering resulted in zero rows
+};
+
+/// Prepares parts pruning result for iterating over parts.
+static PartsPruningResult preparePartsPruning(
+    const MergeTreeData & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & required_columns,
+    const ActionsDAG * filter_dag,
+    const RangesInDataParts & parts,
+    ContextPtr query_context)
+{
+    PartsPruningResult result;
+
+    auto virtual_block = storage.getHeaderWithVirtualsForFilter(metadata_snapshot);
+    bool has_virtual_column
+        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
+
+    if (has_virtual_column || filter_dag)
+    {
+        result.virtual_columns_block = storage.getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
+        if (result.virtual_columns_block.rows() == 0)
+        {
+            result.valid = false;
+            return result;
+        }
+    }
+
+    result.rows = parts.size();
+
+    if (filter_dag)
+    {
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            const auto & partition_key = metadata_snapshot->getPartitionKey();
+            auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+            result.minmax_columns_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            result.minmax_idx_condition.emplace(
+                inverted_dag, query_context, minmax_columns_names,
+                MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
+            result.partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
+        }
+
+        const auto * predicate = filter_dag->getOutputs().at(0);
+        VirtualColumnUtils::filterBlockWithPredicate(
+            predicate, result.virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
+
+        result.rows = result.virtual_columns_block.rows();
+        result.part_name_column = result.virtual_columns_block.getByName("_part").column;
+    }
+
+    return result;
+}
+
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
@@ -8297,57 +8363,20 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column.insertFrom(place);
     };
 
-    Block virtual_columns_block;
-    auto virtual_block = getHeaderWithVirtualsForFilter(metadata_snapshot);
-    bool has_virtual_column
-        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
-    if (has_virtual_column || filter_dag)
-    {
-        virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
-        if (virtual_columns_block.rows() == 0)
-            return {};
-    }
-
-    size_t rows = parts.size();
-    ColumnPtr part_name_column;
-    std::optional<PartitionPruner> partition_pruner;
-    std::optional<KeyCondition> minmax_idx_condition;
-    DataTypes minmax_columns_types;
-    if (filter_dag)
-    {
-        if (metadata_snapshot->hasPartitionKey())
-        {
-            const auto & partition_key = metadata_snapshot->getPartitionKey();
-            auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
-            minmax_columns_types = getMinMaxColumnsTypes(partition_key);
-
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            minmax_idx_condition.emplace(
-                inverted_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
-            partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
-        }
-
-        const auto * predicate = filter_dag->getOutputs().at(0);
-
-        // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(
-            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
-
-        rows = virtual_columns_block.rows();
-        part_name_column = virtual_columns_block.getByName("_part").column;
-    }
+    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
+    if (!pruning_result.valid)
+        return {};
 
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
     DataPartsVector real_parts;
-    real_parts.reserve(rows);
-    for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
+    real_parts.reserve(pruning_result.rows);
+    for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
     {
-        if (part_name_column)
+        if (pruning_result.part_name_column)
         {
-            while (parts[part_idx].data_part->name != part_name_column->getDataAt(row))
+            while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
                 ++part_idx;
         }
 
@@ -8368,13 +8397,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+        if (pruning_result.minmax_idx_condition
+            && !pruning_result.minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, pruning_result.minmax_columns_types).can_be_true)
             continue;
 
-        if (partition_pruner)
+        if (pruning_result.partition_pruner)
         {
-            if (partition_pruner->canBePruned(*part))
+            if (pruning_result.partition_pruner->canBePruned(*part))
                 continue;
         }
 
@@ -8392,9 +8421,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         return {};
 
     FilterDescription filter(*filter_column);
-    for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
+    for (size_t i = 0; i < pruning_result.virtual_columns_block.columns(); ++i)
     {
-        ColumnPtr & column = virtual_columns_block.safeGetByPosition(i).column;
+        ColumnPtr & column = pruning_result.virtual_columns_block.safeGetByPosition(i).column;
         column = column->filter(*filter.data, -1);
     }
 
@@ -8476,8 +8505,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     Block res;
     for (const auto & name : required_columns)
     {
-        if (virtual_columns_block.has(name))
-            res.insert(virtual_columns_block.getByName(name));
+        if (pruning_result.virtual_columns_block.has(name))
+            res.insert(pruning_result.virtual_columns_block.getByName(name));
         else if (block.has(name))
             res.insert(block.getByName(name));
         else if (startsWith(name, "count")) // special case to match count(...) variants
@@ -8492,6 +8521,415 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 name);
     }
     return res;
+}
+
+struct SkipIndexAggColumnInfo
+{
+    String col_name;
+    DataTypePtr data_type;
+    MutableColumnPtr column;
+    AggregateFunctionPtr func;
+
+    /// MinMax index specific fields
+    bool is_min = false;
+    size_t hyperrect_idx = 0;       /// Index into hyperrectangle for minmax index
+};
+
+static Block buildSkipIndexResultBlockInOrder(
+    const Names & required_columns,
+    const MergeTreeData::GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
+    std::unordered_map<String, MutableColumnPtr> & key_columns,
+    std::vector<SkipIndexAggColumnInfo> & agg_columns,
+    const KeyDescription & partition_key,
+    const PartsPruningResult & pruning_result)
+{
+    const bool has_group_by = !group_by_key_to_partition_idx.empty();
+
+    std::unordered_map<String, SkipIndexAggColumnInfo *> agg_col_map;
+    for (auto & agg_col : agg_columns)
+        agg_col_map[agg_col.col_name] = &agg_col;
+
+    std::unordered_map<String, size_t> key_to_partition_idx;
+    for (const auto & [key_name, partition_idx] : group_by_key_to_partition_idx)
+        key_to_partition_idx[key_name] = partition_idx;
+
+    Block result;
+    for (const auto & col_name : required_columns)
+    {
+        /// Try aggregate columns first
+        auto agg_it = agg_col_map.find(col_name);
+        if (agg_it != agg_col_map.end())
+        {
+            auto & agg_col = *agg_it->second;
+            auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, Array{});
+            result.insert({std::move(agg_col.column), agg_type, col_name});
+            continue;
+        }
+
+        /// Try Group by key columns
+        auto key_it = key_columns.find(col_name);
+        if (key_it != key_columns.end())
+        {
+            size_t partition_idx = key_to_partition_idx.at(col_name);
+            result.insert({std::move(key_it->second), partition_key.data_types[partition_idx], col_name});
+            continue;
+        }
+
+        /// Try virtual columns
+        if (!has_group_by && pruning_result.virtual_columns_block.has(col_name))
+        {
+            result.insert(pruning_result.virtual_columns_block.getByName(col_name));
+            continue;
+        }
+
+        if (!has_group_by)
+            return {};
+    }
+
+    return result;
+}
+
+Block MergeTreeData::getSkipIndexAggregationBlock(
+    const StorageMetadataPtr & metadata_snapshot,
+    const IndexDescription & index_desc,
+    const AggregateDescriptions & aggregate_descriptions,
+    const AggColumnToHyperrectIdx & agg_col_to_hyperrect_idx,
+    const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
+    const ActionsDAG * filter_dag,
+    const RangesInDataParts & parts,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    ContextPtr query_context) const
+{
+    const String & index_name = index_desc.name;
+    const String & index_type = index_desc.type;
+    const bool has_group_by = !group_by_key_to_partition_idx.empty();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    /// Build required_columns: GROUP BY keys + aggregate columns
+    Names required_columns;
+    for (const auto & [query_key_name, _] : group_by_key_to_partition_idx)
+        required_columns.push_back(query_key_name);
+    for (const auto & agg : aggregate_descriptions)
+        required_columns.push_back(agg.column_name);
+
+    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
+    if (!pruning_result.valid)
+    {
+        LOG_TRACE(log, "skipping skip index optimization: pruning result is invalid");
+        return {};
+    }
+
+    LOG_TRACE(log, "Skip index aggregation: index {} of type {}, pruning_result.rows={}, has part_name_column={}",
+              index_name, index_type, pruning_result.rows, pruning_result.part_name_column != nullptr);
+
+    auto skip_index = MergeTreeIndexFactory::instance().get(index_desc);
+
+    /// Get index mark ranges for a part, returns 0 if index is not available
+    auto get_index_mark_ranges = [&](const DataPartPtr & part, MarkRanges & mark_ranges) -> size_t
+    {
+        size_t index_granularity = skip_index->getGranularity();
+        size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+        size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+        if (index_marks_count == 0)
+            return 0;
+        if (!skip_index->getDeserializedFormat(part->checksums, skip_index->getFileName()))
+            return 0;
+        mark_ranges = {{0, index_marks_count}};
+        return index_marks_count;
+    };
+
+    auto should_skip_part = [&](const DataPartPtr & part) -> bool
+    {
+        if (part->isEmpty())
+            return true;
+
+        if (max_block_numbers_to_read)
+        {
+            auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
+            if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                return true;
+        }
+
+        if (pruning_result.minmax_idx_condition && !pruning_result.minmax_idx_condition->checkInHyperrectangle(
+            part->minmax_idx->hyperrectangle,
+            pruning_result.minmax_columns_types).can_be_true)
+            return true;
+
+        if (pruning_result.partition_pruner && pruning_result.partition_pruner->canBePruned(*part))
+            return true;
+
+        return false;
+    };
+
+    /// Insert value into an aggregate function column.
+    auto insert_agg = [](ColumnAggregateFunction & column, const Field & value, const IColumn * source_col = nullptr, size_t num_rows = 0)
+    {
+        chassert((source_col != nullptr && num_rows > 0) || (source_col == nullptr && value != Field{}));
+
+        auto func = column.getAggregateFunction();
+        Arena & arena = column.createOrGetArena();
+        size_t size_of_state = func->sizeOfData();
+        size_t align_of_state = func->alignOfData();
+        auto * place = arena.alignedAlloc(size_of_state, align_of_state);
+        func->create(place);
+
+        if (source_col)
+        {
+            for (size_t i = 0; i < num_rows; ++i)
+                func->add(place, &source_col, i, &arena);
+        }
+        else
+        {
+            auto value_column = func->getArgumentTypes().front()->createColumnConst(1, value)->convertToFullColumnIfConst();
+            const auto * value_column_ptr = value_column.get();
+            func->add(place, &value_column_ptr, 0, &arena);
+        }
+        column.insertFrom(place);
+    };
+
+    /// Insert partition key values into key_columns for GROUP BY.
+    auto insert_partition_keys = [&](std::unordered_map<String, MutableColumnPtr> & key_columns, const Row & partition_values)
+    {
+        if (!has_group_by)
+            return;
+        for (const auto & [query_key_name, partition_idx] : group_by_key_to_partition_idx)
+        {
+            auto & col = key_columns[query_key_name];
+            if (!col)
+                col = partition_key.data_types[partition_idx]->createColumn();
+            col->insert(partition_values[partition_idx]);
+        }
+    };
+
+    /// Read PartitionAggState for index aggregation. Returns std::nullopt if any part is skipped.
+    struct PartitionAggState
+    {
+        MergeTreeIndexBulkGranulesPtr bulk_granules;
+        Row partition_values;
+    };
+    using BulkGranulesFactory = std::function<MergeTreeIndexBulkGranulesPtr(const Block &)>;
+    auto read_index_partition_aggregates = [&](
+        const BulkGranulesFactory & create_bulk_granules) -> std::optional<std::unordered_map<String, PartitionAggState>>
+    {
+        std::unordered_map<String, PartitionAggState> partition_aggregates;
+
+        for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
+        {
+            if (pruning_result.part_name_column)
+            {
+                while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
+                    ++part_idx;
+            }
+
+            const auto & part = parts[part_idx].data_part;
+            if (should_skip_part(part))
+                continue;
+
+            MarkRanges mark_ranges;
+            size_t index_marks_count = get_index_mark_ranges(part, mark_ranges);
+            if (index_marks_count == 0)
+            {
+                LOG_TRACE(log, "Skip index '{}' not available in part '{}', skipping skip index optimization", index_name, part->name);
+                return std::nullopt;
+            }
+
+            const String agg_key = has_group_by ? part->info.getPartitionId() : String{};
+            auto & agg_state = partition_aggregates[agg_key];
+            if (!agg_state.bulk_granules)
+            {
+                agg_state.bulk_granules = create_bulk_granules(index_desc.sample_block);
+                if (has_group_by)
+                    agg_state.partition_values = part->partition.value;
+            }
+
+            MergeTreeIndexReader reader(
+                skip_index,
+                part,
+                index_marks_count,
+                mark_ranges,
+                query_context->getMarkCache().get(),
+                query_context->getUncompressedCache().get(),
+                nullptr,
+                MergeTreeReaderSettings::createFromContext(query_context));
+
+            for (size_t index_mark = 0; index_mark < index_marks_count; ++index_mark)
+            {
+                reader.read(index_mark, index_mark, agg_state.bulk_granules);
+            }
+        }
+
+        if (partition_aggregates.empty())
+            return std::nullopt;
+
+        return partition_aggregates;
+    };
+
+    if (index_type == "minmax")
+    {
+        /// Read from minmax index and collect minmax granules for each partition
+        auto partition_aggregates = read_index_partition_aggregates(
+            [](const Block & sample_block) -> MergeTreeIndexBulkGranulesPtr
+            {
+                return std::make_shared<MergeTreeIndexBulkGranulesMinMax>(sample_block);
+            });
+
+        if (!partition_aggregates)
+            return {};
+
+        /// Parse aggregate descriptions and create aggregate columns
+        std::vector<SkipIndexAggColumnInfo> agg_columns;
+        for (const auto & agg_desc : aggregate_descriptions)
+        {
+            const String & func_name = agg_desc.function->getName();
+            bool is_min = func_name == "min";
+            bool is_max = func_name == "max";
+            if (!is_min && !is_max)
+            {
+                LOG_TRACE(log, "Unsupported aggregate function {}, skipping skip index optimization", func_name);
+                return {};
+            }
+
+            auto idx_it = agg_col_to_hyperrect_idx.find(agg_desc.column_name);
+            if (idx_it == agg_col_to_hyperrect_idx.end())
+            {
+                LOG_TRACE(log, "Aggregate column {} not found in hyperrectangle mapping, skipping skip index optimization", agg_desc.column_name);
+                return {};
+            }
+
+            size_t hyperrect_idx = idx_it->second;
+            DataTypePtr data_type = index_desc.data_types[hyperrect_idx];
+
+            AggregateFunctionProperties properties;
+            auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {data_type}, {}, properties);
+            agg_columns.push_back({agg_desc.column_name, data_type, ColumnAggregateFunction::create(func), func, is_min, hyperrect_idx});
+        }
+
+        /// Fill columns with aggregated data from each partition
+        std::unordered_map<String, MutableColumnPtr> key_columns;
+        for (const auto & [agg_key, agg_state] : *partition_aggregates)
+        {
+            auto * minmax_granules = dynamic_cast<MergeTreeIndexBulkGranulesMinMax *>(agg_state.bulk_granules.get());
+            if (!minmax_granules)
+                continue;
+
+            const auto & hyperrectangle = minmax_granules->hyperrectangle;
+
+            /// Validate all required hyperrectangle indices exist
+            bool valid = std::all_of(agg_columns.begin(), agg_columns.end(),
+                [&](const auto & col) { return col.hyperrect_idx < hyperrectangle.size(); });
+            if (!valid)
+                continue;
+
+            insert_partition_keys(key_columns, agg_state.partition_values);
+
+            /// Insert min/max from hyperrectangle ranges
+            for (auto & agg_col : agg_columns)
+            {
+                const auto & range = hyperrectangle[agg_col.hyperrect_idx];
+                const Field & value = agg_col.is_min ? range.left : range.right;
+                insert_agg(assert_cast<ColumnAggregateFunction &>(*agg_col.column), value);
+            }
+        }
+
+        /// Build final Block in required_columns order
+        Block result = buildSkipIndexResultBlockInOrder(required_columns, group_by_key_to_partition_idx, key_columns, agg_columns, partition_key, pruning_result);
+        if (!result.columns())
+            return {};
+
+        LOG_DEBUG(
+            log,
+            "Skip index aggregation optimization applied for minmax index '{}' with {} columns {} partitions",
+            index_name,
+            index_desc.column_names.size(),
+            partition_aggregates->size());
+
+        return result;
+    }
+    else if (index_type == "set")
+    {
+        if (index_desc.column_names.size() != 1)
+        {
+            LOG_TRACE(log, "Set index {} has {} columns, only single-column indexes are supported for uniq optimization",
+                      index_name, index_desc.column_names.size());
+            return {};
+        }
+
+        /// Verify all aggregates are uniq functions
+        for (const auto & agg_desc : aggregate_descriptions)
+        {
+            const String & func_name = agg_desc.function->getName();
+            if (!func_name.starts_with("uniq"))
+            {
+                LOG_TRACE(log, "Set index '{}' only supports uniq functions, got '{}', skipping skip index optimization", index_name, func_name);
+                return {};
+            }
+        }
+
+        /// Read from set index and collect set granules for each partition
+        auto partition_aggregates = read_index_partition_aggregates(
+            [](const Block & sample_block) -> MergeTreeIndexBulkGranulesPtr
+            {
+                return std::make_shared<MergeTreeIndexBulkGranulesSet>(sample_block);
+            });
+
+        if (!partition_aggregates)
+            return {};
+
+        /// Parse aggregate descriptions and create aggregate columns
+        DataTypePtr data_type = index_desc.data_types[0];
+        std::vector<SkipIndexAggColumnInfo> agg_columns;
+        for (const auto & agg_desc : aggregate_descriptions)
+        {
+            const String & func_name = agg_desc.function->getName();
+            AggregateFunctionProperties properties;
+            auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {data_type}, {}, properties);
+            agg_columns.push_back({agg_desc.column_name, data_type, ColumnAggregateFunction::create(func), func});
+        }
+
+        /// Fill aggregate columns with uniq counts per partition
+        std::unordered_map<String, MutableColumnPtr> key_columns;
+        for (const auto & [agg_key, agg_state] : *partition_aggregates)
+        {
+            auto * set_granules = dynamic_cast<MergeTreeIndexBulkGranulesSet *>(agg_state.bulk_granules.get());
+            if (!set_granules)
+                continue;
+
+            /// Check for overflow granules
+            if (set_granules->has_empty_granule)
+            {
+                LOG_TRACE(log, "Set index '{}' has overflow granules, skipping skip index optimization", index_name);
+                return {};
+            }
+
+            const auto & set_block = set_granules->block;
+            if (set_block.rows() == 0)
+                continue;
+
+            const auto & index_col = set_block.getByPosition(0).column;
+            size_t num_rows = index_col->size();
+
+            LOG_TRACE(log, "Set index aggregation: agg_key='{}', set_block.rows()={}, num_columns={}",
+                      agg_key, set_block.rows(), set_block.columns());
+
+            insert_partition_keys(key_columns, agg_state.partition_values);
+
+            /// For each uniq function, add all values from the set index to the aggregate state.
+            for (auto & agg_col : agg_columns)
+                insert_agg(assert_cast<ColumnAggregateFunction &>(*agg_col.column), Field{}, index_col.get(), num_rows);
+        }
+
+        /// Build final Block in required_columns order
+        Block result = buildSkipIndexResultBlockInOrder(required_columns, group_by_key_to_partition_idx, key_columns, agg_columns, partition_key, pruning_result);
+        if (!result.columns())
+            return {};
+
+        LOG_DEBUG(log, "Skip index aggregation optimization applied for set index '{}' with {} partitions",
+                  index_name, partition_aggregates->size());
+
+        return result;
+    }
+
+    return {};
 }
 
 ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select)

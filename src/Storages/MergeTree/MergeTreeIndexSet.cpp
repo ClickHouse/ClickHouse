@@ -172,7 +172,10 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     UInt64 rows_to_read;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
+    {
+        has_empty_granule = true;
         return;
+    }
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
