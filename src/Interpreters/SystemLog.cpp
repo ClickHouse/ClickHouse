@@ -178,11 +178,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     SystemLogSettings log_settings;
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
-
-    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
-        log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
-    else
-        log_settings.queue_settings.table = default_table_name;
+    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -314,18 +310,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
     else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
         auto schema = config.getString(config_prefix + ".schema_type", "wide");
-        if (schema == "transposed_with_wide_view")
-        {
-            log_settings.view_name_for_transposed_metric_log = config.getString(config_prefix + ".table", "metric_log");
-            return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema == "transposed")
+        if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
         {
             return std::make_shared<TSystemLog>(context, log_settings);
         }
         else if (schema != "wide")
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide' and 'transposed'", schema);
         }
     }
     return std::make_shared<TSystemLog>(context, log_settings);
@@ -362,17 +353,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
+    if (metric_log == nullptr && config.has("metric_log")
+        && (config.getString("metric_log.schema_type", "wide") == "transposed" || config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view"))
     {
         transposed_metric_log = createSystemLog<TransposedMetricLog>(
             global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
     }
-    else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
-    {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
-    }
-
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try
@@ -426,7 +412,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     if (background_schedule_pool_log)
     {
-        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 0);
+        size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
         background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
     }
 }
@@ -640,6 +626,13 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
+    Stopwatch stopwatch;
+    UInt64 prepare_table_time = 0;
+    UInt64 prepare_insert_data_to_block = 0;
+    UInt64 execute_insert_time = 0;
+    UInt64 confirm_time = 0;
+    size_t flush_size = to_flush.size();
+
     try
     {
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
@@ -655,6 +648,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// (new empty table will be created automatically). BTW, flush method
         /// is called from single thread.
         prepareTable();
+        prepare_table_time = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
@@ -673,6 +668,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
             elem.appendToBlock(columns);
 
         block.setColumns(std::move(columns));
+        prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -700,6 +697,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
+        execute_insert_time = stopwatch.elapsedMilliseconds();
+        stopwatch.restart();
     }
     catch (...)
     {
@@ -709,8 +708,21 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     queue->confirm(to_flush_end);
+    confirm_time = stopwatch.elapsedMilliseconds();
 
-    LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
+    UInt64 total_time = prepare_table_time + prepare_insert_data_to_block + execute_insert_time + confirm_time;
+    if (total_time > 100)
+        LOG_TRACE(
+            log,
+            "Flushed system log up to offset {}. Entries {}. Timings: Prepare={}ms, Block={}ms, Insert={}ms, Confirm={}ms",
+            to_flush_end,
+            flush_size,
+            prepare_table_time,
+            prepare_insert_data_to_block,
+            execute_insert_time,
+            confirm_time);
+    else
+        LOG_TRACE(log, "Flushed system log up to offset {}. Entries {}. ({} ms)", to_flush_end, flush_size, total_time);
 }
 
 template <typename LogElement>
@@ -847,15 +859,6 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
-
-    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
-    {
-        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
-        {
-            auto * storage = storage_with_comment.storage->as<ASTStorage>();
-            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
-        }
-    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);

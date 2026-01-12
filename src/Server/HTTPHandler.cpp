@@ -31,7 +31,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -772,7 +771,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        const bool include_version = session && session->sessionContext();
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
         auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
 
         used_output.cancel();

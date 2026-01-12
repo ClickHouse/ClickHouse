@@ -85,6 +85,9 @@ public:
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
         auto & out = getOutputStream(response);
 
+        if (config().expose_info)
+            metrics_writer().writeInfo(out);
+
         if (config().expose_events)
             metrics_writer().writeEvents(out);
 

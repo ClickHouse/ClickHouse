@@ -18,7 +18,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
-#include <Interpreters/RenameMultipleColumnsVisitor.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -185,6 +184,8 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64Auto insert_quorum;
 }
 
 namespace ServerSetting
@@ -271,31 +272,6 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
-    }
-}
-
-static void renameSimpleAliases(ASTPtr node, const StoragePtr & table)
-{
-    if (!node)
-        return;
-
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    std::unordered_map<String, String> column_rename_map;
-    for (const auto & [name, default_desc] : metadata_snapshot->columns.getDefaults())
-    {
-        if (default_desc.kind == ColumnDefaultKind::Alias)
-        {
-            const ASTPtr & alias_expression = default_desc.expression;
-            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
-                column_rename_map[name] = actual_column->full_name;
-        }
-    }
-
-    if (!column_rename_map.empty())
-    {
-        RenameMultipleColumnsData rename_data{column_rename_map};
-        RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
-        rename_columns_visitor.visit(node);
     }
 }
 
@@ -1225,7 +1201,14 @@ static BlockIO executeQueryImpl(
                 String formatted1 = format_ast(out_ast);
 
                 /// The query can become more verbose after formatting, so:
-                size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+                size_t size_t_max = -1;
+                size_t new_max_query_size = 0;
+                if (max_query_size == 0)
+                    new_max_query_size = 0;
+                else if (max_query_size > (size_t_max - 1000) / 2)
+                    new_max_query_size = size_t_max;
+                else
+                    new_max_query_size = 1000 + 2 * max_query_size;
 
                 ASTPtr ast2;
                 try
@@ -1365,6 +1348,7 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
+    QueryMetadataCachePtr query_metadata_cache;
     BlockIO res;
     String query_database;
     String query_table;
@@ -1469,13 +1453,8 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
-            {
                 if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
-                {
                     async_insert_enabled |= table->areAsynchronousInsertsEnabled();
-                    renameSimpleAliases(insert_query->columns, table);
-                }
-            }
         }
 
         if (insert_query && insert_query->select)
@@ -1497,6 +1476,8 @@ static BlockIO executeQueryImpl(
                     input_storage.setPipe(std::move(pipe));
                 }
             }
+
+            insert_query->tail.reset();
         }
         else
         {
@@ -1527,6 +1508,7 @@ static BlockIO executeQueryImpl(
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
+
         bool quota_checked = false;
 
         if (async_insert)
@@ -1550,6 +1532,11 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Deduplication in dependent materialized view cannot work together with async inserts. "\
                         "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+
+            if (settings[Setting::insert_quorum].valueOr(0) > 0)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Insert quorum cannot be used together with async inserts. " \
+                    "Please disable either `insert_quorum` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1595,6 +1582,13 @@ static BlockIO executeQueryImpl(
                 insert_query->tail = std::move(result.insert_data_buffer);
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
+        }
+
+        if (!async_insert && async_insert_enabled)
+        {
+            /// Invoke HTTP 100-Continue callback if it was not invoked yet
+            if (http_continue_callback && !internal)
+                http_continue_callback();
         }
 
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();
@@ -1671,6 +1665,12 @@ static BlockIO executeQueryImpl(
                         e.addMessage("while starting a transaction with 'implicit_transaction'");
                         throw;
                     }
+                }
+
+                if (settings[Setting::enable_shared_storage_snapshot_in_query])
+                {
+                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                    context->setQueryMetadataCache(query_metadata_cache);
                 }
 
                 if (out_ast)
@@ -1814,6 +1814,9 @@ static BlockIO executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
+
+        /// Hold query metadata cache till end of query execution.
+        res.query_metadata_cache = std::move(query_metadata_cache);
 
         if (query_plan)
         {

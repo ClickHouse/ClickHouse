@@ -191,7 +191,7 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
     };
     FunctionDocumentation::IntroducedIn introduced_in_jsonMergePatch = {23, 10};
     FunctionDocumentation::Category category_jsonMergePatch = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation_jsonMergePatch = {description_jsonMergePatch, syntax_jsonMergePatch, arguments_jsonMergePatch, returned_value_jsonMergePatch, examples_jsonMergePatch, introduced_in_jsonMergePatch, category_jsonMergePatch};
+    FunctionDocumentation documentation_jsonMergePatch = {description_jsonMergePatch, syntax_jsonMergePatch, arguments_jsonMergePatch, {}, returned_value_jsonMergePatch, examples_jsonMergePatch, introduced_in_jsonMergePatch, category_jsonMergePatch};
 
     factory.registerFunction<FunctionJSONMergePatch>(documentation_jsonMergePatch);
 

@@ -522,81 +522,39 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
-def _check_and_mark_flaky_tests(workflow_result: Result):
+def _check_and_link_open_issues(result: Result, job_name: str) -> bool:
     """
-    Downloads flaky test catalog from S3 and marks matching test results as flaky.
+    Downloads flaky test catalog from S3 and marks matching test results as flaky
+    or infrastructure issues. Can be called on a single job result.
 
     Args:
-        workflow_result: The workflow result object containing all test results
+        result: The result object to check and mark
+        job_name: The job name for infrastructure job pattern matching
+
+    Returns:
+        True if successful, False if catalog download failed
     """
-    from .dataclasses import TestCaseIssueCatalog
+    from .issue import TestCaseIssueCatalog
 
-    if workflow_result.is_ok():
-        print("Workflow succeeded, no flaky test check needed.")
-        return
+    if result.is_ok():
+        print("Result succeeded, no flaky test check needed.")
+        return True
 
-    print("Checking for flaky tests...")
+    print("Checking for flaky tests and infrastructure issues...")
 
     # Download catalog from S3
-    catalog_name = TestCaseIssueCatalog.name
-    s3_catalog_path = f"{Settings.HTML_S3_PATH}/statistics/{catalog_name}.json.gz"
-    local_catalog_gz = TestCaseIssueCatalog.file_name_static(name=catalog_name) + ".gz"
-    local_catalog_json = TestCaseIssueCatalog.file_name_static(name=catalog_name)
+    issue_catalog = TestCaseIssueCatalog.from_s3()
+    if not issue_catalog:
+        print("ERROR: Could not load issue catalog")
+        return False
+    print(f"Loaded {len(issue_catalog.active_test_issues)} active issues")
 
-    if not S3.copy_file_from_s3(s3_catalog_path, local_catalog_gz, no_strict=True):
-        print("  WARNING: Could not download flaky test catalog from S3")
-        return
-
-    if not Utils.decompress_file(local_catalog_gz, local_catalog_json):
-        print("  WARNING: Could not decompress flaky test catalog")
-        return
-
-    flaky_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
-
-    # Build a lookup map: test_name -> issue (for fast matching)
-    flaky_tests_map = {
-        issue.test_name: issue
-        for issue in flaky_catalog.active_test_issues
-        if issue.test_name and issue.test_name != "unknown"
-    }
-    print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
-
-    # Walk the result tree and flag flaky leaves
-    def check_and_mark_flaky(result: Result):
-        if result.is_ok():
-            return
-
-        if result.results:
-            for sub_result in result.results:
-                check_and_mark_flaky(sub_result)
-        else:
-            for test_name, issue in flaky_tests_map.items():
-                name_in_report = result.name
-
-                # Normalize pytest parameterized names.
-                # If the issue already includes parameters (e.g. "test_x[param]"),
-                # do exact matching later. Otherwise, strip the "[param]" suffix
-                # from the reported test name so we can match the base test name.
-                if "[" in test_name:
-                    # Issue mentions a specific parametrization: keep full name for exact match
-                    pass
-                elif "[" in name_in_report:
-                    # Issue mentions only the base test: compare against the base part
-                    name_in_report = name_in_report.split("[")[0]
-
-                if name_in_report.endswith(
-                    test_name
-                ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
-                    print(
-                        f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
-                    )
-                    result.set_clickable_label(label="issue", link=issue.issue_url)
-                    break
-
-    # Check all workflow results
-    check_and_mark_flaky(workflow_result)
-    workflow_result.dump()
-    print("Flaky test check completed and results updated")
+    # Check all issues against the result tree
+    for issue in issue_catalog.active_test_issues:
+        issue.check_result(result, job_name)
+    result.dump()
+    print("Flaky test check and infrastructure issue check completed")
+    return True
 
 
 def _finish_workflow(workflow, job_name):
@@ -645,23 +603,6 @@ def _finish_workflow(workflow, job_name):
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
 
-    if workflow.enable_open_issues_check:
-
-        def do():
-            try:
-                _check_and_mark_flaky_tests(workflow_result)
-            except Exception as e:
-                print(f"ERROR: failed to check open issues: {e}")
-                traceback.print_exc()
-                env.add_info("Open issues check failed")
-            return True  # make it always success for now
-
-        results.append(
-            Result.from_commands_run(
-                name="Open issues check", command=do, with_info=True
-            )
-        )
-
     for result in workflow_result.results:
         if result.name == job_name:
             continue
@@ -671,6 +612,26 @@ def _finish_workflow(workflow, job_name):
             continue
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
+            continue
+        if workflow.enable_open_issues_check and (
+            (
+                result.has_label(Result.Label.ISSUE)
+                and not result.has_label(Result.Label.BLOCKER)
+            )
+            or (
+                result.results
+                and all(
+                    (
+                        sub_result.has_label(Result.Label.ISSUE)
+                        and not sub_result.has_label(Result.Label.BLOCKER)
+                    )
+                    for sub_result in result.results
+                )
+            )
+        ):
+            print(
+                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
+            )
             continue
         if not result.is_completed():
             print(

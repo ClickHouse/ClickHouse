@@ -152,7 +152,7 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         {
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(toString(change.value));
+            pair.push_back(fieldToString(change.value));
             settings_map.push_back(std::move(pair));
         }
     }

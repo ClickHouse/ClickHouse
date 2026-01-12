@@ -182,6 +182,13 @@ class Validator:
                     workflow_name=workflow.name,
                 )
 
+            if workflow.enable_open_issues_check:
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    f".enable_open_issues_check workflow setting is applicable with .enable_report=True",
+                    workflow_name=workflow.name,
+                )
+
             if workflow.enable_report:
                 assert (
                     Settings.HTML_S3_PATH

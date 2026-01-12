@@ -15,7 +15,8 @@ Uses `CRC32` as a hash function.
     FunctionDocumentation::Arguments arguments_sparse = {
         {"s", "An input string.", {"String"}},
         {"min_ngram_length", "Optional. The minimum length of extracted ngram. The default and minimal value is 3.", {"UInt*"}},
-        {"max_ngram_length", "Optional. The maximum length of extracted ngram. The default value is 100. Should be not less than `min_ngram_length`.", {"UInt*"}}
+        {"max_ngram_length", "Optional. The maximum length of extracted ngram. The default value is 100. Should be not less than `min_ngram_length`.", {"UInt*"}},
+        {"min_cutoff_length", "Optional. If specified, only n-grams with length greater or equal than `min_cutoff_length` are returned. The default value is the same as `min_ngram_length`. Should be not less than `min_ngram_length` and not greater than `max_ngram_length`.", {"UInt*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_sparse = {"Returns an array of selected substrings.", {"Array(String)"}};
     FunctionDocumentation::Examples examples_sparse = {
@@ -31,7 +32,7 @@ Uses `CRC32` as a hash function.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_sparse = {description_sparse, syntax_sparse, arguments_sparse, returned_value_sparse, examples_sparse, introduced_in, category};
+    FunctionDocumentation documentation_sparse = {description_sparse, syntax_sparse, arguments_sparse, {}, returned_value_sparse, examples_sparse, introduced_in, category};
 
     FunctionDocumentation::Description description_sparse_utf8 = R"(
 Finds all substrings of a given UTF-8 string that have a length of at least `n`, where the hashes of the (n-1)-grams at the borders of the substring are strictly greater than those of any (n-1)-gram inside the substring.
@@ -51,7 +52,7 @@ Uses `CRC32` as a hash function.
         )"
     }
     };
-    FunctionDocumentation documentation_sparse_utf8 = {description_sparse_utf8, syntax_sparse_utf8, arguments_sparse, returned_value_sparse_utf8, examples_sparse_utf8, introduced_in, category};
+    FunctionDocumentation documentation_sparse_utf8 = {description_sparse_utf8, syntax_sparse_utf8, arguments_sparse, {}, returned_value_sparse_utf8, examples_sparse_utf8, introduced_in, category};
 
     FunctionDocumentation::Description description_hashes = R"(
 Finds hashes of all substrings of a given string that have a length of at least `n`,
@@ -72,7 +73,7 @@ Uses `CRC32` as a hash function.
         )"
     }
     };
-    FunctionDocumentation documentation_hashes = {description_hashes, syntax_hashes, arguments_sparse, returned_value_hashes, examples_hashes, introduced_in, category};
+    FunctionDocumentation documentation_hashes = {description_hashes, syntax_hashes, arguments_sparse, {}, returned_value_hashes, examples_hashes, introduced_in, category};
 
     FunctionDocumentation::Description description_hashes_utf8 = R"(
 Finds hashes of all substrings of a given UTF-8 string that have a length of at least `n`, where the hashes of the (n-1)-grams at the borders of the substring are strictly greater than those of any (n-1)-gram inside the substring.
@@ -92,7 +93,7 @@ Uses `CRC32` as a hash function.
         )"
     }
     };
-    FunctionDocumentation documentation_hashes_utf8 = {description_hashes_utf8, syntax_hashes_utf8, arguments_sparse, returned_value_hashes_utf8, examples_hashes_utf8, introduced_in, category};
+    FunctionDocumentation documentation_hashes_utf8 = {description_hashes_utf8, syntax_hashes_utf8, arguments_sparse, {}, returned_value_hashes_utf8, examples_hashes_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionSparseGrams>(documentation_sparse);
     factory.registerFunction<FunctionSparseGramsUTF8>(documentation_sparse_utf8);

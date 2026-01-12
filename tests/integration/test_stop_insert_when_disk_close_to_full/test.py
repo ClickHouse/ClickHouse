@@ -9,13 +9,13 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/storage_configuration.xml"],
-    tmpfs=["/disk1:size=7M"],
+    tmpfs=["/test_stop_insert_when_disk1:size=7M"],
 )
 
 node_query_log = cluster.add_instance(
     "node_query_log",
     main_configs=["configs/config.d/storage_configuration_query_log.xml"],
-    tmpfs=["/disk1:size=7M"],
+    tmpfs=["/test_stop_insert_when_disk1:size=7M"],
 )
 
 

@@ -152,7 +152,7 @@ SELECT generateUUIDv7(1), generateUUIDv7(1);
     };
     FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv7 = {24, 5};
     FunctionDocumentation::Category category_generateUUIDv7 = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateUUIDv7 = {description_generateUUIDv7, syntax_generateUUIDv7, arguments_generateUUIDv7, returned_value_generateUUIDv7, examples_generateUUIDv7, introduced_in_generateUUIDv7, category_generateUUIDv7};
+    FunctionDocumentation documentation_generateUUIDv7 = {description_generateUUIDv7, syntax_generateUUIDv7, arguments_generateUUIDv7, {}, returned_value_generateUUIDv7, examples_generateUUIDv7, introduced_in_generateUUIDv7, category_generateUUIDv7};
 
     factory.registerFunction<FunctionGenerateUUIDv7Base>(documentation_generateUUIDv7);
 }

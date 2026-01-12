@@ -15,6 +15,8 @@ struct Settings;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class QueryPlan;
+
 struct QueryPlanOptimizationSettings
 {
     explicit QueryPlanOptimizationSettings(
@@ -79,6 +81,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool query_condition_cache_store_conditions_as_plaintext;
     bool read_in_order_through_join;
+    bool correlated_subqueries_use_in_memory_buffer;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -119,6 +122,7 @@ struct QueryPlanOptimizationSettings
 
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
+    bool enable_full_text_index;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
@@ -145,6 +149,9 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
+    Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
+    UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
+    Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
@@ -156,9 +163,16 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
+    bool parallel_replicas_enabled;
+    size_t max_parallel_replicas;
+    size_t automatic_parallel_replicas_mode;
+    size_t automatic_parallel_replicas_min_bytes_per_replica;
+
     bool keep_logical_steps;
 
     bool is_explain;
+
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
 
 }
