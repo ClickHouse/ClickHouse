@@ -162,17 +162,17 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
 {
     auto & cur_data = this->data(place);
 
-    UInt64 temp_size = 0;
-    readVarUInt(temp_size, buf);
-
-    cur_data.checkAndUpdateSize(temp_size, arena);
-
     /// IAggregateFunction::deserialize() must be called only for an empty (just created) state.
     if (cur_data.data_size != 0)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "groupConcat deserialize() expects an empty state (data_size = 0), got data_size = {}",
             cur_data.data_size);
+
+    UInt64 temp_size = 0;
+    readVarUInt(temp_size, buf);
+
+    cur_data.checkAndUpdateSize(temp_size, arena);
 
     buf.readStrict(cur_data.data, temp_size);
     cur_data.data_size = temp_size;
