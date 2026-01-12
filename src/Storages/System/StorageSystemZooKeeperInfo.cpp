@@ -434,7 +434,8 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
         auto in = std::make_shared<ReadBufferFromPocoSocket>(socket);
         auto out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket);
 
-        int32_t res = *reinterpret_cast<const int32_t *>(command.data());
+        int32_t res = 0;
+        std::memcpy(&res, command.data(), sizeof(int32_t));
         /// keep consistent with Coordination::read method by changing big endian to little endian.
         int32_t cmd_int = std::byteswap(res);
 

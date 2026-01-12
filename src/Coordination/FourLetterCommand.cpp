@@ -80,7 +80,8 @@ String IFourLetterCommand::toName(int32_t code)
 
 int32_t IFourLetterCommand::toCode(std::string_view name)
 {
-    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
+    int32_t res = 0;
+    std::memcpy(&res, name.data(), sizeof(int32_t));
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return std::byteswap(res);
 }
