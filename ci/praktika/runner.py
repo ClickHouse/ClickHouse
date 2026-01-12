@@ -22,6 +22,7 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
+from ci.praktika import result
 
 _GH_authenticated = False
 
@@ -474,6 +475,8 @@ class Runner:
             ).dump()
 
         print(f"####REMOVEME {result.is_completed()}")
+        print("\n".join(f"{k}={v!r}" for k, v in result.items()))
+
         if not result.is_completed():
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
