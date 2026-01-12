@@ -61,28 +61,47 @@ class EventFeed:
         """Add event, replacing any existing event for the same PR, maintaining time order.
 
         Deduplicates by pr_number (keeps only latest event per PR).
-        Preserves pr_title from existing event if new event has empty title.
         Applies retention policy: removes events older than MAX_TIMELINE_DAYS,
         except for open PRs which are always retained.
+
+        For merge events (pr_number=0), also replaces events for related PRs listed in
+        event.ext["related_prs"], preserving their pr_title, change_url and report_url in
+        event.ext["related_pr_info"].
+
+        Also replaces events with the same commit SHA.
         """
         import time
 
         cutoff_timestamp = int(time.time()) - (MAX_TIMELINE_DAYS * 24 * 60 * 60)
 
-        # Find existing event for the same PR to potentially transfer title
-        existing_event = next(
-            (e for e in self.events if e.pr_number == event.pr_number), None
-        )
+        # Get related PRs if this is a merge event
+        related_prs = event.ext.get("related_prs", []) if event.pr_number == 0 else []
 
-        # Transfer pr_title from existing event if new event's title is empty
-        if existing_event and not event.pr_title:
-            event.pr_title = existing_event.pr_title
+        # Collect info from events that will be replaced due to related_prs or matching SHA
+        related_pr_info = {}
+        for e in self.events:
+            # Preserve info if event is in related_prs or has matching SHA
+            if (related_prs and e.pr_number in related_prs) or (
+                e.sha == event.sha and e.pr_number != event.pr_number
+            ):
+                related_pr_info[e.pr_number] = {
+                    "pr_title": e.pr_title,
+                    "change_url": e.ext.get("change_url", ""),
+                    "report_url": e.ext.get("report_url", ""),
+                }
 
-        # Filter events: remove same PR, and apply cutoff only to non-open PRs
+        # Store related PRs info in event.ext if any were found
+        if related_pr_info:
+            event.ext["related_pr_info"] = related_pr_info
+
+        # Filter events: remove if pr_number matches OR if it's in related_prs (for merge events) OR if commit SHA matches
+        # Also apply retention policy (cutoff only to non-open PRs)
         self.events = [
             e
             for e in self.events
             if e.pr_number != event.pr_number
+            and (event.pr_number != 0 or e.pr_number not in related_prs)
+            and e.sha != event.sha
             and (e.pr_status == Event.PRStatus.OPEN or e.timestamp >= cutoff_timestamp)
         ]
         self.events.append(event)
