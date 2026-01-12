@@ -779,22 +779,22 @@ void CurrentThread::QueryScope::logPeakMemoryUsage()
     group->memory_tracker.logPeakMemoryUsage();
 }
 
-CurrentThread::QueryScope::QueryScope(bool inited_)
-: intited(inited_)
+CurrentThread::QueryScope::QueryScope(bool initialized_)
+: initialized(initialized_)
 {}
 
 CurrentThread::QueryScope::QueryScope(QueryScope && other) noexcept
-: intited(other.intited)
+: initialized(other.initialized)
 {
-    other.intited = false;
+    other.initialized = false;
 }
 
 CurrentThread::QueryScope & CurrentThread::QueryScope::operator=(QueryScope && other) noexcept
 {
     if (this == &other)
         return *this;
-    intited = other.intited;
-    other.intited = false;
+    initialized = other.initialized;
+    other.initialized = false;
     return *this;
 }
 
@@ -819,7 +819,7 @@ CurrentThread::QueryScope CurrentThread::QueryScope::create(ContextMutablePtr qu
     return QueryScope(true);
 }
 
-CurrentThread::QueryScope CurrentThread::QueryScope::createFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent)
+CurrentThread::QueryScope CurrentThread::QueryScope::createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent)
 {
     if (!query_context->hasQueryContext())
         query_context->makeQueryContext();
@@ -831,7 +831,7 @@ CurrentThread::QueryScope CurrentThread::QueryScope::createFlushAsyncInsert(Cont
 
 CurrentThread::QueryScope::~QueryScope()
 {
-    if (!intited)
+    if (!initialized)
         return;
 
     try

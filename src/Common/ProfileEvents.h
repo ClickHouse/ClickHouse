@@ -132,7 +132,7 @@ namespace ProfileEvents
         }
 
         /// Set parent (thread unsafe)
-        void setUserCountes(Counters * user)
+        void setUserCounters(Counters * user)
         {
             auto * current_val = this;
             auto * parent_val = this->parent.load(std::memory_order_relaxed);

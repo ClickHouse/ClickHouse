@@ -111,7 +111,7 @@ public:
     class QueryScope
     {
     private:
-        explicit QueryScope(bool inited_);
+        explicit QueryScope(bool initialized_);
     public:
         QueryScope() = default;
         QueryScope(QueryScope && other) noexcept;
@@ -123,7 +123,7 @@ public:
 
         ~QueryScope();
 
-        bool intited = false;
+        bool initialized = false;
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
     };
