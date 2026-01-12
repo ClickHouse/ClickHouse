@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
 
 #include <Interpreters/ProcessList.h>
@@ -719,6 +720,13 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     , views_error_registry(std::make_shared<ViewErrorsRegistry>())
     , logger(getLogger("InsertDependenciesBuilder"))
 {
+    /// Resolve StorageAlias to its target table so that dependent MVs are properly triggered.
+    if (const auto * alias_storage = dynamic_cast<const StorageAlias *>(init_storage.get()))
+    {
+        init_storage = alias_storage->getTargetTable();
+        init_table_id = init_storage->getStorageID();
+    }
+
     const auto & settings = init_context->getSettingsRef();
 
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();

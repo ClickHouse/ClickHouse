@@ -1,0 +1,6 @@
+Direct insert to source_table
+source_table count:	1
+mv_target count:	1
+Insert through alias_table
+source_table count:	2
+mv_target count:	2
