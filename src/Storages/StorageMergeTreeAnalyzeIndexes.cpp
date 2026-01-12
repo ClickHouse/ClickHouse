@@ -208,6 +208,7 @@ protected:
             indexes->use_skip_indexes_for_disjunctions,
             /* find_exact_ranges= */ false,
             /* is_final_query= */ false,
+            /* use_skip_indexes_if_final_exact_mode= */ false,
             /* is_parallel_reading_from_replicas= */ false,
             analysis_result);
     }
