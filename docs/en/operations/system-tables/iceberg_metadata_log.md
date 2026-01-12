@@ -83,6 +83,7 @@ See more information in the description of the [`iceberg_metadata_log_level`](..
 - The table contains duplicate entries, as it is intended primarily for debugging and does not guarantee uniqueness per entity. Separate rows store content and pruning status because they are collected at different moments in a program. Content is collected when the metadata is read, pruning status is collected when the metadata is checked for pruning. **Never rely on the table itself for deduplication.**
 - If you use a `content_type` more verbose than `ManifestListMetadata`, the Iceberg metadata cache is disabled for manifest lists.
 - Similarly, if you use a `content_type` more verbose than `ManifestFileMetadata`, the Iceberg metadata cache is disabled for manifest files.
+- If the SELECT query was cancelled or failed, the log table may still contain entries for the metadata that was processed before the failure and doesn't contain information about metadata entities that were not processed.
 
 ## See also {#see-also}
 - [Iceberg Table Engine](../../engines/table-engines/integrations/iceberg.md)
