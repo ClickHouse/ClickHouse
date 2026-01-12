@@ -48,7 +48,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(UInt8)                      /// Number of stack frames
         + sizeof(FramePointers)              /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
-        + sizeof(UInt64)                     /// cpu_id
+        // NOTE: temporarily comment out the fix to confirm that multiple flushes are caught by the CI (see the assert below)
+        // + sizeof(UInt64)                     /// cpu_id
         + sizeof(UInt64)                     /// thread_id
         + sizeof(ThreadName)                 /// thread name enum
         + sizeof(Int64)                      /// size
