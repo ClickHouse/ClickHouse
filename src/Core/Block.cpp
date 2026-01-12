@@ -323,7 +323,7 @@ std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::strin
 {
     for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
-        const auto * column = findByName(column_name, false);
+        const auto * column = findByName(String(column_name), false);
         if (!column)
             continue;
 
