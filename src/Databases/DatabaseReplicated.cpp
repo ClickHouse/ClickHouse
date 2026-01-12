@@ -612,7 +612,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                         replica_host_id,
                         host_id);
 
-                // After restarting, InterserverIOAddress might change.
+                // After restarting, InterserverIOAddress might change (e.g: config updated, `getFQDNOrHostName` returns a different one)
                 // If the UUID in the keeper is the same as the current server UUID, we will update the host_id in keeper
                 LOG_INFO(
                     log,
