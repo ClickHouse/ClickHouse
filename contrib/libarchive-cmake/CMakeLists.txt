@@ -132,7 +132,11 @@ set(SRCS
 )
 
 add_library(_libarchive ${SRCS})
-target_include_directories(_libarchive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if (OS_SUNOS)
+    target_include_directories(_libarchive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/illumos)
+else()
+    target_include_directories(_libarchive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 target_include_directories(_libarchive PUBLIC "${LIBRARY_DIR}/libarchive")
 
 target_compile_definitions(_libarchive PUBLIC

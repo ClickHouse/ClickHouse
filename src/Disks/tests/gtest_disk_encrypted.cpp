@@ -447,7 +447,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
 TEST_F(DiskEncryptedTest, LocalBlobs)
 {
-    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(fs::path{getDirectory()} / "local_blobs", false));
+    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
     auto metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
     auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
