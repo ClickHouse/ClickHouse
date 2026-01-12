@@ -578,7 +578,7 @@ public:
 
     static bool tryParse(UUID & uuid, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
 };
@@ -609,7 +609,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         UUID uuid;
         if (!tryReadUUIDText(uuid, buf) || !buf.eof())
         {
@@ -648,7 +648,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         DateType date;
         if (!tryReadDateText(date, buf) || !buf.eof())
         {
@@ -705,7 +705,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -770,7 +770,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
@@ -913,7 +913,7 @@ public:
 
     bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -995,7 +995,7 @@ public:
 
     bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
@@ -1126,7 +1126,7 @@ public:
 
     static bool tryParse(IPv4 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
 };
@@ -1169,7 +1169,7 @@ public:
 
     static bool tryParse(IPv6 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
 };
@@ -1852,7 +1852,7 @@ private:
         MutableColumnPtr & tmp_dynamic_column,
         bool is_root) const
     {
-        if (shouldSkipPath(current_path, insert_settings))
+        if (shouldSkipPath(current_path))
             return true;
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
@@ -1899,12 +1899,8 @@ private:
             }
             else if (!typed_path_nodes.at(current_path)->insertResultToColumn(*typed_it->second, element, insert_settings, format_settings, error))
             {
-                if (!insert_settings.skip_invalid_typed_paths)
-                {
-                    error += fmt::format(" (while reading path {})", current_path);
-                    return false;
-                }
-                /// Otherwise skip this field and continue
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
             }
         }
         /// Check if we have this path in dynamic paths.
@@ -1950,25 +1946,23 @@ private:
             /// creating it every time is very slow. And so we need to always infer
             /// new type for new value and don't reuse existing variants.
             insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
-            if (dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
-            {
-                paths_and_values_for_shared_data.emplace_back(current_path, "");
-                WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-                /// Use default format settings for binary serialization. Non-default settings may change
-                /// the binary representation of the values and break the future deserialization.
-                dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
-            }
-            else
+            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
             }
+
+            paths_and_values_for_shared_data.emplace_back(current_path, "");
+            WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
+            /// Use default format settings for binary serialization. Non-default settings may change
+            /// the binary representation of the values and break the future deserialization.
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
         }
 
         return true;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    bool shouldSkipPath(const String & path) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -1982,16 +1976,8 @@ private:
 
         for (const auto & regexp : path_regexps_to_skip)
         {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
         }
 
         return false;
