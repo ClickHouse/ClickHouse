@@ -3940,4 +3940,6 @@ deltaLake(
     upload_directory(minio_client, bucket, path, "")
 
     assert 2 == int(node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip())
+    # check rows indexes size is 2
+    # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
     assert node.contains_in_log("Row indexes size: 2")
