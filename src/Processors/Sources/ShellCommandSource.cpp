@@ -138,7 +138,6 @@ public:
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
-        , has_stderr_output(false)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -180,12 +179,14 @@ public:
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
                     {
                         /// Accumulate stderr up to safety limit
-                        if (stderr_full_output.size() < MAX_STDERR_SIZE)
+                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                        if (current_size < MAX_STDERR_SIZE)
                         {
-                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - stderr_full_output.size());
-                            stderr_full_output.append(str.begin(), str.begin() + bytes_to_append);
+                            if (!stderr_full_output)
+                                stderr_full_output.emplace();
+                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - current_size);
+                            stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
                         }
-                        has_stderr_output = true;
                     }
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
                     {
@@ -219,7 +220,8 @@ public:
                         static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
 
                         /// Continue reading stderr until EOF or timeout
-                        while (stderr_full_output.size() < MAX_STDERR_SIZE)
+                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                        while (current_size < MAX_STDERR_SIZE)
                         {
                             pfds[1].revents = 0;
                             int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
@@ -234,10 +236,12 @@ public:
                                 if (stderr_res <= 0)
                                     break;
 
+                                if (!stderr_full_output)
+                                    stderr_full_output.emplace();
                                 std::string_view str(stderr_read_buf.get(), stderr_res);
-                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - stderr_full_output.size());
-                                stderr_full_output.append(str.begin(), str.begin() + bytes_to_append);
-                                has_stderr_output = true;
+                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - current_size);
+                                stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
+                                current_size = stderr_full_output->size();
                             }
                             else
                             {
@@ -245,8 +249,8 @@ public:
                             }
                         }
 
-                        if (has_stderr_output)
-                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", stderr_full_output);
+                        if (stderr_full_output)
+                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", *stderr_full_output);
                     }
                     break;
                 }
@@ -297,7 +301,6 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
-    bool has_stderr_output;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
@@ -305,7 +308,7 @@ private:
     size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
-    String stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
+    std::optional<String> stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
