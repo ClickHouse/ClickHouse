@@ -25,6 +25,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/Stopwatch.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
@@ -35,6 +36,8 @@ namespace ProfileEvents
     extern const Event KeeperLogsEntryReadFromCommitCache;
     extern const Event KeeperLogsEntryReadFromFile;
     extern const Event KeeperLogsPrefetchedEntries;
+    extern const Event KeeperChangelogWrittenBytes;
+    extern const Event KeeperChangelogFileSyncMicroseconds;
 }
 
 namespace DB
@@ -274,6 +277,8 @@ public:
         }
 
         auto & write_buffer = getBuffer();
+        const size_t bytes_before = write_buffer.count();
+
         auto current_position = initial_file_size + write_buffer.count();
         writeIntBinary(computeRecordChecksum(record), write_buffer);
 
@@ -306,6 +311,9 @@ public:
         chassert(!last_index_written || *last_index_written >= record.header.index || *last_index_written == record.header.index - 1);
         last_index_written = record.header.index;
 
+        const size_t bytes_written = write_buffer.count() - bytes_before;
+        ProfileEvents::increment(ProfileEvents::KeeperChangelogWrittenBytes, bytes_written);
+
         return true;
     }
 
@@ -316,7 +324,14 @@ public:
         {
             /// Fsync file system if needed
             if (log_file_settings.force_sync)
+            {
+                Stopwatch watch;
+
                 file_buffer->sync();
+
+                if (!compressed_buffer)
+                    ProfileEvents::increment(ProfileEvents::KeeperChangelogFileSyncMicroseconds, watch.elapsedMicroseconds());
+            }
             else
                 file_buffer->next();
         }
