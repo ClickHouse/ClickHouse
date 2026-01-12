@@ -95,7 +95,7 @@ int main(int argc, char ** argv)
 
         if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(config_xml, "encryption_codecs", "from_hashicorp_vault"))
         {
-            Coordination::HashiCorpVault::instance().load(*configuration, "hashicorp_vault");
+            DB::HashiCorpVault::instance().load(*configuration, "hashicorp_vault");
             config_xml = config_processor.processConfig(&has_zk_includes);
             configuration = new Poco::Util::XMLConfiguration(config_xml);
         }
