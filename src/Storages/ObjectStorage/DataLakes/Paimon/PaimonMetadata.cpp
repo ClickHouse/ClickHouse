@@ -78,8 +78,10 @@ DataLakeMetadataPtr PaimonMetadata::create(
 
     const String table_path = configuration_ptr->getPathForRead().path;
 
+    auto global_context = local_context->getGlobalContext();
+
     /// Create table client
-    PaimonTableClientPtr table_client = std::make_shared<PaimonTableClient>(object_storage, table_path, local_context);
+    PaimonTableClientPtr table_client = std::make_shared<PaimonTableClient>(object_storage, table_path, global_context);
 
     /// Get and validate schema
     auto schema_info = table_client->getLastestTableSchemaInfo();
@@ -119,7 +121,14 @@ DataLakeMetadataPtr PaimonMetadata::create(
         String keeper_path = "/clickhouse/paimon";
         if (!keeper_path.ends_with('/'))
             keeper_path += '/';
-        keeper_path += table_path;
+        /// Sanitize table_path for Keeper (no '/',' ' or ':' allowed in znode names)
+        String sanitized = table_path;
+        for (auto & ch : sanitized)
+        {
+            if (ch == '/' || ch == ':' || ch == ' ')
+                ch = '_';
+        }
+        keeper_path += sanitized;
 
         /// Use host-based unique replica name to avoid config knob
         String host = getFQDNOrHostName();
@@ -146,7 +155,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
         metadata_refresh_interval_ms);
 
     return std::make_unique<PaimonMetadata>(
-        object_storage, configuration_ptr, local_context, std::move(persistent_components), table_client);
+        object_storage, configuration_ptr, global_context, std::move(persistent_components), table_client);
 }
 
 PaimonMetadata::PaimonMetadata(
@@ -682,6 +691,8 @@ Strings PaimonMetadata::collectFullScanDataFiles(
     const std::optional<PartitionPruner> & partition_pruner) const
 {
     Strings data_files;
+    std::unordered_set<String> seen_files;
+    std::unordered_set<String> delete_files;
 
     auto collect_files = [&](const String & manifest_list_path, const String & type)
     {
@@ -694,26 +705,46 @@ Strings PaimonMetadata::collectFullScanDataFiles(
             auto manifest = getManifest(meta.file_name, state->schema_id);
             for (const auto & entry : manifest.entries)
             {
+                String file_path = (std::filesystem::path(persistent_components.table_path)
+                    / entry.file.bucket_path / entry.file.file_name);
+
                 if (entry.kind == PaimonManifestEntry::Kind::DELETE)
+                {
+                    delete_files.emplace(file_path);
+                    LOG_TEST(log, "{} delete file: {}", type, file_path);
                     continue;
+                }
 
                 if (partition_pruner && partition_pruner->canBePruned(entry))
-            {
+                {
                     LOG_TEST(log, "Partition pruned {} manifest file: {}, {}",
                              type, entry.file.file_name, entry.file.bucket_path);
-                continue;
-            }
+                    continue;
+                }
 
-                data_files.emplace_back(
-                    std::filesystem::path(persistent_components.table_path)
-                    / entry.file.bucket_path / entry.file.file_name);
+                if (!seen_files.emplace(file_path).second)
+                {
+                    LOG_TEST(log, "Skip duplicated {} data file: {}", type, file_path);
+                continue;
+                }
+
+                data_files.emplace_back(std::move(file_path));
                 LOG_TEST(log, "{} data file: {}", type, data_files.back());
+            }
         }
-    }
     };
 
+    /// Full scan: include base + delta, with dedup and tombstone handling.
     collect_files(state->base_manifest_list_path, "base");
     collect_files(state->delta_manifest_list_path, "delta");
+
+    /// Apply delete markers best-effort.
+    data_files.erase(
+        std::remove_if(
+            data_files.begin(),
+            data_files.end(),
+            [&](const String & path) { return delete_files.contains(path); }),
+        data_files.end());
 
     return data_files;
 }

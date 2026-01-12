@@ -16,8 +16,8 @@ f_float	Nullable(Float32)
 f_double	Nullable(Float64)					
 f_date	Nullable(Date)					
 f_time	Nullable(Int64)					
-f_timestamp	Nullable(DateTime64(3, 'UTC'))					
-f_timestamp2	Nullable(DateTime64(1, 'UTC'))					
+f_timestamp	Nullable(DateTime64(3, \'UTC\'))					
+f_timestamp2	Nullable(DateTime64(1, \'UTC\'))					
 f_timestamp3	Nullable(DateTime64(3))					
 f_boolean_nn	Int8					
 f_char_nn	FixedString(1)					
@@ -37,8 +37,8 @@ f_float_nn	Float32
 f_double_nn	Float64					
 f_date_nn	Date					
 f_time_nn	Int64					
-f_timestamp_nn	DateTime64(3, 'UTC')					
-f_timestamp2_nn	DateTime64(1, 'UTC')					
+f_timestamp_nn	DateTime64(3, \'UTC\')					
+f_timestamp2_nn	DateTime64(1, \'UTC\')					
 f_timestamp3_nn	DateTime64(3)					
 f_array	Array(Int32)					
 f_map	Map(String, String)					
@@ -55,4 +55,3 @@ f_map	Map(String, String)
 0	J	j	中文String9	\t	\t	\t	9	90	900	9	9	9	9000	9.1	9.01	2023-01-09	32949	2025-01-10 09:09:09.009	2025-01-10 09:09:09.0	2025-01-10 17:09:09.009	0	J	j	中文String9	\t	\t	\t	9	90	900	9	9	9	9000	9.1	9.01	2023-01-09	32949	2025-01-10 09:09:09.009	2025-01-10 09:09:09.0	2025-01-10 17:09:09.009	[9,18,27]	{'18':'18','9':'9','27':'27'}
 ===
 10
-
