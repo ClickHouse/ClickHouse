@@ -1,0 +1,21 @@
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <protocols>
+        <tcp_secure>
+            <type>tls</type>
+            <impl>tcp</impl>
+            <port>9440</port>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+            <verificationMode>none</verificationMode>
+            <caConfig>/etc/clickhouse-server/config.d/server.pem</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <description>secure native protocol</description>
+        </tcp_secure>
+        <tcp>
+            <type>tcp</type>
+            <port>9000</port>
+            <description>native</description>
+        </tcp>
+    </protocols>
+</clickhouse>

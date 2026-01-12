@@ -1,29 +1,40 @@
+#include <Common/logger_useful.h>
+#include <Common/safe_cast.h>
+
+#include <Core/Joins.h>
 #include <Core/Settings.h>
+
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/TableJoin.h>
+
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/StorageMemory.h>
-
-#include <Processors/QueryPlan/LimitStep.h>
-
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Interpreters/FullSortingMergeJoin.h>
+#include <Processors/QueryPlan/SortingStep.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+
+#include <Storages/StorageMemory.h>
 
 #include <algorithm>
 #include <limits>
@@ -34,16 +45,7 @@
 #include <unordered_set>
 #include <vector>
 #include <ranges>
-#include <Core/Joins.h>
-#include <Interpreters/HashTablesStatistics.h>
-#include <Common/logger_useful.h>
-#include <Common/safe_cast.h>
 #include <base/types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-
 
 namespace ProfileEvents
 {
@@ -294,6 +296,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+    }
+
+    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    {
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
     if (node.children.size() != 1)
@@ -1135,12 +1142,13 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
-    if (!optimization_settings.query_plan_optimize_join_order_limit ||
-        (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
-        locality != JoinLocality::Unspecified ||
-        kind == JoinKind::Paste ||
-        kind == JoinKind::Full ||
-        !join_operator.residual_filter.empty())
+    if (!optimization_settings.query_plan_optimize_join_order_limit
+        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any)
+        || locality != JoinLocality::Unspecified
+        || kind == JoinKind::Paste
+        || kind == JoinKind::Full
+        || !join_operator.residual_filter.empty()
+    )
     {
         join_step->setOptimized();
         return;

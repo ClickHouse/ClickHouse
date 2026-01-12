@@ -267,7 +267,7 @@ void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery
         return;
 
     auto & columns = create.columns_list->columns->children;
-    auto * it = std::find_if(columns.begin(), columns.end(), [](const ASTPtr & column)
+    auto it = std::find_if(columns.begin(), columns.end(), [](const ASTPtr & column)
     {
         return typeid_cast<const ASTColumnDeclaration &>(*column).name == TimeSeriesColumnNames::ID;
     });

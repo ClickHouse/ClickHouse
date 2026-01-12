@@ -20,7 +20,7 @@ public:
     bool prefer_alias_to_column_name = false;
     // An alias can be defined as a query parameter,
     // in which case we can only resolve it during query execution.
-    std::optional<std::shared_ptr<ASTQueryParameter>> parametrised_alias;
+    std::shared_ptr<ASTQueryParameter> parametrised_alias;
 
     using IAST::IAST;
 

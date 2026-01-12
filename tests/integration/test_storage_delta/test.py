@@ -3548,8 +3548,8 @@ def test_subcolumns(started_cluster, column_mapping):
             os.path.join(os.path.dirname(os.path.realpath(__file__))), data_file
         )
     )
-    write_delta_from_df(spark, df, path, mode="overwrite")
-    default_upload_directory(started_cluster, "s3", path, "")
+    write_delta_from_df(spark, df, f"/{path}", mode="overwrite")
+    default_upload_directory(started_cluster, "s3", f"/{path}", "")
 
     s3_objects = list(minio_client.list_objects(bucket, table_name, recursive=True))
     file_names = []
