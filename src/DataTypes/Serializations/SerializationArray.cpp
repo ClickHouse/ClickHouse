@@ -729,27 +729,26 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    auto nested_column_type_id = removeNullable(column_array.getDataPtr())->getDataType();
-    bool print_each_element_on_separate_line = nested_column_type_id == TypeIndex::Array || nested_column_type_id == TypeIndex::Map
-        || nested_column_type_id == TypeIndex::Object || nested_column_type_id == TypeIndex::Tuple;
+    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
+    bool print_each_element_on_separate_line =
+        nested_column_type == TypeIndex::Array ||
+        nested_column_type == TypeIndex::Map ||
+        nested_column_type == TypeIndex::Object ||
+        nested_column_type == TypeIndex::Tuple;
 
-    if (print_each_element_on_separate_line)
-        writeCString("[\n", ostr);
-    else
-        writeChar('[', ostr);
 
+    writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-        {
-            if (print_each_element_on_separate_line)
-                writeCString(",\n", ostr);
-            else
-                writeChar(',', ostr);
-        }
+            writeChar(',', ostr);
 
         if (print_each_element_on_separate_line)
+        {
+            writeChar('\n', ostr);
             writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        }
+
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
 
