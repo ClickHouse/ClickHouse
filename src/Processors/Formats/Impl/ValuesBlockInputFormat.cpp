@@ -431,14 +431,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     ASTPtr ast;
     std::optional<IParser::Pos> ti_start;
 
-    /// RAII guard to capture literal token positions during parsing.
+    /// Map to capture literal token positions during parsing.
     /// This is used by ConstantExpressionTemplate to track token positions.
-    /// The scope must extend past the ConstantExpressionTemplate usage below.
-    LiteralTokenMapScope literal_token_scope;
+    /// Must span both parsing and template construction.
+    LiteralTokenMap literal_token_map;
+    Expected expected;
+    expected.literal_token_map = &literal_token_map;
 
     if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
     {
-        Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
         ti_start = IParser::Pos(
             *token_iterator,
@@ -516,7 +517,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 *token_iterator,
                 ast,
                 context,
-                literal_token_scope.get(),
+                literal_token_map,
                 &found_in_cache,
                 delimiter);
 

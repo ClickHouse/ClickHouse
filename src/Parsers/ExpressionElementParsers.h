@@ -3,70 +3,10 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
-#include <Parsers/TokenIterator.h>
 
-#include <unordered_map>
 
 namespace DB
 {
-
-class ASTLiteral;
-
-/// Token position info for literals - stores raw character pointers into the query string.
-/// Used for ConstantExpressionTemplate construction and LIKE/REGEXP syntax highlighting.
-/// Stored externally to reduce ASTLiteral size by ~48 bytes per literal.
-///
-/// IMPORTANT: These are raw pointers into the original query string. They are only valid
-/// during parsing while the query buffer exists. Do not store or access after parsing.
-struct LiteralTokenInfo
-{
-    const char * begin; /// Start of literal in query string
-    const char * end;   /// End of literal in query string
-
-    LiteralTokenInfo(const char * begin_, const char * end_)
-        : begin(begin_)
-        , end(end_)
-    {
-    }
-};
-using LiteralTokenMap = std::unordered_map<const ASTLiteral *, LiteralTokenInfo>;
-
-/// Thread-local map for capturing literal token positions during parsing.
-/// Used by ValuesBlockInputFormat for ConstantExpressionTemplate and by
-/// ParserExpression for LIKE/REGEXP syntax highlighting.
-///
-/// IMPORTANT: The map stores raw pointers to ASTLiteral nodes. It must only be
-/// used during parsing while the AST nodes are still valid. Do not store or
-/// access the map after parsing completes.
-void setLiteralTokenMap(LiteralTokenMap * map);
-LiteralTokenMap * getLiteralTokenMap();
-
-/// RAII guard for managing the thread-local LiteralTokenMap.
-/// Creates a local map and sets it as the thread-local; restores previous state on destruction.
-/// Use this instead of manual setLiteralTokenMap/SCOPE_EXIT pairs.
-class LiteralTokenMapScope
-{
-public:
-    LiteralTokenMapScope()
-        : prev_map(getLiteralTokenMap())
-    {
-        setLiteralTokenMap(&map);
-    }
-
-    ~LiteralTokenMapScope() { setLiteralTokenMap(prev_map); }
-
-    LiteralTokenMap & get() { return map; }
-    const LiteralTokenMap & get() const { return map; }
-
-    /// Non-copyable, non-movable
-    LiteralTokenMapScope(const LiteralTokenMapScope &) = delete;
-    LiteralTokenMapScope & operator=(const LiteralTokenMapScope &) = delete;
-
-private:
-    LiteralTokenMap map;
-    LiteralTokenMap * prev_map;
-};
-
 
 /** The SELECT subquery, in parentheses.
   */
