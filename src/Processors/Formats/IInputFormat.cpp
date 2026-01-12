@@ -75,8 +75,9 @@ void IInputFormat::onFinish()
     resetReadBuffer();
 }
 
-void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
+bool IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
 {
+    return false;
 }
 
 }

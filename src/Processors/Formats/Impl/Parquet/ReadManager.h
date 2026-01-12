@@ -49,6 +49,7 @@ public:
         Chunk chunk;
         BlockMissingValues block_missing_values;
         size_t virtual_bytes_read = 0;
+        int row_group_id = -1;
     };
 
     /// Not thread safe.

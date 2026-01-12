@@ -1070,7 +1070,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             const auto context = getContext();
-            reader = StorageObjectStorageSource::createReader(
+            String prev_reader;
+            reader = *StorageObjectStorageSource::createReader(
                 processor_id,
                 file_iterator,
                 configuration,
@@ -1083,7 +1084,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 max_block_size,
                 parser_shared_resources,
                 nullptr,
-                /* need_only_count */ false);
+                /* need_only_count */ false,
+                prev_reader,
+                reader);
 
             if (!reader)
             {

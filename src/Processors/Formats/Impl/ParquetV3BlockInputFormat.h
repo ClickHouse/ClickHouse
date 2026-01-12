@@ -33,7 +33,7 @@ public:
         return previous_approx_bytes_read_for_chunk;
     }
 
-    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
+    bool setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
     Chunk read() override;
@@ -53,6 +53,8 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    size_t last_rg = 0;
+    std::mutex set_buckets_mutex;
 };
 
 class NativeParquetSchemaReader : public ISchemaReader

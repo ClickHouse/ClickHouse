@@ -14,12 +14,14 @@ namespace ErrorCodes
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
-    bool send_over_whole_archive_)
+    bool send_over_whole_archive_,
+    bool use_bucket_splitting_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
     , connection_to_files(ids_of_nodes_.size())
     , ids_of_nodes(std::move(ids_of_nodes_))
     , iterator_exhausted(false)
+    , use_bucket_splitting(use_bucket_splitting_)
 {
 }
 
@@ -27,6 +29,11 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
 {
     LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
 
+    if (use_bucket_splitting)
+    {
+        auto res = iterator->next(0);
+        return res;
+    }
     // 1. Check pre-queued files first
     if (auto file = getPreQueuedFile(number_of_current_replica))
         return file;

@@ -107,7 +107,7 @@ protected:
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
-        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        IInputFormat * getInputFormat() const { return dynamic_cast<IInputFormat *>(source.get()); }
 
     private:
         ObjectInfoPtr object_info;
@@ -118,11 +118,11 @@ protected:
     };
 
     ReaderHolder reader;
-    ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
-    std::future<ReaderHolder> reader_future;
+    ThreadPoolCallbackRunnerUnsafe<std::optional<ReaderHolder>> create_reader_scheduler;
+    std::future<std::optional<ReaderHolder>> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    static ReaderHolder createReader(
+    static std::optional<ReaderHolder> createReader(
         size_t processor,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
@@ -135,14 +135,18 @@ protected:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count);
+        bool need_only_count,
+        String & prev_file,
+        ReaderHolder & reader);
 
-    ReaderHolder createReader();
+    std::optional<ReaderHolder> createReader();
 
-    std::future<ReaderHolder> createReaderAsync();
+    std::future<std::optional<ReaderHolder>> createReaderAsync();
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
     void lazyInitialize();
+
+    String prev_file;
 };
 
 class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator, private WithContext

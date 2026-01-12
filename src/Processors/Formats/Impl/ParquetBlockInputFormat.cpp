@@ -606,7 +606,7 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
     size_t size_chunks;
     readVarUInt(size_chunks, buffer);
-    row_group_ids = std::vector<size_t>{};
+    row_group_ids = std::deque<size_t>{};
     row_group_ids.resize(size_chunks);
     size_t bucket;
     for (size_t i = 0; i < size_chunks; ++i)
@@ -625,8 +625,19 @@ String ParquetFileBucketInfo::getIdentifier() const
 }
 
 ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
-    : row_group_ids(row_group_ids_)
+    : row_group_ids(std::deque<size_t>(row_group_ids_.begin(), row_group_ids_.end()))
 {
+}
+
+void ParquetFileBucketInfo::unite(const ParquetFileBucketInfo & other)
+{
+    for (const auto & val : other.row_group_ids)
+    {
+        if (!row_group_ids.empty() && row_group_ids.back() >= val)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "WTF? {} {}", row_group_ids.back(), val);
+        row_group_ids.push_back(val);
+    }
+
 }
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
@@ -1245,9 +1256,10 @@ Chunk ParquetBlockInputFormat::read()
     }
 }
 
-void ParquetBlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
+bool ParquetBlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+    return true;
 }
 
 void ParquetBlockInputFormat::resetParser()

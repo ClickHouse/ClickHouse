@@ -52,7 +52,7 @@ class ArrowColumnToCHColumn;
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
-    std::vector<size_t> row_group_ids;
+    std::deque<size_t> row_group_ids;
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
@@ -63,6 +63,8 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     {
         return "Parquet";
     }
+
+    void unite(const ParquetFileBucketInfo & other);
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
@@ -93,7 +95,7 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
-    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
+    bool setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
     Chunk read() override;
