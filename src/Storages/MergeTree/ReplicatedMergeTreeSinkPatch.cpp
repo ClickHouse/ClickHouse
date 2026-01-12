@@ -32,6 +32,9 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
 
 void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
+    if (delayed_parts.empty())
+        return;
+
     for (auto & partition : delayed_parts)
     {
         partition.temp_part->finalize();
