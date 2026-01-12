@@ -1,6 +1,5 @@
 #include <Client/IConnections.h>
 #include <Core/Settings.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
