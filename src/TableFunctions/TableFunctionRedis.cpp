@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <IO/WriteHelpers.h>
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/ColumnsDescription.h>
@@ -61,7 +61,7 @@ StoragePtr TableFunctionRedis::executeImpl(
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
 
-    String db_name = "redis" + getDatabaseName() + "_db_" + toString(configuration.db_index);
+    String db_name = fmt::format("redis{}_db_{}", getDatabaseName(), configuration.db_index);
     auto storage = std::make_shared<StorageRedis>(
         StorageID(db_name, table_name), configuration, context, metadata, primary_key);
     storage->startup();

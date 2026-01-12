@@ -38,7 +38,6 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.pr_body.set_dependency([JobNames.STYLE_CHECK]),
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -56,6 +55,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
@@ -133,7 +133,8 @@ workflow = Workflow.Config(
     enable_merge_ready_status=True,
     enable_gh_summary_comment=True,
     enable_commit_status_on_failure=False,
-    enable_flaky_tests_catalog=True,
+    enable_open_issues_check=True,
+    enable_slack_feed=True,
     pre_hooks=[
         can_be_trusted,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",

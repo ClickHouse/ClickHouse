@@ -38,8 +38,21 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ExternalJoinCompressedBytes;
+    extern const Event ExternalJoinUncompressedBytes;
+    extern const Event ExternalJoinWritePart;
+}
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_join_right_table_sorting;
@@ -1182,6 +1195,17 @@ void TableJoin::assertEnableAnalyzer() const
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
 }
 
+TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
+{
+    if (!tmp_data)
+        return nullptr;
+    return tmp_data->childScope({
+        .current_metric = CurrentMetrics::TemporaryFilesForJoin,
+        .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
+        .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
+        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
+}
+
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
@@ -1191,7 +1215,8 @@ bool allowParallelHashJoin(
 {
     if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
-    if (kind != JoinKind::Left && kind != JoinKind::Inner)
+    if (kind != JoinKind::Left && kind != JoinKind::Inner
+        && kind != JoinKind::Right && kind != JoinKind::Full)
         return false;
     if (strictness == JoinStrictness::Asof)
         return false;

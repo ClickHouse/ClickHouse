@@ -59,28 +59,28 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
-#include <Processors/Formats/Impl/NullFormat.h>
+#include <IO/Ask.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ForkWriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/processColumnTransformers.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/processColumnTransformers.h>
-#include <IO/Ask.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/CompressionMethod.h>
-#include <IO/ForkWriteBuffer.h>
-#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
@@ -117,6 +117,9 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -153,6 +156,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 }
@@ -268,8 +272,8 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     struct Id
     {
-        StringRef name;
-        StringRef host_name;
+        std::string_view name;
+        std::string_view host_name;
 
         bool operator<(const Id & rhs) const
         {
@@ -952,7 +956,16 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
 
     if (getClientConfiguration().has("insert_format_max_block_size"))
-        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+        insert_format_max_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+
+    if (getClientConfiguration().has("insert_format_max_block_size_bytes"))
+        insert_format_max_block_size_bytes_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size_bytes");
+
+    if (getClientConfiguration().has("insert_format_min_block_size_rows"))
+        insert_format_min_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_min_block_size_rows");
+
+    if (getClientConfiguration().has("insert_format_min_block_size_bytes"))
+        insert_format_min_block_size_bytes_from_config = getClientConfiguration().getUInt64("insert_format_min_block_size_bytes");
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -1383,9 +1396,15 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                     double elapsed = receive_watch.elapsedSeconds();
                     if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
-                        output_stream << "Timeout exceeded while receiving data from server."
-                                    << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
-                                    << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+                        PreformattedMessage error_message = PreformattedMessage::create
+                        (
+                            "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
+                            static_cast<size_t>(elapsed),
+                            receive_timeout.totalSeconds()
+                        );
+
+                        client_exception = std::make_unique<Exception>(error_message, ErrorCodes::TIMEOUT_EXCEEDED);
+                        have_error = true;
 
                         cancelQuery();
                     }
@@ -1572,14 +1591,14 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
         const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
-        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
-            auto host_name = host_names.getDataAt(i).toString();
+            std::string host_name{host_names.getDataAt(i)};
 
             /// In ProfileEvents packets thread id 0 specifies common profiling information
             /// for all threads executing current query on specific host. So instead of summing per thread
@@ -2031,13 +2050,34 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    /// Setting value from cmd arg overrides one from config.
-    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
-    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
-        insert_format_max_block_size_from_config.has_value())
-        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
+    const Settings & settings = client_context->getSettingsRef();
 
-    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    /// Setting value from cmd arg overrides one from config.
+    size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size].changed
+        ? settings[Setting::max_insert_block_size]
+        : insert_format_max_block_size_rows_from_config.value_or(settings[Setting::max_insert_block_size]);
+
+    size_t insert_format_max_block_size_bytes = settings[Setting::max_insert_block_size_bytes].changed
+        ? settings[Setting::max_insert_block_size_bytes]
+        : insert_format_max_block_size_bytes_from_config.value_or(settings[Setting::max_insert_block_size_bytes]);
+
+    size_t insert_format_min_block_size_rows = settings[Setting::min_insert_block_size_rows].changed
+        ? settings[Setting::min_insert_block_size_rows]
+        : insert_format_min_block_size_rows_from_config.value_or(settings[Setting::min_insert_block_size_rows]);
+
+    size_t insert_format_min_block_size_bytes = settings[Setting::min_insert_block_size_bytes].changed
+        ? settings[Setting::min_insert_block_size_bytes]
+        : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
+
+    auto source = client_context->getInputFormat(
+        current_format,
+        buf,
+        sample,
+        insert_format_max_block_size_rows,
+        std::nullopt,
+        insert_format_max_block_size_bytes,
+        insert_format_min_block_size_rows,
+        insert_format_min_block_size_bytes);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
@@ -3141,7 +3181,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                         {
                             if (!result.empty())
                                 result += "\n";
-                            result += column->getDataAt(i).toString();
+                            result.append(column->getDataAt(i));
                         }
                     }
                     break;
@@ -3406,6 +3446,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
+    if (options.contains("oauth-url"))
+        getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
+    if (options.contains("oauth-client-id"))
+        getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.contains("server_logs_file"))
@@ -3549,6 +3594,7 @@ void ClientBase::runInteractive()
         .multiline = getClientConfiguration().has("multiline"),
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
+        .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

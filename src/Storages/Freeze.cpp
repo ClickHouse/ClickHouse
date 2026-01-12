@@ -1,6 +1,6 @@
 #include <Storages/Freeze.h>
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>

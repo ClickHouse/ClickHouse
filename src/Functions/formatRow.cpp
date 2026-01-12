@@ -214,7 +214,7 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
     };
     FunctionDocumentation::IntroducedIn formatRow_introduced_in = {20, 7};
     FunctionDocumentation::Category formatRow_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation formatRow_documentation = {formatRow_description, formatRow_syntax, formatRow_arguments, formatRow_returned_value, formatRow_examples, formatRow_introduced_in, formatRow_category};
+    FunctionDocumentation formatRow_documentation = {formatRow_description, formatRow_syntax, formatRow_arguments, {}, formatRow_returned_value, formatRow_examples, formatRow_introduced_in, formatRow_category};
 
     /// formatRowNoNewline documentation
     FunctionDocumentation::Description formatRowNoNewline_description = R"(
@@ -248,7 +248,7 @@ FROM numbers(3)
     };
     FunctionDocumentation::IntroducedIn formatRowNoNewline_introduced_in = {20, 7};
     FunctionDocumentation::Category formatRowNoNewline_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation formatRowNoNewline_documentation = {formatRowNoNewline_description, formatRowNoNewline_syntax, formatRowNoNewline_arguments, formatRowNoNewline_returned_value, formatRowNoNewline_examples, formatRowNoNewline_introduced_in, formatRowNoNewline_category};
+    FunctionDocumentation formatRowNoNewline_documentation = {formatRowNoNewline_description, formatRowNoNewline_syntax, formatRowNoNewline_arguments, {}, formatRowNoNewline_returned_value, formatRowNoNewline_examples, formatRowNoNewline_introduced_in, formatRowNoNewline_category};
 
     factory.registerFunction<FormatRowOverloadResolver<false>>(formatRow_documentation);
     factory.registerFunction<FormatRowOverloadResolver<true>>(formatRowNoNewline_documentation);

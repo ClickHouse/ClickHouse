@@ -18,19 +18,24 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
     std::unordered_map<String, const ActionsDAG::Node *> input_nodes;
     for (const auto & required_column : required_columns)
     {
-        auto subcolumn = available_columns.findSubcolumnByName(required_column);
-        if (!available_columns.has(required_column) && subcolumn)
+        if (available_columns.has(required_column))
+            continue;
+
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column))
         {
-            auto [column_name, subcolumn_name] = Nested::splitName(required_column);
+            const auto * column = available_columns.findByName(column_name);
+            if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))
+                continue;
+
             const ActionsDAG::Node * column_input_node;
             /// Check if we don't have input with this column yet.
-            if (auto it = input_nodes.find(column_name); it == input_nodes.end())
+            if (auto it = input_nodes.find(column->name); it == input_nodes.end())
             {
-                const auto * node = &extract_subcolumns_dag.addInput(available_columns.getByName(column_name));
+                const auto * node = &extract_subcolumns_dag.addInput(available_columns.getByName(column->name));
                 extract_subcolumns_dag.getOutputs().push_back(node);
-                input_nodes[column_name] = node;
+                input_nodes[column->name] = node;
             }
-            column_input_node = input_nodes[column_name];
+            column_input_node = input_nodes[column->name];
 
             /// Create the second argument of getSubcolumn function with string
             /// containing subcolumn name and add it to the ActionsDAG.
@@ -48,6 +53,8 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
             /// Create an alias for getSubcolumn function so it has the name of the subcolumn.
             const auto & alias_node = extract_subcolumns_dag.addAlias(function_node, required_column);
             extract_subcolumns_dag.getOutputs().push_back(&alias_node);
+
+            break;
         }
     }
 

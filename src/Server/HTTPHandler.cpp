@@ -31,7 +31,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -519,11 +518,11 @@ void HTTPHandler::processQuery(
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
 
-        if (details.query_cache_created_at)
-            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_created_at).count()));
+        if (details.query_cache_entry_created_at)
+            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_entry_created_at).count()));
 
-        if (details.query_cache_expires_at)
-            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_expires_at));
+        if (details.query_cache_entry_expires_at)
+            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
 
         for (const auto & [name, value] : details.additional_headers)
             response.set(name, value);
@@ -772,7 +771,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        const bool include_version = session && session->sessionContext();
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
         auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
 
         used_output.cancel();

@@ -82,6 +82,9 @@ public:
         if (left.info.isPatch() != right.info.isPatch())
             return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
 
+        if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
+            return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
+
         int64_t left_max_block = left.info.max_block;
         int64_t right_min_block = right.info.min_block;
         chassert(left_max_block < right_min_block);

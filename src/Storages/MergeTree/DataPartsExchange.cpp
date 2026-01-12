@@ -20,14 +20,11 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomDelay.h>
-#include <Common/FailPoint.h>
-#include <Common/thread_local_rng.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
-#include <random>
 
 namespace fs = std::filesystem;
 
@@ -58,12 +55,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char replicated_sends_failpoint[];
 }
 
 namespace DataPartsExchange
@@ -303,19 +294,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         HashingWriteBuffer hashing_out(out);
 
         const auto & is_cancelled = blocker.getCounter();
-        auto cancellation_hook = [&]()
-        {
-            if (is_cancelled)
-                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
-
-            fiu_do_on(FailPoints::replicated_sends_failpoint,
-            {
-                std::bernoulli_distribution fault(0.1);
-                if (fault(thread_local_rng))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
-            });
-        };
-        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
+        copyDataWithThrottler(*file_in, hashing_out, is_cancelled, data.getSendsThrottler());
 
         hashing_out.finalize();
 

@@ -7,6 +7,7 @@ pyarrow==22.0.0
 grpcio==1.60.0
 protobuf==4.25.8
 psutil
+PyYAML==6.0.2
 
 # for targeted job
 unidiff==0.7.5

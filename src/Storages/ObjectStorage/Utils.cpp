@@ -3,7 +3,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCacheKey.h>
@@ -125,7 +125,7 @@ void validateSupportedColumns(
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)
 {
     ASTs::iterator first_key_value_arg_it = args.end();
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         const auto * function_ast = (*it)->as<ASTFunction>();
         if (function_ast && function_ast->name == "equals")
@@ -207,7 +207,7 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         engine_args_to_idx = {{"path", 0}};
 
     ASTs key_value_asts;
-    if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+    if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
         first_key_value_arg_it != args.end())
     {
         key_value_asts = ASTs(first_key_value_arg_it, args.end());

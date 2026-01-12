@@ -387,7 +387,7 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationArray::deserializeOffsetsBinaryBulk(
+bool SerializationArray::deserializeOffsetsBinaryBulk(
     ColumnPtr & offsets_column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -405,8 +405,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
             insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
         else
             offsets_column = arraySizesToOffsets(*cached_column);
+
+        return true;
     }
-    else if (auto * stream = settings.getter(settings.path))
+
+    if (auto * stream = settings.getter(settings.path))
     {
         size_t prev_size = offsets_column->size();
 
@@ -431,7 +434,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Add array sizes read from current range into the cache.
         if (cache)
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+
+        return true;
     }
+
+    return false;
 }
 
 std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
@@ -444,7 +451,8 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
     size_t prev_offset_size = offsets_data.size();
-    deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache);
+    if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
+        return {0, 0};
 
     size_t skipped_nested_rows = 0;
 

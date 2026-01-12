@@ -31,6 +31,10 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -47,6 +51,9 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -54,6 +61,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -107,6 +115,7 @@ StorageObjectStorage::StorageObjectStorage(
     bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
+    ASTPtr order_by_,
     bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
@@ -126,14 +135,25 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    LOG_DEBUG(log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
-        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function, is_datalake_query, columns_in_table_or_function_definition.toString(true));
+    LOG_DEBUG(
+        log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
+        "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
+        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function,
+        is_datalake_query, columns_in_table_or_function_definition.toString(true));
+
+    bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
+
+    if (!is_table_function && is_delta_lake_cdf)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
+    }
 
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;
@@ -246,7 +266,13 @@ StorageObjectStorage::StorageObjectStorage(
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context,
+        format_settings,
+        configuration->partition_strategy_type,
+        sample_path));
+
     setInMemoryMetadata(metadata);
 
     /// This will update metadata for table function which contains specific information about table
@@ -351,6 +377,9 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
     if (update_configuration_on_read_write)
@@ -368,6 +397,47 @@ void StorageObjectStorage::read(
                         getName());
     }
 
+    const auto & settings = local_context->getSettingsRef();
+#if USE_DELTA_KERNEL_RS
+    if (configuration->isDataLakeConfiguration())
+    {
+        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        {
+            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+                delta_kernel_metadata != nullptr)
+            {
+                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+                auto version_range = DeltaLake::TableChanges::getVersionRange(
+                    start_version,
+                    settings[Setting::delta_lake_snapshot_end_version].value);
+                auto table_changes = delta_kernel_metadata->getTableChanges(
+                    version_range,
+                    source_header,
+                    format_settings,
+                    local_context);
+
+                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
+                    std::move(table_changes),
+                    source_header,
+                    column_names,
+                    query_info,
+                    storage_snapshot,
+                    num_streams,
+                    local_context);
+                query_plan.addStep(std::move(read_step));
+                return;
+            }
+        }
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
+        }
+    }
+#endif
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
@@ -375,12 +445,17 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+
+
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
-    const bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+    const bool need_only_count = (query_info.optimize_trivial_count
+                                  || (read_from_format_info.requested_columns.empty()
+                                      && !read_from_format_info.prewhere_info
+                                      && !read_from_format_info.row_level_filter))
+        && settings[Setting::optimize_count_from_files];
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())
@@ -462,10 +537,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 bool StorageObjectStorage::optimize(
@@ -494,6 +570,12 @@ void StorageObjectStorage::truncate(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Path '{}' contains archive. Table cannot be truncated",
                         path.path);
+    }
+
+    if (configuration->isDataLakeConfiguration())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Truncate is not supported for data lake engine");
     }
 
     if (path.hasGlobs())

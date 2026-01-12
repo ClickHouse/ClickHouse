@@ -93,7 +93,7 @@ SELECT blockSerializedSize(maxState(1)) AS x;
     };
     FunctionDocumentation::IntroducedIn introduced_in_blockSerializedSize = {20, 3};
     FunctionDocumentation::Category category_blockSerializedSize = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_blockSerializedSize = {description_blockSerializedSize, syntax_blockSerializedSize, arguments_blockSerializedSize, returned_value_blockSerializedSize, examples_blockSerializedSize, introduced_in_blockSerializedSize, category_blockSerializedSize};
+    FunctionDocumentation documentation_blockSerializedSize = {description_blockSerializedSize, syntax_blockSerializedSize, arguments_blockSerializedSize, {}, returned_value_blockSerializedSize, examples_blockSerializedSize, introduced_in_blockSerializedSize, category_blockSerializedSize};
 
     factory.registerFunction<FunctionBlockSerializedSize>(documentation_blockSerializedSize);
 }
