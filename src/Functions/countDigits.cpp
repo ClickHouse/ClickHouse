@@ -143,7 +143,7 @@ private:
             {
                 auto value = src_data[i];
                 if (value < 0) [[unlikely]]
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-value)));
+                    dst_data[i] = static_cast<UInt8>(digits10(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
                     dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
