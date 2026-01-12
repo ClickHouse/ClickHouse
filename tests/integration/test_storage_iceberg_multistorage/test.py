@@ -1,5 +1,4 @@
 import pytest
-import pyspark
 import os
 import shutil
 import tempfile
@@ -7,7 +6,7 @@ import json
 import avro.datafile
 import avro.io
 
-from helpers.cluster import ClickHouseCluster, minio_access_key, minio_secret_key
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
@@ -18,40 +17,10 @@ from helpers.s3_tools import (
 )
 from helpers.iceberg_utils import (
     get_uuid_str,
+    get_spark,
     default_upload_directory,
     default_download_directory,
 )
-
-
-def get_spark(cluster: ClickHouseCluster):
-    iceberg_version = "1.4.3"
-    spark_version = "3.5.1"
-    hadoop_aws_version = "3.3.4"
-    jdk_bundle = "1.12.262"
-
-    builder = (
-        pyspark.sql.SparkSession.builder
-        .appName("IcebergMultiStorage")
-        .config("spark.jars.repositories", "https://repo1.maven.org/maven2")
-        .config(
-            "spark.jars.packages",
-            f"org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:{iceberg_version},"
-            f"org.apache.spark:spark-avro_2.12:{spark_version},"
-            f"org.apache.hadoop:hadoop-aws:{hadoop_aws_version},"
-            f"com.amazonaws:aws-java-sdk-bundle:{jdk_bundle}",
-        )
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
-        .config("spark.sql.catalog.spark_catalog.type", "hadoop")
-        .config("spark.sql.catalog.spark_catalog.warehouse", "s3a://root/var/lib/clickhouse/user_files/iceberg_data")
-        .config("spark.hadoop.fs.s3a.endpoint", f"http://{cluster.minio_ip}:{cluster.minio_port}/")
-        .config("spark.hadoop.fs.s3a.access.key", minio_access_key)
-        .config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
-        .config("spark.hadoop.fs.s3a.path.style.access", "true")
-        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-        .master("local")
-    )
-    return builder.getOrCreate()
 
 
 @pytest.fixture(scope="package")
@@ -75,7 +44,7 @@ def started_cluster():
 
         prepare_s3_bucket(cluster)
 
-        cluster.spark_session = get_spark(cluster)
+        cluster.spark_session = get_spark()
 
         cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
         cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
