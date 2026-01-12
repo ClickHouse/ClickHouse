@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
 
 namespace ProfileEvents
 {
@@ -225,7 +226,7 @@ private:
 
         IndicesDescription text_indexes_to_merge;
         MutableDataPartStoragePtr temporary_text_index_storage;
-        std::unordered_map<String, BuildTextIndexTransformPtr> build_text_index_transforms;
+        std::unordered_map<String, std::vector<BuildTextIndexTransformPtr>> build_text_index_transforms;
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
@@ -477,6 +478,8 @@ private:
         MergeTextIndexStageSubtasks::const_iterator subtasks_iterator = subtasks.begin();
         MergeTextIndexRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
+
+        std::vector<TextIndexSegment> getTextIndexSegments(const String & part_name, const String & index_name, size_t part_idx) const;
     };
 
     /// By default this context is uninitialized, but some variables has to be set after construction,
@@ -549,7 +552,9 @@ private:
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 

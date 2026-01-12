@@ -285,7 +285,7 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         {
             ret += pick;
             /// A few times, generate a large string
-            if (this->nextLargeNumber() < 4)
+            if (this->nextMediumNumber() < 11)
             {
                 uint32_t i = 0;
                 uint32_t len = static_cast<uint32_t>(pick.size());

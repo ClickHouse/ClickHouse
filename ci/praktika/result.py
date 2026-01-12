@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .event import Event
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -58,6 +59,8 @@ class Result(MetaClasses.Serializable):
     class Label:
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
+        BLOCKER = "blocker"
+        ISSUE = "issue"
 
     name: str
     status: str
@@ -79,6 +82,7 @@ class Result(MetaClasses.Serializable):
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
+        labels=None,
     ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -151,7 +155,7 @@ class Result(MetaClasses.Serializable):
             results=results or [],
             files=files or [],
             links=links or [],
-        )
+        ).set_label(labels or [])
 
     @staticmethod
     def get():
@@ -196,6 +200,9 @@ class Result(MetaClasses.Serializable):
 
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
+
+    def is_dropped(self):
+        return self.status in (Result.Status.DROPPED,)
 
     def set_status(self, status) -> "Result":
         self.status = status
@@ -310,7 +317,11 @@ class Result(MetaClasses.Serializable):
     def set_label(self, label):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
-        self.ext["labels"].append(label)
+        if isinstance(label, list):
+            self.ext["labels"].extend(label)
+        else:
+            self.ext["labels"].append(label)
+        return self
 
     def get_labels(self):
         return self.ext.get("labels", [])
@@ -661,10 +672,18 @@ class Result(MetaClasses.Serializable):
                         )
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
-                        if isinstance(result, bool):
-                            info_lines.extend(buffer.getvalue().splitlines())
-                        else:
-                            info_lines.extend(str(result).splitlines())
+                        output = (
+                            buffer.getvalue()
+                            if isinstance(result, bool)
+                            else str(result)
+                        )
+                        info_lines.extend(output.splitlines())
+                        # Write callable output to log file for consistency with shell commands
+                        if log_file and output:
+                            with open(log_file, "a") as f:
+                                f.write(
+                                    output if output.endswith("\n") else output + "\n"
+                                )
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -674,10 +693,8 @@ class Result(MetaClasses.Serializable):
                         retries=retries,
                         retry_errors=retry_errors,
                     )
-                    log_output = Shell.get_output(
-                        f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
-                    )
                     if with_info or (with_info_on_failure and exit_code != 0):
+                        log_output = Shell.get_output(f"cat {log_file}")
                         info_lines += log_output.splitlines()
                     res = exit_code == 0
 
@@ -686,22 +703,22 @@ class Result(MetaClasses.Serializable):
                     print(f"Execution stopped due to failure in [{command_}]")
                     break
 
+        # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
+        truncated = False
+        if len(info_lines) > MAX_LINES_IN_INFO:
+            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+            info_lines = [
+                f"~~~~~ truncated {truncated_count} lines ~~~~~"
+            ] + info_lines[-MAX_LINES_IN_INFO:]
+            truncated = True
+
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
-            info=(
-                info_lines
-                if len(info_lines) < MAX_LINES_IN_INFO
-                else [
-                    f"~~~~~ truncated {len(info_lines)-MAX_LINES_IN_INFO} lines ~~~~~"
-                ]
-                + info_lines[-MAX_LINES_IN_INFO:]
-            ),
-            files=(
-                [log_file] if with_log or len(info_lines) >= MAX_LINES_IN_INFO else None
-            ),
+            info=info_lines,
+            files=([log_file] if (with_log or truncated) and log_file else None),
         )
 
     def do_not_block_pipeline_on_failure(self):
@@ -849,6 +866,20 @@ class Result(MetaClasses.Serializable):
             raise RuntimeError("Not implemented")
         return self
 
+    def to_event(self, sha, pr_number, branch, pr_title, pr_status):
+        return Event(
+            type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
+            timestamp=int(time.time()),
+            sha=sha,
+            pr_number=pr_number,
+            pr_status=pr_status,
+            pr_title=pr_title,
+            branch=branch,
+            ci_status=self.status,
+            result=Result.to_dict(self),
+            ext={},
+        )
+
 
 class ResultInfo:
     SETUP_ENV_JOB_FAILED = (
@@ -978,30 +1009,40 @@ class _ResultS3:
                 unique_files[file_str] = file  # Keep original file reference
 
         for file_str, file in unique_files.items():
-            if not Path(file).is_file():
-                print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: File [{file}] was not found")
-                file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
-            elif file in _uploaded_file_link:
-                # in case different sub results have the same file for upload
-                file_link = _uploaded_file_link[file]
-            else:
-                is_text = False
-                for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
-                    if file.endswith(text_file_suffix):
-                        print(
-                            f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
-                        )
-                        is_text = True
-                        break
-                file_link = S3._upload_file_to_s3(
-                    file,
-                    upload_to_s3=True,
-                    text=is_text,
-                    s3_subprefix=s3_subprefix,
+            try:
+                if not Path(file).is_file():
+                    print(
+                        f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload"
+                    )
+                    result.set_info(f"WARNING: File [{file}] was not found")
+                    file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
+                elif file in _uploaded_file_link:
+                    # in case different sub results have the same file for upload
+                    file_link = _uploaded_file_link[file]
+                else:
+                    is_text = False
+                    for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
+                        if file.endswith(text_file_suffix):
+                            print(
+                                f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
+                            )
+                            is_text = True
+                            break
+                    file_link = S3._upload_file_to_s3(
+                        file,
+                        upload_to_s3=True,
+                        text=is_text,
+                        s3_subprefix=s3_subprefix,
+                    )
+                    _uploaded_file_link[file] = file_link
+
+                result.links.append(file_link)
+            except Exception as e:
+                traceback.print_exc()
+                print(
+                    f"ERROR: Failed to upload file [{file}] for result [{result.name}]"
                 )
-                _uploaded_file_link[file] = file_link
-            result.links.append(file_link)
+                result.set_info(f"ERROR: Failed to upload file [{file}]: {e}")
         result.files = []
 
         if result.results:
@@ -1565,6 +1606,9 @@ class ResultTranslator:
                                 )
                                 test_results[node_id] = test_result
                             else:
+                                # accumulate duration setup + call + teardown
+                                test_results[node_id].duration += duration
+
                                 # Always override with a failure, or keep existing failure
                                 if (
                                     status == Result.StatusExtended.FAIL
@@ -1572,7 +1616,6 @@ class ResultTranslator:
                                     == Result.StatusExtended.FAIL
                                 ):
                                     test_results[node_id].status = status
-                                    test_results[node_id].duration = duration
                                 # Update info if we now have traceback
                                 if traceback_str:
                                     if not test_results[node_id].info:
@@ -1591,7 +1634,6 @@ class ResultTranslator:
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
                                         test_results[node_id].status = status
-                                        test_results[node_id].duration = duration
 
                     except json.JSONDecodeError as e:
                         print(f"Error decoding line in jsonl file: {e}")

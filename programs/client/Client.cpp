@@ -714,6 +714,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
+        ("tls-sni-override", po::value<std::string>(), "Override the SNI host name used for TLS connections")
         ("no-secure", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
@@ -853,6 +854,8 @@ void Client::processOptions(
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.contains("secure"))
         config().setBool("secure", true);
+    if (options.contains("tls-sni-override"))
+        config().setString("tls-sni-override", options["tls-sni-override"].as<std::string>());
     if (options.contains("no-secure"))
         config().setBool("no-secure", true);
     if (options.contains("user") && !options["user"].defaulted())
@@ -1107,6 +1110,23 @@ void Client::readArguments(
     for (int arg_num = start_argument_index; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
+        /// Support arguments with a space on both sides of equals sign.
+        /// Ex: --param = value
+        std::string fused_arg;
+        if (arg.starts_with('-') && arg_num + 2 < argc)
+        {
+            std::string_view next_arg = argv[arg_num + 1];
+            if (next_arg == "=" && !arg.contains('='))
+            {
+                fused_arg = std::string(arg);
+                fused_arg += "=";
+                fused_arg += argv[arg_num + 2];
+
+                arg = fused_arg;
+                arg_num += 2;
+            }
+        }
 
         if (has_connection_string || is_hostname_argument)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);

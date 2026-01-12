@@ -667,7 +667,9 @@ llvm::Value * SingleValueDataFixed<T>::getValueFromAggregateDataPtr(llvm::IRBuil
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
     auto * type = toNativeType<T>(builder);
     auto * value_ptr = getValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    return b.CreateLoad(type, value_ptr);
+    auto * res = b.CreateLoad(type, value_ptr);
+    res->setAlignment(llvm::Align(alignof(T)));
+    return res;
 }
 
 template <typename T>
@@ -683,7 +685,9 @@ llvm::Value * SingleValueDataFixed<T>::getHasValueFromAggregateDataPtr(llvm::IRB
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
     auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    return b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+    auto * res = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+    res->setAlignment(llvm::Align(alignof(T)));
+    return res;
 }
 
 template <typename T>
@@ -714,10 +718,10 @@ void SingleValueDataFixed<T>::compileSetValueFromNumber(
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
     auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    b.CreateStore(b.getTrue(), has_value_ptr);
+    b.CreateStore(b.getTrue(), has_value_ptr)->setAlignment(llvm::Align(alignof(T)));
 
     auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
-    b.CreateStore(value_to_check, value_ptr);
+    b.CreateStore(value_to_check, value_ptr)->setAlignment(llvm::Align(alignof(T)));
 }
 
 template <typename T>

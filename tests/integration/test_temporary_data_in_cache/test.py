@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/storage_configuration.xml"],
-    tmpfs=["/local_disk:size=50M", "/tiny_local_cache:size=12M"],
+    tmpfs=["/test_tmp_data_in_cache_local_disk:size=50M", "/test_tmp_data_in_cache_tiny_local_cache:size=12M"],
 )
 
 

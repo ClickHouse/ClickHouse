@@ -233,12 +233,7 @@ void QueryOracle::dumpTableContent(
     }
     if (test_content)
     {
-        if (!sel->has_setting_values())
-        {
-            const auto * news = sel->mutable_setting_values();
-            UNUSED(news);
-        }
-        finishSettings(&const_cast<SettingValues &>(sel->setting_values()));
+        finishSettings(sel->mutable_setting_values());
     }
     ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
     const auto err = std::filesystem::remove(qcfile);
@@ -277,6 +272,7 @@ void QueryOracle::dumpTableContent(
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
+    SettingValues * svs = nullptr;
     Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
@@ -331,16 +327,22 @@ void QueryOracle::generateExportQuery(
     if (rg.nextSmallNumber() < 10)
     {
         const auto & settings = can_test_oracle_result ? serverSettings : formatSettings;
-        gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
-        const SettingValues & svs = ins->setting_values();
 
-        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_oracle_result; i++)
+        svs = ins->mutable_setting_values();
+        gen.generateSettingValues(rg, settings, svs);
+        for (int i = 0; i < (svs->other_values_size() + 1) && can_test_oracle_result; i++)
         {
-            const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
+            const SetValue & osv = i == 0 ? svs->set_value() : svs->other_values(i - 1);
             const CHSetting & ochs = settings.at(osv.property());
 
             can_test_oracle_result &= !ochs.changes_behavior;
         }
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        svs = svs ? svs : ins->mutable_setting_values();
+        finishSettings(svs);
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -517,7 +519,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 std::optional<String> acluster;
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
 
-                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), at);
+                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), false, at);
                 if (acluster.has_value())
                 {
                     at->mutable_cluster()->set_cluster(acluster.value());
@@ -554,7 +556,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
 void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
-    SettingValues * svs = nullptr;
     Insert * nins = sq4.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
@@ -581,22 +582,27 @@ void QueryOracle::generateImportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 10)
     {
         /// If can't test success, swap settings sometimes
-        svs = nins->mutable_setting_values();
-        gen.generateSettingValues(rg, formatSettings, svs);
+        gen.generateSettingValues(rg, formatSettings, nins->mutable_setting_values());
     }
     else if (oins.has_setting_values())
     {
-        svs = nins->mutable_setting_values();
+        SettingValues * svs = nins->mutable_setting_values();
+
         svs->CopyFrom(oins.setting_values());
     }
     if (can_test_oracle_result && inf == InFormat::IN_CSV)
     {
-        svs = svs ? svs : nins->mutable_setting_values();
+        SettingValues * svs = nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         /// The oracle expects to read all the lines from the file
         sv->set_property("input_format_csv_detect_header");
         sv->set_value("0");
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        finishSettings(nins->mutable_setting_values());
     }
 }
 
@@ -819,28 +825,21 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
     }
+    SettingValues * svs = sel->mutable_setting_values();
 
-    if (!sel->has_setting_values())
-    {
-        const auto * news = sel->mutable_setting_values();
-        UNUSED(news);
-    }
-    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-
-    finishSettings(&svs);
+    finishSettings(svs);
     if (measure_performance)
     {
         /// Add tag to find query later on
-        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         sv->set_property("log_comment");
         sv->set_value("'measure_performance'");
     }
     else if (indexes)
     {
         /// These settings are relevant to show index information
-        SetValue * sv2 = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-        SetValue * sv3 = svs.add_other_values();
+        SetValue * sv2 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        SetValue * sv3 = svs->add_other_values();
 
         sv2->set_property("use_query_condition_cache");
         sv2->set_value("0");
@@ -849,144 +848,45 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
-void QueryOracle::swapQuery(RandomGenerator & rg, StatementGenerator & gen, google::protobuf::Message & mes)
+void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules)
 {
+    const google::protobuf::Descriptor * desc = message.GetDescriptor();
+    const google::protobuf::Reflection * refl = message.GetReflection();
+
     checkStackSize();
-
-    if (mes.GetTypeName() == "BuzzHouse.Select")
+    for (const auto & rh : rules)
     {
-        auto & sel = static_cast<Select &>(mes);
+        if (rh.predicate(message))
+        {
+            /// If this message itself is the target type, mutate it.
+            rh.handler(message);
+        }
+    }
+    const int field_count = desc->field_count();
+    for (int i = 0; i < field_count; ++i)
+    {
+        const google::protobuf::FieldDescriptor * field = desc->field(i);
 
-        if (sel.has_select_core())
+        if (field->is_repeated())
         {
-            swapQuery(rg, gen, const_cast<SelectStatementCore &>(sel.select_core()));
-        }
-        else if (sel.has_set_query())
-        {
-            swapQuery(rg, gen, const_cast<SetQuery &>(sel.set_query()));
-        }
-        if (sel.has_ctes())
-        {
-            if (sel.ctes().cte().has_cte_query())
+            if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
             {
-                swapQuery(rg, gen, const_cast<Select &>(sel.ctes().cte().cte_query().query()));
-            }
-            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
-            {
-                if (sel.ctes().other_ctes(i).has_cte_query())
+                const int n = refl->FieldSize(message, field);
+                for (int idx = 0; idx < n; ++idx)
                 {
-                    swapQuery(rg, gen, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()));
+                    google::protobuf::Message * sub = refl->MutableRepeatedMessage(&message, field, idx);
+                    iterateQuery(*sub, rules);
                 }
             }
         }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
-    {
-        auto & setq = static_cast<SetQuery &>(mes);
-
-        swapQuery(rg, gen, const_cast<Select &>(setq.sel1().inner_query().select().sel()));
-        swapQuery(rg, gen, const_cast<Select &>(setq.sel2().inner_query().select().sel()));
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
-    {
-        auto & ssc = static_cast<SelectStatementCore &>(mes);
-
-        if (ssc.has_from())
+        else if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
         {
-            swapQuery(rg, gen, const_cast<JoinedQuery &>(ssc.from().tos()));
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
-    {
-        auto & jquery = static_cast<JoinedQuery &>(mes);
-
-        for (int i = 0; i < jquery.tos_list_size(); i++)
-        {
-            swapQuery(rg, gen, const_cast<TableOrSubquery &>(jquery.tos_list(i)));
-        }
-        swapQuery(rg, gen, const_cast<JoinClause &>(jquery.join_clause()));
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
-    {
-        auto & jclause = static_cast<JoinClause &>(mes);
-
-        for (int i = 0; i < jclause.clauses_size(); i++)
-        {
-            if (jclause.clauses(i).has_core())
+            if (!refl->HasField(message, field))
             {
-                swapQuery(rg, gen, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()));
+                continue;
             }
-        }
-        swapQuery(rg, gen, const_cast<TableOrSubquery &>(jclause.tos()));
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
-    {
-        auto & tos = static_cast<TableOrSubquery &>(mes);
-
-        if (tos.has_joined_table())
-        {
-            auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
-
-            swapQuery(rg, gen, const_cast<TableOrFunction &>(jtf.tof()));
-        }
-        else if (tos.has_joined_query())
-        {
-            swapQuery(rg, gen, const_cast<JoinedQuery &>(tos.joined_query()));
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
-    {
-        auto & tfunc = static_cast<TableFunction &>(mes);
-
-        if (tfunc.has_loop())
-        {
-            swapQuery(rg, gen, const_cast<TableOrFunction &>(tfunc.loop()));
-        }
-        else if (tfunc.has_remote() || tfunc.has_cluster())
-        {
-            swapQuery(rg, gen, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()));
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
-    {
-        auto & torfunc = static_cast<TableOrFunction &>(mes);
-
-        if (torfunc.has_est() && !compare_explain)
-        {
-            const ExprSchemaTable & est = torfunc.est();
-
-            if ((!est.has_database()
-                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                     && est.database().database() != "information_schema"))
-                && est.table().table().at(0) == 't')
-            {
-                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
-
-                if (gen.tables.contains(tname))
-                {
-                    /// Replace table with table function call
-                    const SQLTable & t = gen.tables.at(tname);
-
-                    gen.setAllowNotDetermistic(false);
-                    if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
-                    {
-                        gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, torfunc.mutable_tfunc());
-                    }
-                    else if (rg.nextSmallNumber() < 3)
-                    {
-                        gen.setTableFunction(rg, TableFunctionUsage::RemoteCall, t, torfunc.mutable_tfunc());
-                    }
-                    gen.setAllowNotDetermistic(true);
-                }
-            }
-        }
-        else if (torfunc.has_tfunc())
-        {
-            swapQuery(rg, gen, const_cast<TableFunction &>(torfunc.tfunc()));
-        }
-        else if (torfunc.has_select())
-        {
-            swapQuery(rg, gen, const_cast<Select &>(torfunc.select().inner_query().select().sel()));
+            google::protobuf::Message * sub = refl->MutableMessage(&message, field);
+            iterateQuery(*sub, rules);
         }
     }
 }
@@ -998,173 +898,52 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
     if (rg.nextBool())
     {
         /// Swap query parts
+        std::vector<MatchHandler> rules;
         const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
         Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
 
-        swapQuery(rg, gen, nsel);
-    }
-}
-
-bool QueryOracle::findTablesWithPeersAndReplace(
-    RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, const bool replace)
-{
-    checkStackSize();
-
-    if (mes.GetTypeName() == "BuzzHouse.Select")
-    {
-        auto & sel = static_cast<Select &>(mes);
-
-        if (sel.has_select_core())
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen, replace);
-            UNUSED(u);
-        }
-        else if (sel.has_set_query())
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen, replace);
-            UNUSED(u);
-        }
-        if (sel.has_ctes())
-        {
-            if (sel.ctes().cte().has_cte_query())
-            {
-                const auto u = findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()), gen, replace);
-                UNUSED(u);
-            }
-            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
-            {
-                if (sel.ctes().other_ctes(i).has_cte_query())
+        rules.push_back(
+            MatchHandler{
+                .predicate
+                = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrFunction"; },
+                .handler =
+                    [&](google::protobuf::Message & message)
                 {
-                    const auto u = findTablesWithPeersAndReplace(
-                        rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()), gen, replace);
-                    UNUSED(u);
-                }
-            }
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
-    {
-        auto & setq = static_cast<SetQuery &>(mes);
+                    TableOrFunction * tf = dynamic_cast<TableOrFunction *>(&message);
 
-        const auto u = findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()), gen, replace);
-        const auto w = findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()), gen, replace);
-
-        UNUSED(u);
-        UNUSED(w);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
-    {
-        auto & ssc = static_cast<SelectStatementCore &>(mes);
-
-        if (ssc.has_from())
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen, replace);
-            UNUSED(u);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
-    {
-        auto & jquery = static_cast<JoinedQuery &>(mes);
-
-        for (int i = 0; i < jquery.tos_list_size(); i++)
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen, replace);
-            UNUSED(u);
-        }
-        const auto u = findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen, replace);
-        UNUSED(u);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
-    {
-        auto & jclause = static_cast<JoinClause &>(mes);
-
-        for (int i = 0; i < jclause.clauses_size(); i++)
-        {
-            if (jclause.clauses(i).has_core())
-            {
-                const auto u
-                    = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen, replace);
-                UNUSED(u);
-            }
-        }
-        const auto u = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen, replace);
-        UNUSED(u);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
-    {
-        auto & tos = static_cast<TableOrSubquery &>(mes);
-
-        if (tos.has_joined_table())
-        {
-            auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
-
-            const auto has_external_peer = findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(jtf.tof()), gen, replace);
-            /// Remove final for MySQL and PostgreSQL calls
-            jtf.set_final(jtf.final() && !has_external_peer);
-        }
-        else if (tos.has_joined_query())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
-    {
-        auto & tfunc = static_cast<TableFunction &>(mes);
-
-        if (tfunc.has_loop())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
-        }
-        else if (tfunc.has_remote() || tfunc.has_cluster())
-        {
-            return findTablesWithPeersAndReplace(
-                rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
-    {
-        auto & torfunc = static_cast<TableOrFunction &>(mes);
-
-        if (torfunc.has_est())
-        {
-            bool res = false;
-            const ExprSchemaTable & est = torfunc.est();
-
-            if ((!est.has_database()
-                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                     && est.database().database() != "information_schema"))
-                && est.table().table().at(0) == 't')
-            {
-                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
-
-                if (gen.tables.contains(tname))
-                {
-                    const SQLTable & t = gen.tables.at(tname);
-
-                    if (t.hasDatabasePeer())
+                    chassert(tf);
+                    if (tf && tf->has_est() && !compare_explain)
                     {
-                        if (replace)
+                        const ExprSchemaTable & est = tf->est();
+
+                        if ((!est.has_database()
+                             || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                                 && est.database().database() != "information_schema"))
+                            && est.table().table().at(0) == 't')
                         {
-                            insertOnTableOrCluster(rg, gen, t, true, &torfunc);
+                            const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+
+                            if (gen.tables.contains(tname))
+                            {
+                                /// Replace table with table function call
+                                const SQLTable & t = gen.tables.at(tname);
+
+                                gen.setAllowNotDetermistic(false);
+                                if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
+                                {
+                                    gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, tf->mutable_tfunc());
+                                }
+                                else if (rg.nextSmallNumber() < 3)
+                                {
+                                    gen.setTableFunction(rg, TableFunctionUsage::RemoteCall, t, tf->mutable_tfunc());
+                                }
+                                gen.setAllowNotDetermistic(true);
+                            }
                         }
-                        found_tables.insert(tname);
-                        res = !t.hasClickHousePeer();
-                        can_test_oracle_result &= t.hasClickHousePeer();
                     }
-                }
-            }
-            return res;
-        }
-        else if (torfunc.has_tfunc())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<TableFunction &>(torfunc.tfunc()), gen, replace);
-        }
-        else if (torfunc.has_select())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()), gen, replace);
-        }
+                }});
+        iterateQuery(nsel, rules);
     }
-    return false;
 }
 
 void QueryOracle::truncatePeerTables(const StatementGenerator & gen)
@@ -1194,15 +973,64 @@ void QueryOracle::optimizePeerTables(const StatementGenerator & gen)
 void QueryOracle::replaceQueryWithTablePeers(
     RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
 {
+    std::vector<MatchHandler> rules;
     found_tables.clear();
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
     const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
     Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+
     /// Replace references
-    const auto u = findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
-    UNUSED(u);
+    rules.push_back(
+        MatchHandler{
+            .predicate = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrSubquery"; },
+            .handler =
+                [&](google::protobuf::Message & message)
+            {
+                TableOrSubquery * tos = dynamic_cast<TableOrSubquery *>(&message);
+
+                chassert(tos);
+                if (tos && tos->has_joined_table())
+                {
+                    bool res = false;
+                    JoinedTableOrFunction & jtf = const_cast<JoinedTableOrFunction &>(tos->joined_table());
+                    TableOrFunction & tf = const_cast<TableOrFunction &>(jtf.tof());
+
+                    if (tf.has_est())
+                    {
+                        const ExprSchemaTable & est = tf.est();
+
+                        if ((!est.has_database()
+                             || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                                 && est.database().database() != "information_schema"))
+                            && est.table().table().at(0) == 't')
+                        {
+                            const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+
+                            if (gen.tables.contains(tname))
+                            {
+                                const SQLTable & t = gen.tables.at(tname);
+
+                                if (t.hasDatabasePeer())
+                                {
+                                    if (peer_query != PeerQuery::ClickHouseOnly)
+                                    {
+                                        insertOnTableOrCluster(rg, gen, t, true, &tf);
+                                    }
+                                    found_tables.insert(tname);
+                                    res = !t.hasClickHousePeer();
+                                    can_test_oracle_result &= t.hasClickHousePeer();
+                                }
+                            }
+                        }
+                    }
+                    /// Remove final for MySQL and PostgreSQL calls
+                    jtf.set_final(jtf.final() && !res);
+                }
+            }});
+    iterateQuery(nsel, rules);
+
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database

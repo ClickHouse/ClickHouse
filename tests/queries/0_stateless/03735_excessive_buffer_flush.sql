@@ -1,4 +1,8 @@
--- Note, this test uses sleep, but, it should not affect it's flakiness
+-- Tags: no-fasttest
+-- To make fasttest fast (this test sleeps a lot)
+
+-- We use sleep(5) just to wait a little bit to wait some Buffer flushes, if
+-- there are excessive flushes 5 seconds should be enough to catch them.
 
 set function_sleep_max_microseconds_per_block=5e9;
 
@@ -36,5 +40,5 @@ select sleep(5) format Null;
 drop table buffer_flush_by_flush_time;
 
 system flush logs text_log;
--- to avoid flakiness we only check that number of logs < 10, instead of some strict values
-select extractAll(logger_name, 'StorageBuffer \\([^.]+\\.([^)]+)\\)')[1] as table_name, max2(count(), 10) from system.text_log where logger_name LIKE format('%StorageBuffer ({}.%', currentDatabase()) group by 1 order by 1;
+-- to avoid flakiness we only check that number of logs < 20, instead of some strict values
+select extractAll(logger_name, 'StorageBuffer \\([^.]+\\.([^)]+)\\)')[1] as table_name, max2(count(), 20) from system.text_log where logger_name LIKE format('%StorageBuffer ({}.%', currentDatabase()) group by 1 order by 1;

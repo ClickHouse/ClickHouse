@@ -8,7 +8,6 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
 #include <Formats/MarkInCompressedFile.h>
-#include <Interpreters/ITokenExtractor.h>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -321,6 +320,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     LoggerPtr logger;
 };
 
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
+
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
@@ -329,19 +331,19 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
-    void incrementCurrentRow() { ++current_row; }
+    void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
-    bool empty() const { return num_processed_documents == 0; }
+    bool empty() const { return is_empty; }
     void reset();
 
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
 
+    bool is_empty = true;
     UInt64 current_row = 0;
     UInt64 num_processed_tokens = 0;
-    UInt64 num_processed_documents = 0;
     /// Pointers to posting lists for each token.
     TokenToPostingsBuilderMap tokens_map;
     /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
