@@ -338,7 +338,6 @@ The functions [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE mapContainsValue(map, 'clickhouse');
 SELECT count() FROM tab WHERE mapContainsKeyLike(map, '% clickhouse %');
 SELECT count() FROM tab WHERE mapContainsValueLike(map, '% clickhouse %');
 ```
