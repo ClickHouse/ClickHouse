@@ -121,7 +121,9 @@ def _get_infra_config():
     try:
         cloud_config = getattr(module, "CLOUD")
         cloud_config._settings = Settings
-        print(f"Loaded infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]")
+        print(
+            f"Loaded infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+        )
         return cloud_config
     except AttributeError:
         Utils.raise_with_error(

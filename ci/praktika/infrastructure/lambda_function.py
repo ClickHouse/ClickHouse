@@ -9,8 +9,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
-import boto3
-
 
 class Lambda:
 
@@ -53,6 +51,8 @@ class Lambda:
             Raises:
                 Exception: If Lambda function does not exist or AWS API call fails
             """
+            import boto3
+
             lambda_client = boto3.client("lambda", region_name=self.region)
 
             try:
@@ -106,6 +106,8 @@ class Lambda:
             if not self.secrets:
                 return {}
 
+            import boto3
+
             ssm_client = boto3.client("ssm", region_name=self.region)
             env_vars = {}
 
@@ -132,6 +134,8 @@ class Lambda:
                 role_arn: Lambda execution role ARN
                 worker_function_name: Worker Lambda function name to invoke
             """
+            import boto3
+
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
 
@@ -177,6 +181,8 @@ class Lambda:
             Args:
                 role_arn: Lambda execution role ARN
             """
+            import boto3
+
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
 
@@ -213,6 +219,8 @@ class Lambda:
             Args:
                 role_arn: Lambda execution role ARN
             """
+            import boto3
+
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
 
@@ -254,6 +262,8 @@ class Lambda:
             Args:
                 role_arn: Lambda execution role ARN
             """
+            import boto3
+
             # Extract role name from ARN (format: arn:aws:iam::account:role/role-name)
             role_name = role_arn.split("/")[-1]
 
@@ -292,6 +302,8 @@ class Lambda:
             Deploy a Lambda function to AWS using self.ext configuration.
             If Lambda exists, fetches current configuration including role_arn.
             """
+            import boto3
+
             lambda_client = boto3.client("lambda", region_name=self.region)
 
             # Try to fetch existing Lambda configuration first
@@ -461,6 +473,8 @@ class Lambda:
             """
             import time
 
+            import boto3
+
             logs_client = boto3.client("logs", region_name=self.region)
             log_group_name = f"/aws/lambda/{self.name}"
 
@@ -539,6 +553,8 @@ class Lambda:
             Returns:
                 Response from Lambda invoke call
             """
+            import boto3
+
             lambda_client = boto3.client("lambda", region_name=self.region)
 
             try:

@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from ..settings import _Settings
-from .lambda_function import Lambda, lambda_app_config, lambda_worker_config
+from .lambda_function import lambda_app_config, lambda_worker_config
+
+if TYPE_CHECKING:
+    from .lambda_function import Lambda
 
 
 class CloudInfrastructure:
@@ -11,7 +14,7 @@ class CloudInfrastructure:
     @dataclass
     class Config:
         name: str
-        lambda_functions: List[Lambda.Config] = field(default_factory=list)
+        lambda_functions: List["Lambda.Config"] = field(default_factory=list)
         _settings: Optional[_Settings] = None
 
         def deploy(self, all=False):
