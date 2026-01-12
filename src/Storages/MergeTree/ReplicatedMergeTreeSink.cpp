@@ -621,7 +621,6 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
         if (deduplicate && deduplicated)
         {
             error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
-            error_message = "The part was deduplicated";
 
             const auto & relative_path = part->getDataPartStorage().getRelativePath();
             const auto part_dir = fs::path(relative_path).parent_path().filename().string();
