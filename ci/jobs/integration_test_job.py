@@ -414,9 +414,6 @@ dmesg -T > ./ci/tmp/dmesg.log
             has_error = True
             error_info.append(test_result_parallel.info)
 
-    # test
-    assert False
-
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
