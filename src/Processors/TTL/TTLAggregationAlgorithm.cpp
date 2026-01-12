@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
@@ -220,7 +221,25 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
         for (auto & agg_block : aggregated_res)
         {
             for (const auto & it : description.set_parts)
+            {
                 it.expression->execute(agg_block);
+
+                /// Restore LowCardinality wrappers on SET expression results if needed
+                /// Aggregation strips LowCardinality, but result_columns expects it
+                const auto & result_column_type = header.getByName(it.column_name).type;
+                if (result_column_type->lowCardinality())
+                {
+                    auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
+                    // Only convert if the column doesn't already have LowCardinality
+                    if (!column_with_type.type->lowCardinality())
+                    {
+                        auto nested_type = recursiveRemoveLowCardinality(result_column_type);
+                        column_with_type.column = recursiveLowCardinalityTypeConversion(
+                            column_with_type.column, nested_type, result_column_type);
+                        column_with_type.type = result_column_type;
+                    }
+                }
+            }
 
             /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
             /// the SET values over the GROUP BY because doing it the other way causes unexpected

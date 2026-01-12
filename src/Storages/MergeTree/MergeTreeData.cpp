@@ -2481,9 +2481,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
 
-    auto refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+    startStatisticsCache((*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds());
+}
+
+void MergeTreeData::startStatisticsCache(UInt64 refresh_statistics_seconds)
+{
     if (refresh_statistics_seconds && !refresh_stats_task)
     {
+        LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
             [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
@@ -2689,7 +2694,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(log, "Loading of unexpected parts failed. "
+    LOG_FATAL(log, "Loading of unexpected parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
         "Exception: {}", getCurrentExceptionMessage(true));
     std::terminate();
@@ -2789,7 +2794,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(log, "Loading of outdated parts failed. "
+    LOG_FATAL(log, "Loading of outdated parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
         "Exception: {}", getCurrentExceptionMessage(true));
     std::terminate();

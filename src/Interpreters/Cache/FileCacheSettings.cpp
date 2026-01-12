@@ -54,6 +54,7 @@ namespace ErrorCodes
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
     DECLARE(Bool, use_split_cache, false, "Use separation of files to system/data.", 0) \
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
+    DECLARE(Double, check_cache_probability, 0.01, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
@@ -234,7 +235,7 @@ void FileCacheSettings::validate()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
 
     if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute: {}", (*this)[FileCacheSetting::path].value);
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either `max_size` or `max_size_ratio_to_total_space` must be defined in cache configuration");

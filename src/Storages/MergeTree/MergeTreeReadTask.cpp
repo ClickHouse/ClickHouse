@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
-#include <Processors/Transforms/LazilyMaterializingTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 

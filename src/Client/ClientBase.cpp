@@ -59,28 +59,28 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
-#include <Processors/Formats/Impl/NullFormat.h>
+#include <IO/Ask.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ForkWriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/processColumnTransformers.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/processColumnTransformers.h>
-#include <IO/Ask.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/CompressionMethod.h>
-#include <IO/ForkWriteBuffer.h>
-#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
@@ -117,6 +117,9 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -953,7 +956,16 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
 
     if (getClientConfiguration().has("insert_format_max_block_size"))
-        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+        insert_format_max_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+
+    if (getClientConfiguration().has("insert_format_max_block_size_bytes"))
+        insert_format_max_block_size_bytes_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size_bytes");
+
+    if (getClientConfiguration().has("insert_format_min_block_size_rows"))
+        insert_format_min_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_min_block_size_rows");
+
+    if (getClientConfiguration().has("insert_format_min_block_size_bytes"))
+        insert_format_min_block_size_bytes_from_config = getClientConfiguration().getUInt64("insert_format_min_block_size_bytes");
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -2038,13 +2050,34 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    /// Setting value from cmd arg overrides one from config.
-    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
-    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
-        insert_format_max_block_size_from_config.has_value())
-        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
+    const Settings & settings = client_context->getSettingsRef();
 
-    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    /// Setting value from cmd arg overrides one from config.
+    size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size].changed
+        ? settings[Setting::max_insert_block_size]
+        : insert_format_max_block_size_rows_from_config.value_or(settings[Setting::max_insert_block_size]);
+
+    size_t insert_format_max_block_size_bytes = settings[Setting::max_insert_block_size_bytes].changed
+        ? settings[Setting::max_insert_block_size_bytes]
+        : insert_format_max_block_size_bytes_from_config.value_or(settings[Setting::max_insert_block_size_bytes]);
+
+    size_t insert_format_min_block_size_rows = settings[Setting::min_insert_block_size_rows].changed
+        ? settings[Setting::min_insert_block_size_rows]
+        : insert_format_min_block_size_rows_from_config.value_or(settings[Setting::min_insert_block_size_rows]);
+
+    size_t insert_format_min_block_size_bytes = settings[Setting::min_insert_block_size_bytes].changed
+        ? settings[Setting::min_insert_block_size_bytes]
+        : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
+
+    auto source = client_context->getInputFormat(
+        current_format,
+        buf,
+        sample,
+        insert_format_max_block_size_rows,
+        std::nullopt,
+        insert_format_max_block_size_bytes,
+        insert_format_min_block_size_rows,
+        insert_format_min_block_size_bytes);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
