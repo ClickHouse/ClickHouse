@@ -121,7 +121,7 @@ def setup_minio_users(cluster):
             )
         )
 
-    start_s3_mock(cluster, "broken_s3", "8083")
+    start_s3_mock(cluster, "broken_s3", "8084")
     node = cluster.instances["node"]
     node.stop_clickhouse()
     node.copy_file_to_container(
@@ -564,7 +564,7 @@ def test_backup_to_s3_native_copy_multipart(cluster):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_s3_mock(cluster, "broken_s3", "8084")
 
 
 @pytest.fixture(scope="function")
@@ -577,7 +577,7 @@ def test_backup_to_s3_copy_multipart_check_error_message(cluster, broken_s3):
     storage_policy = "policy_s3"
     size = 10000000
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://resolver:8083/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
     node = cluster.instances["node"]
 
     node.query(
@@ -1057,7 +1057,7 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3, to_disk):
     backup_destination = (
         f"Disk('{to_disk}', '{backup_name}')"
         if to_disk
-        else f"S3('http://resolver:8083/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+        else f"S3('http://resolver:8084/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
     )
     node = cluster.instances["node"]
     backup_settings = {

@@ -709,6 +709,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
             ]
         ),
+        timeout=3600 * 2,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_asan",
