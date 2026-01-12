@@ -29,7 +29,6 @@
 #include <algorithm>
 #include <vector>
 
-
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
