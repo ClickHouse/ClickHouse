@@ -139,13 +139,8 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
     UInt64 last_modify_time = 0;
     if (need_add_last_modify_time)
     {
-        RelativePathsWithMetadata files;
-        object_storage->listObjects(path, files, 1);
-
-        if (files.size() != 1 || !files[0]->metadata)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name path: '{}'. Path size is {}.", file_name, files.size());
-
-        last_modify_time = files[0]->metadata->last_modified.epochTime();
+        ObjectMetadata meta = object_storage->getObjectMetadata(path, false);
+        last_modify_time = static_cast<UInt64>(meta.last_modified.epochTime());
     }
 
     return MetadataFileWithInfo{
