@@ -2694,7 +2694,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(log, "Loading of unexpected parts failed. "
+    LOG_FATAL(log, "Loading of unexpected parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
         "Exception: {}", getCurrentExceptionMessage(true));
     std::terminate();
@@ -2794,7 +2794,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(log, "Loading of outdated parts failed. "
+    LOG_FATAL(log, "Loading of outdated parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
         "Exception: {}", getCurrentExceptionMessage(true));
     std::terminate();
@@ -8065,7 +8065,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
         buf << ".";
         if (!detached_precommitted_parts.empty())
         {
-            buf << " Rollbacking parts state to temporary and removing from working set:";
+            buf << " Rolling back parts state to temporary and removing from working set:";
             for (const auto & part : detached_precommitted_parts)
                 buf << " " << part->getDataPartStorage().getPartDirectory();
             buf << ".";

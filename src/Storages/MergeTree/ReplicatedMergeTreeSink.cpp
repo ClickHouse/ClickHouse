@@ -8,7 +8,6 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -16,18 +15,14 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
-#include <fmt/core.h>
 #include <fmt/format.h>
 
 
