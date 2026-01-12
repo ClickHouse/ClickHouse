@@ -622,6 +622,8 @@ public:
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
 
+    void removeIfNeeded() noexcept;
+
 protected:
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -659,8 +661,6 @@ protected:
     String parent_part_name;
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
-
-    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
