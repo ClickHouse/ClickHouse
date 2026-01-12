@@ -452,11 +452,6 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
                             data_type->getName(),
                             elements_size,
                             read_nested_columns);
-
-        /// There are no nested columns to grow, so we must explicitly increment the column size.
-        /// Otherwise, `column.size()` will return 0 for empty tuples columns.
-        if (elements_size == 0)
-            tuple_column.addSize(1);
     };
 
     SerializationTuple::readElementsSafe(column, read_tuple);

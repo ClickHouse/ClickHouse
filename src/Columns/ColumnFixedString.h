@@ -139,7 +139,7 @@ public:
 
     void popBack(size_t elems) override
     {
-        if (n > size())
+        if (elems > size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
 
         chars.resize_assume_reserved(chars.size() - n * elems);
