@@ -20,6 +20,18 @@ SELECT min(number) OVER (PARTITION BY number % 2)
 FROM numbers(3)
 GROUP BY number;
 
+SELECT 'GROUPING SETS tests (optimization enabled)';
+SELECT max(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a;
+SELECT min(number % 2) AS a, max(number % 2) AS b FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a, b;
+SELECT min(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a;
+SELECT max(number % 2) AS a, min(number % 3) AS b FROM numbers(100) GROUP BY GROUPING SETS ((number % 2, number % 3), (number % 2, number % 3, number % 5)) ORDER BY a, b;
+SELECT max(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 3)) ORDER BY a;
+EXPLAIN QUERY TREE SELECT max(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a;
+EXPLAIN QUERY TREE SELECT min(number % 2) AS a, max(number % 2) AS b FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a, b;
+EXPLAIN QUERY TREE SELECT min(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a;
+EXPLAIN QUERY TREE SELECT max(number % 2) AS a, min(number % 3) AS b FROM numbers(100) GROUP BY GROUPING SETS ((number % 2, number % 3), (number % 2, number % 3, number % 5)) ORDER BY a, b;
+EXPLAIN QUERY TREE SELECT max(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 3)) ORDER BY a;
+
 SELECT 'set optimize_aggregators_of_group_by_keys = 0';
 set optimize_aggregators_of_group_by_keys = 0;
 
@@ -37,3 +49,7 @@ EXPLAIN QUERY TREE
 SELECT min(number) OVER (PARTITION BY number % 2)
 FROM numbers(3)
 GROUP BY number;
+
+SELECT 'GROUPING SETS tests (optimization disabled)';
+SELECT max(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a;
+EXPLAIN QUERY TREE SELECT max(number % 2) AS a FROM numbers(100) GROUP BY GROUPING SETS ((number % 2), (number % 2, number % 3)) ORDER BY a;
