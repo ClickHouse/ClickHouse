@@ -7,6 +7,7 @@
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
+#include <base/getThreadId.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -33,7 +34,7 @@ extern const int CANNOT_SEND_SIGNAL;
 
 extern const char * GIT_HASH;
 
-static const std::vector<FramePointers> empty_stack;
+static const std::vector<StackTrace::FramePointers> empty_stack;
 
 using namespace DB;
 
@@ -319,7 +320,7 @@ void SignalListener::run()
             siginfo_t info{};
             ucontext_t * context{};
             StackTrace stack_trace(NoCapture{});
-            std::vector<FramePointers> thread_frame_pointers;
+            std::vector<StackTrace::FramePointers> thread_frame_pointers;
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
 
@@ -362,7 +363,7 @@ void SignalListener::onFault(
     const siginfo_t & info,
     ucontext_t * context,
     const StackTrace & stack_trace,
-    const std::vector<FramePointers> & thread_frame_pointers,
+    const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
     DB::ThreadStatus * thread_ptr) const
 try
@@ -456,7 +457,7 @@ try
 
     /// In case it's a scheduled job write all previous jobs origins call stacks
     std::for_each(thread_frame_pointers.rbegin(), thread_frame_pointers.rend(),
-        [this](const FramePointers & frame_pointers)
+        [this](const StackTrace::FramePointers & frame_pointers)
         {
             if (size_t size = std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())
             {

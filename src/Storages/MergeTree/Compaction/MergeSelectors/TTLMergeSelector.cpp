@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
@@ -78,9 +79,8 @@ private:
 
 bool ITTLMergeSelector::needToPostponePartition(const std::string & partition_id) const
 {
-    if (merge_due_times)
-        if (auto it = merge_due_times->find(partition_id); it != merge_due_times->end())
-            return it->second > current_time;
+    if (auto it = merge_due_times.find(partition_id); it != merge_due_times.end())
+        return it->second > current_time;
 
     return false;
 }
@@ -161,7 +161,7 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(const CenterPosition & cen
     return right;
 }
 
-ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_)
+ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
     : current_time(current_time_)
     , merge_due_times(merge_due_times_)
 {
@@ -186,23 +186,23 @@ PartsRanges ITTLMergeSelector::select(
     return result;
 }
 
-TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_)
-    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
+TTLPartDeleteMergeSelector::TTLPartDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+    : ITTLMergeSelector(merge_due_times_, current_time_)
 {
 }
 
-time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) const
+time_t TTLPartDeleteMergeSelector::getTTLForPart(const PartProperties & part) const
 {
     return part.general_ttl_info->part_max_ttl;
 }
 
-bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
+bool TTLPartDeleteMergeSelector::canConsiderPart(const PartProperties & part) const
 {
     return part.general_ttl_info.has_value();
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+    : ITTLMergeSelector(merge_due_times_, current_time_)
 {
 }
 
@@ -213,9 +213,6 @@ time_t TTLRowDeleteMergeSelector::getTTLForPart(const PartProperties & part) con
 
 bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) const
 {
-    if (part.is_in_volume_where_merges_avoid)
-        return false;
-
     if (!part.general_ttl_info.has_value())
         return false;
 
@@ -223,7 +220,7 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
 }
 
 TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+    : ITTLMergeSelector(merge_due_times_, current_time_)
 {
 }
 
@@ -234,9 +231,6 @@ time_t TTLRecompressMergeSelector::getTTLForPart(const PartProperties & part) co
 
 bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) const
 {
-    if (part.is_in_volume_where_merges_avoid)
-        return false;
-
     if (!part.recompression_ttl_info.has_value())
         return false;
 

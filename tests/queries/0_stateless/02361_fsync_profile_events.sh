@@ -16,9 +16,7 @@ $CLICKHOUSE_CLIENT -m -q "
         fsync_after_insert = 1,
         fsync_part_directory = 1,
         ratio_of_defaults_for_sparse_serialization = 1,
-        serialization_info_version = 'basic',
-        write_marks_for_substreams_in_compact_parts = 1,
-        auto_statistics_types = '';
+        write_marks_for_substreams_in_compact_parts=1;
 "
 
 ret=1

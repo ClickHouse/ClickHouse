@@ -4,7 +4,6 @@ description: 'Similar to covarSamp but works slower while providing a lower comp
 sidebar_position: 126
 slug: /sql-reference/aggregate-functions/reference/covarsampstable
 title: 'covarSampStable'
-doc_type: 'reference'
 ---
 
 # covarSampStable

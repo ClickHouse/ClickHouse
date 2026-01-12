@@ -117,17 +117,6 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         return result;
     }
 
-    auto chunk_infos = std::move(input_chunks.back().getChunkInfos());
-    auto result = Squashing::squash(std::move(input_chunks));
-    result.setChunkInfos(infos);
-    result.getChunkInfos().appendIfUniq(std::move(chunk_infos));
-
-    chassert(result);
-    return result;
-}
-
-Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
-{
     std::vector<IColumn::MutablePtr> mutable_columns;
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
@@ -155,9 +144,19 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
         auto columns = input_chunks[i].detachColumns();
         for (size_t j = 0; j != num_columns; ++j)
         {
+            /// IColumn::structureEquals is not implemented for deprecated object type, ignore it and always convert to non-sparse.
+            bool has_object_deprecated = columns[j]->getDataType() == TypeIndex::ObjectDeprecated ||
+                mutable_columns[j]->getDataType() == TypeIndex::ObjectDeprecated;
+            auto has_object_deprecated_lambda = [&has_object_deprecated](const auto & subcolumn)
+            {
+                has_object_deprecated = has_object_deprecated || subcolumn.getDataType() == TypeIndex::ObjectDeprecated;
+            };
+            columns[j]->forEachSubcolumnRecursively(has_object_deprecated_lambda);
+            mutable_columns[j]->forEachSubcolumnRecursively(has_object_deprecated_lambda);
+
             /// Need to check if there are any sparse columns in subcolumns,
             /// since `IColumn::isSparse` is not recursive but sparse column can be inside a tuple, for example.
-            have_same_serialization[j] &= columns[j]->structureEquals(*mutable_columns[j]);
+            have_same_serialization[j] &= !has_object_deprecated && columns[j]->structureEquals(*mutable_columns[j]);
             source_columns_list[j].emplace_back(std::move(columns[j]));
         }
     }
@@ -166,9 +165,9 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
     {
         if (!have_same_serialization[i])
         {
-            mutable_columns[i] = removeSpecialRepresentations(mutable_columns[i]->convertToFullColumnIfConst())->assumeMutable();
+            mutable_columns[i] = recursiveRemoveSparse(std::move(mutable_columns[i]))->convertToFullColumnIfConst()->assumeMutable();
             for (auto & column : source_columns_list[i])
-                column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+                column = recursiveRemoveSparse(column)->convertToFullColumnIfConst();
         }
 
         /// We know all the data we will insert in advance and can make all necessary pre-allocations.
@@ -182,6 +181,10 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
 
     Chunk result;
     result.setColumns(std::move(mutable_columns), rows);
+    result.setChunkInfos(infos);
+    result.getChunkInfos().appendIfUniq(std::move(input_chunks.back().getChunkInfos()));
+
+    chassert(result);
     return result;
 }
 

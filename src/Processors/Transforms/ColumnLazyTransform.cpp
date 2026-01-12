@@ -3,8 +3,6 @@
 #include <Columns/ColumnLazy.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 
@@ -21,10 +19,9 @@ Block ColumnLazyTransform::transformHeader(Block header)
 }
 
 ColumnLazyTransform::ColumnLazyTransform(
-    SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_)), true)
     , lazy_column_reader(std::move(lazy_column_reader_))
-    , updater(std::move(updater_))
 {
 }
 
@@ -47,9 +44,6 @@ void ColumnLazyTransform::transform(Chunk & chunk)
         }
     }
 
-    if (updater)
-        updater->recordInputColumns(res_columns, lazy_column_reader->getColumnSizes());
-
     for (auto & column_with_type_and_name : res_columns)
     {
         const auto & alias_name = column_with_type_and_name.name;
@@ -57,8 +51,5 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     }
 
     chunk.setColumns(block.getColumns(), rows_size);
-
-    if (updater)
-        updater->recordOutputChunk(chunk, block);
 }
 }

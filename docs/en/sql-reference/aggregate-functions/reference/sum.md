@@ -3,7 +3,6 @@ description: 'Calculates the sum. Only works for numbers.'
 sidebar_position: 195
 slug: /sql-reference/aggregate-functions/reference/sum
 title: 'sum'
-doc_type: 'reference'
 ---
 
 # sum

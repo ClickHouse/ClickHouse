@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 #include <Common/thread_local_rng.h>
 
@@ -6,6 +7,14 @@
 
 namespace DB
 {
+
+void registerTrivialMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("Trivial", MergeSelectorAlgorithm::TRIVIAL, [](const std::any &)
+    {
+        return std::make_shared<TrivialMergeSelector>();
+    });
+}
 
 PartsRanges TrivialMergeSelector::select(
     const PartsRanges & parts_ranges,

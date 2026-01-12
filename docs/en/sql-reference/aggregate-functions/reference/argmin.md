@@ -5,7 +5,6 @@ description: 'Calculates the `arg` value for a minimum `val` value. If there are
 sidebar_position: 110
 slug: /sql-reference/aggregate-functions/reference/argmin
 title: 'argMin'
-doc_type: 'reference'
 ---
 
 # argMin

@@ -46,7 +46,7 @@ namespace ErrorCodes
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
     DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
-    DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
+    DECLARE(UInt64, cache_hits_threshold, FILECACHE_DEFAULT_HITS_THRESHOLD, "Number of cache hits required to cache corresponding file segment", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \

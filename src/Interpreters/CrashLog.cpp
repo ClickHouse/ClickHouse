@@ -8,7 +8,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/SymbolIndex.h>
 

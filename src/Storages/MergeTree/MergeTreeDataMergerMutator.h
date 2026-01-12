@@ -92,7 +92,6 @@ public:
         MergeTreeData::MergingParams merging_params,
         MergeTreeTransactionPtr txn,
         bool need_prefix = true,
-        ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 

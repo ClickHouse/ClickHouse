@@ -87,13 +87,12 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const LazilyReadInfoPtr & lazily_read_info_,
-    const ContextPtr & context,
+    const ContextPtr & context_,
     const AliasToName & alias_index_)
     : storage(storage_)
     , data_part_infos(lazily_read_info_->data_part_infos)
     , storage_snapshot(storage_snapshot_)
-    , use_uncompressed_cache(context->getSettingsRef()[Setting::use_uncompressed_cache])
-    , reader_settings(MergeTreeReaderSettings::createFromContext(context))
+    , use_uncompressed_cache(context_->getSettingsRef()[Setting::use_uncompressed_cache])
 {
     NameSet columns_name_set;
 
@@ -115,7 +114,10 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     }
 }
 
-void MergeTreeLazilyReader::readLazyColumns(const PartIndexToRowOffsets & part_to_row_offsets, MutableColumns & lazily_read_columns)
+void MergeTreeLazilyReader::readLazyColumns(
+    const MergeTreeReaderSettings & reader_settings,
+    const PartIndexToRowOffsets & part_to_row_offsets,
+    MutableColumns & lazily_read_columns)
 {
     const auto columns_size = lazily_read_columns.size();
 
@@ -148,6 +150,7 @@ void MergeTreeLazilyReader::readLazyColumns(const PartIndexToRowOffsets & part_t
             tmp_requested_column_names);
 
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
             .withSubcolumns(storage.supportsSubcolumns());
 
         NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);
@@ -156,7 +159,6 @@ void MergeTreeLazilyReader::readLazyColumns(const PartIndexToRowOffsets & part_t
             data_part_info,
             columns_for_reader,
             storage_snapshot,
-            storage.getSettings(),
             mark_ranges,
             /*virtual_fields=*/ {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
@@ -167,7 +169,7 @@ void MergeTreeLazilyReader::readLazyColumns(const PartIndexToRowOffsets & part_t
             ReadBufferFromFileBase::ProfileCallback{});
 
         size_t idx = 0;
-        auto * mark_range_iter = mark_ranges.begin();
+        auto mark_range_iter = mark_ranges.begin();
         auto row_offset = row_offsets[idx].row_offset;
         size_t next_offset = row_offset - index_granularity.getMarkStartingRow(mark_range_iter->begin);
         size_t skipped_rows = next_offset;
@@ -196,7 +198,7 @@ void MergeTreeLazilyReader::readLazyColumns(const PartIndexToRowOffsets & part_t
             reader->performRequiredConversions(columns_to_read);
 
             for (auto & col : columns_to_read)
-                col = removeSpecialRepresentations(col->convertToFullColumnIfConst());
+                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < columns_size; ++i)
                 lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);
@@ -260,6 +262,13 @@ void MergeTreeLazilyReader::transformLazyColumns(
     chassert(row_num_column->size() == part_num_column->size());
     const size_t rows_size = row_num_column->size();
 
+    ReadSettings read_settings;
+    MergeTreeReaderSettings reader_settings =
+    {
+        .read_settings = read_settings,
+        .save_marks_in_cache = true,
+    };
+
     MutableColumns lazily_read_columns;
     lazily_read_columns.resize(columns_size);
 
@@ -278,7 +287,7 @@ void MergeTreeLazilyReader::transformLazyColumns(
     matchDataPartToRowOffsets(row_num_column, part_num_column, part_to_row_offsets, permutation);
 
     /// Actually read the lazily materialized column data from MergeTree.
-    readLazyColumns(part_to_row_offsets, lazily_read_columns);
+    readLazyColumns(reader_settings, part_to_row_offsets, lazily_read_columns);
 
     /// Restore the original order of the rows.
     for (size_t i = 0; i < lazily_read_columns.size(); ++i)

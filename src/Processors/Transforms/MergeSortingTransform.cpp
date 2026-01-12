@@ -145,8 +145,7 @@ MergeSortingTransform::MergeSortingTransform(
     size_t max_bytes_in_block_before_external_sort_,
     size_t max_bytes_in_query_before_external_sort_,
     TemporaryDataOnDiskScopePtr tmp_data_,
-    size_t min_free_disk_space_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -155,7 +154,6 @@ MergeSortingTransform::MergeSortingTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
-    , threshold_tracker(threshold_tracker_)
 {
 }
 
@@ -213,12 +211,12 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /** If significant amount of data was accumulated, perform preliminary merging step.
       */
-    if ((chunks.size() > 1
+    if (chunks.size() > 1
         && limit
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (sum_rows_in_blocks > limit * 1.5)))
+        && sum_bytes_in_blocks > max_bytes_before_remerge)
     {
         remerge();
     }
@@ -271,13 +269,11 @@ void MergeSortingTransform::consume(Chunk chunk)
                         0,
                         description,
                         max_merged_block_size,
-                        /*max_merged_block_size_bytes=*/0,
-                        /*max_dynamic_subcolumns=*/std::nullopt,
+                        /*max_merged_block_size_bytes*/0,
                         SortingQueueStrategy::Batch,
                         limit,
                         /*always_read_till_end_=*/ false,
-                        /*out_row_sources_buf=*/ nullptr,
-                        /*filter_column_name=*/ std::nullopt,
+                        nullptr,
                         use_average_block_sizes,
                         apply_virtual_row,
                         have_all_inputs);
@@ -359,15 +355,6 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
-
-    /// Publish the updated TopK value if optimization is ON
-    if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
-    {
-        Field value;
-        chunks[0].getColumns()[0]->get(limit - 1, value);
-        threshold_tracker->testAndSet(value);
-        LOG_DEBUG(log, "TopK threshold tracker is updated");
-    }
 }
 
 }

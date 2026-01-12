@@ -3,7 +3,6 @@ description: 'Aggregate function for re-sampling time series data for PromQL-lik
 sidebar_position: 224
 slug: /sql-reference/aggregate-functions/reference/timeSeriesLastTwoSamples
 title: 'timeSeriesLastTwoSamples'
-doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and stores only at most 2 recent samples.

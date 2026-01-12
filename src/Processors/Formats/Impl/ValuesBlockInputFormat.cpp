@@ -17,6 +17,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/ObjectUtils.h>
+
 
 namespace DB
 {

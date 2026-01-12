@@ -4,7 +4,6 @@ description: 'Calculations the OR of a bitmap column, return cardinality of type
 sidebar_position: 150
 slug: /sql-reference/aggregate-functions/reference/groupbitmapor
 title: 'groupBitmapOr'
-doc_type: 'reference'
 ---
 
 # groupBitmapOr

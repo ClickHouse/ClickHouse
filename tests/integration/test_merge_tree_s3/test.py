@@ -508,7 +508,7 @@ def test_table_manipulations(cluster, node_name):
 
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
-    assert node.query("CHECK TABLE s3_test FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
+    assert node.query("CHECK TABLE s3_test FORMAT Values") == "(1)"
 
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")
@@ -945,7 +945,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count

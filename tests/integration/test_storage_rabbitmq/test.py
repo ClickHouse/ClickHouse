@@ -13,7 +13,6 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-pytestmark = pytest.mark.timeout(1200)
 
 DEFAULT_TIMEOUT_SEC = 60
 

@@ -3,7 +3,6 @@ description: 'Aggregate function which builds a flamegraph using the list of sta
 sidebar_position: 138
 slug: /sql-reference/aggregate-functions/reference/flame_graph
 title: 'flameGraph'
-doc_type: 'reference'
 ---
 
 # flameGraph

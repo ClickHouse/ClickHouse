@@ -94,8 +94,7 @@ public:
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
 
-    void addMergingAggregatedMemoryEfficientTransform(
-        AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
+    void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
@@ -213,7 +212,7 @@ public:
         return concurrency_control;
     }
 
-    void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
+    void addResources(QueryPlanResourceHolder resources_) { resources.append(std::move(resources_)); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

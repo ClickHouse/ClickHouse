@@ -49,13 +49,13 @@ public:
     XDBCDictionarySource(const XDBCDictionarySource & other);
     XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

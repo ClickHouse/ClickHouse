@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-
-#include <Disks/IStoragePolicy.h>
-
 #include <Core/UUID.h>
 
 #include <optional>
@@ -27,7 +24,6 @@ struct PartProperties
     const std::set<std::string> projection_names = {};
 
     const bool all_ttl_calculated_if_any = false;
-    const bool is_in_volume_where_merges_avoid = false;
 
     /// Size of data part in bytes.
     const size_t size = 0;
@@ -60,7 +56,6 @@ using PartsRangeView = std::span<const PartProperties>;
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
     time_t current_time);
 
 }

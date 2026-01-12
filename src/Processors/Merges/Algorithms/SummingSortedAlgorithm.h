@@ -25,7 +25,6 @@ public:
         const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        std::optional<size_t> max_dynamic_subcolumns_,
         const String & sum_function_name,
         const String & sum_function_map_name,
         bool remove_default_values,
@@ -78,7 +77,7 @@ public:
         using MergedData::insertRow;
 
     public:
-        SummingMergedData(UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_);
+        SummingMergedData(UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
 
         void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
