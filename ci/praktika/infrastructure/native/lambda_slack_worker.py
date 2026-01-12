@@ -71,6 +71,14 @@ def publish_home_view(
             except Exception:
                 pr_link = ""
 
+            # Check if any job has failed or errored
+            has_failures = False
+            if hasattr(event, "result") and event.result and event.result.get("results"):
+                has_failures = any(
+                    r.get("status") in ["failure", "error"]
+                    for r in event.result.get("results", [])
+                )
+
             # CI status emoji based on event.ci_status
             if event.ci_status in ["pending", "running"]:
                 ci_running_status_emoji = ":frog-run:"
@@ -80,7 +88,8 @@ def publish_home_view(
             if event.ci_status == "success":
                 ci_status_emoji = ":yay-frog:"
             elif event.ci_status in ["pending", "running"]:
-                ci_status_emoji = ":frog-run:"
+                # Show worry emoji if any job has already failed even though workflow is still running
+                ci_status_emoji = ":worry-stop:" if has_failures else ":frog-run:"
             else:
                 ci_status_emoji = ":worry-stop:"
 
