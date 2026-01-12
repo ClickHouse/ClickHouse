@@ -12,7 +12,6 @@ node_1_1 = cluster.add_instance(
     main_configs=["configs/cluster.xml"],
     with_zookeeper=True,
     macros={"replica": "1", "shard": "1"},
-    with_installed_binary=True,
 )
 
 node_1_2 = cluster.add_instance(
@@ -20,7 +19,6 @@ node_1_2 = cluster.add_instance(
     main_configs=["configs/cluster.xml"],
     with_zookeeper=True,
     macros={"replica": "2", "shard": "1"},
-    with_installed_binary=True,
 )
 
 # Start the cluster

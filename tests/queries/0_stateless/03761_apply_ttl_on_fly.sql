@@ -1,8 +1,8 @@
 DROP DATABASE IF EXISTS test_apply_ttl_on_fly_db;
 
-CREATE DATABASE test_apply_ttl_on_fly_db;
+CREATE DATABASE IF NOT EXISTS test_apply_ttl_on_fly_db;
 
-CREATE TABLE test_apply_ttl_on_fly_db.test_apply_ttl_on_fly
+CREATE TABLE IF NOT EXISTS test_apply_ttl_on_fly_db.test_apply_ttl_on_fly
 (
     event_time DateTime,
     user_id UInt64,
@@ -38,3 +38,5 @@ SELECT sleep(2);
 SELECT *
 FROM test_apply_ttl_on_fly_db.test_apply_ttl_on_fly
 SETTINGS apply_ttl_on_fly = 1;
+
+DROP DATABASE IF EXISTS test_apply_ttl_on_fly_db;
