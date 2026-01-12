@@ -414,7 +414,8 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
-    chassert(columns);
+    /// They can be null in case if part is in broken state.
+    chassert(!(static_cast<bool>(columns) ^ static_cast<bool>(columns_description)), "Both columns and columns_description are null or both are not null");
 
     if (columns_description)
     {
@@ -423,7 +424,11 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
         storage.decrefColumnsDescriptionForColumns(*columns);
     }
 
-    storage.decrefNamesAndTypesListInSharedCache(columns);
+    if (columns)
+    {
+        storage.decrefNamesAndTypesListInSharedCache(columns);
+    }
+
 
     DimensionalMetrics::sub(
         DimensionalMetrics::MergeTreeParts,
