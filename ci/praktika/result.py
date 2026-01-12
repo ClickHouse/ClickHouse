@@ -222,18 +222,14 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def add_files(self, files) -> "Result":
-        self.files = list(set(self.files) | set(files))
-        self.dump()
-        return self
-
-    def set_files(self, files) -> "Result":
+    def set_files(self, files, strict=True) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]
-        for file in files:
-            assert Path(
-                file
-            ).is_file(), f"Not valid file [{file}] from file list [{files}]"
+        if strict:
+            for file in files:
+                assert Path(
+                    file
+                ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
         for file in self.files:
