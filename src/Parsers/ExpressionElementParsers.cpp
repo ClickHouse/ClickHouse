@@ -75,7 +75,10 @@ inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, 
         /// begin points to first token of literal, end points to one-past-last token.
         /// We need the char* range: [first_token.begin, last_token.end)
         --end; /// end was pointing past the literal, go back to last token of literal
-        g_literal_token_map->emplace(literal, LiteralTokenInfo{begin->begin, end->end});
+        /// Use insert_or_assign to handle memory reuse - the parser may reuse the same
+        /// memory address for different ASTLiteral objects. The final AST will have
+        /// the last literal created at each address, so we want the last token info.
+        g_literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
     }
 }
 }
