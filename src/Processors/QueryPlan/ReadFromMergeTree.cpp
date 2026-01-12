@@ -2152,7 +2152,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         bool use_skip_indexes_if_final_exact_mode =
             indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes)
+            && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, indexes->skip_indexes,
+                                        indexes->key_condition_rpn_template->hasOnlyConjunctions())
             && settings[Setting::use_skip_indexes_if_final_exact_mode];
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
@@ -3691,8 +3692,8 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
     return false;
 }
 
-/// Check if all columns with the given skip indexes are also part of the primary key
-bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes)
+/// Check if any/all columns with the given skip indexes are also part of the primary key
+bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
 {
     NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
 
@@ -3700,12 +3701,14 @@ bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_ke
     {
         for (const auto & column : skip_index.index->index.column_names)
         {
-            if (!primary_key_columns_set.contains(column))
+            if (primary_key_columns_set.contains(column) && any_one)
+                return true;
+            else if (!primary_key_columns_set.contains(column) && !any_one)
                 return false;
         }
     }
 
-    return true;
+    return !any_one;
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
