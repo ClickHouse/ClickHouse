@@ -14,6 +14,8 @@ namespace
     class FunctionToBool : public IFunction
     {
     private:
+        ContextPtr context;
+
         static String getReturnTypeName(const DataTypePtr & argument)
         {
             return argument->isNullable() ? "Nullable(Bool)" : "Bool";
@@ -22,9 +24,11 @@ namespace
     public:
         static constexpr auto name = "toBool";
 
-        static FunctionPtr create(ContextPtr)
+        explicit FunctionToBool(ContextPtr context_) : context(context_) {}
+
+        static FunctionPtr create(ContextPtr context)
         {
-            return std::make_shared<FunctionToBool>();
+            return std::make_shared<FunctionToBool>(context);
         }
 
         std::string getName() const override
@@ -54,7 +58,10 @@ namespace
                 }
             };
 
-            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {}, nullptr);
+            const bool needs_accurate_or_null
+                = arguments[0].type->isNullable() || arguments[0].type->lowCardinality() || arguments[0].type->isLowCardinalityNullable();
+            auto cast_type = needs_accurate_or_null ? CastType::accurateOrNull : CastType::nonAccurate;
+            auto func_cast = createInternalCast(arguments[0], result_type, cast_type, {}, context);
             return func_cast->execute(cast_args, result_type, arguments[0].column->size(), /* dry_run = */ false);
         }
     };

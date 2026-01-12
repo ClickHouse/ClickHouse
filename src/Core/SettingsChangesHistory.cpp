@@ -103,6 +103,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
+            {"optimize_if_transform_const_strings_to_lowcardinality", false, false, "New setting to allow optimizing results of const branches from if/multiif/transform into LowCardinality"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
