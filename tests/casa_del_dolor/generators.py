@@ -63,7 +63,7 @@ class BuzzHouseGenerator(Generator):
 
         # Set paths
         buzz_config["client_file_path"] = (
-            f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"
+            f"{Path(cluster.instances_dir) / 'node0' / 'database' / 'user_files'}"
         )
         buzz_config["server_file_path"] = "/var/lib/clickhouse/user_files"
         # Set available servers
@@ -211,5 +211,6 @@ class BuzzHouseGenerator(Generator):
             f"{server.ip_address}",
             "--port",
             "9000",
+            "--max_memory_usage_in_client=1000000000",
             f"--buzz-house-config={self.temp.name}",
         ]
