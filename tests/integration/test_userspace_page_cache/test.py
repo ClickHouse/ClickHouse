@@ -176,14 +176,19 @@ def test_size_adjustment(started_cluster):
     # Make sure asynchronous metrics update.
     time.sleep(3)
 
-    memory_stats = node.query("select metric, value from system.asynchronous_metrics where metric in ('CGroupMemoryTotal', 'CGroupMemoryUsed', 'OSMemoryTotal', 'MemoryResident')")
-    memory_stats = dict(map(lambda p: p.split('\t'), memory_stats.strip().split('\n')))
-    memory_used = int(memory_stats['MemoryResident'])
-    os_memory_limit = int(memory_stats['OSMemoryTotal'])
-    if 'CGroupMemoryUsed' in memory_stats:
-        memory_used = max(memory_used, int(memory_stats['CGroupMemoryUsed']))
-    if 'CGroupMemoryTotal' in memory_stats:
-        os_memory_limit = min(os_memory_limit, int(memory_stats['CGroupMemoryTotal']))
+    def get_metrics():
+        tsv = node.query("select metric, toInt64(value) as value from system.asynchronous_metrics where metric in ('CGroupMemoryTotal', 'CGroupMemoryUsed', 'OSMemoryTotal', 'MemoryResident', 'PageCacheMaxBytes') UNION ALL select metric, value from system.metrics where metric in ('PageCacheBytes', 'PageCacheCells')")
+        pairs = map(lambda p: p.split('\t'), tsv.strip().split('\n'))
+        return {k: int(v) for [k, v] in pairs}
+
+    metrics = get_metrics()
+    logging.info(f"server metrics before reads: {metrics}")
+    memory_used = metrics['MemoryResident']
+    os_memory_limit = metrics['OSMemoryTotal']
+    if 'CGroupMemoryUsed' in metrics:
+        memory_used = max(memory_used, metrics['CGroupMemoryUsed'])
+    if 'CGroupMemoryTotal' in metrics:
+        os_memory_limit = min(os_memory_limit, metrics['CGroupMemoryTotal'])
 
     # Check that the test is run with a high enough memory limit in cgroups.
     assert os_memory_limit >= memory_limit
@@ -191,19 +196,20 @@ def test_size_adjustment(started_cluster):
     # Check there's at least some free memory for page cache. If this fails, maybe server's memory
     # usage bloated enough that max_server_memory_usage needs to be increased in configs/smol.xml
     memory_free = min(os_memory_limit, memory_limit) - memory_used
-    logging.info(f"server free memory: {memory_free/1e6:.3f} MB")
     assert memory_free > 100e6
+
+    assert metrics['PageCacheMaxBytes'] > 60e6
+    assert metrics['PageCacheBytes'] < 10e6
 
     # Read with cache enabled.
     node.query(
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
     )
-    initial_cache_size = int(
-        node.query(
-            "select value from system.metrics where metric = 'PageCacheBytes'"
-        )
-    )
-    assert initial_cache_size > 50e6
+
+    metrics = get_metrics()
+    logging.info(f"server metrics after first read: {metrics}")
+
+    assert metrics['PageCacheBytes'] > 50e6
 
     # Do a query that uses lots of memory (and fails), check that the cache was shrunk to ~page_cache_min_size.
     err = node.query_and_get_error(
@@ -214,13 +220,8 @@ def test_size_adjustment(started_cluster):
     # (There used to be a check here that system.query_log shows high enough memory usage for the previous
     #  query, but it was flaky because log flush sometimes hits memory limit and fails.)
 
-    assert (
-        int(
-            node.query(
-                "select value from system.metrics where metric = 'PageCacheBytes'"
-            )
-        )
-        < 50e6
-    )
+    metrics = get_metrics()
+    logging.info(f"server metrics after second read: {metrics}")
+    assert metrics['PageCacheBytes'] < 50e6
 
     node.query("drop table a;" "system drop page cache;")
