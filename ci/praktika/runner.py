@@ -475,7 +475,7 @@ class Runner:
             ).dump()
 
         print(f"####REMOVEME {result.is_completed()}")
-        import asdict
+        from dataclasses import asdict
         print("\n".join(f"{k}={v!r}" for k, v in asdict(result).items()))
 
         if not result.is_completed():
