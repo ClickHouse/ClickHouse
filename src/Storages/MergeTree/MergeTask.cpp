@@ -973,7 +973,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
         Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
-            return;
+            continue;
+
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
         Chunk squashed_chunk = Squashing::squash(
