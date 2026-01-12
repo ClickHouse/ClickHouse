@@ -3928,16 +3928,16 @@ deltaLake(
         ]
     )
 
-    data = [(1, "a", "a"), (1, "b", "a"), (1, "c", "a"), (2, "b", "a")]
+    data = [(1, "a", "a"), (1, "b", "a"), (1, "c", "a"), (1, "b", "c"), (2, "b", "a")]
     df = spark.createDataFrame(data=data, schema=schema)
     df.write.format("delta").partitionBy("a").mode("overwrite").save(path)
 
     upload_directory(minio_client, bucket, path, "")
 
-    assert 4 == int(node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip())
+    assert 5 == int(node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip())
 
     spark.sql(f"DELETE FROM {table_name} WHERE b = 'b'")
     upload_directory(minio_client, bucket, path, "")
 
     assert 2 == int(node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip())
-    assert node.contains_in_log("Selection vector size: 2")
+    assert node.contains_in_log("Row indexes size: 2")

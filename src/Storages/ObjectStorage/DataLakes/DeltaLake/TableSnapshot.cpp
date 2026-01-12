@@ -391,24 +391,25 @@ public:
 
         if (dv_info && dv_info->has_vector)
         {
-            auto selection_vector = KernelUtils::unwrapResult(
-                ffi::selection_vector_from_dv(
+            /// `row_indexes_from_dv` returns a vector of row indexes
+            /// that should be *removed* from the result set
+            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
+                ffi::row_indexes_from_dv(
                     dv_info->info,
                     context->kernel_snapshot_state->engine.get(),
                     KernelUtils::toDeltaString(context->getTableLocation())),
-                "selection_vector_from_dv");
+                "row_indexes_from_dv");
 
             SCOPE_EXIT({
-                ffi::free_bool_slice(selection_vector);
+                ffi::free_row_indexes(row_indexes);
             });
 
-            LOG_TEST(context->log, "Selection vector size: {}", selection_vector.len);
+            LOG_TEST(context->log, "Row indexes size: {}", row_indexes.len);
 
             auto bitmap = std::make_shared<DB::DataLakeObjectMetadata::ExcludedRows>();
-            for (size_t i = 0; i < selection_vector.len; ++i)
+            for (size_t i = 0; i < row_indexes.len; ++i)
             {
-                if (!selection_vector.ptr[i])
-                    bitmap->add(i);
+                bitmap->add(row_indexes.ptr[i]);
             }
             object->data_lake_metadata->excluded_rows = std::move(bitmap);
         }

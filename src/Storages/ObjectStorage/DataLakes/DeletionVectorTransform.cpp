@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/DataLakes/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
@@ -13,7 +13,7 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-PositionDeleteTransform::PositionDeleteTransform(
+DeletionVectorTransform::DeletionVectorTransform(
     const DB::SharedHeader & header_,
     ExcludedRowsPtr excluded_rows_)
     : ISimpleTransform(header_, header_, /* skip_empty_chunks */false)
@@ -21,7 +21,12 @@ PositionDeleteTransform::PositionDeleteTransform(
 {
 }
 
-void PositionDeleteTransform::transform(DB::Chunk & chunk)
+void DeletionVectorTransform::transform(DB::Chunk & chunk)
+{
+    return transform(chunk, *excluded_rows);
+}
+
+void DeletionVectorTransform::transform(DB::Chunk & chunk, const ExcludedRows & excluded_rows)
 {
     auto chunk_info = chunk.getChunkInfos().get<DB::ChunkInfoRowNumbers>();
     if (!chunk_info)
@@ -39,7 +44,7 @@ void PositionDeleteTransform::transform(DB::Chunk & chunk)
     {
         if (!applied_filter.has_value() || applied_filter.value()[i])
         {
-            if (excluded_rows->rb_contains(chunk_info->row_num_offset + i))
+            if (excluded_rows.rb_contains(chunk_info->row_num_offset + i))
             {
                 filter[idx_in_chunk] = false;
                 --num_rows_after;

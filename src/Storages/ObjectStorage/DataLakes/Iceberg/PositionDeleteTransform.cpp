@@ -21,6 +21,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::Setting
@@ -139,51 +140,7 @@ size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInp
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 {
-    size_t num_rows = chunk.getNumRows();
-    IColumn::Filter delete_vector(num_rows, true);
-    size_t num_rows_after_filtration = num_rows;
-
-    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
-    if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
-
-    size_t row_num_offset = chunk_info->row_num_offset;
-    auto & applied_filter = chunk_info->applied_filter;
-    size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
-    size_t idx_in_chunk = 0;
-    for (size_t i = 0; i < num_indices; i++)
-    {
-        if (!applied_filter.has_value() || applied_filter.value()[i])
-        {
-            size_t row_idx = row_num_offset + i;
-            if (bitmap.rb_contains(row_idx))
-            {
-                delete_vector[idx_in_chunk] = false;
-
-                /// If we already have a _row_number-indexed filter vector, update it in place.
-                if (applied_filter.has_value())
-                    applied_filter.value()[i] = false;
-
-                num_rows_after_filtration--;
-            }
-            idx_in_chunk += 1;
-        }
-    }
-    chassert(idx_in_chunk == num_rows);
-
-    if (num_rows_after_filtration == num_rows)
-        return;
-
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = column->filter(delete_vector, -1);
-
-    /// If it's the first filtering we do on this Chunk (i.e. its _row_number-s were consecutive),
-    /// assign its applied_filter.
-    if (!applied_filter.has_value())
-        applied_filter.emplace(std::move(delete_vector));
-
-    chunk.setColumns(std::move(columns), num_rows_after_filtration);
+    return DeletionVectorTransform::transform(chunk, bitmap);
 }
 
 void IcebergBitmapPositionDeleteTransform::initialize()

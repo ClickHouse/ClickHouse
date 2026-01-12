@@ -26,7 +26,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -650,7 +650,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
-                return std::make_shared<PositionDeleteTransform>(header, object_info->data_lake_metadata->excluded_rows);
+                return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
             });
         }
 
