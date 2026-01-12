@@ -23,7 +23,7 @@ DeletionVectorTransform::DeletionVectorTransform(
 
 void DeletionVectorTransform::transform(DB::Chunk & chunk)
 {
-    return transform(chunk, *excluded_rows);
+    transform(chunk, *excluded_rows);
 }
 
 void DeletionVectorTransform::transform(DB::Chunk & chunk, const ExcludedRows & excluded_rows)

@@ -140,7 +140,7 @@ size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInp
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 {
-    return DeletionVectorTransform::transform(chunk, bitmap);
+    DeletionVectorTransform::transform(chunk, bitmap);
 }
 
 void IcebergBitmapPositionDeleteTransform::initialize()
