@@ -1,47 +1,48 @@
-#include <Core/Block.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <Parsers/TokenIterator.h>
-#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Core/Block.h>
 #include <base/find_symbols.h>
+#include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
+#include <Core/Settings.h>
+#include <Parsers/ASTLiteral.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 
 namespace DB
 {
 namespace Setting
 {
-extern const SettingsUInt64 max_parser_backtracks;
-extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int SYNTAX_ERROR;
-extern const int TYPE_MISMATCH;
-extern const int SUPPORT_IS_DISABLED;
-extern const int ARGUMENT_OUT_OF_BOUND;
-extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
+    extern const int TYPE_MISMATCH;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
-    ReadBuffer & in_, SharedHeader header_, const RowInputFormatParams & params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_,
+    SharedHeader header_,
+    const RowInputFormatParams & params_,
+    const FormatSettings & format_settings_)
     : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
 }
@@ -51,18 +52,11 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
     SharedHeader header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IInputFormat(header_, buf_.get())
-    , buf(std::move(buf_))
-    , params(params_)
-    , format_settings(format_settings_)
-    , num_columns(header_->columns())
-    , parser_type_for_column(num_columns, ParserType::Streaming)
-    , attempts_to_deduce_template(num_columns)
-    , attempts_to_deduce_template_cached(num_columns)
-    , rows_parsed_using_template(num_columns)
-    , templates(num_columns)
-    , types(header_->getDataTypes())
-    , serializations(header_->getSerializations())
+    : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
+        params(params_), format_settings(format_settings_), num_columns(header_->columns()),
+        parser_type_for_column(num_columns, ParserType::Streaming),
+        attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_->getDataTypes()), serializations(header_->getSerializations())
     , block_missing_values(getPort().getHeader().columns())
 {
 }
@@ -339,83 +333,83 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
 namespace
 {
-void tryToReplaceNullFieldsInComplexTypesWithDefaultValues(Field & value, const IDataType & data_type)
-{
-    checkStackSize();
-
-    WhichDataType type(data_type);
-
-    if (type.isTuple() && value.getType() == Field::Types::Tuple)
+    void tryToReplaceNullFieldsInComplexTypesWithDefaultValues(Field & value, const IDataType & data_type)
     {
-        const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
+        checkStackSize();
 
-        Tuple & tuple_value = value.safeGet<Tuple>();
+        WhichDataType type(data_type);
 
-        size_t src_tuple_size = tuple_value.size();
-        size_t dst_tuple_size = type_tuple.getElements().size();
-
-        if (src_tuple_size != dst_tuple_size)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH, "Bad size of tuple. Expected size: {}, actual size: {}.", src_tuple_size, dst_tuple_size);
-
-        for (size_t i = 0; i < src_tuple_size; ++i)
+        if (type.isTuple() && value.getType() == Field::Types::Tuple)
         {
-            const auto & element_type = *(type_tuple.getElements()[i]);
+            const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
 
-            if (tuple_value[i].isNull() && !element_type.isNullable())
-                tuple_value[i] = element_type.getDefault();
+            Tuple & tuple_value = value.safeGet<Tuple>();
 
-            tryToReplaceNullFieldsInComplexTypesWithDefaultValues(tuple_value[i], element_type);
+            size_t src_tuple_size = tuple_value.size();
+            size_t dst_tuple_size = type_tuple.getElements().size();
+
+            if (src_tuple_size != dst_tuple_size)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple. Expected size: {}, actual size: {}.",
+                    src_tuple_size, dst_tuple_size);
+
+            for (size_t i = 0; i < src_tuple_size; ++i)
+            {
+                const auto & element_type = *(type_tuple.getElements()[i]);
+
+                if (tuple_value[i].isNull() && !element_type.isNullable())
+                    tuple_value[i] = element_type.getDefault();
+
+                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(tuple_value[i], element_type);
+            }
+        }
+        else if (type.isArray() && value.getType() == Field::Types::Array)
+        {
+            const DataTypeArray & type_aray = static_cast<const DataTypeArray &>(data_type);
+            const auto & element_type = *(type_aray.getNestedType());
+
+            if (element_type.isNullable())
+                return;
+
+            Array & array_value = value.safeGet<Array>();
+            size_t array_value_size = array_value.size();
+
+            for (size_t i = 0; i < array_value_size; ++i)
+            {
+                if (array_value[i].isNull())
+                    array_value[i] = element_type.getDefault();
+
+                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(array_value[i], element_type);
+            }
+        }
+        else if (type.isMap() && value.getType() == Field::Types::Map)
+        {
+            const DataTypeMap & type_map = static_cast<const DataTypeMap &>(data_type);
+
+            const auto & key_type = *type_map.getKeyType();
+            const auto & value_type = *type_map.getValueType();
+
+            auto & map = value.safeGet<Map>();
+            size_t map_size = map.size();
+
+            for (size_t i = 0; i < map_size; ++i)
+            {
+                auto & map_entry = map[i].safeGet<Tuple>();
+
+                auto & entry_key = map_entry[0];
+                auto & entry_value = map_entry[1];
+
+                if (entry_key.isNull() && !key_type.isNullable())
+                    entry_key = key_type.getDefault();
+
+                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_key, key_type);
+
+                if (entry_value.isNull() && !value_type.isNullable())
+                    entry_value = value_type.getDefault();
+
+                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_value, value_type);
+            }
         }
     }
-    else if (type.isArray() && value.getType() == Field::Types::Array)
-    {
-        const DataTypeArray & type_aray = static_cast<const DataTypeArray &>(data_type);
-        const auto & element_type = *(type_aray.getNestedType());
-
-        if (element_type.isNullable())
-            return;
-
-        Array & array_value = value.safeGet<Array>();
-        size_t array_value_size = array_value.size();
-
-        for (size_t i = 0; i < array_value_size; ++i)
-        {
-            if (array_value[i].isNull())
-                array_value[i] = element_type.getDefault();
-
-            tryToReplaceNullFieldsInComplexTypesWithDefaultValues(array_value[i], element_type);
-        }
-    }
-    else if (type.isMap() && value.getType() == Field::Types::Map)
-    {
-        const DataTypeMap & type_map = static_cast<const DataTypeMap &>(data_type);
-
-        const auto & key_type = *type_map.getKeyType();
-        const auto & value_type = *type_map.getValueType();
-
-        auto & map = value.safeGet<Map>();
-        size_t map_size = map.size();
-
-        for (size_t i = 0; i < map_size; ++i)
-        {
-            auto & map_entry = map[i].safeGet<Tuple>();
-
-            auto & entry_key = map_entry[0];
-            auto & entry_value = map_entry[1];
-
-            if (entry_key.isNull() && !key_type.isNullable())
-                entry_key = key_type.getDefault();
-
-            tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_key, key_type);
-
-            if (entry_value.isNull() && !value_type.isNullable())
-                entry_value = value_type.getDefault();
-
-            tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_value, value_type);
-        }
-    }
-}
 }
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
@@ -430,21 +424,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     bool parsed = false;
     ASTPtr ast;
     std::optional<IParser::Pos> ti_start;
-
-    /// Map to capture literal token positions during parsing.
-    /// This is used by ConstantExpressionTemplate to track token positions.
-    /// Must span both parsing and template construction.
     LiteralTokenMap literal_token_map;
-    Expected expected;
-    expected.literal_token_map = &literal_token_map;
 
     if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
     {
+        Expected expected;
+        expected.literal_token_map = &literal_token_map;
         /// Keep a copy to the start of the column tokens to use if later if necessary
         ti_start = IParser::Pos(
-            *token_iterator,
-            static_cast<unsigned>(settings[Setting::max_parser_depth]),
-            static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+            *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -500,10 +488,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
-            throw DB::Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Template for column {} already exists and it was not evaluated yet",
-                std::to_string(column_idx));
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
+                                std::to_string(column_idx));
         std::exception_ptr exception;
         try
         {
@@ -516,16 +502,13 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 *ti_start,
                 *token_iterator,
                 ast,
-                context,
                 literal_token_map,
+                context,
                 &found_in_cache,
                 delimiter);
 
-            LOG_TEST(
-                getLogger("ValuesBlockInputFormat"),
-                "Will use an expression template to parse column {}: {}",
-                column_idx,
-                structure->dumpTemplate());
+            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+                     column_idx, structure->dumpTemplate());
 
             templates[column_idx].emplace(structure);
             if (found_in_cache)
@@ -584,11 +567,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             return false;
         }
         buf->rollbackToCheckpoint();
-        throw Exception(
-            ErrorCodes::TYPE_MISMATCH,
-            "Cannot insert NULL value into a column of type '{}' at: {}",
-            type.getName(),
-            String(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at: {}",
+                        type.getName(), String(buf->position(),
+                        std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
     /// Insert value into the column.
@@ -722,8 +703,7 @@ void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_)
-    , buf(in_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
 }
 
@@ -779,20 +759,26 @@ void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::Data
 
 void registerInputFormatValues(FormatFactory & factory)
 {
-    factory.registerInputFormat(
-        "Values",
-        [](ReadBuffer & buf, const Block & header, const RowInputFormatParams & params, const FormatSettings & settings)
-        { return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings); });
+    factory.registerInputFormat("Values", [](
+        ReadBuffer & buf,
+        const Block & header,
+        const RowInputFormatParams & params,
+        const FormatSettings & settings)
+    {
+        return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
+    });
 }
 
 void registerValuesSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader(
-        "Values", [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<ValuesSchemaReader>(buf, settings); });
-    factory.registerAdditionalInfoForSchemaCacheGetter(
-        "Values",
-        [](const FormatSettings & settings)
-        { return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted); });
+    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_shared<ValuesSchemaReader>(buf, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
+    });
 }
 
 }

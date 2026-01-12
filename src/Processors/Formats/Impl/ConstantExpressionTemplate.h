@@ -67,8 +67,8 @@ public:
                                                      TokenIterator expression_begin,
                                                      TokenIterator expression_end,
                                                      const ASTPtr & expression_,
-                                                     ContextPtr context,
                                                      const LiteralTokenMap & token_map,
+                                                     ContextPtr context,
                                                      bool * found_in_cache = nullptr,
                                                      const String & salt = {});
     };
