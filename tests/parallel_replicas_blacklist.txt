@@ -453,3 +453,6 @@
 
     Produces different result:
 03658_joined_block_split_single_row_bytes
+
+# https://github.com/ClickHouse/ClickHouse/issues/92056
+03712_nested_loop_join_merge_tree

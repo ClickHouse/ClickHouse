@@ -235,6 +235,8 @@ public:
          */
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
+
+    virtual std::string getDescription() const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -318,6 +320,7 @@ struct IMergeTreeIndex
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
+    virtual bool isTextIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const

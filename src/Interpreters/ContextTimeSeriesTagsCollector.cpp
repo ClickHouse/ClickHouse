@@ -168,6 +168,13 @@ std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByGroup
 
 TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByGroupNoLock(size_t group) const
 {
+    if (group >= groups.size())
+    {
+        if (groups.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No groups exist");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is out of bounds, must be between 0 and {}", group, groups.size() - 1);
+    }
     return groups[group].tags;
 }
 

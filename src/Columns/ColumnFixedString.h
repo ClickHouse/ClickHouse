@@ -174,6 +174,8 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
+    void filter(const IColumn::Filter & filt) override;
+
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;

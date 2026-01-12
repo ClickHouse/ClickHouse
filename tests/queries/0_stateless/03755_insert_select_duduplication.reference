@@ -1,0 +1,13 @@
+insert_select_deduplicate=1 with non-stable select, exception expected
+DEDUPLICATION_IS_NOT_POSSIBLE
+insert_select_deduplicate=1 with stable select, deduplication happens
+10
+insert_select_deduplicate=auto and insert_deduplicate=1 with non-stable select, warning expected, deduplication disabled
+INSERT SELECT deduplication is disabled because SELECT is not stable
+20
+insert_select_deduplicate=auto and insert_deduplicate=1 with stable select, deduplication happens
+10
+insert_select_deduplicate=0 and insert_deduplicate=1 with stable select, deduplication disabled
+20
+insert_select_deduplicate=1 and insert_deduplicate=1 with stable select, deduplication happens
+1

@@ -19,9 +19,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
@@ -253,6 +255,9 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 struct QueryPlanAndSets;
 using QueryPlanDeserializationCallback = std::function<std::shared_ptr<QueryPlanAndSets>()>;
 
@@ -361,6 +366,7 @@ protected:
     {
         StorageID table = StorageID::createEmpty();
         std::optional<Names> column_names;
+        std::optional<ColumnsDescription> columns_description;
     };
 
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
@@ -389,6 +395,8 @@ protected:
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
     BlockMarshallingCallback block_marshalling_callback;
+
+    mutable RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     bool is_under_restore = false;
 
@@ -589,13 +597,7 @@ protected:
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
-    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
-    mutable StorageMetadataCache storage_metadata_cache;
-    mutable std::mutex storage_metadata_cache_mutex;
-
-    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
-    mutable StorageSnapshotCache storage_snapshot_cache;
-    mutable std::mutex storage_snapshot_cache_mutex;
+    QueryMetadataCacheWeakPtr query_metadata_cache;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1002,9 +1004,11 @@ public:
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
+    bool hasInsertionTableColumnsDescription() const { return insertion_table_info.columns_description.has_value(); }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt, std::optional<ColumnsDescription> column_description = std::nullopt);
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
     const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
+    const std::optional<ColumnsDescription> & getInsertionTableColumnsDescription() const { return insertion_table_info.columns_description; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1061,7 +1065,6 @@ public:
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
-    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
@@ -1078,8 +1081,15 @@ public:
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
+        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -1436,7 +1446,7 @@ public:
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
-    std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
+    std::shared_ptr<PartLog> getPartLog() const;
 
     std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
 
@@ -1530,8 +1540,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
-    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
-    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+    QueryMetadataCachePtr getQueryMetadataCache() const;
+    void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
@@ -1594,11 +1604,14 @@ public:
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
+    bool hasMergeTreeAllRangesCallback() const;
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
 
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr getRuntimeDataflowStatisticsCacheUpdater() const;
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);

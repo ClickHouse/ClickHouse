@@ -52,7 +52,6 @@ def clone_submodules():
         "contrib/simdjson",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
         "contrib/StringZilla",
@@ -164,6 +163,11 @@ def main():
     attach_files = []
     job_info = ""
 
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         results.append(
             Result.from_commands_run(
@@ -274,7 +278,7 @@ def main():
 
     if attach_debug:
         attach_files += [
-            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            clickhouse_bin_path,
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
         ]

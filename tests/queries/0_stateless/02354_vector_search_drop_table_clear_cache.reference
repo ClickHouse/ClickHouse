@@ -2,21 +2,24 @@
 6
 7
 Expression (Project names)
-  LazilyRead (Lazily Read)
-    Limit (preliminary LIMIT)
-      Sorting (Sorting for ORDER BY)
-        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
-          ReadFromMergeTree (default.tab)
-          Indexes:
-            PrimaryKey
-              Condition: true
-              Parts: 1/1
-              Granules: 1/1
-            Skip
-              Name: idx
-              Description: vector_similarity GRANULARITY 100000000
-              Parts: 1/1
-              Granules: 1/1
-            Ranges: 1
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Expression
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 1/1
+                Skip
+                  Name: idx
+                  Description: vector_similarity GRANULARITY 100000000
+                  Parts: 1/1
+                  Granules: 1/1
+                Ranges: 1
+      LazilyReadFromMergeTree
 VectorSimilarityIndexCacheBytes	Good
 VectorSimilarityIndexCacheBytes	0

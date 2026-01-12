@@ -245,6 +245,11 @@ bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * t
             stack.push(child_join_node->getLeftTableExpression().get());
             stack.push(child_join_node->getRightTableExpression().get());
         }
+
+        if (const auto * child_join_node = current->as<CrossJoinNode>())
+        {
+            stack.push_range(child_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
+        }
     }
     return false;
 }
@@ -3081,11 +3086,19 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
     for (auto & node : sort_node_list_typed.getNodes())
     {
         auto & sort_node = node->as<SortNode &>();
-        sort_expression_projection_names = resolveExpressionNode(sort_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        auto & sort_expression = sort_node.getExpression();
+        bool is_order_by_asterisk = sort_expression->getNodeType() == QueryTreeNodeType::MATCHER;
 
-        if (auto * sort_column_list_node = sort_node.getExpression()->as<ListNode>())
+        sort_expression_projection_names = resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (auto * sort_column_list_node = sort_expression->as<ListNode>())
         {
             size_t sort_column_list_node_size = sort_column_list_node->getNodes().size();
+            if (sort_column_list_node_size != 1 && is_order_by_asterisk)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Expression ORDER BY {} is not supported, matcher expression can only contain single column",
+                    sort_expression->formatASTForErrorMessage());
+            }
             if (sort_column_list_node_size != 1)
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -3360,11 +3373,11 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, const NameSet & interpolate_list)
 {
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
+    auto & projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
     NamesAndTypes projection_columns;
@@ -3379,6 +3392,19 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 "Projection node must be constant, function, column, query or union");
 
         projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
+
+        if (interpolate_list.contains(projection_names[i]))
+        {
+            if (const auto * function_node = projection_nodes[i]->as<FunctionNode>(); !function_node || function_node->getFunctionName() != "__interpolate")
+            {
+                auto f = std::make_shared<FunctionNode>("__interpolate");
+                f->getArguments().getNodes().push_back(projection_nodes[i]);
+                f->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(projection_names[i]));
+                resolveOrdinaryFunctionNodeByName(*f, f->getFunctionName(), scope.context);
+                projection_nodes[i] = f;
+                scope.expression_argument_name_to_node.emplace(projection_names[i], projection_nodes[i]);
+            }
+        }
     }
 
     return projection_columns;
@@ -3646,6 +3672,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             }
         }
 
+        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
         for (auto & [alias_column_to_resolve_name, alias_column_to_resolve] : alias_columns_to_resolve)
         {
             /** Alias column could be potentially resolved during resolve of other ALIAS column.
@@ -3653,10 +3680,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               *
               * During resolve of alias_value_1, alias_value_2 column will be resolved.
               */
-            alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
+            alias_column_to_resolve = table_expression_data.column_name_to_column_node[alias_column_to_resolve_name];
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
-            alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
+            alias_column_resolve_scope.table_expression_data_for_alias_resolution = &table_expression_data;
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
@@ -3670,11 +3697,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
-            column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
-            column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
+            table_expression_data.column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
-
-        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
     }
     else if (query_node || union_node)
     {
@@ -3928,72 +3952,35 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
-    if (!nested_table_function && !scope.subquery_depth && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTable()
+    if (!nested_table_function && !scope.subquery_depth && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTableColumnsDescription()
         && table_function_ptr->needStructureHint())
     {
-        const auto & insertion_table = scope_context->getInsertionTable();
-        if (!insertion_table.empty())
+        const auto & insert_columns = *scope_context->getInsertionTableColumnsDescription();
+        const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
+        DB::ColumnsDescription structure_hint;
+
+        bool use_columns_from_insert_query = true;
+
+        /// Insert table matches columns against SELECT expression by position, so we want to map
+        /// insert table columns to table function columns through names from SELECT expression.
+
+        auto insert_column_name_it = insert_column_names.begin();
+        auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
+        auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+        bool asterisk = false;
+        const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
+        auto expression = expression_list.begin();
+
+        /// We want to go through SELECT expression list and correspond each expression to column in insert table
+        /// which type will be used as a hint for the file structure inference.
+        for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
         {
-            auto insert_storage = DatabaseCatalog::instance().getTable(insertion_table, scope_context);
-            const auto & insert_columns = insert_storage->getInMemoryMetadataPtr()->getColumns();
-            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
-            DB::ColumnsDescription structure_hint;
-
-            bool use_columns_from_insert_query = true;
-
-            /// Insert table matches columns against SELECT expression by position, so we want to map
-            /// insert table columns to table function columns through names from SELECT expression.
-
-            auto insert_column_name_it = insert_column_names.begin();
-            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
-            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-            bool asterisk = false;
-            const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
-            auto expression = expression_list.begin();
-
-            /// We want to go through SELECT expression list and correspond each expression to column in insert table
-            /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
+            if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
-                if (auto * identifier_node = (*expression)->as<IdentifierNode>())
-                {
 
-                    if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
-                    {
-                        if (asterisk)
-                        {
-                            if (use_structure_from_insertion_table_in_table_functions == 1)
-                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
-
-                            use_columns_from_insert_query = false;
-                            break;
-                        }
-
-                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                        column.name = identifier_node->getIdentifier().getFullName();
-                        /// Change ephemeral columns to default columns.
-                        column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
-                    }
-
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
-                else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
+                if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
                 {
                     if (asterisk)
-                    {
-                        if (use_structure_from_insertion_table_in_table_functions == 1)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
-
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                    if (!structure_hint.empty())
                     {
                         if (use_structure_from_insertion_table_in_table_functions == 1)
                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
@@ -4002,65 +3989,97 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         break;
                     }
 
-                    asterisk = true;
+                    ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                    column.name = identifier_node->getIdentifier().getFullName();
+                    /// Change ephemeral columns to default columns.
+                    column.default_desc.kind = ColumnDefaultKind::Default;
+                    structure_hint.add(std::move(column));
                 }
-                else if (auto * function = (*expression)->as<FunctionNode>())
-                {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
 
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
+                /// Once we hit asterisk we want to find end of the range covered by asterisk
+                /// contributing every further SELECT expression to the tail of insert structure
+                if (asterisk)
+                    --insert_column_names_end;
                 else
-                {
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
+                    ++insert_column_name_it;
             }
-
-            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+            else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
             {
-                /// For input function we should check if input format supports reading subset of columns.
-                if (table_function_ptr->getName() == "input")
-                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat(), scope.context);
+                if (asterisk)
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 1)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+
+                    use_columns_from_insert_query = false;
+                    break;
+                }
+                if (!structure_hint.empty())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 1)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                    use_columns_from_insert_query = false;
+                    break;
+                }
+
+                asterisk = true;
+            }
+            else if (auto * function = (*expression)->as<FunctionNode>())
+            {
+                if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
+                {
+                    use_columns_from_insert_query = false;
+                    break;
+                }
+
+                /// Once we hit asterisk we want to find end of the range covered by asterisk
+                /// contributing every further SELECT expression to the tail of insert structure
+                if (asterisk)
+                    --insert_column_names_end;
                 else
-                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
+                    ++insert_column_name_it;
             }
-
-            if (use_columns_from_insert_query)
+            else
             {
-                if (expression == expression_list.end())
-                {
-                    /// Append tail of insert structure to the hint
-                    if (asterisk)
-                    {
-                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
-                        {
-                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                            /// Change ephemeral columns to default columns.
-                            column.default_desc.kind = ColumnDefaultKind::Default;
-                            structure_hint.add(std::move(column));
-                        }
-                    }
-
-                    if (!structure_hint.empty())
-                        table_function_ptr->setStructureHint(structure_hint);
-                }
-                else if (use_structure_from_insertion_table_in_table_functions == 1)
-                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+                /// Once we hit asterisk we want to find end of the range covered by asterisk
+                /// contributing every further SELECT expression to the tail of insert structure
+                if (asterisk)
+                    --insert_column_names_end;
+                else
+                    ++insert_column_name_it;
             }
+        }
+
+        if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+        {
+            /// For input function we should check if input format supports reading subset of columns.
+            if (table_function_ptr->getName() == "input")
+                use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat(), scope.context);
+            else
+                use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
+        }
+
+        if (use_columns_from_insert_query)
+        {
+            if (expression == expression_list.end())
+            {
+                /// Append tail of insert structure to the hint
+                if (asterisk)
+                {
+                    for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
+                    {
+                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
+                        structure_hint.add(std::move(column));
+                    }
+                }
+
+                if (!structure_hint.empty())
+                    table_function_ptr->setStructureHint(structure_hint);
+            }
+            else if (use_structure_from_insertion_table_in_table_functions == 1)
+                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
         }
     }
 
@@ -4390,6 +4409,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         left_subquery->getJoinTree() = left_table_expression;
 
                         IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
+                        /// We are using alias column mechanism for USING column from projection.
+                        /// It will be calculated right after reading, so column will be not nullable there.
+                        left_subquery_scope.join_use_nulls = false;
+
                         resolveQuery(left_subquery, left_subquery_scope);
 
                         const auto & resolved_nodes = left_subquery->getProjection().getNodes();
@@ -4422,7 +4445,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             /** With `analyzer_compatibility_join_using_top_level_identifier` alias in projection has higher priority than column from left table.
               * But if aliased expression cannot be resolved from left table, we get UNKNOW_IDENTIFIER error,
               * despite the fact that column from USING could be resolved from left table.
-              * It's compatibility with a default behavior for old analyzer.
+              * It's compatible with a default behavior for old analyzer.
               */
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
@@ -4432,14 +4455,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
             }
-
-            /** Here we may try to resolve identifier from projection in case it's not resolved from left table expression
-              * and analyzer_compatibility_join_using_top_level_identifier is disabled.
-              * For now we do not do this, because not all corner cases are clear.
-              * But let's at least mention it in error message
-              */
-            /// if (!settings.analyzer_compatibility_join_using_top_level_identifier && !result_left_table_expression)
-            ///     result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
 
             if (!result_left_table_expression)
             {
@@ -4840,9 +4855,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    NameSet interpolate_list =
+        query_node_typed.hasInterpolate() ?
+            query_node_typed.getInterpolate()->as<ListNode &>().getNodes()
+            | std::views::transform([](const QueryTreeNodePtr & node){ return node->as<InterpolateNode &>().getExpressionName(); })
+            | std::ranges::to<std::unordered_set>()
+        : NameSet{};
+
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -4937,7 +4959,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, interpolate_list);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",

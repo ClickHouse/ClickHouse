@@ -270,7 +270,7 @@ std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFrom
     return std::nullopt;
 }
 
-ObjectStorageKey MetadataStorageFromDiskTransaction::generateObjectKeyForPath(const std::string & /*path*/) const
+ObjectStorageKey MetadataStorageFromDiskTransaction::generateObjectKeyForPath(const std::string & /*path*/)
 {
     return metadata_storage.key_generator->generate();
 }

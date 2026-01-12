@@ -180,7 +180,7 @@ WHERE
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAddressToLineWithInlines>(documentation);
 }

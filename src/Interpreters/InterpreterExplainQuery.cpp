@@ -262,6 +262,7 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"indices", query_plan_options.indexes},
             {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
@@ -659,16 +660,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
+                auto insert_context = Context::createCopy(getContext());
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
-                    query_context,
+                    insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
                     /* async_insert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
-                // we do not need it anymore, it would be executed
+                // we do not need it anymore, it would not be executed
                 io.pipeline.cancel();
             }
             else

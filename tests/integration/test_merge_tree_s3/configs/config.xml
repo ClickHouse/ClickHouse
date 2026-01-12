@@ -1,7 +1,7 @@
 <clickhouse>
     <s3>
         <broken_s3>
-            <endpoint>http://resolver:8083/root/data/</endpoint>
+            <endpoint>http://resolver:8085/root/data/</endpoint>
             <retry_attempts>0</retry_attempts>
             <request_timeout_ms>20000</request_timeout_ms>
         </broken_s3>

@@ -53,6 +53,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -376,6 +377,9 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
     if (update_configuration_on_read_write)

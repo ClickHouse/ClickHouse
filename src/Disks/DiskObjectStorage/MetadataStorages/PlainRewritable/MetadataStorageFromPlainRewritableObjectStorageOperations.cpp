@@ -66,7 +66,8 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 {
-    if (fs_tree->existsDirectory(path).first)
+    const auto [exists_directory, info] = fs_tree->existsDirectory(path);
+    if (info)
         return;
 
     if (fs_tree->existsFile(path))
@@ -78,11 +79,18 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
     auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
 
-    LOG_TRACE(
-        getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
-        "Creating metadata for directory '{}' with remote path='{}'",
-        path,
-        metadata_object_key);
+    if (exists_directory)
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
+            "Materializing virtual directory '{}' with remote path='{}'",
+            path,
+            metadata_object_key);
+    else
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"),
+            "Creating metadata for directory '{}' with remote path='{}'",
+            path,
+            metadata_object_key);
 
     auto metadata_object = StoredObject(metadata_object_key, path);
 

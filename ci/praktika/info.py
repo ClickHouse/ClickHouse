@@ -58,6 +58,10 @@ class Info:
         return self.env.PR_TITLE
 
     @property
+    def updated_at(self):
+        return self.env.EVENT_TIME
+
+    @property
     def pr_url(self):
         return self.env.CHANGE_URL
 
@@ -94,8 +98,16 @@ class Info:
         return self.env.FORK_NAME
 
     @property
+    def commit_message(self):
+        return self.env.COMMIT_MESSAGE
+
+    @property
     def user_name(self):
         return self.env.USER_LOGIN
+
+    @property
+    def commit_authors(self):
+        return self.env.COMMIT_AUTHORS or []
 
     @property
     def run_url(self):

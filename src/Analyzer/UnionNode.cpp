@@ -130,6 +130,35 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     if (recursive_cte_table)
         return;
 
+    /// We can't remove unused projections in the case of EXCEPT and INTERSECT
+    /// because it can lead to incorrect query results. Example:
+    ///
+    /// SELECT count()
+    /// FROM
+    /// (
+    ///     SELECT
+    ///         1 AS a,
+    ///         2 AS b
+    ///     INTERSECT ALL
+    ///     SELECT
+    ///         1,
+    ///         1
+    /// )
+    ///
+    /// Will be transformed into the following query with output 1 instead of 0:
+    ///
+    /// SELECT count()
+    /// FROM
+    /// (
+    ///     SELECT
+    ///         1 AS a, -- we must keep at least 1 column
+    ///     INTERSECT ALL
+    ///     SELECT
+    ///         1
+    /// );
+    if (union_mode > SelectUnionMode::UNION_DISTINCT)
+        return;
+
     auto & query_nodes = getQueries().getNodes();
     for (auto & query_node : query_nodes)
     {

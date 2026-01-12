@@ -8,6 +8,7 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
+
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
 temp_dir = f"{current_directory}/ci/tmp"
@@ -141,6 +142,11 @@ def main():
 
     res = True
     results = []
+
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
 

@@ -9,10 +9,12 @@
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <Core/Field.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/String.h>
 #include <fmt/ranges.h>
 #include <filesystem>
+
 
 namespace DB::ErrorCodes
 {

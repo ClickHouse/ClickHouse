@@ -235,7 +235,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std
     removeDirectory(path);
 }
 
-ObjectStorageKey MetadataStorageFromPlainObjectStorageTransaction::generateObjectKeyForPath(const std::string & path) const
+ObjectStorageKey MetadataStorageFromPlainObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)
 {
     return getKeyForPath(object_storage->getCommonKeyPrefix(), path);
 }
