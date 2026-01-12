@@ -12,7 +12,7 @@ namespace
 
 void generateUUID4Generic(ColumnVector<UUID>::Container & vec_to)
 {
-    RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
+    RandImpl::executeGeneric(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
     for (UUID & uuid : vec_to)
     {
         /// https://tools.ietf.org/html/rfc4122#section-4.4

@@ -39,13 +39,30 @@ namespace ErrorCodes
 struct RandImpl
 {
     /// Fill memory with random data. The memory region must be 15-bytes padded.
-    static void execute(char * output, size_t size);
+    ALWAYS_INLINE static void execute(char * output, size_t size)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            executeAVX512BW(output, size);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            executeAVX2(output, size);
+            return;
+        }
+#endif
+        executeGeneric(output, size);
+    }
 
 #if USE_MULTITARGET_CODE
     /// Assumes isArchSupported has been verified before calling
     static void executeAVX2(char * output, size_t size);
     static void executeAVX512BW(char * output, size_t size);
 #endif
+    static void executeGeneric(char * output, size_t size);
 };
 
 template <typename ToType, typename Name>
@@ -79,10 +96,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto col_to = ColumnVector<ToType>::create();
+        auto col_to = ColumnVector<ToType>::create(input_rows_count);
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-
-        vec_to.resize(input_rows_count);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;

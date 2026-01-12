@@ -67,30 +67,30 @@ namespace
         0x15762761bb55b9acULL, 0x3e448fc94fdd28e7ULL, 0xa5121232adfbe70aULL, 0xb1e0f6d286112804ULL,
         0x6062e96de9554806ULL, 0xcc679b329c28882aULL, 0x5c6d29f45cbc060eULL, 0x1af1325a86ffb162ULL,
     };
+}
 
-    void randImpl(char * output, size_t size)
+void RandImpl::executeGeneric(char * output, size_t size)
+{
+    LinearCongruentialGenerator generator0;
+    LinearCongruentialGenerator generator1;
+    LinearCongruentialGenerator generator2;
+    LinearCongruentialGenerator generator3;
+
+    UInt64 rand_seed = randomSeed();
+
+    seed(generator0, rand_seed, random_numbers[0] + reinterpret_cast<intptr_t>(output));
+    seed(generator1, rand_seed, random_numbers[1] + reinterpret_cast<intptr_t>(output));
+    seed(generator2, rand_seed, random_numbers[2] + reinterpret_cast<intptr_t>(output));
+    seed(generator3, rand_seed, random_numbers[3] + reinterpret_cast<intptr_t>(output));
+
+    for (const char * end = output + size; output < end; output += 16)
     {
-        LinearCongruentialGenerator generator0;
-        LinearCongruentialGenerator generator1;
-        LinearCongruentialGenerator generator2;
-        LinearCongruentialGenerator generator3;
-
-        UInt64 rand_seed = randomSeed();
-
-        seed(generator0, rand_seed, random_numbers[0] + reinterpret_cast<intptr_t>(output));
-        seed(generator1, rand_seed, random_numbers[1] + reinterpret_cast<intptr_t>(output));
-        seed(generator2, rand_seed, random_numbers[2] + reinterpret_cast<intptr_t>(output));
-        seed(generator3, rand_seed, random_numbers[3] + reinterpret_cast<intptr_t>(output));
-
-        for (const char * end = output + size; output < end; output += 16)
-        {
-            unalignedStore<UInt32>(output, generator0.next());
-            unalignedStore<UInt32>(output + 4, generator1.next());
-            unalignedStore<UInt32>(output + 8, generator2.next());
-            unalignedStore<UInt32>(output + 12, generator3.next());
-        }
-        /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
+        unalignedStore<UInt32>(output, generator0.next());
+        unalignedStore<UInt32>(output + 4, generator1.next());
+        unalignedStore<UInt32>(output + 8, generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
     }
+    /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
 }
 
 #if USE_MULTITARGET_CODE
@@ -267,23 +267,4 @@ AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE void NO_INLINE RandImpl::executeAVX512BW(ch
 }
 
 #endif
-
-void RandImpl::execute(char * output, size_t size)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512BW))
-    {
-        executeAVX512BW(output, size);
-        return;
-    }
-
-    if (isArchSupported(TargetArch::AVX2))
-    {
-        executeAVX2(output, size);
-        return;
-    }
-#endif
-
-    randImpl(output, size);
-}
 }
