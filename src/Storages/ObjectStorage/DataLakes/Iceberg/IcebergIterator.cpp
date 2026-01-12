@@ -82,6 +82,10 @@ namespace
 std::span<const ManifestFileEntryPtr> defineDeletesSpan(
     ManifestFileEntryPtr data_object_, const std::vector<ManifestFileEntryPtr> & deletes_objects, bool is_equality_delete, LoggerPtr logger)
 {
+    if (deletes_objects.empty())
+    {
+        return {};
+    }
     ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
     /// to the data object form a subsegment in a deletes_objects vector.
@@ -113,15 +117,14 @@ std::span<const ManifestFileEntryPtr> defineDeletesSpan(
     }
     if (beg_it != end_it)
     {
-        auto previous_it = end_it;
-        --previous_it;
+        auto previous_it = std::prev(end_it);
         assert(*beg_it);
         assert(*previous_it);
         LOG_DEBUG(
             logger,
             "Got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is {}, last taken "
             "delete object info is {}",
-            static_cast<size_t>(end_it - beg_it),
+            std::distance(beg_it, end_it),
             is_equality_delete ? "equality" : "position",
             data_object_->file_path,
             data_object_->dumpDeletesMatchingInfo(),
@@ -319,6 +322,8 @@ IcebergIterator::IcebergIterator(
         }
         delete_file = deletes_iterator.next();
     }
+    LOG_DEBUG(logger, "Taken {} position deletes files in iceberg iterator", position_deletes_files.size());
+    LOG_DEBUG(logger, "Taken {} equality deletes files in iceberg iterator", equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
     producer_task.emplace(
@@ -363,11 +368,13 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
-        for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false, logger))
+        for (const auto & position_delete :
+             defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
             object_info->addPositionDeleteObject(position_delete);
         }
-        for (const auto & equality_delete : defineDeletesSpan(manifest_file_entry, equality_deletes_files, true, logger))
+        for (const auto & equality_delete :
+             defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }

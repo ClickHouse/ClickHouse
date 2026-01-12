@@ -673,7 +673,7 @@ String dumpPartitionSpecification(const PartitionSpecification & partition_speci
         {
             const auto & entry = partition_specification[i];
             answer += fmt::format(
-                "(Source id: {}, Transform name: {}, Partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
+                "(source id: {}, transform name: {}, partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
             if (i != partition_specification.size() - 1)
                 answer += ", ";
         }
