@@ -30,23 +30,31 @@ def get_ddl_worker_reset_count(node):
         ).strip()
     )
 
+
+def assert_ddl_worker_reset_with_retry(node, prev_reset_count: int):
+    for i in range(10):
+        current_reset = get_ddl_worker_reset_count(node)
+        if current_reset == prev_reset_count + 1:
+            return
+        time.sleep(5)
+
+    current_reset = get_ddl_worker_reset_count(node)
+    assert current_reset == prev_reset_count + 1
+
+
 def test_reset_ddl_worker(started_cluster):
     prev_reset_count = get_ddl_worker_reset_count(node1)
 
     node1.query("SYSTEM RESET DDL WORKER")
     time.sleep(5)
 
-    current_reset_count = get_ddl_worker_reset_count(node1)
-    assert prev_reset_count + 1 == current_reset_count
+    assert_ddl_worker_reset_with_retry(node1, prev_reset_count)
 
 def test_reset_ddl_worker_on_cluster(started_cluster):
     prev_reset_count1 = get_ddl_worker_reset_count(node1)
     prev_reset_count2 = get_ddl_worker_reset_count(node2)
 
     node1.query("SYSTEM RESET DDL WORKER ON CLUSTER 'test_cluster'")
-    time.sleep(5)
 
-    current_reset_count1 = get_ddl_worker_reset_count(node1)
-    current_reset_count2 = get_ddl_worker_reset_count(node2)
-    assert prev_reset_count1 + 1 == current_reset_count1
-    assert prev_reset_count2 + 1 == current_reset_count2
+    assert_ddl_worker_reset_with_retry(node1, prev_reset_count1)
+    assert_ddl_worker_reset_with_retry(node2, prev_reset_count2)
