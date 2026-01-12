@@ -170,6 +170,7 @@ public:
     {
     public:
         const String & getName() const;
+        const String & getPath() const;
         Field getValue() const;
         void setValue(const Field & value);
         String getValueString() const;
@@ -789,6 +790,17 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
 }
 
 template <typename TTraits>
+const String & BaseSettings<TTraits>::SettingFieldRef::getPath() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return (*custom_setting)->first;
+    }
+    return accessor->getPath(index);
+}
+
+template <typename TTraits>
 Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
 {
     if constexpr (Traits::allow_custom_settings)
@@ -912,6 +924,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             size_t size() const { return field_infos.size(); } \
             size_t find(std::string_view name) const; \
             const String & getName(size_t index) const { return field_infos[index].name; } \
+            const String & getPath(size_t index) const { return field_infos[index].path; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
@@ -933,6 +946,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             struct FieldInfo \
             { \
                 String name; \
+                String path; \
                 const char * type; \
                 const char * description; \
                 UInt64 flags; \
@@ -1022,9 +1036,61 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
 /// NOLINTNEXTLINE
+#define IMPLEMENT_SETTINGS_TRAITS_WITH_NESTED_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SIMPLE_SETTINGS_MACRO, LIST_OF_NESTED_SETTINGS_MACRO) \
+    const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
+    { \
+        static const Accessor the_instance = [] \
+        { \
+            Accessor res; \
+            constexpr int IMPORTANT = 0x01; \
+            UNUSED(IMPORTANT); \
+            LIST_OF_SIMPLE_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_NESTED_SETTINGS_MACRO(IMPLEMENT_NESTED_SETTINGS_TRAITS_, IMPLEMENT_NESTED_SETTINGS_TRAITS_) \
+            for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
+            { \
+                const auto & info = res.field_infos[i]; \
+                res.name_to_index_map.emplace(info.name, i); \
+            } \
+            return res; \
+        }(); \
+        return the_instance; \
+    } \
+    \
+    SETTINGS_TRAITS_NAME::Accessor::Accessor() {} \
+    \
+    size_t SETTINGS_TRAITS_NAME::Accessor::find(std::string_view name) const \
+    { \
+        auto it = name_to_index_map.find(name); \
+        if (it != name_to_index_map.end()) \
+            return it->second; \
+        return static_cast<size_t>(-1); \
+    } \
+    \
+    template class BaseSettings<SETTINGS_TRAITS_NAME>;
+
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, #TYPE, DESCRIPTION, \
+        FieldInfo{#NAME, #NAME, #TYPE, DESCRIPTION, \
+            static_cast<UInt64>(FLAGS), \
+            [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
+            [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
+            [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
+            [](Data & data, const Field & value) { data.NAME = value; }, \
+            [](const Data & data) -> Field { return static_cast<Field>(data.NAME); }, \
+            [](Data & data, const String & str) { data.NAME.parseFromString(str); }, \
+            [](const Data & data) -> String { return data.NAME.toString(); }, \
+            [](const Data & data) -> bool { return data.NAME.changed; }, \
+            [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
+            [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
+            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
+            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
+        });
+
+        /// NOLINTNEXTLINE
+#define IMPLEMENT_NESTED_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
+    res.field_infos.emplace_back( \
+        FieldInfo{#NAME, PATH, #TYPE, DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \

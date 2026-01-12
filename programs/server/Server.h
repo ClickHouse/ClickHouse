@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ServerSettings.h>
 #include <Server/IServer.h>
 
 #include <Daemon/BaseDaemon.h>
@@ -77,7 +78,7 @@ private:
     HTTPContextPtr httpContext() const;
 
     Poco::Net::SocketAddress socketBindListen(
-        const Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         Poco::Net::ServerSocket & socket,
         const std::string & host,
         UInt16 port,
@@ -85,6 +86,7 @@ private:
 
     std::unique_ptr<TCPProtocolStackFactory> buildProtocolStackFromConfig(
         const Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         const std::string & protocol,
         Poco::Net::HTTPServerParams::Ptr http_params,
         AsynchronousMetrics & async_metrics,
@@ -102,6 +104,7 @@ private:
 
     void createServers(
         Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         const Strings & listen_hosts,
         bool listen_try,
         Poco::ThreadPool & server_pool,
@@ -112,6 +115,7 @@ private:
 
     void createInterserverServers(
         Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         const Strings & interserver_listen_hosts,
         bool listen_try,
         Poco::ThreadPool & server_pool,
@@ -122,6 +126,7 @@ private:
 
     void updateServers(
         Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
@@ -130,6 +135,8 @@ private:
     void stopServers(
         std::vector<ProtocolServerAdapter> & servers,
         const ServerType & server_type) const;
+
+    void dumpServerConfigToFile(const std::string & file_path) const;
 };
 
 }
