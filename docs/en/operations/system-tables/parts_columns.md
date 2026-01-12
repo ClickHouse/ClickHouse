@@ -10,16 +10,7 @@ doc_type: 'reference'
 # system.parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-
 Each row describes one data part.
-
-Columns:
-
-# system.parts_columns
-
-Contains information about parts and columns of MergeTree tables. Each row describes one data part.
-
-## Columns
 
 | Column | Type | Description |
 |--------|------|-------------|
