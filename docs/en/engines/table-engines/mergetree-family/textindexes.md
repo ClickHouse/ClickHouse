@@ -164,7 +164,7 @@ Optional parameter `dictionary_block_size` (default: 512) specifies the size of 
 
 Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
-Optional parameter `posting_list_block_size` (default: 1048576) specifies the size of posting list blocks rows.
+Optional parameter `posting_list_block_size` (default: 1048576) specifies the size of posting list blocks in rows.
 
 </details>
 
@@ -311,7 +311,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is only used if it is created on `mapKeys(map)` expression.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map. The behaviour is similar to the `equals` function with a `String` column. The text index is only used if it is created on `mapKeys(map)` expression.
 
 Example:
 
@@ -533,7 +533,7 @@ The performance benefit of the direct read optimization is greatest when the tex
 
 **Direct read as a hint**
 
-Direct read as a hint uses the same principles as exact direct read, but instead adds an additional filter build from the text index data without removing the underlying text column. It is used for functions when accessing only the text index may produce false positives.
+Direct read as a hint uses the same principles as normal direct read, but instead adds an additional filter build from the text index data without removing the underlying text column. It is used for functions when accessing only the text index may produce false positives.
 
 Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
 
@@ -646,7 +646,7 @@ If the posting list is larger than `posting_list_block_size`, it is split into m
 
 **Merging of text indexes**
 
-When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process. During this step, the sorted dictionaries from each part are read and combined into a new unified dictionary. The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase. This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged. If index is not materialized in the source part, it is build, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
+When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process. During this step, the sorted dictionaries from each part are read and combined into a new unified dictionary. The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase. This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged. If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
