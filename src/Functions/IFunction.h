@@ -90,11 +90,6 @@ protected:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
-    /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
-      * Otherwise, convert all replicated columns to ordinary columns.
-      */
-    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
-
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
@@ -120,9 +115,6 @@ private:
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-
-    ColumnPtr executeWithoutReplicatedColumns(
-         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     bool short_circuit_function_evaluation_for_nulls = false;
     double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
@@ -155,7 +147,6 @@ public:
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
-    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     virtual bool isCompilable() const { return false; }
 
@@ -362,8 +353,6 @@ public:
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
-
 protected:
 
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const;
@@ -423,17 +412,9 @@ protected:
       */
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
-    /** If useDefaultImplementationForVariant() is true, then special FunctionBaseVariantAdaptor will be used
-     *  if function arguments has Variant column. This adaptor will build and execute this function for all
-     *  internal types inside Variant column separately and construct result based on results for these types.
-     *  The result will be Variant with the union of all variant types from arguments.
-     *
-     *  We cannot use default implementation for Variant if function doesn't use default implementation for NULLs,
-     *  because Variant column can contain NULLs and we should know how to process them.
-      */
-    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
-
 private:
+
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
@@ -493,18 +474,11 @@ public:
       */
     virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
-    /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
-      * Otherwise, convert all replicated columns to ordinary columns.
-      */
-    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
-
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
-
-    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)
@@ -554,7 +528,6 @@ public:
 
 
 #if USE_EMBEDDED_COMPILER
-    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 

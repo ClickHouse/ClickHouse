@@ -18,7 +18,6 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    serialization_info_version = 'basic',
     storage_policy = 'default';
 
 SYSTEM STOP MERGES t_lightweight_mut_1;
@@ -48,7 +47,7 @@ SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly =
 SYSTEM DROP MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
 WHERE

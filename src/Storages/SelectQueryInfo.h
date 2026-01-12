@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -42,11 +41,16 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
 struct PrewhereInfo
 {
+    /// Actions for row level security filter. Applied separately before prewhere_actions.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    std::optional<ActionsDAG> row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ActionsDAG prewhere_actions;
+    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
+    bool generated_by_optimizer = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
@@ -54,10 +58,23 @@ struct PrewhereInfo
 
     std::string dump() const;
 
-    PrewhereInfo clone() const;
+    PrewhereInfoPtr clone() const
+    {
+        PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+        if (row_level_filter)
+            prewhere_info->row_level_filter = row_level_filter->clone();
+
+        prewhere_info->prewhere_actions = prewhere_actions.clone();
+
+        prewhere_info->row_level_column_name = row_level_column_name;
+        prewhere_info->prewhere_column_name = prewhere_column_name;
+        prewhere_info->remove_prewhere_column = remove_prewhere_column;
+        prewhere_info->need_filter = need_filter;
+        prewhere_info->generated_by_optimizer = generated_by_optimizer;
+
+        return prewhere_info;
+    }
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -68,9 +85,6 @@ struct FilterDAGInfo
     bool do_remove_column = false;
 
     std::string dump() const;
-
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -146,11 +160,11 @@ struct SelectQueryInfo
     StorageLimits local_storage_limits;
 
     /// This is a leak of abstraction.
-    /// StorageMerge/StorageBuffer/StorageMaterializedView replace storage into query_tree. However, column types may be changed for inner table.
+    /// StorageMerge replaces storage into query_tree. However, column types may be changed for inner table.
     /// So, resolved query tree might have incompatible types.
     /// StorageDistributed uses this query tree to calculate a header, throws if we use storage snapshot.
-    /// To avoid this, we use initial_storage_snapshot.
-    StorageSnapshotPtr initial_storage_snapshot;
+    /// To avoid this, we use initial merge_storage_snapshot.
+    StorageSnapshotPtr merge_storage_snapshot;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -168,11 +182,7 @@ struct SelectQueryInfo
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
 
-    /// Filter actions dag for current storage.
-    /// NOTE: Currently we store two copies of the filter DAGs:
-    /// (1) SourceStepWithFilter::filter_actions_dag, (2) SelectQueryInfo::filter_actions_dag.
-    /// Prefer to use the one in SourceStepWithFilter, not this one.
-    /// (See comment in ReadFromMergeTree::applyFilters.)
+    /// Filter actions dag for current storage
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
     ReadInOrderOptimizerPtr order_optimizer;
@@ -180,7 +190,6 @@ struct SelectQueryInfo
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
-    /// New analyzer stores prepared sets in planner_context and hashes computed of QueryTree instead of AST.
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 
@@ -188,10 +197,6 @@ struct SelectQueryInfo
     bool has_window = false;
     bool has_order_by = false;
     bool need_aggregate = false;
-
-    /// Actions for row level security filter. Applied separately before prewhere.
-    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
 
     /// If query has aggregate functions

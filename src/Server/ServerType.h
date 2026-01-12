@@ -19,7 +19,6 @@ public:
         HTTPS,
         MYSQL,
         GRPC,
-        ARROW_FLIGHT,
         POSTGRESQL,
         PROMETHEUS,
         CUSTOM,

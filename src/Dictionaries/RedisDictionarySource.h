@@ -3,8 +3,8 @@
 #include <Core/Block.h>
 #include <base/BorrowedObjectPool.h>
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 #include <Storages/RedisCommon.h>
 
 namespace DB
@@ -20,24 +20,24 @@ namespace DB
         RedisDictionarySource(
             const DictionaryStructure & dict_struct_,
             const RedisConfiguration & configuration_,
-            SharedHeader sample_block_);
+            const Block & sample_block_);
 
         RedisDictionarySource(const RedisDictionarySource & other);
 
         ~RedisDictionarySource() override;
 
-        BlockIO loadAll() override;
+        QueryPipeline loadAll() override;
 
-        BlockIO loadUpdatedAll() override
+        QueryPipeline loadUpdatedAll() override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
         }
 
         bool supportsSelectiveLoad() const override { return true; }
 
-        BlockIO loadIds(const std::vector<UInt64> & ids) override;
+        QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-        BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
         bool isModified() const override { return true; }
 
@@ -52,6 +52,6 @@ namespace DB
         const RedisConfiguration configuration;
 
         RedisPoolPtr pool;
-        SharedHeader sample_block;
+        Block sample_block;
     };
 }

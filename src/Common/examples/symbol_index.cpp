@@ -1,11 +1,10 @@
-#include <iostream>
-#include <dlfcn.h>
+#include <Common/SymbolIndex.h>
+#include <Common/Elf.h>
+#include <Common/Dwarf.h>
 #include <Core/Defines.h>
 #include <base/demangle.h>
-#include <Common/Dwarf.h>
-#include <Common/Elf.h>
-#include <Common/StackTrace.h>
-#include <Common/SymbolIndex.h>
+#include <iostream>
+#include <dlfcn.h>
 
 [[maybe_unused]] static NO_INLINE const void * getAddress()
 {
@@ -26,14 +25,14 @@ int main(int argc, char ** argv)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
     for (const auto & elem : symbol_index.symbols())
-        std::cout << elem.name << ": " << elem.offset_begin << " ... " << elem.offset_end << "\n";
+        std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";
     std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
     const auto * symbol = symbol_index.findSymbol(address);
     if (symbol)
-        std::cerr << symbol->name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
+        std::cerr << symbol->name << ": " << symbol->address_begin << " ... " << symbol->address_end << "\n";
     else
         std::cerr << "SymbolIndex: Not found\n";
 

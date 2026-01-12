@@ -12,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
-#include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -82,14 +81,6 @@ void buildLifetimeConfiguration(
     if (!lifetime)
         return;
 
-    if (lifetime->min_sec > lifetime->max_sec)
-    {
-        throw DB::Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "{} parameter 'MIN' must be less than or equal to 'MAX'",
-            lifetime->getID(0));
-    }
-
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
     AutoPtr<Element> max_element(doc->createElement("max"));
@@ -145,8 +136,6 @@ void buildLayoutConfiguration(
         }
     }
 
-    const auto is_ssd_cache_layout = layout->layout_type.ends_with("ssd_cache");
-
     for (const auto & param : layout->parameters->children)
     {
         const ASTPair * pair = param->as<ASTPair>();
@@ -167,7 +156,7 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const Field & value_field = value_literal->value;
+        const auto value_field = value_literal->value;
 
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
@@ -177,19 +166,8 @@ void buildLayoutConfiguration(
                 value_field.getTypeName());
         }
 
-        if (is_ssd_cache_layout)
-        {
-            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<::UInt64>() == 0)
-            {
-                throw DB::Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "{} parameter value should be positive number",
-                    layout->getID(0));
-            }
-        }
-
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -382,7 +360,7 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto it = std::find_if(
+        const auto * it = std::find_if(
             children.begin(),
             children.end(),
             [&](const ASTPtr & node)
@@ -606,7 +584,7 @@ void checkAST(const ASTCreateQuery & query)
 void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names & key_attrs)
 {
     for (const auto & key_attr : key_attrs)
-        if (!all_attrs.contains(key_attr))
+        if (all_attrs.find(key_attr) == all_attrs.end())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
 }
 

@@ -1,17 +1,11 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <IO/ReadBufferFromString.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
 struct Settings;
-
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
 
 template <bool is_plain_column = false>
 static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
@@ -23,28 +17,19 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     else
     {
         const char * begin = nullptr;
-        auto settings = IColumn::SerializationSettings::createForAggregationState();
-        auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
-        chassert(!serialized.empty());
+        StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
+        assert(serialized.data != nullptr);
         return SerializedKeyHolder{serialized, arena};
     }
 }
 
 template <bool is_plain_column>
-static void deserializeAndInsert(std::string_view str, IColumn & data_to)
+static void deserializeAndInsert(StringRef str, IColumn & data_to)
 {
     if constexpr (is_plain_column)
-        data_to.insertData(str.data(), str.size());
+        data_to.insertData(str.data, str.size);
     else
-    {
-        ReadBufferFromString in(str);
-        auto settings = IColumn::SerializationSettings::createForAggregationState();
-        data_to.deserializeAndInsertFromArena(in, &settings);
-        if (!in.eof())
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Extra bytes ({}) found after deserializing aggregation state", in.available());
-        }
-    }
+        std::ignore = data_to.deserializeAndInsertFromArena(str.data);
 }
 
 }

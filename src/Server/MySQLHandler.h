@@ -9,19 +9,17 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <IO/ReadBufferFromString.h>
-#include <Server/IServer.h>
+#include "IO/ReadBufferFromString.h"
+#include "IServer.h"
 
-#include <base/types.h>
+#include "base/types.h"
 #include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
-#    include <Common/Crypto/KeyPair.h>
 #endif
 
 #include <memory>
-#include <mutex>
 
 namespace CurrentMetrics
 {
@@ -45,7 +43,6 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
-        bool secure_required,
         uint32_t connection_id_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
@@ -88,7 +85,6 @@ protected:
     IServer & server;
     TCPServer & tcp_server;
     LoggerPtr log;
-    bool secure_required = false;
     uint32_t connection_id = 0;
 
     uint32_t server_capabilities = 0;
@@ -129,9 +125,9 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
-        bool secure_required_,
         uint32_t connection_id_,
-        KeyPair & private_key_,
+        RSA & public_key_,
+        RSA & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -142,7 +138,8 @@ private:
         size_t packet_size, char * buf, size_t pos,
         std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
 
-    KeyPair & private_key;
+    RSA & public_key;
+    RSA & private_key;
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 #endif

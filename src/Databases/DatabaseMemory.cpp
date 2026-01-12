@@ -22,10 +22,10 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
+    , data_path("data/" + escapeForFileName(database_name) + "/")
 {
-    /// Temporary database should not have any data at the moment of its creation.
-    /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
+    /// Temporary database should not have any data on the moment of its creation
+    /// In case of sudden server shutdown remove database folder of temporary database
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
         removeDataPath(context_);
 }
@@ -65,15 +65,15 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since
+        /// Remove table without lock since:
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
         table->drop();
 
         if (table->storesDataOnDisk())
         {
-            auto metdata_disk = getDisk();
-            metdata_disk->removeRecursive(getTableDataPath(table_name));
+            db_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
@@ -92,17 +92,17 @@ void DatabaseMemory::dropTable(
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(database_name);
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
-    if (!comment.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }
@@ -129,8 +129,7 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
-    auto db_disk = getDisk();
-    db_disk->removeDirectoryIfExists(data_path);
+    db_disk->removeRecursive(data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)
@@ -139,32 +138,27 @@ void DatabaseMemory::drop(ContextPtr local_context)
     removeDataPath(local_context);
 }
 
-void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
-        auto it = tables.find(table_id.table_name);
-        if (it == tables.end() || (table_id.uuid != UUIDHelpers::Nil && it->second->getStorageID().uuid != table_id.uuid))
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
-
-        auto it_query = create_queries.find(table_id.table_name);
-        if (it_query == create_queries.end() || !it_query->second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
-
-        create_query = it_query->second;
+        auto it = create_queries.find(table_id.table_name);
+        if (it == create_queries.end() || !it->second)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+        create_query = it->second;
     }
 
     /// Apply metadata changes without holding a lock to avoid possible deadlock
     /// (i.e. when ALTER contains IN (table))
-    applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
+    applyMetadataChangesToCreateQuery(create_query, metadata, local_context);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
-    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies, loading_dependencies);
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
@@ -212,7 +206,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
+        storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

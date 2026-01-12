@@ -1,4 +1,4 @@
-#include <Common/EnvironmentProxyConfigurationResolver.h>
+#include "EnvironmentProxyConfigurationResolver.h"
 
 #include <Common/logger_useful.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>

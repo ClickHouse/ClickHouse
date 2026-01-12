@@ -1,6 +1,10 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#include <sys/statvfs.h>
+#if defined(OS_DARWIN) || defined(OS_FREEBSD)
+#   include <sys/mount.h>
+#else
+#   include <sys/statfs.h>
+#endif
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -33,7 +37,7 @@
 #   include <sys/sysctl.h>
 #endif
 
-#include <types.h>
+#include "types.h"
 
 /// decompress part
 int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
@@ -212,10 +216,10 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
 
     /// Check free space
-    struct statvfs fs_info;
-    if (0 != fstatvfs(input_fd, &fs_info))
+    struct statfs fs_info;
+    if (0 != fstatfs(input_fd, &fs_info))
     {
-        perror("fstatvfs");
+        perror("fstatfs");
         if (0 != munmap(input, info_in.st_size))
                 perror("munmap");
         return 1;
@@ -488,7 +492,7 @@ int main(int/* argc*/, char* argv[])
 
         /// size 1 of lock file indicates that another decompressor has found active executable
         if (lock_info.st_size == 1)
-            execv(self, argv);  // NOLINT(clang-analyzer-optin.taint.GenericTaint)
+            execv(self, argv);
 
         printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
         return 0;
@@ -572,7 +576,7 @@ int main(int/* argc*/, char* argv[])
             /// execution should be performed
             write(lock, "1", 1);
 #endif
-            execv(self, argv); // NOLINT(clang-analyzer-optin.taint.GenericTaint)
+            execv(self, argv);
 
             /// This part of code will be reached only if error happened
             perror("execv");

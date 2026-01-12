@@ -30,7 +30,6 @@ public:
     Field getDefault() const override;
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }
@@ -51,8 +50,6 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
-
-    void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
 
     SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };

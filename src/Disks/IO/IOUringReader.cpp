@@ -1,4 +1,4 @@
-#include <Disks/IO/IOUringReader.h>
+#include "IOUringReader.h"
 
 #if USE_LIBURING
 
@@ -208,7 +208,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 
 void IOUringReader::monitorRing()
 {
-    DB::setThreadName(ThreadName::IO_URING_MONITOR);
+    setThreadName("IOUringMonitor");
 
     while (!cancelled.load(std::memory_order_relaxed))
     {

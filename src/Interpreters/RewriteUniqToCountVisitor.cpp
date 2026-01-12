@@ -39,10 +39,10 @@ bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & al
             return true;
 
         /// translate alias
-        if (alias.contains(lhs_idf->shortName()))
+        if (alias.find(lhs_idf->shortName()) != alias.end())
             lhs_idf = alias.find(lhs_idf->shortName())->second->as<ASTIdentifier>();
 
-        if (alias.contains(rhs_idf->shortName()))
+        if (alias.find(rhs_idf->shortName()) != alias.end())
             rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
 
         if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
