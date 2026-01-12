@@ -31,7 +31,7 @@ class ClusterBuilder:
             b = (backend or "default").strip().lower()
         except Exception:
             b = "default"
-        rocks_backend = (b == "rocks")
+        rocks_backend = b == "rocks"
         coord_overrides_xml = opts.get("coord_overrides_xml", "")
         use_minio = bool(MINIO_ENDPOINT)
         # Allow explicit override via env: KEEPER_DISABLE_S3=1 to force local disks
@@ -47,9 +47,13 @@ class ClusterBuilder:
         cname = f"{cbase}_{worker}" if worker else cbase
         # Sanitize name to characters safe for docker-compose project/network names and DNS
         try:
-            cname = "".join(
-                (ch.lower() if (ch.isalnum() or ch in "-_") else "_") for ch in cname
-            ).strip("_") or "keeper"
+            cname = (
+                "".join(
+                    (ch.lower() if (ch.isalnum() or ch in "-_") else "_")
+                    for ch in cname
+                ).strip("_")
+                or "keeper"
+            )
         except Exception:
             pass
 
@@ -112,7 +116,11 @@ class ClusterBuilder:
             "<session_timeout_ms>30000</session_timeout_ms>"
             "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
             "<shutdown_timeout>5000</shutdown_timeout>"
-            + ("<experimental_use_rocksdb>1</experimental_use_rocksdb>" if rocks_backend else "")
+            + (
+                "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
+                if rocks_backend
+                else ""
+            )
             + "</coordination_settings>"
         )
         feature_flags_xml = ""
@@ -130,7 +138,9 @@ class ClusterBuilder:
                     except Exception:
                         val = v
                     parts.append(f"<{k}>{val}</{k}>")
-                feature_flags_xml = "<feature_flags>" + "".join(parts) + "</feature_flags>"
+                feature_flags_xml = (
+                    "<feature_flags>" + "".join(parts) + "</feature_flags>"
+                )
             except Exception:
                 feature_flags_xml = ""
         enable_ctrl = bool(CONTROL_PORT) and parse_bool(
@@ -197,7 +207,11 @@ class ClusterBuilder:
             ]
         )
         disks_block = (
-            ("<storage_configuration><disks>" + "\n".join(disks_xml) + "</disks></storage_configuration>")
+            (
+                "<storage_configuration><disks>"
+                + "\n".join(disks_xml)
+                + "</disks></storage_configuration>"
+            )
             if disks_xml
             else ""
         )
@@ -219,9 +233,7 @@ class ClusterBuilder:
             try:
                 cur = (os.environ.get("CH_WAIT_START_PORTS", "") or "").strip()
                 head = str(CONTROL_PORT)
-                os.environ["CH_WAIT_START_PORTS"] = (
-                    head if not cur else f"{head},{cur}"
-                )
+                os.environ["CH_WAIT_START_PORTS"] = head if not cur else f"{head},{cur}"
             except Exception:
                 pass
 
@@ -251,16 +263,23 @@ class ClusterBuilder:
             macros_block = ""
             # Ensure server listens on container IPs; do not duplicate tcp_port
             net_block = (
-                "<listen_host remove=\"1\">::</listen_host>"
-                "<listen_host remove=\"1\">::1</listen_host>"
+                '<listen_host remove="1">::</listen_host>'
+                '<listen_host remove="1">::1</listen_host>'
                 "<listen_host>0.0.0.0</listen_host>"
                 "<listen_try>1</listen_try>"
             )
-            full_xml = "<clickhouse>" + keeper_server + net_block + prom_block + disks_block + "</clickhouse>"
+            full_xml = (
+                "<clickhouse>"
+                + keeper_server
+                + net_block
+                + prom_block
+                + disks_block
+                + "</clickhouse>"
+            )
             cfg_path = (conf_dir / f"keeper_config_{name}.xml").resolve()
             cfg_path.write_text(full_xml)
             try:
-                legacy_dir = (base_dir / "configs" / cname)
+                legacy_dir = base_dir / "configs" / cname
                 legacy_dir.mkdir(parents=True, exist_ok=True)
                 (legacy_dir / f"keeper_config_{name}.xml").write_text(full_xml)
             except Exception:

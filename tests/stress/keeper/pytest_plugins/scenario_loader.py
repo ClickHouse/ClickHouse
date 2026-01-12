@@ -193,16 +193,12 @@ def pytest_generate_tests(metafunc):
     scenarios = []
     # matrix options (TLS removed) - allow env override via KEEPER_MATRIX_BACKENDS / KEEPER_MATRIX_TOPOLOGIES
     mb = (
-        _getopt(
-            metafunc.config, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", ""
-        )
+        _getopt(metafunc.config, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", "")
         or ""
     ).split(",")
     mb = [x.strip() for x in mb if x.strip()]
     mtops = (
-        _getopt(
-            metafunc.config, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", ""
-        )
+        _getopt(metafunc.config, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", "")
         or ""
     ).split(",")
     mtops = [int(x.strip()) for x in mtops if x.strip()]

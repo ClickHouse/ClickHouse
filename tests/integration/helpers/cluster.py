@@ -4260,6 +4260,7 @@ services:
             - timeout:1
             - inet6
             - rotate
+        {ports_mappings}
         {networks}
             {app_net}
                 {ipv4_address}
@@ -5986,6 +5987,18 @@ class ClickHouseInstance:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
 
+        ports_mappings = ""
+        try:
+            publish_ctl = (os.environ.get("KEEPER_PUBLISH_CONTROL", "") or "").strip()
+            ctrl_port = (os.environ.get("KEEPER_CONTROL_PORT", "") or "").strip()
+            publish_node = (os.environ.get("KEEPER_PUBLISH_NODE", "keeper1") or "keeper1").strip()
+            host_port = (os.environ.get("KEEPER_PUBLISH_HOST_PORT", ctrl_port) or "").strip()
+            if publish_ctl == "1" and ctrl_port.isdigit() and host_port.isdigit():
+                if self.hostname == publish_node or self.name == publish_node:
+                    ports_mappings = f"ports:\n            - \"{host_port}:{ctrl_port}\""
+        except Exception:
+            ports_mappings = ""
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -6029,6 +6042,7 @@ class ClickHouseInstance:
                     dev_mount=(
                         "- /dev:/dev" if os.environ.get("KEEPER_PRIVILEGED", "") == "1" else ""
                     ),
+                    ports_mappings=ports_mappings,
                 )
             )
 

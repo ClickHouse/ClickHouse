@@ -199,6 +199,7 @@ def ops_ge(summary, min_ops=0.0):
     except Exception:
         return
 
+
 def _zk_count_descendants(zk, path):
     try:
         if not zk.exists(path):
@@ -228,7 +229,7 @@ def count_paths(nodes, prefixes):
         connected = False
 
     if connected:
-        for p in (prefixes or []):
+        for p in prefixes or []:
             try:
                 cnt = _zk_count_descendants(zk, str(p))
                 print(f"[keeper] count_paths prefix={p} count={cnt}")
@@ -237,15 +238,23 @@ def count_paths(nodes, prefixes):
                 print(f"[keeper] count_paths prefix={p} count=0")
                 results.append((str(p), 0))
     else:
-        for p in (prefixes or []):
+        for p in prefixes or []:
             print(f"[keeper] count_paths prefix={p} count=0 (no_zk_conn)")
             results.append((str(p), 0))
 
     try:
         import os
+
         if parse_bool(os.environ.get("KEEPER_DEBUG")):
             repo_root = Path(__file__).parents[4]
-            out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_counts.txt"
+            out = (
+                repo_root
+                / "tests"
+                / "stress"
+                / "keeper"
+                / "tests"
+                / "keeper_counts.txt"
+            )
             out.parent.mkdir(parents=True, exist_ok=True)
             with open(out, "w", encoding="utf-8") as f:
                 for p, c in results:
@@ -443,7 +452,9 @@ def lgif_monotone(nodes, ctx=None):
             base = None
             try:
                 if ctx is not None:
-                    base = ((ctx.get("_metrics_cache_baseline") or {}).get(n.name) or {}).get("lgif")
+                    base = (
+                        (ctx.get("_metrics_cache_baseline") or {}).get(n.name) or {}
+                    ).get("lgif")
             except Exception:
                 base = None
             if not base:
@@ -645,12 +656,21 @@ def _gate_print_summary(summary):
                 extra.append(f"write_ratio={float(wr):.3f}")
             except Exception:
                 pass
-        extra_str = (" "+" ".join(extra)) if extra else ""
-        print(f"[keeper] bench_summary ops={ops} errors={errs} p50={p50}ms p95={p95}ms p99={p99}ms{extra_str}")
+        extra_str = (" " + " ".join(extra)) if extra else ""
+        print(
+            f"[keeper] bench_summary ops={ops} errors={errs} p50={p50}ms p95={p95}ms p99={p99}ms{extra_str}"
+        )
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 repo_root = Path(__file__).parents[4]
-                out = repo_root / "tests" / "stress" / "keeper" / "tests" / "keeper_summary.txt"
+                out = (
+                    repo_root
+                    / "tests"
+                    / "stress"
+                    / "keeper"
+                    / "tests"
+                    / "keeper_summary.txt"
+                )
                 out.parent.mkdir(parents=True, exist_ok=True)
                 with open(out, "w", encoding="utf-8") as f:
                     f.write(
@@ -676,6 +696,7 @@ def _gate_print_summary(summary):
 
 def apply_gate(gate, nodes, leader, ctx, summary):
     gtype = (gate.get("type") or "").strip()
+
     def _wdw(g):
         pct = g.get("pct")
         md = g.get("max_delta")
@@ -690,38 +711,81 @@ def apply_gate(gate, nodes, leader, ctx, summary):
         return watch_delta_within(nodes, ctx, max_delta=md, pct=pct)
 
     dispatch = {
-        "single_leader": lambda g: single_leader(nodes, timeout_s=int(g.get("timeout_s", 60))),
-        "backlog_drains": lambda g: backlog_drains(nodes, max_s=int(g.get("max_s", 120))),
-        "error_rate_le": lambda g: error_rate_le(summary or {}, max_ratio=float(g.get("max_ratio", DEFAULT_ERROR_RATE))),
-        "p99_le": lambda g: p99_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))),
-        "p95_le": lambda g: p95_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))),
+        "single_leader": lambda g: single_leader(
+            nodes, timeout_s=int(g.get("timeout_s", 60))
+        ),
+        "backlog_drains": lambda g: backlog_drains(
+            nodes, max_s=int(g.get("max_s", 120))
+        ),
+        "error_rate_le": lambda g: error_rate_le(
+            summary or {}, max_ratio=float(g.get("max_ratio", DEFAULT_ERROR_RATE))
+        ),
+        "p99_le": lambda g: p99_le(
+            summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))
+        ),
+        "p95_le": lambda g: p95_le(
+            summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS))
+        ),
         "watch_delta_within": _wdw,
-        "no_watcher_hotspot": lambda g: (lambda _g: (
-            (lambda mps: no_watcher_hotspot(
-                nodes,
-                ctx,
-                max_share=float(_g.get("max_share", 0.95)),
-                max_path_share=mps,
-            ))(
-                (lambda raw: (float(raw) if raw not in (None, "") else None))(_g.get("max_path_share"))
+        "no_watcher_hotspot": lambda g: (
+            lambda _g: (
+                (
+                    lambda mps: no_watcher_hotspot(
+                        nodes,
+                        ctx,
+                        max_share=float(_g.get("max_share", 0.95)),
+                        max_path_share=mps,
+                    )
+                )(
+                    (lambda raw: (float(raw) if raw not in (None, "") else None))(
+                        _g.get("max_path_share")
+                    )
+                )
             )
-        ))(g),
-        "ephemerals_gone_within": lambda g: ephemerals_gone_within(nodes, max_s=int(g.get("max_s", 60))),
-        "ready_expect": lambda g: ready_expect(nodes, leader, ok=bool(g.get("ok", True)), timeout_s=int(g.get("timeout_s", 60))),
+        )(g),
+        "ephemerals_gone_within": lambda g: ephemerals_gone_within(
+            nodes, max_s=int(g.get("max_s", 60))
+        ),
+        "ready_expect": lambda g: ready_expect(
+            nodes,
+            leader,
+            ok=bool(g.get("ok", True)),
+            timeout_s=int(g.get("timeout_s", 60)),
+        ),
         "lgif_monotone": lambda g: lgif_monotone(nodes, ctx),
-        "fourlw_enforces": lambda g: fourlw_enforces(nodes, allow=g.get("allow"), deny=g.get("deny")),
+        "fourlw_enforces": lambda g: fourlw_enforces(
+            nodes, allow=g.get("allow"), deny=g.get("deny")
+        ),
         "health_precheck": lambda g: health_precheck(nodes),
-        "replay_repeatable": lambda g: replay_repeatable(nodes, leader, ctx, summary or {}, duration_s=int(g.get("duration_s", 120)), max_error_rate_delta=float(g.get("max_error_rate_delta", 0.05)), max_p99_delta_ms=int(g.get("max_p99_delta_ms", 500))),
-        "prom_thresholds_le": lambda g: prom_thresholds_le(nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))),
-        "srvr_thresholds_le": lambda g: srvr_thresholds_le(nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))),
+        "replay_repeatable": lambda g: replay_repeatable(
+            nodes,
+            leader,
+            ctx,
+            summary or {},
+            duration_s=int(g.get("duration_s", 120)),
+            max_error_rate_delta=float(g.get("max_error_rate_delta", 0.05)),
+            max_p99_delta_ms=int(g.get("max_p99_delta_ms", 500)),
+        ),
+        "prom_thresholds_le": lambda g: prom_thresholds_le(
+            nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))
+        ),
+        "srvr_thresholds_le": lambda g: srvr_thresholds_le(
+            nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))
+        ),
         "rps_ge": lambda g: rps_ge(summary or {}, min_rps=float(g.get("min_rps", 0))),
         "ops_ge": lambda g: ops_ge(summary or {}, min_ops=float(g.get("min_ops", 0))),
         "count_paths": lambda g: count_paths(nodes, g.get("prefixes") or []),
         "mntr_print": lambda g: _gate_mntr_print(nodes),
         "print_summary": lambda g: _gate_print_summary(summary),
-        "config_converged": lambda g: config_converged(nodes, timeout_s=int(g.get("timeout_s", 30))),
-        "config_members_len_eq": lambda g: config_members_len_eq(nodes, expected=int(g.get("expected", 3))),
-        "election_time_le": lambda g: election_time_le(ctx, max_s=float(g.get("max_s", 10))),
+        "config_converged": lambda g: config_converged(
+            nodes, timeout_s=int(g.get("timeout_s", 30))
+        ),
+        "config_members_len_eq": lambda g: config_members_len_eq(
+            nodes, expected=int(g.get("expected", 3))
+        ),
+        "election_time_le": lambda g: election_time_le(
+            ctx, max_s=float(g.get("max_s", 10))
+        ),
         "log_sanity_ok": lambda g: log_sanity_ok(nodes, allow=g.get("allow")),
     }
     fn = dispatch.get(gtype)

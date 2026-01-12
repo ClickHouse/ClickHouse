@@ -136,7 +136,7 @@ def _translate_workload(cfg_text, servers, duration_s):
             "requests": requests or {"get": {"path": "/", "weight": 1}},
         },
         "output": {
-            "file": {"path": "/tmp/keeper_bench_out.json", "with_timestamp": False},
+            "file": "/tmp/keeper_bench_out.json",
             "stdout": True,
         },
     }
@@ -205,19 +205,23 @@ class KeeperBench:
             data = json.loads(out_text or "{}")
             if isinstance(data, dict):
                 try:
-                    s["ops"] = int(data.get("operations") or data.get("total_requests") or 0)
+                    s["ops"] = int(
+                        data.get("operations") or data.get("total_requests") or 0
+                    )
                 except Exception:
                     pass
                 try:
                     s["errors"] = int(data.get("errors") or data.get("failed") or 0)
                 except Exception:
                     pass
+
                 def _to_float_ms(v):
                     try:
                         if isinstance(v, (int, float)):
                             return float(v)
                         t = str(v).strip().lower()
                         import re as _re
+
                         m = _re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(us|ms|s)?", t)
                         if not m:
                             return None
@@ -230,6 +234,7 @@ class KeeperBench:
                         return val
                     except Exception:
                         return None
+
                 def _search_any(obj, keys):
                     stack = [obj]
                     while stack:
@@ -248,6 +253,7 @@ class KeeperBench:
                             for it in cur:
                                 stack.append(it)
                     return None
+
                 k50 = ["p50", "50%", "median", "50th", "p50ms"]
                 k95 = ["p95", "95%", "95th", "p95ms"]
                 k99 = ["p99", "99%", "99th", "p99ms"]
@@ -260,13 +266,16 @@ class KeeperBench:
                     s["p95_ms"] = float(p95)
                 if p99 is not None:
                     s["p99_ms"] = float(p99)
-                s["has_latency"] = any(x is not None and float(x) > 0 for x in (p50, p95, p99))
+                s["has_latency"] = any(
+                    x is not None and float(x) > 0 for x in (p50, p95, p99)
+                )
         except Exception:
             pass
         return s
 
     def _run_stage(self, base_cfg, clients, dur):
         import copy as _copy
+
         st_cfg = _copy.deepcopy(base_cfg)
         try:
             st_cfg["concurrency"] = int(clients)
@@ -279,15 +288,16 @@ class KeeperBench:
         prefix = ""
         try:
             if has_bin(self.node, "timeout"):
-                prefix = f"timeout -s SIGKILL {hard_cap}"
+                prefix = f"timeout {hard_cap}"
         except Exception:
             prefix = ""
         base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(dur)}"
         cmd = f"{prefix} {base}".strip()
-        run_out = sh(self.node, cmd, timeout=int(hard_cap) + 5)
+        # Capture both stdout and stderr to aid parsing (some builds print stats on stderr)
+        run_out = sh(self.node, cmd + " 2>&1", timeout=int(hard_cap) + 5)
         out = sh(
             self.node,
-            "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+            "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null || cat /var/lib/clickhouse/keeper_bench_results.json 2>/dev/null",
             timeout=5,
         )
         st = {
@@ -321,12 +331,17 @@ class KeeperBench:
                 # Fallback: if path is missing but contains 'workloads/', try resolving relative to package
                 if self.cfg_path and "workloads/" in str(self.cfg_path):
                     from pathlib import Path as _P
+
                     try:
                         rel = str(self.cfg_path).split("workloads/", 1)[1]
                     except Exception:
                         rel = None
                     if rel:
-                        alt = _P(__file__).parents[2] / "workloads" / rel.split("/", 1)[-1]
+                        alt = (
+                            _P(__file__).parents[2]
+                            / "workloads"
+                            / rel.split("/", 1)[-1]
+                        )
                         if alt.exists():
                             with open(alt, "r", encoding="utf-8") as f:
                                 cfg_text = f.read()
@@ -341,7 +356,9 @@ class KeeperBench:
             dbg = []
             dbg.append(f"cfg_path={self.cfg_path or ''}\n")
             try:
-                dbg.append(f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n")
+                dbg.append(
+                    f"cfg_exists={(os.path.exists(self.cfg_path) if self.cfg_path else False)}\n"
+                )
             except Exception:
                 dbg.append("cfg_exists=error\n")
             dbg.append(f"servers='{self.servers}'\n")
@@ -372,7 +389,7 @@ class KeeperBench:
             ysrc = {}
         try:
             bases = set()
-            for spec in (ysrc.get("ops") or []):
+            for spec in ysrc.get("ops") or []:
                 try:
                     pfx = str(spec.get("path_prefix", "")).strip()
                 except Exception:
@@ -382,7 +399,7 @@ class KeeperBench:
             for base in sorted(bases):
                 full = "/"
                 for seg in [s for s in base.split("/") if s]:
-                    full = (full.rstrip("/") + "/" + seg)
+                    full = full.rstrip("/") + "/" + seg
                     try:
                         sh(
                             self.node,
@@ -395,7 +412,14 @@ class KeeperBench:
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 ls_out = []
-                for q in ["ls /", "ls /e2e", "ls /e2e/prod", "stat /e2e/prod", "stat /e2e/prod/create", "stat /e2e/prod/set"]:
+                for q in [
+                    "ls /",
+                    "ls /e2e",
+                    "ls /e2e/prod",
+                    "stat /e2e/prod",
+                    "stat /e2e/prod/create",
+                    "stat /e2e/prod/set",
+                ]:
                     try:
                         r = sh(
                             self.node,
@@ -443,7 +467,9 @@ class KeeperBench:
             "has_latency": False,
         }
         try:
-            adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE") or os.environ.get("KEEPER_ADAPTIVE")
+            adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE") or os.environ.get(
+                "KEEPER_ADAPTIVE"
+            )
             adapt = str(adapt_env).strip().lower() in ("1", "true", "yes", "on")
         except Exception:
             adapt = False
@@ -452,12 +478,21 @@ class KeeperBench:
                 summary["duration_s"] = 0
             except Exception:
                 pass
-            target_p99 = int(getenv_int("KEEPER_ADAPT_TARGET_P99_MS", int(DEFAULT_P99_MS)))
-            max_err = float(getenv_float("KEEPER_ADAPT_MAX_ERROR", float(DEFAULT_ERROR_RATE)))
+            target_p99 = int(
+                getenv_int("KEEPER_ADAPT_TARGET_P99_MS", int(DEFAULT_P99_MS))
+            )
+            max_err = float(
+                getenv_float("KEEPER_ADAPT_MAX_ERROR", float(DEFAULT_ERROR_RATE))
+            )
             stage_s = int(getenv_int("KEEPER_ADAPT_STAGE_S", 15))
             cmin = int(getenv_int("KEEPER_ADAPT_MIN_CLIENTS", 8))
             # Allow KEEPER_BENCH_CLIENTS to seed cmax if explicit max not set
-            cmax = int(getenv_int("KEEPER_ADAPT_MAX_CLIENTS", int(os.environ.get("KEEPER_BENCH_CLIENTS", "128") or 128)))
+            cmax = int(
+                getenv_int(
+                    "KEEPER_ADAPT_MAX_CLIENTS",
+                    int(os.environ.get("KEEPER_BENCH_CLIENTS", "128") or 128),
+                )
+            )
             ccur = int(getenv_int("KEEPER_BENCH_CLIENTS", 64))
             # If explicit clients were passed via constructor, prefer them as the starting point
             try:
@@ -489,10 +524,18 @@ class KeeperBench:
                     summary["ops"] += int(st.get("ops") or 0)
                     summary["errors"] += int(st.get("errors") or 0)
                     summary["duration_s"] += int(st.get("duration_s") or 0)
-                    summary["p50_ms"] = max(float(summary.get("p50_ms") or 0), float(st.get("p50_ms") or 0))
-                    summary["p95_ms"] = max(float(summary.get("p95_ms") or 0), float(st.get("p95_ms") or 0))
-                    summary["p99_ms"] = max(float(summary.get("p99_ms") or 0), float(st.get("p99_ms") or 0))
-                    summary["has_latency"] = bool(summary.get("has_latency")) or bool(st.get("has_latency"))
+                    summary["p50_ms"] = max(
+                        float(summary.get("p50_ms") or 0), float(st.get("p50_ms") or 0)
+                    )
+                    summary["p95_ms"] = max(
+                        float(summary.get("p95_ms") or 0), float(st.get("p95_ms") or 0)
+                    )
+                    summary["p99_ms"] = max(
+                        float(summary.get("p99_ms") or 0), float(st.get("p99_ms") or 0)
+                    )
+                    summary["has_latency"] = bool(summary.get("has_latency")) or bool(
+                        st.get("has_latency")
+                    )
                 except Exception:
                     pass
                 try:
@@ -524,7 +567,7 @@ class KeeperBench:
         prefix = ""
         try:
             if has_bin(self.node, "timeout"):
-                prefix = f"timeout -s SIGKILL {hard_cap}"
+                prefix = f"timeout {hard_cap}"
         except Exception:
             prefix = ""
         # Fallback metric: capture pre-run znode count from this node
@@ -540,43 +583,61 @@ class KeeperBench:
         else:
             base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(self.duration_s)}"
         cmd = f"{prefix} {base}".strip()
-        run_out = sh(self.node, cmd, timeout=int(hard_cap) + 5)
+        run_out = sh(self.node, cmd + " 2>&1", timeout=int(hard_cap) + 5)
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 self._write_debug("keeper_bench_cmd.txt", cmd + "\n")
-                self._write_debug("keeper_bench_stdout.txt", (run_out or {}).get("out", ""))
+                self._write_debug(
+                    "keeper_bench_stdout.txt", (run_out or {}).get("out", "")
+                )
         except Exception:
             pass
         # Parse JSON output if present
         out = sh(
             self.node,
-            "cat /tmp/keeper_bench_out.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null",
+            "cat /tmp/keeper_bench_out.json 2>/dev/null || cat /tmp/keeper_bench_out*.json 2>/dev/null || cat keeper_bench_results.json 2>/dev/null || cat /var/lib/clickhouse/keeper_bench_results.json 2>/dev/null",
             timeout=5,
         )
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 self._write_debug("keeper_bench_out_raw.json", out.get("out", ""))
+                # Also record whether any likely JSON files exist inside the container
+                files = sh(
+                    self.node,
+                    "ls -l /tmp/keeper_bench_out.json 2>/dev/null; ls -l /tmp/keeper_bench_out*.json 2>/dev/null; ls -l keeper_bench_results.json 2>/dev/null; ls -l /var/lib/clickhouse/keeper_bench_results.json 2>/dev/null",
+                ).get("out", "")
+                self._write_debug("keeper_bench_files.txt", files)
         except Exception:
             pass
         try:
             parsed = self._parse_output_json(out.get("out", ""))
             for k, v in parsed.items():
-                summary[k] = v if k in ("ops", "errors", "p50_ms", "p95_ms", "p99_ms", "has_latency") else summary.get(k, v)
+                summary[k] = (
+                    v
+                    if k
+                    in ("ops", "errors", "p50_ms", "p95_ms", "p99_ms", "has_latency")
+                    else summary.get(k, v)
+                )
             if not bool(summary.get("has_latency")):
                 try:
                     txt = (run_out or {}).get("out", "")
                 except Exception:
                     txt = ""
                 if txt:
+
                     def _pick(text, keys):
                         for k in keys:
                             try:
-                                m = re.search(rf"(?i)\\b{re.escape(k)}\\b[^0-9]*([0-9]+(?:\\.[0-9]+)?)", text)
+                                m = re.search(
+                                    rf"(?i)\\b{re.escape(k)}\\b[^0-9]*([0-9]+(?:\\.[0-9]+)?)",
+                                    text,
+                                )
                                 if m:
                                     return float(m.group(1))
                             except Exception:
                                 continue
                         return None
+
                     p50 = _pick(txt, ("p50", "50%", "median", "50th"))
                     p95 = _pick(txt, ("p95", "95%", "95th"))
                     p99 = _pick(txt, ("p99", "99%", "99th"))

@@ -48,7 +48,9 @@ def _unescape_label_value(s):
     return "".join(out)
 
 
-def parse_prometheus_text(text, allow_prefixes=DEFAULT_PREFIXES, name_allowlist=None, exclude_label_keys=None):
+def parse_prometheus_text(
+    text, allow_prefixes=DEFAULT_PREFIXES, name_allowlist=None, exclude_label_keys=None
+):
     rows = []
     if not text:
         return rows
@@ -69,7 +71,9 @@ def parse_prometheus_text(text, allow_prefixes=DEFAULT_PREFIXES, name_allowlist=
         if label_blob:
             for lm in _LABEL_RE.finditer(label_blob):
                 labels[lm.group(1)] = _unescape_label_value(lm.group(2))
-        if excl_label_keys is not None and any((k in excl_label_keys) for k in labels.keys()):
+        if excl_label_keys is not None and any(
+            (k in excl_label_keys) for k in labels.keys()
+        ):
             continue
         try:
             value = float(val)
