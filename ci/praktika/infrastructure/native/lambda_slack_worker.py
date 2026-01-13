@@ -264,18 +264,7 @@ def publish_home_view(
             # Format parent event
             event_text = format_event_text(root_event, pr_status, indent="")
 
-            # Add child events with indentation (sorted by timestamp, newest first)
-            if children:
-                children_sorted = sorted(
-                    children, key=lambda e: e.timestamp, reverse=True
-                )
-                for child_event in children_sorted:
-                    child_text = format_event_text(
-                        child_event, pr_status, indent="        | "
-                    )
-                    event_text += "\n" + child_text
-
-            # Create section block for the event (parent + children)
+            # Add parent event section
             blocks.append(
                 {
                     "type": "section",
@@ -285,6 +274,30 @@ def publish_home_view(
                     },
                 }
             )
+
+            # Add child events with indentation (sorted by timestamp, newest first)
+            if children:
+                children_sorted = sorted(
+                    children, key=lambda e: e.timestamp, reverse=True
+                )
+                for child_event in children_sorted:
+                    # Add divider before each child
+                    blocks.append({"type": "divider"})
+                    
+                    child_text = format_event_text(
+                        child_event, pr_status, indent="> "
+                    )
+                    blocks.append(
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": child_text,
+                            },
+                        }
+                    )
+
+            # Add divider after the event group
             blocks.append({"type": "divider"})
 
     # Add footer with divider
