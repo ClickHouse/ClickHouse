@@ -109,7 +109,7 @@ ls -l ./tests/integration/test_backup_restore_azure_blob_storage/_instances-gw2/
 tar --dereference -czf ./ci/tmp/logs.tar.gz \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
-  ./ci/tmp/*.jsonl 2>/dev/null || true
+  ./ci/tmp/*.jsonl 2>./ci/tmp/tar.log || true
 docker rm -f praktika
 """,
     timeout=600, #REMOVEME
