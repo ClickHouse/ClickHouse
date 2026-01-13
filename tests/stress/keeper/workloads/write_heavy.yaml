@@ -1,7 +1,16 @@
 name: write_heavy
-clients: 64
-ops:
-  - { kind: create, percent: 50, path_prefix: /e2e/write, value_bytes: 512 }
-  - { kind: set,    percent: 45, path_prefix: /e2e/write, value_bytes: 512 }
-  - { kind: get,    percent: 5,  path_prefix: /e2e/write }
-duration_seconds: 0
+concurrency: 64
+generator:
+  requests:
+    create:
+      path: /e2e/write
+      name_length: 10
+      data: { random_string: { size: 512 } }
+      weight: 50
+    set:
+      path: /e2e/write
+      data: { random_string: { size: 512 } }
+      weight: 45
+    get:
+      path: { children_of: /e2e/write }
+      weight: 5

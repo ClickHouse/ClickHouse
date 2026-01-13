@@ -4,15 +4,22 @@ from .settings import parse_bool
 from .util import has_bin, sh_root
 
 
+def _fault_kinds(faults):
+    kinds = set()
+    for f in faults or []:
+        if isinstance(f, dict):
+            try:
+                k = str(f.get("kind", "")).strip().lower()
+            except Exception:
+                k = ""
+            if k:
+                kinds.add(k)
+    return kinds
+
+
 def _tools_for_faults(faults):
     req = set()
-    if not faults:
-        return req
-    kinds = set(
-        str((f or {}).get("kind", "")).strip().lower()
-        for f in faults
-        if isinstance(f, dict)
-    )
+    kinds = _fault_kinds(faults)
     # Network related
     if kinds & {"netem", "tbf", "partition_symmetric", "partition_oneway"}:
         req.update({"tc", "ip", "iptables"})
@@ -31,11 +38,57 @@ def _tools_for_faults(faults):
     return req
 
 
+def _bench_present(node):
+    try:
+        if has_bin(node, "keeper-bench"):
+            return True
+        if has_bin(node, "clickhouse"):
+            # Many images ship keeper-bench as a clickhouse subcommand; treat clickhouse presence as sufficient
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def _install_bench_from_url(nodes):
+    try:
+        url = os.environ.get("KEEPER_BENCH_URL", "").strip()
+    except Exception:
+        url = ""
+    if not url:
+        return False
+    try:
+        for n in nodes or []:
+            sh_root(
+                n,
+                f"curl -sfL {url} -o /usr/local/bin/keeper-bench && chmod +x /usr/local/bin/keeper-bench",
+            )
+        return True
+    except Exception:
+        return False
+
+
+def _ensure_replay_if_requested(node0, scenario):
+    try:
+        wl = (scenario or {}).get("workload") or {}
+        replay_path = wl.get("replay")
+        if replay_path:
+            from .util import sh
+
+            r2 = sh(node0, f"test -f {replay_path} >/dev/null 2>&1; echo $?")
+            if not str(r2.get("out", " ")).strip().endswith("0"):
+                msg = (
+                    f"replay file not found inside container at {replay_path} "
+                    f"(mount it, e.g. bind-mount host log to /artifacts)"
+                )
+                raise AssertionError(msg)
+    except Exception:
+        pass
+
+
 def ensure_environment(nodes, scenario):
     faults = (scenario or {}).get("faults") or []
-    req = _tools_for_faults(faults)
-    if not req:
-        req = set()
+    req = _tools_for_faults(faults) or set()
     # Keeper-bench presence (if workload is requested)
     if (
         isinstance(scenario, dict)
@@ -43,45 +96,18 @@ def ensure_environment(nodes, scenario):
         and nodes
         and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD"))
     ):
-        bench_ok = False
         n0 = nodes[0]
-        try:
-            if has_bin(n0, "keeper-bench"):
-                bench_ok = True
-            elif has_bin(n0, "clickhouse"):
-                # Many images ship keeper-bench as a clickhouse subcommand; treat clickhouse presence as sufficient
-                bench_ok = True
-        except Exception:
-            bench_ok = False
+        bench_ok = _bench_present(n0)
+        if not bench_ok and _install_bench_from_url(nodes):
+            bench_ok = _bench_present(n0)
         if not bench_ok:
-            try:
-                url = os.environ.get("KEEPER_BENCH_URL", "").strip()
-                if url:
-                    for n in nodes or []:
-                        sh_root(
-                            n,
-                            f"curl -sfL {url} -o /usr/local/bin/keeper-bench && chmod +x /usr/local/bin/keeper-bench",
-                        )
-                    if has_bin(n0, "keeper-bench"):
-                        bench_ok = True
-            except Exception:
-                pass
-        if not bench_ok:
-            msg = f"keeper-bench not available on {getattr(n0, 'name', 'node')}: install utils/keeper-bench or provide clickhouse keeper-bench"
+            msg = (
+                f"keeper-bench not available on {getattr(n0, 'name', 'node')}: "
+                f"install utils/keeper-bench or provide clickhouse keeper-bench"
+            )
             raise AssertionError(msg)
         # If replay is requested, verify the file is accessible inside container
-        try:
-            wl = scenario.get("workload") or {}
-            replay_path = wl.get("replay")
-            if replay_path:
-                from .util import sh
-
-                r2 = sh(n0, f"test -f {replay_path} >/dev/null 2>&1; echo $?")
-                if not str(r2.get("out", " ")).strip().endswith("0"):
-                    msg = f"replay file not found inside container at {replay_path} (mount it, e.g. bind-mount host log to /artifacts)"
-                    raise AssertionError(msg)
-        except Exception:
-            pass
+        _ensure_replay_if_requested(n0, scenario)
     missing = {}
     for n in nodes or []:
         miss_n = [t for t in req if not has_bin(n, t)]

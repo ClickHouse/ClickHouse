@@ -1,11 +1,5 @@
-import gzip
 import json
 import os
-import random
-import time
-
-_SEEDED = False
-
 
 def _sanitize_filename_component(x: object) -> str:
     try:
@@ -17,14 +11,7 @@ def _sanitize_filename_component(x: object) -> str:
     res = [ch if ch in allowed else "_" for ch in s]
     name = "".join(res) or "unknown"
     return name[:80]
-
-
-def _autocreate_enabled() -> bool:
-    try:
-        v = os.environ.get("KEEPER_AUTOCREATE_SCHEMA", "").strip().lower()
-        return v in ("1", "true", "yes", "on")
-    except Exception:
-        return False
+ 
 
 
 def _get_helper():
@@ -59,67 +46,16 @@ def has_ci_sink():
         pass
     return _get_helper() is not None
 
-
-def ensure_sink_schema(_url_ignored=None):
-    """Ensure metrics DB/table exist using CI ClickHouseHelper credentials.
-
-    Ignores any passed URL and uses the standard CI test-stat endpoint and
-    credentials, same as other test frameworks.
-    """
-    global _SEEDED
-    if _SEEDED:
-        return
-    # Align with other tests: do not auto-create unless explicitly enabled
-    if not _autocreate_enabled():
-        return
+def _write_jsonl_lines(path, rows):
     try:
-        import requests
+        with open(path, "a", encoding="utf-8") as f:
+            for r in rows:
+                try:
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
     except Exception:
-        return
-
-    helper = _get_helper()
-    if helper is None:
-        return
-    url = helper.url
-    auth = helper.auth
-    db = (
-        os.environ.get("KEEPER_METRICS_DB", "keeper_stress_tests").strip()
-        or "keeper_stress_tests"
-    )
-    ddls = [
-        f"CREATE DATABASE IF NOT EXISTS {db}",
-        f"""CREATE TABLE IF NOT EXISTS {db}.keeper_metrics_ts (
-            ts DateTime64(3) DEFAULT now64(3),
-            run_id String,
-            commit_sha String,
-            backend String,
-            scenario String,
-            topology Int32,
-            node String,
-            stage String,
-            source LowCardinality(String),
-            name LowCardinality(String),
-            value Float64,
-            labels_json String DEFAULT '{{}}'
-        ) ENGINE=MergeTree
-        ORDER BY (run_id, scenario, node, stage, name, ts)""",
-    ]
-    ok = True
-    for ddl in ddls:
-        d_ok = False
-        for attempt in range(2):
-            try:
-                r = requests.post(url, params={"query": ddl}, headers=auth, timeout=20)
-                r.raise_for_status()
-                d_ok = True
-                break
-            except Exception:
-                time.sleep(0.5 * (attempt + 1))
-        ok = ok and d_ok
-    if ok:
-        _SEEDED = True
-
-
+        pass
 def sink_clickhouse(_url_ignored, table, rows):
     """Write rows to sidecar JSONL for host-side ingestion.
 
@@ -159,23 +95,7 @@ def sink_clickhouse(_url_ignored, table, rows):
             path = f"{base}__{rid}__{scen}{ext}"
             groups.setdefault(path, []).append(r)
         for path, rs in groups.items():
-            try:
-                with open(path, "a", encoding="utf-8") as f:
-                    for r in rs:
-                        try:
-                            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+            _write_jsonl_lines(path, rs)
         return
     # Fallback: single file
-    try:
-        with open(sidecar, "a", encoding="utf-8") as f:
-            for r in rows:
-                try:
-                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    _write_jsonl_lines(sidecar, rows)

@@ -4,7 +4,7 @@ import time
 
 from ..core.settings import SAMPLER_FLUSH_EVERY, SAMPLER_ROW_FLUSH_THRESHOLD
 from ..io.probes import lgif, mntr, prom_metrics, dirs, srvr_kv
-from ..io.prom_parse import parse_prometheus_text, DEFAULT_PREFIXES
+from ..io.prom_parse import parse_prometheus_text
 from ..io.sink import sink_clickhouse
 
 
@@ -84,6 +84,56 @@ class MetricsSampler:
         self._row_flush_threshold = int(SAMPLER_ROW_FLUSH_THRESHOLD)
         self._ctx = ctx
 
+    def _append_row(self, node_name, source, name, value, labels_json="{}"):
+        try:
+            val = float(value)
+        except Exception:
+            val = 0.0
+        self._metrics_ts_rows.append(
+            {
+                "ts": _ts_ms_str(),
+                "run_id": self.run_id,
+                "commit_sha": self.run_meta.get("commit_sha", "local"),
+                "backend": self.run_meta.get("backend", "default"),
+                "scenario": self.scenario_id,
+                "topology": self.topology,
+                "node": node_name,
+                "stage": self.stage_prefix,
+                "source": source,
+                "name": str(name),
+                "value": val,
+                "labels_json": labels_json or "{}",
+            }
+        )
+
+    def _cache_entry(self, node_name):
+        if self._ctx is None:
+            return None, None
+        cache = self._ctx.setdefault("_metrics_cache", {})
+        entry = dict(cache.get(node_name) or {})
+        base = self._ctx.setdefault("_metrics_cache_baseline", {})
+        return entry, base
+
+    def _store_entry(self, node_name, entry):
+        if self._ctx is None:
+            return
+        cache = self._ctx.setdefault("_metrics_cache", {})
+        cache[node_name] = entry
+
+    def _parse_prom(self, text):
+        if self.prom_allow_prefixes is None:
+            return parse_prometheus_text(
+                text,
+                name_allowlist=self.prom_name_allowlist,
+                exclude_label_keys=self.prom_exclude_label_keys,
+            )
+        return parse_prometheus_text(
+            text,
+            allow_prefixes=self.prom_allow_prefixes,
+            name_allowlist=self.prom_name_allowlist,
+            exclude_label_keys=self.prom_exclude_label_keys,
+        )
+
     def _snapshot_once(self):
         for n in self.nodes:
             try:
@@ -91,37 +141,16 @@ class MetricsSampler:
                 l = lgif(n)
                 try:
                     for k, v in (m or {}).items():
-                        try:
-                            val = float(v)
-                        except Exception:
-                            continue
-                        self._metrics_ts_rows.append(
-                            {
-                                "ts": _ts_ms_str(),
-                                "run_id": self.run_id,
-                                "commit_sha": self.run_meta.get("commit_sha", "local"),
-                                "backend": self.run_meta.get("backend", "default"),
-                                "scenario": self.scenario_id,
-                                "topology": self.topology,
-                                "node": n.name,
-                                "stage": self.stage_prefix,
-                                "source": "mntr",
-                                "name": str(k),
-                                "value": val,
-                                "labels_json": "{}",
-                            }
-                        )
+                        self._append_row(n.name, "mntr", k, v)
                 except Exception:
                     pass
-                if self._ctx is not None:
-                    cache = self._ctx.setdefault("_metrics_cache", {})
-                    entry = dict(cache.get(n.name) or {})
+                entry, base = self._cache_entry(n.name)
+                if entry is not None:
                     entry["mntr"] = m
                     entry["lgif"] = l
-                    cache[n.name] = entry
-                    b = self._ctx.setdefault("_metrics_cache_baseline", {})
-                    if n.name not in b:
-                        b[n.name] = {"lgif": l}
+                    self._store_entry(n.name, entry)
+                    if n.name not in (base or {}):
+                        base[n.name] = {"lgif": l}
             except Exception:
                 pass
             # Sample 4LW 'dirs' in a lightweight way: count lines and bytes
@@ -129,99 +158,37 @@ class MetricsSampler:
                 d_txt = dirs(n)
                 d_lines = len(d_txt.splitlines()) if d_txt else 0
                 d_bytes = len(d_txt.encode("utf-8")) if d_txt else 0
-                for nm, val in ("lines", d_lines), ("bytes", d_bytes):
-                    self._metrics_ts_rows.append(
-                        {
-                            "ts": _ts_ms_str(),
-                            "run_id": self.run_id,
-                            "commit_sha": self.run_meta.get("commit_sha", "local"),
-                            "backend": self.run_meta.get("backend", "default"),
-                            "scenario": self.scenario_id,
-                            "topology": self.topology,
-                            "node": n.name,
-                            "stage": self.stage_prefix,
-                            "source": "dirs",
-                            "name": nm,
-                            "value": float(val),
-                            "labels_json": "{}",
-                        }
-                    )
-                if self._ctx is not None:
-                    cache = self._ctx.setdefault("_metrics_cache", {})
-                    entry = dict(cache.get(n.name) or {})
+                self._append_row(n.name, "dirs", "lines", d_lines)
+                self._append_row(n.name, "dirs", "bytes", d_bytes)
+                entry, _ = self._cache_entry(n.name)
+                if entry is not None:
                     entry["dirs_lines"] = d_lines
                     entry["dirs_bytes"] = d_bytes
-                    cache[n.name] = entry
+                    self._store_entry(n.name, entry)
             except Exception:
                 pass
             # Sample 4LW 'srvr' counters
             try:
                 sk = srvr_kv(n) or {}
                 for k, v in sk.items():
-                    try:
-                        val = float(v)
-                    except Exception:
-                        continue
-                    self._metrics_ts_rows.append(
-                        {
-                            "ts": _ts_ms_str(),
-                            "run_id": self.run_id,
-                            "commit_sha": self.run_meta.get("commit_sha", "local"),
-                            "backend": self.run_meta.get("backend", "default"),
-                            "scenario": self.scenario_id,
-                            "topology": self.topology,
-                            "node": n.name,
-                            "stage": self.stage_prefix,
-                            "source": "srvr",
-                            "name": str(k),
-                            "value": val,
-                            "labels_json": "{}",
-                        }
-                    )
-                if self._ctx is not None:
-                    cache = self._ctx.setdefault("_metrics_cache", {})
-                    entry = dict(cache.get(n.name) or {})
+                    self._append_row(n.name, "srvr", k, v)
+                entry, _ = self._cache_entry(n.name)
+                if entry is not None:
                     entry["srvr"] = sk
-                    cache[n.name] = entry
+                    self._store_entry(n.name, entry)
             except Exception:
                 pass
             try:
                 if (self._snap_count % self._prom_every_n) == 0:
                     p = prom_metrics(n)
-                    parsed = parse_prometheus_text(
-                        p,
-                        allow_prefixes=(self.prom_allow_prefixes or DEFAULT_PREFIXES),
-                        name_allowlist=self.prom_name_allowlist,
-                        exclude_label_keys=self.prom_exclude_label_keys,
-                    )
+                    parsed = self._parse_prom(p)
                     for r in parsed:
                         name = r.get("name", "")
-                        try:
-                            val = float(r.get("value", 0.0))
-                        except Exception:
-                            val = 0.0
-                        lj = r.get("labels_json", "{}")
-                        self._metrics_ts_rows.append(
-                            {
-                                "ts": _ts_ms_str(),
-                                "run_id": self.run_id,
-                                "commit_sha": self.run_meta.get("commit_sha", "local"),
-                                "backend": self.run_meta.get("backend", "default"),
-                                "scenario": self.scenario_id,
-                                "topology": self.topology,
-                                "node": n.name,
-                                "stage": self.stage_prefix,
-                                "source": "prom",
-                                "name": name,
-                                "value": val,
-                                "labels_json": lj,
-                            }
-                        )
-                    if self._ctx is not None:
-                        cache = self._ctx.setdefault("_metrics_cache", {})
-                        entry = dict(cache.get(n.name) or {})
+                        self._append_row(n.name, "prom", name, r.get("value", 0.0), r.get("labels_json", "{}"))
+                    entry, _ = self._cache_entry(n.name)
+                    if entry is not None:
                         entry["prom_rows"] = parsed
-                        cache[n.name] = entry
+                        self._store_entry(n.name, entry)
             except Exception:
                 pass
 

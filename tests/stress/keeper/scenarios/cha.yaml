@@ -13,7 +13,8 @@ scenarios:
       - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []
 
   - id: CHA-03
     name: Latency jitter sweep
@@ -27,7 +28,8 @@ scenarios:
       - { type: p99_le, max_ms: 5000 }
       - { type: p95_le, max_ms: 3000 }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []
 
   - id: CHA-04
     name: Packet loss 2%
@@ -41,7 +43,8 @@ scenarios:
       - { type: p99_le, max_ms: 6000 }
       - { type: p95_le, max_ms: 4000 }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []
 
   - id: CHA-05
     name: Rolling restart (stop/cont)
@@ -57,7 +60,8 @@ scenarios:
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: p99_le, max_ms: 6000 }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []
 
   - id: CHA-06
     name: Net+Disk combined (parallel)
@@ -73,7 +77,8 @@ scenarios:
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: p99_le, max_ms: 6000 }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []
 
   - id: CHA-10M-01
     name: 10m bench with leader partition + kill
@@ -95,7 +100,8 @@ scenarios:
       - { type: p99_le, max_ms: 10000 }
       - { type: log_sanity_ok, allow: ["failed to read rpc header.*End of file", "Socket is not connected", "Cannot read all data"] }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []
 
   - id: CHA-HEAVY-01
     name: "10m heavy chaos: symmetric partitions, quorum loss, tbf, dns, resource pressure, ENOSPC, dm_delay"
@@ -136,4 +142,5 @@ scenarios:
       - { type: log_sanity_ok }
       - { type: prom_thresholds_le, metrics: { keeper_dummy_metric: 1000000 }, aggregate: sum }
     opts:
-      prom_allow_prefixes: ["keeper_", "raft_"]
+      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
+      prom_name_allowlist: []

@@ -50,6 +50,45 @@ def backlog_drains(nodes, max_s=120):
         time.sleep(1.0)
 
 
+def _aggregate_totals(nodes, targets, aggregate, per_node_values_fn):
+    try:
+        agg = str(aggregate or "sum").strip().lower()
+    except Exception:
+        agg = "sum"
+    totals = {k: 0.0 for k in (targets or {}).keys()}
+    for n in nodes or []:
+        try:
+            for k, val in per_node_values_fn(n):
+                if k not in targets:
+                    continue
+                try:
+                    v = float(val)
+                except Exception:
+                    v = 0.0
+                if agg == "max":
+                    totals[k] = max(totals.get(k, 0.0), v)
+                else:
+                    totals[k] = totals.get(k, 0.0) + v
+        except Exception:
+            continue
+    return totals
+
+
+def _leader_or_first(nodes):
+    if not nodes:
+        return None
+    try:
+        for n in nodes:
+            try:
+                if is_leader(n):
+                    return n
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return nodes[0]
+
+
 def _conf_members_count(node):
     try:
         txt = four(node, "conf")
@@ -72,15 +111,7 @@ def config_members_len_eq(nodes, expected):
     # Compare against leader's conf and assert equals expected
     if not nodes:
         raise AssertionError("no nodes")
-    leader = None
-    for n in nodes:
-        try:
-            if is_leader(n):
-                leader = n
-                break
-        except Exception:
-            continue
-    target = leader or nodes[0]
+    target = _leader_or_first(nodes)
     cnt = _conf_members_count(target)
     # If 4lw 'conf' is unavailable, we cannot strictly validate; be lenient in stress env
     if int(cnt) <= 0:
@@ -93,15 +124,7 @@ def config_converged(nodes, timeout_s=30):
     # Ensure all nodes show the same conf members count as leader
     if not nodes:
         raise AssertionError("no nodes")
-    leader = None
-    for n in nodes:
-        try:
-            if is_leader(n):
-                leader = n
-                break
-        except Exception:
-            continue
-    target = leader or nodes[0]
+    target = _leader_or_first(nodes)
     expected = _conf_members_count(target)
     # If 4lw 'conf' is unavailable on this build, fall back to topology size for smoke runs
     if expected <= 0:
@@ -145,25 +168,12 @@ def srvr_thresholds_le(nodes, metrics, aggregate="sum"):
         targets = dict(metrics or {})
         if not targets:
             return
-        agg = str(aggregate or "sum").strip().lower()
-        totals = {k: 0.0 for k in targets.keys()}
-        for n in nodes or []:
-            try:
-                sk = srvr_kv(n) or {}
-                for k, thr in targets.items():
-                    if k not in sk:
-                        continue
-                    try:
-                        val = float(sk.get(k, 0.0))
-                    except Exception:
-                        val = 0.0
-                    if agg == "max":
-                        totals[k] = max(totals.get(k, 0.0), val)
-                    else:  # sum by default
-                        totals[k] = totals.get(k, 0.0) + val
-            except Exception:
-                continue
-        # Validate <= threshold
+        def _values(n):
+            sk = srvr_kv(n) or {}
+            for k in targets.keys():
+                if k in sk:
+                    yield k, sk.get(k, 0.0)
+        totals = _aggregate_totals(nodes, targets, aggregate, _values)
         for k, thr in targets.items():
             try:
                 if float(totals.get(k, 0.0)) <= float(thr):
@@ -243,8 +253,6 @@ def count_paths(nodes, prefixes):
             results.append((str(p), 0))
 
     try:
-        import os
-
         if parse_bool(os.environ.get("KEEPER_DEBUG")):
             repo_root = Path(__file__).parents[4]
             out = (
@@ -529,26 +537,13 @@ def prom_thresholds_le(nodes, metrics, aggregate="sum"):
         targets = dict(metrics or {})
         if not targets:
             return
-        agg = str(aggregate or "sum").strip().lower()
-        totals = {k: 0.0 for k in targets.keys()}
-        for n in nodes or []:
-            try:
-                text = prom_metrics(n)
-                for r in parse_prometheus_text(text):
-                    name = r.get("name", "")
-                    if name not in targets:
-                        continue
-                    try:
-                        val = float(r.get("value", 0.0))
-                    except Exception:
-                        val = 0.0
-                    if agg == "max":
-                        totals[name] = max(totals.get(name, 0.0), val)
-                    else:  # sum by default
-                        totals[name] = totals.get(name, 0.0) + val
-            except Exception:
-                continue
-        # Validate <= threshold
+        def _values(n):
+            text = prom_metrics(n)
+            for r in parse_prometheus_text(text):
+                name = r.get("name", "")
+                if name in targets:
+                    yield name, r.get("value", 0.0)
+        totals = _aggregate_totals(nodes, targets, aggregate, _values)
         for k, thr in targets.items():
             try:
                 if float(totals.get(k, 0.0)) <= float(thr):

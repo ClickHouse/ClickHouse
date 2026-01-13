@@ -4,8 +4,18 @@ from ..core.settings import CLIENT_PORT, CONTROL_PORT, PROM_PORT
 from ..core.util import has_bin, sh
 
 
+def _first_nonempty_cmd(node, cmds):
+    for c in cmds:
+        try:
+            out = sh(node, c, timeout=5)["out"]
+            if str(out).strip():
+                return out
+        except Exception:
+            continue
+    return ""
+
+
 def four(node, cmd):
-    # Prefer nc when available
     try:
         if has_bin(node, "nc"):
             out = sh(
@@ -15,30 +25,20 @@ def four(node, cmd):
                 return out
     except Exception:
         pass
-    # Fallbacks: keeper-client variants (avoid history file by setting HOME)
-    for c in [
-        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}'",
-        f"HOME=/tmp timeout 2s clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}'",
-    ]:
-        try:
-            out = sh(node, c + " 2>/dev/null", timeout=5)["out"]
-            if str(out).strip():
-                return out
-        except Exception:
-            continue
-    # Last resort: use bash /dev/tcp to send 4lw and read reply
-    try:
-        devtcp_inner = (
-            f"exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; "
-            f"printf '{cmd}\\n' >&3; "
-            f"cat <&3; "
-            f"exec 3<&-; exec 3>&-"
-        )
-        out = sh(node, f'timeout 2s bash -lc "{devtcp_inner}"', timeout=5)["out"]
-        if str(out).strip():
-            return out
-    except Exception:
-        pass
+    fb = [
+        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}' 2>/dev/null",
+        f"HOME=/tmp timeout 2s clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}' 2>/dev/null",
+    ]
+    devtcp_inner = (
+        f"exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; "
+        f"printf '{cmd}\\n' >&3; "
+        f"cat <&3; "
+        f"exec 3<&-; exec 3>&-"
+    )
+    fb.append(f'timeout 2s bash -lc "{devtcp_inner}"')
+    out = _first_nonempty_cmd(node, fb)
+    if str(out).strip():
+        return out
     return ""
 
 
@@ -90,11 +90,11 @@ def wchs_total(node):
         if line.lower().startswith("total watches"):
             try:
                 return int(line.split(":")[1].strip())
-            except:
+            except Exception:
                 pass
     try:
         return int(mntr(node).get("zk_watch_count", "0"))
-    except:
+    except Exception:
         return 0
 
 
@@ -135,7 +135,7 @@ def lgif(node):
         if len(p) >= 2:
             try:
                 kv[p[0]] = int(p[1])
-            except:
+            except Exception:
                 pass
     return kv
 
@@ -184,18 +184,21 @@ def ready(node):
 
 
 def ch_metrics(node):
-    try:
-        txt = node.query("SELECT name, value FROM system.metrics FORMAT JSONEachRow")
-        return [json.loads(l) for l in txt.strip().splitlines() if l.strip()]
-    except Exception:
-        return []
+    return _query_json_each_row(
+        node, "SELECT name, value FROM system.metrics FORMAT JSONEachRow"
+    )
 
 
 def ch_async_metrics(node):
+    return _query_json_each_row(
+        node,
+        "SELECT name, value FROM system.asynchronous_metrics FORMAT JSONEachRow",
+    )
+
+
+def _query_json_each_row(node, sql):
     try:
-        txt = node.query(
-            "SELECT name, value FROM system.asynchronous_metrics FORMAT JSONEachRow"
-        )
+        txt = node.query(sql)
         return [json.loads(l) for l in txt.strip().splitlines() if l.strip()]
     except Exception:
         return []
