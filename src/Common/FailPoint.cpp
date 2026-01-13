@@ -132,9 +132,7 @@ static struct InitFiu
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_kill_part_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
-    ONCE(database_iceberg_gcs) \
-
-
+    ONCE(database_iceberg_gcs)
 
 namespace FailPoints
 {
