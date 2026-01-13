@@ -15,6 +15,8 @@ instance = cluster.add_instance(
     main_configs=[
         "configs/testkeeper.xml",
     ],
+    # Test operates files on a filesystem manually.
+    with_remote_database_disk=False,
 )
 q = instance.query
 path_to_data = "/var/lib/clickhouse/"
@@ -526,7 +528,7 @@ def test_detached_part_dir_exists(started_cluster):
     data_path = q(
         f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
     ).strip()
-     
+
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
