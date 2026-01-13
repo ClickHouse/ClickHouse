@@ -26,10 +26,10 @@ Positions: 0
       Actions: INPUT :: 0 -> dummy UInt8 : 0
                COLUMN Const(UInt8) -> __table1.1 UInt8 : 1
       Positions: 1
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
       Actions: INPUT :: 0 -> dummy UInt8 : 0
                COLUMN Const(UInt8) -> __table3.c0 UInt8 : 1
       Positions: 1
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
 1
