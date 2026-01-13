@@ -139,7 +139,7 @@ A block is emitted when either condition is met:
 - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
 - Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
 )", 0) \
-    DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+    DECLARE_WITH_ALIAS(UInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
 This setting controls block formation in format parsing. When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) or Values format from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.

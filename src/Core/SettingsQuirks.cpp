@@ -149,26 +149,6 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
             LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
         current_settings[Setting::max_block_size] = DEFAULT_BLOCK_SIZE;
     }
-
-    UInt64 max_insert_block_size_rows = current_settings[Setting::max_insert_block_size];
-    UInt64 min_insert_block_size_rows = current_settings[Setting::min_insert_block_size_rows];
-    
-    if (max_insert_block_size_rows != 0 && min_insert_block_size_rows != 0 && max_insert_block_size_rows < min_insert_block_size_rows)
-    {
-        if (log)
-            LOG_WARNING(log, "Sanity check: 'max_insert_block_size' cannot be smaller that 'min_insert_block_size_rows'. Set to 'min_insert_block_size_rows' value {}", min_insert_block_size_rows);
-        current_settings[Setting::max_insert_block_size] = min_insert_block_size_rows;
-    } 
-
-    UInt64 max_insert_block_size_bytes = current_settings[Setting::max_insert_block_size_bytes];
-    UInt64 min_insert_block_size_bytes = current_settings[Setting::min_insert_block_size_bytes];
-    
-    if (max_insert_block_size_bytes != 0 && min_insert_block_size_bytes != 0 && max_insert_block_size_bytes < min_insert_block_size_bytes)
-    {
-        if (log)
-            LOG_WARNING(log, "Sanity check: 'max_insert_block_size_bytes' cannot be smaller that 'min_insert_block_size_bytes'. Set to 'min_insert_block_size_bytes' value {}", min_insert_block_size_bytes);
-        current_settings[Setting::max_insert_block_size_bytes] = min_insert_block_size_bytes;
-    } 
 }
 
 }

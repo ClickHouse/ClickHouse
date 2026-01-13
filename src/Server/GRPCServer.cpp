@@ -74,7 +74,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;

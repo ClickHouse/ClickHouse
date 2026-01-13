@@ -27,19 +27,23 @@ void PlanSquashingTransform::onConsume(Chunk chunk)
 
 PlanSquashingTransform::GenerateResult PlanSquashingTransform::onGenerate()
 {
+    squashed_chunk = squashing.generate();
+
     if (!squashed_chunk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in PlanSquashingChunksTransform");
 
     GenerateResult res;
     res.chunk.swap(squashed_chunk);
-    res.is_done = true;
+    res.is_done = !squashing.canGenerate();
     return res;
 }
 
 bool PlanSquashingTransform::canGenerate()
 {
-    squashed_chunk = squashing.generate();
-    return bool(squashed_chunk);
+    /// TODO: use handy interface of squashing to check if in the queue
+    /// and in the accumulated we have enough data to generate an output
+    /// transfer generate to onGenerate() function
+    return squashing.canGenerate();
 }
 
 PlanSquashingTransform::GenerateResult PlanSquashingTransform::getRemaining()
