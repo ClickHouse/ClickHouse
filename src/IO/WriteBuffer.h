@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <memory>
 
@@ -107,7 +108,7 @@ public:
     bool isCanceled() const { return canceled; }
 
     /// Get number of times next() has been called (number of flushes)
-    size_t getFlushCount() const { return flush_count; }
+    size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
@@ -152,7 +153,7 @@ private:
     int exception_level = std::uncaught_exceptions();
 
     /// Number of flushes for debugging/assertions
-    size_t flush_count = 0;
+    std::atomic<size_t> flush_count = 0;
 };
 
 
