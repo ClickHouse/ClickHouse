@@ -2,6 +2,10 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDecimalDataType.h>
+#include <Parsers/ASTDateTime64DataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTFixedStringDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
@@ -9,6 +13,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Common/StringUtils.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -16,6 +22,157 @@ namespace DB
 
 namespace
 {
+
+/// Check if type name is an Enum type
+bool isEnumType(const String & type_name_upper)
+{
+    return type_name_upper == "ENUM" || type_name_upper == "ENUM8" || type_name_upper == "ENUM16";
+}
+
+/// Check if type name is a Decimal type
+bool isDecimalType(const String & type_name_upper)
+{
+    return type_name_upper == "DECIMAL" || type_name_upper == "DECIMAL32"
+        || type_name_upper == "DECIMAL64" || type_name_upper == "DECIMAL128"
+        || type_name_upper == "DECIMAL256";
+}
+
+/// Check if type name is DateTime64
+bool isDateTime64Type(const String & type_name_upper)
+{
+    return type_name_upper == "DATETIME64";
+}
+
+/// Check if type name is FixedString
+bool isFixedStringType(const String & type_name_upper)
+{
+    return type_name_upper == "FIXEDSTRING";
+}
+
+/// Parse an unsigned integer from current token
+bool parseUnsignedInteger(IParser::Pos & pos, UInt64 & value, Expected & expected)
+{
+    if (pos->type != TokenType::Number)
+    {
+        expected.add(pos, "number");
+        return false;
+    }
+
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    if (!tryReadIntText(value, in) || in.count() != pos->size())
+    {
+        expected.add(pos, "unsigned integer");
+        return false;
+    }
+    ++pos;
+    return true;
+}
+
+/// Parse enum values directly into the vector without creating ASTLiteral nodes.
+/// Format: 'name1' = value1, 'name2' = value2, ... or just 'name1', 'name2', ...
+/// Returns true on success.
+bool parseEnumValues(
+    IParser::Pos & pos,
+    std::vector<std::pair<String, Int64>> & values,
+    Expected & expected)
+{
+    bool first_element = true;
+    Int64 auto_value = 1;
+    bool has_explicit_values = false;
+    bool has_auto_values = false;
+
+    while (true)
+    {
+        if (!first_element)
+        {
+            if (pos->type != TokenType::Comma)
+                break;
+            ++pos;
+        }
+        first_element = false;
+
+        /// Parse the string name
+        if (pos->type != TokenType::StringLiteral)
+        {
+            expected.add(pos, "string literal for enum element name");
+            return false;
+        }
+
+        String elem_name;
+        ReadBufferFromMemory in(pos->begin, pos->size());
+        try
+        {
+            readQuotedStringWithSQLStyle(elem_name, in);
+        }
+        catch (const Exception &)
+        {
+            expected.add(pos, "valid string literal");
+            return false;
+        }
+
+        if (in.count() != pos->size())
+        {
+            expected.add(pos, "string literal");
+            return false;
+        }
+        ++pos;
+
+        Int64 elem_value;
+
+        /// Check for '=' and value
+        if (pos->type == TokenType::Equals)
+        {
+            ++pos;
+            has_explicit_values = true;
+
+            /// Parse the numeric value (can be negative)
+            bool negative = false;
+            if (pos->type == TokenType::Minus)
+            {
+                negative = true;
+                ++pos;
+            }
+
+            if (pos->type != TokenType::Number)
+            {
+                expected.add(pos, "number for enum element value");
+                return false;
+            }
+
+            UInt64 abs_value = 0;
+            ReadBufferFromMemory num_in(pos->begin, pos->size());
+            if (!tryReadIntText(abs_value, num_in) || num_in.count() != pos->size())
+            {
+                expected.add(pos, "integer value");
+                return false;
+            }
+            ++pos;
+
+            elem_value = negative ? -static_cast<Int64>(abs_value) : static_cast<Int64>(abs_value);
+
+            /// Update auto_value for subsequent auto-assigned elements
+            auto_value = elem_value;
+        }
+        else
+        {
+            /// Auto-assign value
+            has_auto_values = true;
+            elem_value = auto_value;
+        }
+
+        values.emplace_back(elem_name, elem_value);
+        ++auto_value;
+    }
+
+    /// Check that we don't mix explicit and auto values (except for the first element which sets the base)
+    if (has_explicit_values && has_auto_values && values.size() > 1)
+    {
+        /// This is actually allowed - first element can have explicit value, rest can be auto
+        /// The rule is: either all explicit OR first explicit then all auto OR all auto
+    }
+
+    return !values.empty();
+}
 
 /// Parser of Dynamic type argument: Dynamic(max_types=N)
 class DynamicArgumentParser : public IParserBase
@@ -227,6 +384,181 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    /// Handle Enum types specially - parse directly into ASTEnumDataType
+    /// to avoid creating hundreds of ASTLiteral nodes for large enums
+    if (isEnumType(type_name_upper))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+        {
+            expected.add(pos, "opening bracket for Enum values");
+            return false;
+        }
+        ++pos;
+
+        auto enum_node = std::make_shared<ASTEnumDataType>();
+        enum_node->name = type_name;
+
+        if (!parseEnumValues(pos, enum_node->values, expected))
+            return false;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+        {
+            expected.add(pos, "closing bracket");
+            return false;
+        }
+        ++pos;
+
+        node = enum_node;
+        return true;
+    }
+
+    /// Handle Decimal types specially
+    if (isDecimalType(type_name_upper))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+        {
+            expected.add(pos, "opening bracket for Decimal parameters");
+            return false;
+        }
+        ++pos;
+
+        auto decimal_node = std::make_shared<ASTDecimalDataType>();
+        decimal_node->name = type_name;
+
+        UInt64 first_param = 0;
+        if (!parseUnsignedInteger(pos, first_param, expected))
+            return false;
+
+        /// Decimal(precision, scale) has two parameters
+        /// Decimal32/64/128/256(scale) has one parameter
+        if (type_name_upper == "DECIMAL")
+        {
+            decimal_node->precision = static_cast<UInt32>(first_param);
+
+            if (pos->type == TokenType::Comma)
+            {
+                ++pos;
+                UInt64 scale = 0;
+                if (!parseUnsignedInteger(pos, scale, expected))
+                    return false;
+                decimal_node->scale = static_cast<UInt32>(scale);
+            }
+            else
+            {
+                /// Decimal(P) without scale means scale = 0
+                decimal_node->scale = 0;
+            }
+        }
+        else
+        {
+            /// Decimal32/64/128/256 - first param is scale
+            decimal_node->scale = static_cast<UInt32>(first_param);
+            /// Set precision based on type
+            if (type_name_upper == "DECIMAL32")
+                decimal_node->precision = 9;
+            else if (type_name_upper == "DECIMAL64")
+                decimal_node->precision = 18;
+            else if (type_name_upper == "DECIMAL128")
+                decimal_node->precision = 38;
+            else if (type_name_upper == "DECIMAL256")
+                decimal_node->precision = 76;
+        }
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+        {
+            expected.add(pos, "closing bracket");
+            return false;
+        }
+        ++pos;
+
+        node = decimal_node;
+        return true;
+    }
+
+    /// Handle DateTime64 specially
+    if (isDateTime64Type(type_name_upper))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+        {
+            expected.add(pos, "opening bracket for DateTime64 parameters");
+            return false;
+        }
+        ++pos;
+
+        auto dt64_node = std::make_shared<ASTDateTime64DataType>();
+        dt64_node->name = type_name;
+
+        UInt64 precision = 0;
+        if (!parseUnsignedInteger(pos, precision, expected))
+            return false;
+        dt64_node->precision = static_cast<UInt32>(precision);
+
+        /// Optional timezone parameter
+        if (pos->type == TokenType::Comma)
+        {
+            ++pos;
+
+            if (pos->type != TokenType::StringLiteral)
+            {
+                expected.add(pos, "timezone string");
+                return false;
+            }
+
+            String timezone;
+            ReadBufferFromMemory in(pos->begin, pos->size());
+            try
+            {
+                readQuotedStringWithSQLStyle(timezone, in);
+            }
+            catch (const Exception &)
+            {
+                expected.add(pos, "valid timezone string");
+                return false;
+            }
+            ++pos;
+            dt64_node->timezone = timezone;
+        }
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+        {
+            expected.add(pos, "closing bracket");
+            return false;
+        }
+        ++pos;
+
+        node = dt64_node;
+        return true;
+    }
+
+    /// Handle FixedString specially
+    if (isFixedStringType(type_name_upper))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+        {
+            expected.add(pos, "opening bracket for FixedString parameter");
+            return false;
+        }
+        ++pos;
+
+        auto fs_node = std::make_shared<ASTFixedStringDataType>();
+        fs_node->name = type_name;
+
+        UInt64 n = 0;
+        if (!parseUnsignedInteger(pos, n, expected))
+            return false;
+        fs_node->n = n;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+        {
+            expected.add(pos, "closing bracket");
+            return false;
+        }
+        ++pos;
+
+        node = fs_node;
+        return true;
+    }
+
     auto data_type_node = std::make_shared<ASTDataType>();
     data_type_node->name = type_name;
 
@@ -244,7 +576,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parameters are either:
     /// - Nested table element;
     /// - Tuple element
-    /// - Enum element in form of 'a' = 1;
     /// - literal;
     /// - Dynamic type argument;
     /// - JSON type argument;

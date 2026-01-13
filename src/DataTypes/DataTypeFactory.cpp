@@ -1,8 +1,17 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDecimalDataType.h>
+#include <Parsers/ASTDateTime64DataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTFixedStringDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -83,9 +92,140 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
     return getImpl<true>(ast);
 }
 
+/// Helper to create Enum data type from direct values (used by ASTEnumDataType)
+static DataTypePtr createEnumFromValues(const String & type_name, const std::vector<std::pair<String, Int64>> & values)
+{
+    String type_name_upper = Poco::toUpper(type_name);
+
+    /// Determine if we need Enum8 or Enum16 based on values and explicit type name
+    bool needs_enum16 = (type_name_upper == "ENUM16");
+
+    if (!needs_enum16 && type_name_upper != "ENUM8")
+    {
+        /// For plain "Enum", check if values fit in Int8 range
+        for (const auto & [name, value] : values)
+        {
+            if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
+            {
+                needs_enum16 = true;
+                break;
+            }
+        }
+    }
+
+    if (needs_enum16)
+    {
+        DataTypeEnum16::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int16>(value));
+        return std::make_shared<DataTypeEnum16>(enum_values);
+    }
+    else
+    {
+        DataTypeEnum8::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int8>(value));
+        return std::make_shared<DataTypeEnum8>(enum_values);
+    }
+}
+
+/// Helper to create Decimal data type from precision and scale (used by ASTDecimalDataType)
+static DataTypePtr createDecimalFromParams(UInt32 precision, UInt32 scale)
+{
+    return createDecimal<DataTypeDecimal>(precision, scale);
+}
+
+/// Helper to create DateTime64 data type from precision and timezone (used by ASTDateTime64DataType)
+static DataTypePtr createDateTime64FromParams(UInt32 precision, const String & timezone)
+{
+    return std::make_shared<DataTypeDateTime64>(precision, timezone);
+}
+
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// Handle specialized ASTEnumDataType directly (no need to extract from ASTLiteral children)
+    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createEnumFromValues(enum_type->name, enum_type->values);
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
+        }
+        else
+        {
+            return createEnumFromValues(enum_type->name, enum_type->values);
+        }
+    }
+
+    /// Handle specialized ASTDecimalDataType directly
+    if (const auto * decimal_type = ast->as<ASTDecimalDataType>())
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createDecimalFromParams(decimal_type->precision, decimal_type->scale);
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
+        }
+        else
+        {
+            return createDecimalFromParams(decimal_type->precision, decimal_type->scale);
+        }
+    }
+
+    /// Handle specialized ASTDateTime64DataType directly
+    if (const auto * dt64_type = ast->as<ASTDateTime64DataType>())
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return createDateTime64FromParams(dt64_type->precision, dt64_type->timezone);
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
+        }
+        else
+        {
+            return createDateTime64FromParams(dt64_type->precision, dt64_type->timezone);
+        }
+    }
+
+    /// Handle specialized ASTFixedStringDataType directly
+    if (const auto * fs_type = ast->as<ASTFixedStringDataType>())
+    {
+        if constexpr (nullptr_on_error)
+        {
+            try
+            {
+                return std::make_shared<DataTypeFixedString>(fs_type->n);
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
+        }
+        else
+        {
+            return std::make_shared<DataTypeFixedString>(fs_type->n);
+        }
+    }
+
     if (const auto * type = ast->as<ASTDataType>())
     {
         return getImpl<nullptr_on_error>(type->name, type->arguments);
