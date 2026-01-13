@@ -1,3 +1,4 @@
+#include <format>
 #include "config.h"
 
 #if USE_AVRO
@@ -671,6 +672,56 @@ std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestF
     return std::tie(lhs->common_partition_specification, lhs->partition_key_value, lhs->added_sequence_number)
         <=> std::tie(rhs->common_partition_specification, rhs->partition_key_value, rhs->added_sequence_number);
 }
+
+String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
+{
+    if (partition_specification.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_specification.size(); ++i)
+        {
+            const auto & entry = partition_specification[i];
+            answer += fmt::format(
+                "(source id: {}, transform name: {}, partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
+            if (i != partition_specification.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
 }
+
+String dumpPartitionKeyValue(const DB::Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_key_value.size(); ++i)
+        {
+            const auto & entry = partition_key_value[i];
+            answer += entry.dump();
+            if (i != partition_key_value.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
+}
+
+
+String ManifestFileEntry::dumpDeletesMatchingInfo() const
+{
+    return fmt::format(
+        "Partition specification: {}, partition key value: {}, added sequence number: {}",
+        dumpPartitionSpecification(common_partition_specification),
+        dumpPartitionKeyValue(partition_key_value),
+        added_sequence_number);
+}
+}
+
 
 #endif
