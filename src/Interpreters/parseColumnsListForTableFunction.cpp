@@ -97,7 +97,8 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         if (isBool(variants[i]) || isBool(variants[j]))
                             continue;
 
-                        if (variant_type->getCustomName() && variant_type->getCustomName()->getName() == "Geometry")
+                        const auto * custom_name = variant_type->getCustomName();
+                        if (custom_name && custom_name->getName() == "Geometry")
                             continue;
 
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
