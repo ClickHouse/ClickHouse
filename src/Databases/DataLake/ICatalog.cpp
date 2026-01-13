@@ -5,10 +5,18 @@
 
 #include <filesystem>
 
+#include <Common/FailPoint.h>
+
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::FailPoints
+{
+    extern const char database_iceberg_gcs[];
 }
 
 namespace DataLake
@@ -50,7 +58,13 @@ StorageType parseStorageTypeFromString(const std::string & type)
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
     else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
+    {
+        fiu_do_on(DB::FailPoints::database_iceberg_gcs,
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Google cloud storage converts to S3");
+        });
         storage_type_str = "S3";
+    }
     else if (storage_type_str == "abfss") /// Azure Blob File System Secure
         storage_type_str = "Azure";
 
