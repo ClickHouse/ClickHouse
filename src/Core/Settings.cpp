@@ -7312,6 +7312,9 @@ Possible values:
 
 Default value is `UTC`.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
+Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
+)", BETA, allow_experimental_qbit_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
@@ -7416,10 +7419,6 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, allow_experimental_qbit_type, false, R"(
-Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
