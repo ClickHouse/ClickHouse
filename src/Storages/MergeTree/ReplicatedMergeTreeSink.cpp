@@ -592,14 +592,34 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
 
         int error = 0;
         /// Set a special error code if the block is duplicate
-        /// And remove attaching_ prefix
         if (deduplicate && deduplicated)
         {
             error = ErrorCodes::INSERT_WAS_DEDUPLICATED;
-            if (!endsWith(part->getDataPartStorage().getRelativePath(), "detached/attaching_" + part->name + "/"))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected relative path for a deduplicated part: {}", part->getDataPartStorage().getRelativePath());
-            fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
-            part->renameTo(new_relative_path, false);
+
+            const auto & relative_path = part->getDataPartStorage().getRelativePath();
+            const auto part_dir = fs::path(relative_path).parent_path().filename().string();
+
+            if (relative_path.ends_with("detached/attaching_" + part->name + "/"))
+            {
+                /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
+                fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
+                part->renameTo(new_relative_path, false);
+            }
+            else if (part_dir.starts_with("tmp_restore_" + part->name))
+            {
+                /// Part came from RESTORE with a temporary directory.
+                /// Just remove the temporary part since it's a duplicate.
+                LOG_DEBUG(log, "Removing deduplicated part {} from temporary path {}", part->name, relative_path);
+                part->removeIfNeeded();
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected deduplicated part with relative path '{}' and part directory '{}'. "
+                    "Expected relative path to end with 'detached/attaching_{}/' or part directory to start with 'tmp_restore_{}'.",
+                    relative_path, part_dir, part->name, part->name);
+            }
         }
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus(error));
         return deduplicated;
