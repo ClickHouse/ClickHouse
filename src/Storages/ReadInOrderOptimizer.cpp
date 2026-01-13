@@ -208,7 +208,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     UInt64 limit) const
 {
     const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    int read_direction = description.at(0).direction;
+    /// read_direction will be set from the first non-constant ORDER BY column
+    int read_direction = 0;
 
     auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, context);
 
@@ -224,7 +225,19 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
 
         auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
-        bool is_matched = match.direction && (desc_pos == 0 || match.direction == read_direction);
+        
+        /// If the ORDER BY column matches a fixed (constant) key column,
+        /// skip both without affecting read_direction - this column doesn't affect ordering.
+        /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
+        /// The 'tenant' column is constant, so effective ORDER BY is just 'event_time DESC'.
+        if (match.direction && fixed_sorting_columns.contains(sorting_key_columns[key_pos]))
+        {
+            ++desc_pos;
+            ++key_pos;
+            continue;
+        }
+        
+        bool is_matched = match.direction && (read_direction == 0 || match.direction == read_direction);
 
         if (!is_matched)
         {
@@ -239,7 +252,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
         }
 
-        if (desc_pos == 0)
+        if (read_direction == 0)
             read_direction = match.direction;
 
         sort_description_for_merging.push_back(description[desc_pos]);
