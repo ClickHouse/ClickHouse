@@ -466,7 +466,11 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
     return true;
 }
 
-bool PaimonRestCatalog::tryGetTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const
+bool PaimonRestCatalog::tryGetTableMetadata(
+    const String & database_name,
+    const String & table_name,
+    DB::ContextPtr /* context_ */,
+    TableMetadata & result) const
 {
     try
     {
@@ -592,9 +596,13 @@ Poco::JSON::Object::Ptr PaimonRestCatalog::requestRest(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
-void PaimonRestCatalog::getTableMetadata(const String & database_name, const String & table_name, TableMetadata & result) const
+void PaimonRestCatalog::getTableMetadata(
+    const String & database_name,
+    const String & table_name,
+    DB::ContextPtr context_,
+    TableMetadata & result) const
 {
-    if (!tryGetTableMetadata(database_name, table_name, result))
+    if (!tryGetTableMetadata(database_name, table_name, context_, result))
     {
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from paimon rest catalog");
     }

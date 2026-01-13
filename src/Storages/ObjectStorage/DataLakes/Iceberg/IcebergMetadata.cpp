@@ -170,7 +170,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         }
     }
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -427,7 +427,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
+        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, local_context, log);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};
@@ -487,7 +487,9 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
         return nullptr;
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
         ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
-              iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)
+            context_,
+            iceberg_object_info->info.underlying_format_read_schema_id,
+            iceberg_object_info->info.schema_id_relevant_to_iterator)
         : nullptr;
 }
 
