@@ -64,6 +64,9 @@ public:
                     const int message_size = static_cast<int>(message.size());
                     while (total_sent < message_size)
                     {
+                        if (total_sent < 0 || total_sent >= message_size)
+                            break;
+
                         int sent = socket().sendBytes(message.data() + total_sent, message_size - total_sent);
                         if (sent <= 0)
                         {

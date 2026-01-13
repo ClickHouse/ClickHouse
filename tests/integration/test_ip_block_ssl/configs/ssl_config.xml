@@ -1,4 +1,10 @@
 <clickhouse>
+    <!-- Add a restricted network for all ports. 
+         This will trigger the IP address check in TCPProtocolStackFactory. -->
+    <networks>
+        <ip>1.1.1.1</ip>
+    </networks>
+
     <tcp_port_secure>9440</tcp_port_secure>
     <openSSL>
         <server>
