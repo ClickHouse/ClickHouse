@@ -85,7 +85,7 @@ class SparkAndClickHouseCheck:
                 len(timestamps) == 0 or random.randint(1, 2) == 1
             ):
                 next_snapshot = random.choice(snapshots)
-                clickhouse_predicate = f" SETTINGS {"iceberg_snapshot_id" if table.lake_format == LakeFormat.Iceberg else "delta_lake_snapshot_version"} = {next_snapshot}"
+                clickhouse_predicate = f" SETTINGS {'iceberg_snapshot_id' if table.lake_format == LakeFormat.Iceberg else 'delta_lake_snapshot_version'} = {next_snapshot}"
                 spark_predicate = f" VERSION AS OF {next_snapshot}"
                 extra_predicate = f" on snapshot {next_snapshot}"
             elif len(timestamps) > 0:
@@ -144,9 +144,9 @@ class SparkAndClickHouseCheck:
             SELECT MD5(CONCAT_WS('', COLLECT_LIST(row_hash))) as table_hash
             FROM (
                 SELECT MD5(CONCAT({concat_cols})) as row_hash
-                FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in spark_strings.items()])}
+                FROM (SELECT {', '.join([f'{v} AS {k}' for k, v in spark_strings.items()])}
                       FROM {table.get_table_full_path()}{spark_predicate}) x
-                ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in spark_strings.keys()])}
+                ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in spark_strings.keys()])}
             );
             """
             result = spark.sql(query).collect()
@@ -172,9 +172,9 @@ class SparkAndClickHouseCheck:
             SELECT lower(hex(MD5(arrayStringConcat(groupArray(row_hash), '')))) as table_hash
             FROM (
                 SELECT lower(hex(MD5({concat_cols}))) as row_hash
-                FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in clickhouse_strings.items()])}
+                FROM (SELECT {', '.join([f'{v} AS {k}' for k, v in clickhouse_strings.items()])}
                       FROM {table.get_clickhouse_path()}) x
-                ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in clickhouse_strings.keys()])}
+                ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in clickhouse_strings.keys()])}
             ){clickhouse_predicate};
             """
             )
