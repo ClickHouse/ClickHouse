@@ -1,4 +1,4 @@
-#include <Coordination/KeeperSpans.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Interpreters/Context.h>
 #include <optional>

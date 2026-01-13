@@ -40,7 +40,7 @@
 
 #include <Coordination/KeeperConstants.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Coordination/KeeperSpans.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include "config.h"
 
 #if USE_SSL

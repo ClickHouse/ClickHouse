@@ -28,7 +28,7 @@ The trace context is propagated to downstream services in the following cases:
 
 ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](../guides/sre/keeper/index.md) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
 
-### Enabling Keeper Tracing
+### Enabling Keeper Tracing {#enabling-keeper-tracing}
 
 To enable tracing for Keeper requests, configure the following settings in your ZooKeeper/Keeper client configuration:
 
@@ -47,7 +47,7 @@ To enable tracing for Keeper requests, configure the following settings in your 
 </clickhouse>
 ```
 
-### Keeper Span Types
+### Keeper Span Types {#keeper-span-types}
 
 When tracing is enabled, ClickHouse creates spans for both client-side and server-side Keeper operations:
 
@@ -71,7 +71,7 @@ When tracing is enabled, ClickHouse creates spans for both client-side and serve
 - `keeper.dispatcher.responses_queue` — Response queuing in the dispatcher
 - `keeper.send_response` — Sending the response to the client
 
-### Sampling and Performance
+### Sampling and Performance {#sampling-and-performance}
 
 To manage tracing overhead, Keeper implements dynamic sampling. Sampling rate automatically adjusts between 1/10,000 and 1/10 based on request size. All requests (sampled and unsampled) have their durations recorded to histogram metrics for performance monitoring.
 

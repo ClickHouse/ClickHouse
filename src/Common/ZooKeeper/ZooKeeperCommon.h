@@ -3,7 +3,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Coordination/KeeperSpans.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <vector>

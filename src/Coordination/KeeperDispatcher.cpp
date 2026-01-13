@@ -19,7 +19,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperSpans.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Interpreters/Context.h>
 #include <Common/thread_local_rng.h>
 #include <Coordination/CoordinationSettings.h>

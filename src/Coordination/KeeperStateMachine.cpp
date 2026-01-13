@@ -7,7 +7,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
-#include <Coordination/KeeperSpans.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>

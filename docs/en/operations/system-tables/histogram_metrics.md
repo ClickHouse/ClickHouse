@@ -72,7 +72,6 @@ Batch size sent to Raft, in elements.
 ### keeper_batch_size_bytes_bucket {#keeper_batch_size_bytes_bucket}
 Batch size sent to Raft, in bytes.
 
-
 **See Also**
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
