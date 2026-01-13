@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/ProbabilityGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
@@ -190,6 +191,36 @@ private:
     void generatingPeerQuery(const PeerQuery value) { peer_query = value; }
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
     void resetAliasCounter() { aliases_counter = 0; }
+
+    enum class SqlOp
+    {
+        CreateTable = 0,
+        CreateView,
+        Drop,
+        Insert,
+        LightDelete,
+        Truncate,
+        OptimizeTable,
+        CheckTable,
+        DescTable,
+        Exchange,
+        Alter,
+        SetValues,
+        Attach,
+        Detach,
+        CreateDatabase,
+        CreateFunction,
+        SystemStmt,
+        BackupOrRestore,
+        CreateDictionary,
+        Rename,
+        LightUpdate,
+        SelectQuery,
+        Kill,
+        ShowStatement
+    };
+    ProbabilityGeneratorT sqlgen;
+    std::vector<bool> sqlMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
@@ -678,7 +709,7 @@ public:
     template <TableRequirement req>
     auto getQueryTableLambda();
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
+    StatementGenerator(RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
 
     void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
     std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);

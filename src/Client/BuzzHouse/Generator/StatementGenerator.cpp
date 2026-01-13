@@ -100,7 +100,8 @@ const std::unordered_map<JoinType, std::vector<JoinConst>> StatementGenerator::j
        {J_PASTE, {}},
        {J_CROSS, {}}};
 
-StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool supports_cloud_features_)
+StatementGenerator::StatementGenerator(
+    RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool supports_cloud_features_)
     : fc(fuzzc)
     , next_type_mask(fc.type_mask)
     , connections(conn)
@@ -111,6 +112,36 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
     , deterministic_aggrs_limit(
           static_cast<size_t>(
               std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
+    , sqlgen(ProbabilityGeneratorT(ProbabilityConfig(
+          static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
+          rg.nextInFullRange(),
+          {{
+              {0.01, 0.03}, /// CreateTable
+              {0.01, 0.03}, /// CreateView
+              {0.01, 0.02}, /// Drop
+              {0.15, 0.30}, /// Insert
+              {0.01, 0.08}, /// LightDelete
+              {0.01, 0.05}, /// Truncate
+              {0.01, 0.03}, /// OptimizeTable
+              {0.01, 0.02}, /// CheckTable
+              {0.01, 0.01}, /// DescTable
+              {0.01, 0.01}, /// Exchange
+              {0.03, 0.15}, /// Alter
+              {0.06, 0.20}, /// SetValues
+              {0.03, 0.08}, /// Attach
+              {0.01, 0.05}, /// Detach
+              {0.01, 0.02}, /// CreateDatabase
+              {0.01, 0.02}, /// CreateFunction
+              {0.05, 0.18}, /// SystemStmt
+              {0.01, 0.01}, /// BackupOrRestore
+              {0.01, 0.03}, /// CreateDictionary
+              {0.01, 0.01}, /// Rename
+              {0.01, 0.08}, /// LightUpdate
+              {0.30, 0.80}, /// SelectQuery
+              {0.01, 0.04}, /// Kill
+              {0.01, 0.01} /// ShowStatement
+          }})))
+    , sqlMask(static_cast<size_t>(SqlOp::ShowStatement) + 1, true)
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
@@ -4569,223 +4600,117 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const bool has_views = collectionHas<SQLView>(attached_views);
     const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
-    const uint32_t create_table = 12 * static_cast<uint32_t>(static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
-    const uint32_t create_view = 12 * static_cast<uint32_t>(static_cast<uint32_t>(views.size()) < this->fc.max_views);
-    const uint32_t drop = 1
-        * static_cast<uint32_t>(
-                              !in_parallel
-                              && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                                  || collectionCount<SQLDictionary>(attached_dictionaries) > 3
-                                  || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3));
-    const uint32_t insert = 50 * static_cast<uint32_t>(has_tables);
-    const uint32_t light_delete = 6 * static_cast<uint32_t>(has_mergeable_mt);
-    const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
-    const uint32_t optimize_table = 2 * static_cast<uint32_t>(has_tables);
-    const uint32_t check_table = 2 * static_cast<uint32_t>(has_tables);
-    const uint32_t desc_table = 2;
-    const uint32_t exchange = 1
-        * static_cast<uint32_t>(!in_parallel
-                                && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
-                                    || collectionCount<SQLDictionary>(attached_dictionaries) > 1));
-    const uint32_t alter = 15 * static_cast<uint32_t>(has_tables || has_views || has_databases);
-    const uint32_t set_values = 10;
-    const uint32_t attach = 2
-        * static_cast<uint32_t>(!in_parallel
-                                && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
-                                    || collectionHas<SQLDictionary>(detached_dictionaries)
-                                    || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)));
-    const uint32_t detach = 1
-        * static_cast<uint32_t>(!in_parallel
-                                && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                                    || collectionCount<SQLDictionary>(attached_dictionaries) > 3
-                                    || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3));
-    const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
-    const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
-    const uint32_t system_stmt = 8;
-    const uint32_t backup_or_restore = 1;
-    const uint32_t create_dictionary = 10 * static_cast<uint32_t>(static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries);
-    const uint32_t rename = 1
-        * static_cast<uint32_t>(!in_parallel
-                                && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases));
-    const uint32_t light_update = 6 * static_cast<uint32_t>(has_mergeable_mt);
-    const uint32_t select_query = 300 * static_cast<uint32_t>(!in_parallel);
-    const uint32_t kill = 2;
-    const uint32_t show_stmt = 1;
-    const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
-        + desc_table + exchange + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-        + create_dictionary + rename + light_update + kill + show_stmt + select_query;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.generator);
+    sqlMask[static_cast<size_t>(SqlOp::CreateTable)] = static_cast<uint32_t>(tables.size()) < this->fc.max_tables;
+    sqlMask[static_cast<size_t>(SqlOp::CreateView)] = static_cast<uint32_t>(views.size()) < this->fc.max_views;
+    sqlMask[static_cast<size_t>(SqlOp::Drop)] = !in_parallel
+        && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+            || collectionCount<SQLDictionary>(attached_dictionaries) > 3
+            || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
+    sqlMask[static_cast<size_t>(SqlOp::Insert)] = has_tables;
+    sqlMask[static_cast<size_t>(SqlOp::LightDelete)] = has_mergeable_mt;
+    sqlMask[static_cast<size_t>(SqlOp::Truncate)] = has_databases || has_tables;
+    sqlMask[static_cast<size_t>(SqlOp::OptimizeTable)] = has_tables;
+    sqlMask[static_cast<size_t>(SqlOp::CheckTable)] = has_tables;
+    /// sqlMask[static_cast<size_t>(SqlOp::DescTable)] = true;
+    sqlMask[static_cast<size_t>(SqlOp::Exchange)] = !in_parallel
+        && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
+            || collectionCount<SQLDictionary>(attached_dictionaries) > 1);
+    sqlMask[static_cast<size_t>(SqlOp::Alter)] = has_tables || has_views || has_databases;
+    /// sqlMask[static_cast<size_t>(SqlOp::SetValues)] = true;
+    sqlMask[static_cast<size_t>(SqlOp::Attach)] = !in_parallel
+        && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
+            || collectionHas<SQLDictionary>(detached_dictionaries) || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
+    sqlMask[static_cast<size_t>(SqlOp::Detach)] = !in_parallel
+        && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
+            || collectionCount<SQLDictionary>(attached_dictionaries) > 3
+            || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
+    sqlMask[static_cast<size_t>(SqlOp::CreateDatabase)] = static_cast<uint32_t>(databases.size()) < this->fc.max_databases;
+    sqlMask[static_cast<size_t>(SqlOp::CreateFunction)] = static_cast<uint32_t>(functions.size()) < this->fc.max_functions;
+    /// sqlMask[static_cast<size_t>(SqlOp::SystemStmt)] = true;
+    /// sqlMask[static_cast<size_t>(SqlOp::BackupOrRestore)] = true;
+    sqlMask[static_cast<size_t>(SqlOp::CreateDictionary)] = static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries;
+    sqlMask[static_cast<size_t>(SqlOp::Rename)]
+        = !in_parallel && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
+    sqlMask[static_cast<size_t>(SqlOp::LightUpdate)] = has_mergeable_mt;
+    sqlMask[static_cast<size_t>(SqlOp::SelectQuery)] = !in_parallel;
+    /// sqlMask[static_cast<size_t>(SqlOp::Kill)] = true;
+    /// sqlMask[static_cast<size_t>(SqlOp::ShowStatement)] = true;
+    sqlgen.setEnabled(sqlMask);
 
-    chassert(this->ids.empty());
-    if (create_table && nopt < (create_table + 1))
+    switch (static_cast<SqlOp>(sqlgen.nextOp())) /// drifts over time
     {
-        generateNextCreateTable(rg, in_parallel, sq->mutable_create_table());
-    }
-    else if (create_view && nopt < (create_table + create_view + 1))
-    {
-        generateNextCreateView(rg, sq->mutable_create_view());
-    }
-    else if (drop && nopt < (create_table + create_view + drop + 1))
-    {
-        generateNextDrop(rg, sq->mutable_drop());
-    }
-    else if (insert && nopt < (create_table + create_view + drop + insert + 1))
-    {
-        generateNextInsert(rg, in_parallel, sq->mutable_insert());
-    }
-    else if (light_delete && nopt < (create_table + create_view + drop + insert + light_delete + 1))
-    {
-        generateNextUpdateOrDelete<LightDelete>(rg, sq->mutable_del());
-    }
-    else if (truncate && nopt < (create_table + create_view + drop + insert + light_delete + truncate + 1))
-    {
-        generateNextTruncate(rg, sq->mutable_trunc());
-    }
-    else if (optimize_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + 1))
-    {
-        generateNextOptimizeTable(rg, sq->mutable_opt());
-    }
-    else if (
-        check_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + 1))
-    {
-        generateNextCheckTable(rg, sq->mutable_check());
-    }
-    else if (
-        desc_table
-        && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + 1))
-    {
-        generateNextDescTable(rg, sq->mutable_desc());
-    }
-    else if (
-        exchange
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + 1))
-    {
-        generateNextExchange(rg, sq->mutable_exchange());
-    }
-    else if (
-        alter
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + 1))
-    {
-        generateAlter(rg, in_parallel, sq->mutable_alter());
-    }
-    else if (
-        set_values
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + 1))
-    {
-        generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
-    }
-    else if (
-        attach
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + 1))
-    {
-        generateAttach(rg, sq->mutable_attach());
-    }
-    else if (
-        detach
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + 1))
-    {
-        generateDetach(rg, sq->mutable_detach());
-    }
-    else if (
-        create_database
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + 1))
-    {
-        generateNextCreateDatabase(rg, sq->mutable_create_database());
-    }
-    else if (
-        create_function
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + 1))
-    {
-        generateNextCreateFunction(rg, sq->mutable_create_function());
-    }
-    else if (
-        system_stmt
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + 1))
-    {
-        generateNextSystemStatement(rg, true, sq->mutable_system_cmd());
-    }
-    else if (
-        backup_or_restore
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore + 1))
-    {
-        generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
-    }
-    else if (
-        create_dictionary
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + 1))
-    {
-        generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
-    }
-    else if (
-        rename
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + 1))
-    {
-        generateNextRename(rg, sq->mutable_rename());
-    }
-    else if (
-        light_update
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + light_update + 1))
-    {
-        generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt());
-    }
-    else if (
-        kill
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + light_update + kill + 1))
-    {
-        generateNextKill(rg, sq->mutable_kill());
-    }
-    else if (
-        show_stmt
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + light_update + kill + show_stmt + 1))
-    {
-        generateNextShowStatement(rg, sq->mutable_show());
-    }
-    else if (
-        select_query
-        && nopt
-            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + exchange
-               + alter + set_values + attach + detach + create_database + create_function + system_stmt + backup_or_restore
-               + create_dictionary + rename + light_update + kill + show_stmt + select_query + 1))
-    {
-        generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
-    }
-    else
-    {
-        UNREACHABLE();
+        case SqlOp::CreateTable:
+            generateNextCreateTable(rg, in_parallel, sq->mutable_create_table());
+            break;
+        case SqlOp::CreateView:
+            generateNextCreateView(rg, sq->mutable_create_view());
+            break;
+        case SqlOp::Drop:
+            generateNextDrop(rg, sq->mutable_drop());
+            break;
+        case SqlOp::Insert:
+            generateNextInsert(rg, in_parallel, sq->mutable_insert());
+            break;
+        case SqlOp::LightDelete:
+            generateNextUpdateOrDelete<LightDelete>(rg, sq->mutable_del());
+            break;
+        case SqlOp::Truncate:
+            generateNextTruncate(rg, sq->mutable_trunc());
+            break;
+        case SqlOp::OptimizeTable:
+            generateNextOptimizeTable(rg, sq->mutable_opt());
+            break;
+        case SqlOp::CheckTable:
+            generateNextCheckTable(rg, sq->mutable_check());
+            break;
+        case SqlOp::DescTable:
+            generateNextDescTable(rg, sq->mutable_desc());
+            break;
+        case SqlOp::Exchange:
+            generateNextExchange(rg, sq->mutable_exchange());
+            break;
+        case SqlOp::Alter:
+            generateAlter(rg, in_parallel, sq->mutable_alter());
+            break;
+        case SqlOp::SetValues:
+            generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
+            break;
+        case SqlOp::Attach:
+            generateAttach(rg, sq->mutable_attach());
+            break;
+        case SqlOp::Detach:
+            generateDetach(rg, sq->mutable_detach());
+            break;
+        case SqlOp::CreateDatabase:
+            generateNextCreateDatabase(rg, sq->mutable_create_database());
+            break;
+        case SqlOp::CreateFunction:
+            generateNextCreateFunction(rg, sq->mutable_create_function());
+            break;
+        case SqlOp::SystemStmt:
+            generateNextSystemStatement(rg, true, sq->mutable_system_cmd());
+            break;
+        case SqlOp::BackupOrRestore:
+            generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
+            break;
+        case SqlOp::CreateDictionary:
+            generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
+            break;
+        case SqlOp::Rename:
+            generateNextRename(rg, sq->mutable_rename());
+            break;
+        case SqlOp::LightUpdate:
+            generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt());
+            break;
+        case SqlOp::SelectQuery:
+            generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
+            break;
+        case SqlOp::Kill:
+            generateNextKill(rg, sq->mutable_kill());
+            break;
+        case SqlOp::ShowStatement:
+            generateNextShowStatement(rg, sq->mutable_show());
+            break;
     }
 }
 
