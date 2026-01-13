@@ -4324,8 +4324,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
-                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
+                        "setting 'alter_column_secondary_index_mode' to change this behaviour",
                         backQuoteIfNeed(command.column_name),
                         it->second);
                 }
@@ -4357,13 +4357,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            /// Don't check columns in indices or projections here. If required columns of indices
-            /// or projections get dropped, it will be checked later in AlterCommands::apply. This
-            /// allows projections with * to drop columns. One example can be found in
-            /// 02691_drop_column_with_projections_replicated.sql.
-
             if (!command.clear)
             {
+                /// Don't check columns in indices or projections here. If required columns of indices
+                /// or projections get dropped, it will be checked later in AlterCommands::apply. This
+                /// allows projections with * to drop columns. One example can be found in
+                /// 02691_drop_column_with_projections_replicated.sql.
                 if (!name_deps)
                     name_deps = getDependentViewsByColumn(local_context);
                 const auto & deps_mv = name_deps.value()[command.column_name];
@@ -4372,6 +4371,23 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         "Trying to ALTER DROP column {} which is referenced by materialized view {}",
                         backQuoteIfNeed(command.column_name), toString(deps_mv));
+                }
+            }
+            else
+            {
+                /// In the case of CLEAR we want to respect `alter_column_secondary_index_mode` and we will throw if the setting is
+                /// set to `THROW` and we will clear the index files (as we do with the column files) in any other case
+                if (index_mode == AlterColumnSecondaryIndexMode::THROW)
+                {
+                    if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                    {
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
+                            "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            it->second);
+                    }
                 }
             }
 

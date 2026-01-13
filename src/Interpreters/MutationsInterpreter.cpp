@@ -772,7 +772,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().filters.push_back(predicate);
             }
 
-            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
+            /// ALTER DELETE can change the number of rows in the part, so we need to rebuild indexes and projection
             need_rebuild_projections = true;
             need_rebuild_indexes_for_update_delete = true;
         }
