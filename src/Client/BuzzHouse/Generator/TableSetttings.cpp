@@ -187,6 +187,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"marks_compress_block_size", highRangeSetting},
     {"marks_compression_codec", compressSetting},
     {"materialize_skip_indexes_on_merge", trueOrFalseSetting},
+    {"materialize_statistics_on_merge", trueOrFalseSetting},
     {"materialize_ttl_recalculate_only", trueOrFalseSetting},
     {"max_bytes_to_merge_at_max_space_in_pool", bytesRangeSetting},
     {"max_bytes_to_merge_at_min_space_in_pool", bytesRangeSetting},

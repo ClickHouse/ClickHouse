@@ -2561,8 +2561,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
         if (parts.size() == 2)
         {
-            database_name = parts[0];
-            table_name = parts[1];
+            database_name = std::move(parts[0]);
+            table_name = std::move(parts[1]);
         }
     }
 

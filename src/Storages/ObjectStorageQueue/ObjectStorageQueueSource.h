@@ -206,7 +206,7 @@ public:
 
     static void prepareHiveProcessedRequests(
         Coordination::Requests & requests,
-        const HiveLastProcessedFileInfoMap & file_map);
+        const HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(

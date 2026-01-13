@@ -148,6 +148,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
+    format_settings.check_conversion_from_numbers_to_enum = settings[Setting::check_conversion_from_numbers_to_enum];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
     format_settings.bool_false_representation = settings[Setting::bool_false_representation];
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
@@ -183,6 +184,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
