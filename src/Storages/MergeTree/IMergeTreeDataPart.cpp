@@ -2551,7 +2551,7 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
 {
-    auto file_name = INDEX_FILE_PREFIX + index_name;
+    auto file_name = escapeForFileName(INDEX_FILE_PREFIX + index_name);
     return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
 }
 

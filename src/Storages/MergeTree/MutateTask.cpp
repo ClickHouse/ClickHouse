@@ -979,8 +979,8 @@ static NameToNameVector collectFilesForRenames(
             {
                 for (const auto & extension : extensions)
                 {
-                    const String filename = INDEX_FILE_PREFIX + command.column_name + substream + extension;
-                    const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + substream + mrk_extension;
+                    const String filename = escapeForFileName(INDEX_FILE_PREFIX + command.column_name) + substream + extension;
+                    const String filename_mrk = escapeForFileName(INDEX_FILE_PREFIX + command.column_name) + substream + mrk_extension;
 
                     if (source_part->checksums.has(filename))
                     {
@@ -1735,7 +1735,7 @@ private:
             }
             else
             {
-                auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
+                auto prefix = escapeForFileName(fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name));
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {
