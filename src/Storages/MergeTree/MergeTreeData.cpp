@@ -4376,8 +4376,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             else
             {
                 /// In the case of CLEAR we want to respect `alter_column_secondary_index_mode` and we will throw if the setting is
-                /// set to `THROW` and we will clear the index files (as we do with the column files) in any other case
-                if (index_mode == AlterColumnSecondaryIndexMode::THROW)
+                /// set to `THROW` or `COMPATIBILITY` (since before this would have failed in the mutation) and
+                /// we will clear the index files (as we do with the column files) in any other case
+                if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
                 {
                     if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
                     {
