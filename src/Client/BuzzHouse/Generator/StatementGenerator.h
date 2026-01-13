@@ -242,8 +242,31 @@ private:
         LitFraction
     };
 
-    ProbabilityGeneratorT sqlgen, litGen;//, expGen, predGen, queryGen;
-    std::vector<bool> sqlMask, litMask;//, expMask, predMask, queryMask;
+    enum class ExpOp
+    {
+        Literal = 0,
+        ColumnRef,
+        Predicate,
+        CastExpr,
+        UnaryExpr,
+        IntervalExpr,
+        ColumnsExpr,
+        CondExpr,
+        CaseExpr,
+        SubqueryExpr,
+        BinaryExpr,
+        ArrayTupleExpr,
+        FuncExpr,
+        WindowFuncExpr,
+        TableStarExpr,
+        LambdaExpr,
+        ProjectionExpr,
+        DictExpr,
+        StarExpr
+    };
+
+    ProbabilityGeneratorT sqlgen, litGen, expGen; //, predGen, queryGen;
+    std::vector<bool> sqlMask, litMask, expMask; // predMask, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
