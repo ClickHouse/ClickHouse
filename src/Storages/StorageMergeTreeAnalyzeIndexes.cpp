@@ -3,9 +3,9 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Field.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -15,12 +15,8 @@
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
@@ -70,6 +66,9 @@ protected:
     Chunk generate() override
     {
         if (std::exchange(analyzed, true))
+            return {};
+
+        if (data_parts.empty())
             return {};
 
         auto ranges = getIndexAnalysis();
@@ -150,6 +149,21 @@ protected:
                 planner_context,
                 empty_correlated_columns_set);
             correlated_subtrees.assertEmpty("in constant expression without query context");
+
+            auto subquery_options = SelectQueryOptions{}.subquery();
+            subquery_options.ignore_limits = false;
+            for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+            {
+                auto query_tree = subquery->detachQueryTree();
+                Planner subquery_planner(
+                    query_tree,
+                    subquery_options,
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                subquery_planner.buildQueryPlanIfNeeded();
+
+                auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+                subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+            }
 
             filter_dag.emplace(std::move(actions));
         }

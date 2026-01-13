@@ -162,8 +162,38 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description_anyHeavy = R"(
+Selects a frequently occurring value using the [heavy hitters](https://doi.org/10.1145/762471.762473) algorithm.
+If there is a value that occurs more than in half the cases in each of the query's execution threads, this value is returned.
+Normally, the result is nondeterministic.
+    )";
+    FunctionDocumentation::Syntax syntax_anyHeavy = R"(
+anyHeavy(column)
+    )";
+    FunctionDocumentation::Arguments arguments_anyHeavy = {
+        {"column", "The column name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_anyHeavy = {"Returns a frequently occurring value. The result is nondeterministic.", {"Any"}};
+    FunctionDocumentation::Examples examples_anyHeavy = {
+    {
+        "Usage example",
+        R"(
+SELECT anyHeavy(AirlineID) AS res
+FROM ontime;
+        )",
+        R"(
+┌───res─┐
+│ 19690 │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_anyHeavy = {1, 1};
+    FunctionDocumentation::Category category_anyHeavy = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_anyHeavy = {description_anyHeavy, syntax_anyHeavy, arguments_anyHeavy, {}, returned_value_anyHeavy, examples_anyHeavy, introduced_in_anyHeavy, category_anyHeavy};
+
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties});
+    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties, documentation_anyHeavy});
 }
 
 }
