@@ -1,0 +1,35 @@
+=== Test 1: Simple view with ORDER BY (should use merge sort) ===
+Expression (Project names)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Merge sorted streams for ORDER BY, without aggregation)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
+            ReadFromMemoryStorage
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
+            ReadFromRemote (Read from remote replica)
+
+=== Test 2: View with existing ORDER BY ===
+Expression (Project names)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Union
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))
+              ReadFromMemoryStorage
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
+          ReadFromRemote (Read from remote replica)
+
+=== Test 3: View with GROUP BY ===
+Expression (Project names)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Union
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
+          Aggregating
+            Expression ((Before GROUP BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
+              ReadFromMemoryStorage
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))))
+          ReadFromRemote (Read from remote replica)

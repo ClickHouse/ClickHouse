@@ -1369,8 +1369,30 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
+            /// Try to push ORDER BY from outer query into subquery for distributed optimization.
+            /// This allows distributed tables inside views to sort on shards and use merge sort on coordinator.
+            /// Only do this for simple subqueries without GROUP BY, DISTINCT, LIMIT, etc.
+            auto table_expression_to_plan = table_expression;
+            if (query_node && select_query_info.query_tree)
+            {
+                const auto * main_query_node = select_query_info.query_tree->as<QueryNode>();
+                if (main_query_node && main_query_node->hasOrderBy() && !query_node->hasOrderBy()
+                    && !query_node->hasGroupBy() && !query_node->hasLimitBy() && !query_node->hasLimit()
+                    && !query_node->hasHaving() && !query_node->hasWindow() && !query_node->isDistinct())
+                {
+                    /// Clone the subquery and add ORDER BY from outer query
+                    auto modified_query = table_expression->clone();
+                    auto * modified_query_node = modified_query->as<QueryNode>();
+                    if (modified_query_node)
+                    {
+                        modified_query_node->getOrderByNode() = main_query_node->getOrderByNode()->clone();
+                        table_expression_to_plan = std::move(modified_query);
+                    }
+                }
+            }
+
             auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
+            Planner subquery_planner(table_expression_to_plan, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
             subquery_planner.buildQueryPlanIfNeeded();
