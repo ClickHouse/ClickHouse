@@ -1326,6 +1326,11 @@ Packet Connection::receivePacket()
 {
     try
     {
+        if (!in)
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} is terminated", getDescription());
+        }
+
         Packet res;
 
         /// Have we already read packet type?
