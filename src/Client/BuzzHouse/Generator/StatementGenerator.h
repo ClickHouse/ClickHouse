@@ -280,8 +280,31 @@ private:
         OtherExpr
     };
 
-    ProbabilityGeneratorT sqlgen, litGen, expGen, predGen; //, queryGen;
-    std::vector<bool> sqlMask, litMask, expMask, predMask; //, queryMask;
+    enum class QueryOp
+    {
+        DerivatedTable = 0,
+        CTE,
+        Table,
+        View,
+        RemoteUDF,
+        GenerateSeriesUDF,
+        SystemTable,
+        MergeUDF,
+        ClusterUDF,
+        MergeIndexUDF,
+        LoopUDF,
+        ValuesUDF,
+        RandomDataUDF,
+        Dictionary,
+        URLEncodedTable,
+        TableEngineUDF,
+        MergeProjectionUDF,
+        RandomTableUDF,
+        MergeIndexAnalyzeUDF
+    };
+
+    ProbabilityGeneratorT sqlgen, litGen, expGen, predGen, queryGen;
+    std::vector<bool> sqlMask, litMask, expMask, predMask, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);

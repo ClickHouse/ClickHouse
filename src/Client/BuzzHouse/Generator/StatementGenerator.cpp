@@ -203,10 +203,35 @@ StatementGenerator::StatementGenerator(
               {0.10, 0.30}, /// SearchExpr
               {0.03, 0.05} /// OtherExpr
           }})))
+    , queryGen(ProbabilityGeneratorT(ProbabilityConfig(
+          static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
+          rg.nextInFullRange(),
+          {{
+              {0.15, 0.70}, /// DerivatedTable
+              {0.10, 0.20}, /// CTE
+              {0.15, 0.80}, /// Table
+              {0.10, 0.40}, /// View
+              {0.05, 0.15}, /// RemoteUDF
+              {0.04, 0.10}, /// GenerateSeriesUDF
+              {0.02, 0.05}, /// SystemTable
+              {0.01, 0.05}, /// MergeUDF
+              {0.05, 0.15}, /// ClusterUDF
+              {0.02, 0.05}, /// MergeIndexUDF
+              {0.01, 0.05}, /// LoopUDF
+              {0.03, 0.10}, /// ValuesUDF
+              {0.01, 0.05}, /// RandomDataUDF
+              {0.10, 0.30}, /// Dictionary
+              {0.02, 0.10}, /// URLEncodedTable
+              {0.10, 0.50}, /// TableEngineUDF
+              {0.01, 0.10}, /// MergeProjectionUDF
+              {0.01, 0.05}, /// RandomTableUDF
+              {0.01, 0.05} /// MergeIndexAnalyzeUDF
+          }})))
     , sqlMask(static_cast<size_t>(SqlOp::ShowStatement) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
+    , queryMask(static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF) + 1, true)
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
