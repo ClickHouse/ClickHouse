@@ -463,7 +463,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
 
                     LOG_DEBUG(
                         log,
-                        "After filtering by collision, removed rows {}/{} removed tokets {}/{} from origin block, after retry remaining rows: {}, remaining tokens: {}, elapsed {} ms, new deduplication info debug: {}",
+                        "After filtering by collision, removed rows {}/{}, removed tokets {}/{} from origin block, after retry remaining rows: {}, remaining tokens: {}, elapsed {} ms, new deduplication info debug: {}",
                         result.removed_rows,
                         partition.deduplication_info->getRows(),
                         result.removed_tokens,
