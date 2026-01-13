@@ -2,6 +2,7 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -32,8 +33,9 @@ void ASTDecimalDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & /
     ostr << name << '(';
 
     /// Decimal32, Decimal64, Decimal128, Decimal256 only have scale parameter
-    /// Decimal has both precision and scale
-    if (name == "Decimal")
+    /// Decimal has both precision and scale (case-insensitive comparison)
+    String name_upper = Poco::toUpper(name);
+    if (name_upper == "DECIMAL")
     {
         writeText(precision, ostr);
         ostr << ", ";

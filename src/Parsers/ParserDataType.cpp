@@ -78,7 +78,6 @@ bool parseEnumValues(
 {
     bool first_element = true;
     Int64 auto_value = 1;
-    bool has_explicit_values = false;
     bool has_auto_values = false;
 
     while (true)
@@ -129,7 +128,6 @@ bool parseEnumValues(
         if (pos->type == TokenType::Equals)
         {
             ++pos;
-            has_explicit_values = true;
 
             /// Parse the numeric value (can be negative)
             bool negative = false;
@@ -170,12 +168,11 @@ bool parseEnumValues(
         ++auto_value;
     }
 
-    /// Check that we don't mix explicit and auto values (except for the first element which sets the base)
-    if (has_explicit_values && has_auto_values && values.size() > 1)
-    {
-        /// This is actually allowed - first element can have explicit value, rest can be auto
-        /// The rule is: either all explicit OR first explicit then all auto OR all auto
-    }
+    /// If there are ANY auto-assigned values, fall back to the generic parser
+    /// which handles the complex auto-assignment validation (mixing rules etc.)
+    /// Our specialized parser only handles the case where ALL values are explicitly assigned
+    if (has_auto_values)
+        return false;
 
     return !values.empty();
 }
