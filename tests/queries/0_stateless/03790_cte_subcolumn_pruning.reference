@@ -1,0 +1,11 @@
+Direct query header:
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Header: event.class_name String
+  ReadFromMergeTree (default.test_subcolumn_pruning)
+  Header: event.class_name String
+
+CTE with SELECT * header:
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+Header: event.class_name String
+  ReadFromMergeTree (default.test_subcolumn_pruning)
+  Header: event.class_name String
