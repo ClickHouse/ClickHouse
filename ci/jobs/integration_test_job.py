@@ -190,6 +190,8 @@ def main():
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
             build_type = to
+            if "amd_llvm_coverage" in to:
+                is_llvm_coverage = True
         elif to == "old analyzer":
             use_old_analyzer = True
         elif to == "distributed plan":
@@ -206,8 +208,6 @@ def main():
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
-        elif "amd_llvm_coverage" in to:
-            is_llvm_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
 
