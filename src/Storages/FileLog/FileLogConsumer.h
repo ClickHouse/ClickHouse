@@ -4,7 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/TrackedString.h>
+#include <Common/StrictString.h>
 
 namespace DB
 {
@@ -57,7 +57,7 @@ private:
 
     struct Record
     {
-        TrackedString data;
+        StrictString data;
         std::string file_name;
         /// Offset is the start of a row, which is needed for virtual columns.
         UInt64 offset;
