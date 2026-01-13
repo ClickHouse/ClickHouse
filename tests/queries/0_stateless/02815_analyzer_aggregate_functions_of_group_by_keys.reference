@@ -556,6 +556,50 @@ QUERY id: 0, group_by_type: grouping_sets
                     LIST id: 27, nodes: 2
                       COLUMN id: 28, column_name: number, result_type: UInt64, source_id: 7
                       CONSTANT id: 29, constant_value: UInt64_2, constant_value_type: UInt8
+GROUPING SETS negative test: b is not in all sets, so max(b) should NOT be eliminated
+1	10
+1	20
+1	30
+1	40
+1	50
+1	50
+2	60
+2	70
+2	80
+2	90
+2	100
+2	100
+QUERY id: 0, group_by_type: grouping_sets
+  PROJECTION COLUMNS
+    a UInt8
+    mb UInt8
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: UInt8, source_id: 3
+      FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
+        ARGUMENTS
+          LIST id: 5, nodes: 1
+            COLUMN id: 6, column_name: b, result_type: UInt8, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_grouping_sets
+  GROUP BY
+    LIST id: 7, nodes: 2
+      LIST id: 8, nodes: 2
+        COLUMN id: 9, column_name: a, result_type: UInt8, source_id: 3
+        COLUMN id: 10, column_name: b, result_type: UInt8, source_id: 3
+      LIST id: 11, nodes: 1
+        COLUMN id: 12, column_name: a, result_type: UInt8, source_id: 3
+  ORDER BY
+    LIST id: 13, nodes: 2
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 15, column_name: a, result_type: UInt8, source_id: 3
+      SORT id: 16, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 17, function_name: max, function_type: aggregate, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 1
+                COLUMN id: 19, column_name: b, result_type: UInt8, source_id: 3
 set optimize_aggregators_of_group_by_keys = 0
 0	0
 0	1
