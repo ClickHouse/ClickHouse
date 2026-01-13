@@ -78,7 +78,7 @@ def run_fuzz_job(check_name: str):
         f.write("\n".join(changed_files))
 
     Shell.check(command=run_command, verbose=True)
-    
+
     # Fix file ownership after running docker as root
     logging.info("Fixing file ownership after running docker as root")
     uid = os.getuid()

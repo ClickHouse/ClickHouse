@@ -2293,7 +2293,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
             add_parent_update_delta();
         }
 
-        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
+        return new_deltas;
     }
 
     ToDeleteTreeCollector<Storage> collector(storage, zxid, session_id, zk_request.remove_nodes_limit);
@@ -3855,7 +3855,7 @@ void KeeperStorage<Container>::rollbackRequest(int64_t rollback_zxid, bool allow
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
-    // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
+    // we block memory tracking so we can avoid terminating if we're rolling back because of memory limit
     LockMemoryExceptionInThread blocker{VariableContext::Global};
     try
     {

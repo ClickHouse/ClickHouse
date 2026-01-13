@@ -2,6 +2,16 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+/**
+ * This file declares the concrete list of settings that are considered relevant for query plan step (de)serialization.
+ * They are defined through the PLAN_SERIALIZATION_SETTINGS macro which is consumed by BaseSettings machinery
+ * to generate traits, storage and accessor helpers.
+ *
+ * Macro structure:
+ *  DECLARE(Type, name, default, description, flags)
+ *  "flags" originate from BaseSettings (e.g. IMPORTANT) and may influence exposure or validation.
+ */
+
 namespace DB
 {
 
