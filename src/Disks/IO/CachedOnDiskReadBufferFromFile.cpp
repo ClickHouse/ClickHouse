@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
@@ -63,7 +64,11 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(
+        /* buf_size */use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size,
+        /* existing_memory */nullptr,
+        /* alignment */0,
+        /* file_size */file_size_ ? std::optional<size_t>(file_size_) : std::nullopt)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
@@ -89,6 +94,15 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         cache_key.toString(), source_file_path,
         settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
         use_external_buffer, allow_seeks_after_first_read, file_size_);
+}
+
+std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
+{
+    if (file_size.has_value())
+        return file_size;
+
+    file_size = implementation_buffer_creator()->tryGetFileSize();
+    return file_size;
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -146,9 +160,13 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     }
     else
     {
+        const auto object_size = tryGetFileSize();
+        if (!object_size.has_value())
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
+
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         file_segments = cache->getOrSet(
-            cache_key, file_offset_of_buffer_end, size, file_size.value(),
+            cache_key, file_offset_of_buffer_end, size, object_size.value(),
             create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
     }
 

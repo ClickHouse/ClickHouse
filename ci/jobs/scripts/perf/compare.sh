@@ -1189,21 +1189,21 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         union all
             select
                 test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'slower' test_status,
+                multiIf(
+                    changed_fail != 0 and diff > 0, 'slower',
+                    unstable_fail != 0, 'unstable',
+                    'success'
+                ) test_status,
                 test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.' || test || '.' || toString(query_index) report_url
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/'
+                    || multiIf(
+                        changed_fail != 0 and diff > 0, 'report.html#changes-in-performance.',
+                        unstable_fail != 0, 'report.html#unstable-queries.',
+                        'report.html#all-queries.'
+                    )
+                    || test || '.' || toString(query_index) report_url
             from queries
             array join map('old', left, 'new', right) as test_desc_
-            where changed_fail != 0 and diff > 0
-        union all
-            select
-                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                'unstable' test_status,
-                test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.' || test || '.' || toString(query_index) report_url
-            from queries
-            array join map('old', left, 'new', right) as test_desc_
-            where unstable_fail != 0
     )
 ;
     "

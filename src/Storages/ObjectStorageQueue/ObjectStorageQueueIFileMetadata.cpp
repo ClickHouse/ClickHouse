@@ -377,6 +377,9 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
     chassert(created_processing_node);
+    SCOPE_EXIT({
+        created_processing_node = false;
+    });
 
     auto state = file_status->state.load();
     if (state != FileStatus::State::Processing)

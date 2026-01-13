@@ -165,11 +165,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
 
     {
-        ActionsDAG filter_dag;
-
         /// Pass all columns on probe side
-        for (const auto & column : apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName())
-            filter_dag.addOrReplaceInOutputs(filter_dag.addInput(column));
+        ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
 
         String filter_column_name;
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
