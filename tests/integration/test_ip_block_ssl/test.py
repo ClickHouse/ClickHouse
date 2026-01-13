@@ -19,7 +19,10 @@ def verify_ip_block_error(data):
     if not data:
         pytest.fail("Connection closed without receiving error message")
 
-    error_msg = data.decode('utf-8', errors='replace')
+    try:
+        error_msg = data.decode('utf-8')
+    except UnicodeDecodeError as e:
+        pytest.fail(f"Received non-UTF-8 data from server: {data!r}, decode error: {e}")
     
     # We expect our specific error message
     assert "IP address not allowed" in error_msg
