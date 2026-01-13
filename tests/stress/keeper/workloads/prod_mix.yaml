@@ -1,8 +1,16 @@
 name: prod_mix
-clients: 64
-ops:
-  - { kind: create, percent: 20, path_prefix: /e2e/prod/create, value_bytes: 128 }
-  - { kind: set,    percent: 35, path_prefix: /e2e/prod/set,    value_bytes: 256 }
-  - { kind: get,    percent: 40, path_prefix: /e2e/prod }
-  - { kind: delete, percent: 5,  path_prefix: /e2e/prod/set }
-
+concurrency: 64
+generator:
+  requests:
+    create:
+      path: /e2e/prod/create
+      name_length: 10
+      data: { random_string: { size: 128 } }
+      weight: 20
+    set:
+      path: /e2e/prod/set
+      data: { random_string: { size: 256 } }
+      weight: 35
+    get:
+      path: { children_of: /e2e/prod }
+      weight: 40

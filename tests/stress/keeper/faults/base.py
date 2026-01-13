@@ -15,6 +15,21 @@ from ..framework.io.probes import (
 )
 
 
+def _leader_or_first(nodes):
+    if not nodes:
+        return None
+    try:
+        for n in nodes:
+            try:
+                if is_leader(n):
+                    return n
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return nodes[0]
+
+
 def apply_step(step, nodes, leader, ctx):
     kind = (step or {}).get("kind")
     if not kind:
@@ -198,15 +213,7 @@ def apply_step(step, nodes, leader, ctx):
 
         start = _t.time()
         # Identify leader among nodes
-        cur_leader = None
-        for n in nodes:
-            try:
-                if is_leader(n):
-                    cur_leader = n
-                    break
-            except Exception:
-                continue
-        target = cur_leader or nodes[0]
+        target = _leader_or_first(nodes)
         _kill(target)
         to = int((kind and (step.get("timeout_s", 60))) or 60)
         wait_until(
@@ -236,15 +243,7 @@ def apply_step(step, nodes, leader, ctx):
         op = str(step.get("operation", "")).strip().lower()
         ok_expected = bool(step.get("ok", True))
         # Determine target node (prefer leader)
-        target = None
-        for n in nodes:
-            try:
-                if is_leader(n):
-                    target = n
-                    break
-            except Exception:
-                continue
-        target = target or (nodes[0] if nodes else None)
+        target = _leader_or_first(nodes) if nodes else None
         if not target:
             raise AssertionError("reconfig: no target node")
         spec = str(step.get("spec", "")).strip()

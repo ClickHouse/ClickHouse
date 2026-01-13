@@ -26,8 +26,27 @@ def _translate_workload(cfg_text, servers, duration_s):
         src = yaml.safe_load(cfg_text) or {}
     except Exception:
         src = {}
-    name = src.get("name") or "bench"
-    clients = int(src.get("clients", 1) or 1)
+    clients = int(src.get("concurrency", src.get("clients", 1)) or 1)
+    # Pass-through: if input already resembles keeper-bench config, patch minimal fields and return
+    if isinstance(src, dict) and ("generator" in src or "connections" in src):
+        default_host, conn_list = _build_connections(servers, clients)
+        out = dict(src)
+        try:
+            out["concurrency"] = int(clients)
+        except Exception:
+            pass
+        try:
+            out["timelimit"] = int(duration_s)
+        except Exception:
+            pass
+        conn = dict(out.get("connections") or {})
+        conn.setdefault("operation_timeout_ms", 3000)
+        conn.setdefault("connection_timeout_ms", 40000)
+        conn["host"] = default_host
+        conn["connection"] = conn_list
+        out["connections"] = conn
+        out.setdefault("output", {"file": "/tmp/keeper_bench_out.json", "stdout": True})
+        return out
     ops = src.get("ops") or []
     requests = {}
     # Map our simplified ops spec into keeper-bench request generators
@@ -71,7 +90,6 @@ def _translate_workload(cfg_text, servers, duration_s):
     multi_cfg = src.get("multi") or {}
     if isinstance(multi_cfg, dict) and multi_cfg:
         size = int(multi_cfg.get("depth", 10) or 10)
-        write_ratio = float(multi_cfg.get("write_ratio", 0.5) or 0.5)
         # Basic mix: create+set as writes, get as reads
         requests["multi"] = {
             "size": size,
@@ -114,12 +132,7 @@ def _translate_workload(cfg_text, servers, duration_s):
             if gkey not in requests:
                 requests[gkey] = {"path": {"children_of": base}, "weight": 1}
 
-    hosts = _parse_hosts(servers)
-    default_host = hosts[0] if hosts else "localhost:9181"
-    # Allocate sessions roughly evenly across hosts; minimum 1 per host
-    sessions_total = max(1, clients)
-    per_host = max(1, sessions_total // max(1, len(hosts) or 1))
-    conn_list = [{"host": h, "sessions": per_host} for h in (hosts or [default_host])]
+    default_host, conn_list = _build_connections(servers, clients)
     cfg = {
         "concurrency": clients,
         "iterations": 0,
@@ -141,6 +154,97 @@ def _translate_workload(cfg_text, servers, duration_s):
         },
     }
     return cfg
+
+
+def _build_connections(servers, clients):
+    hosts = _parse_hosts(servers)
+    default_host = hosts[0] if hosts else "localhost:9181"
+    sessions_total = max(1, int(clients))
+    per_host = max(1, sessions_total // max(1, len(hosts) or 1))
+    conn_list = [{"host": h, "sessions": per_host} for h in (hosts or [default_host])]
+    return default_host, conn_list
+
+
+def _load_cfg_text(cfg_path):
+    try:
+        if cfg_path and os.path.exists(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                return f.read()
+        if cfg_path and "workloads/" in str(cfg_path):
+            from pathlib import Path as _P
+
+            try:
+                rel = str(cfg_path).split("workloads/", 1)[1]
+            except Exception:
+                rel = None
+            if rel:
+                alt = _P(__file__).parents[2] / "workloads" / rel.split("/", 1)[-1]
+                if alt.exists():
+                    return alt.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return ""
+
+
+def _write_cfg_to_tmp(node, dump_text):
+    sh(node, "mkdir -p /tmp || true")
+    sh(node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + dump_text + "YAML\n")
+
+
+def _timeout_prefix(node, cap):
+    try:
+        if has_bin(node, "timeout"):
+            return f"timeout {int(cap)}"
+    except Exception:
+        return ""
+    return ""
+
+
+def _precreate_paths(node, ysrc):
+    try:
+        bases = set()
+        for spec in (ysrc.get("ops") or []):
+            try:
+                pfx = str(spec.get("path_prefix", "")).strip()
+            except Exception:
+                pfx = ""
+            if pfx.startswith("/"):
+                bases.add(pfx)
+        # Also support bench-native YAML: generator.requests entries
+        try:
+            gen = ysrc.get("generator") or {}
+            reqs = gen.get("requests") or {}
+            if isinstance(reqs, dict):
+                for _k, ent in reqs.items():
+                    try:
+                        val = ent.get("path")
+                    except Exception:
+                        val = None
+                    pfx = None
+                    if isinstance(val, str):
+                        pfx = val
+                    elif isinstance(val, dict):
+                        try:
+                            pfx = val.get("children_of")
+                        except Exception:
+                            pfx = None
+                    if isinstance(pfx, str) and pfx.startswith("/"):
+                        bases.add(pfx)
+        except Exception:
+            pass
+        for base in sorted(bases):
+            full = "/"
+            for seg in [s for s in base.split("/") if s]:
+                full = full.rstrip("/") + "/" + seg
+                try:
+                    sh(
+                        node,
+                        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" || true",
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 class KeeperBench:
@@ -282,15 +386,9 @@ class KeeperBench:
         except Exception:
             pass
         st_dump = yaml.safe_dump(st_cfg, sort_keys=False)
-        sh(self.node, "mkdir -p /tmp || true")
-        sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + st_dump + "YAML\n")
+        _write_cfg_to_tmp(self.node, st_dump)
         hard_cap = max(5, int(dur) + 30)
-        prefix = ""
-        try:
-            if has_bin(self.node, "timeout"):
-                prefix = f"timeout {hard_cap}"
-        except Exception:
-            prefix = ""
+        prefix = _timeout_prefix(self.node, hard_cap)
         base = f"{self._bench_cmd()} --config /tmp/keeper_bench.yaml -t {int(dur)}"
         cmd = f"{prefix} {base}".strip()
         # Capture both stdout and stderr to aid parsing (some builds print stats on stderr)
@@ -319,39 +417,11 @@ class KeeperBench:
         cfg_text = ""
         clients = 64
         try:
-            if self.cfg_path and os.path.exists(self.cfg_path):
-                with open(self.cfg_path, "r", encoding="utf-8") as f:
-                    cfg_text = f.read()
-                    try:
-                        y = yaml.safe_load(cfg_text) or {}
-                        clients = int(y.get("clients", clients) or clients)
-                    except Exception:
-                        pass
-            else:
-                # Fallback: if path is missing but contains 'workloads/', try resolving relative to package
-                if self.cfg_path and "workloads/" in str(self.cfg_path):
-                    from pathlib import Path as _P
-
-                    try:
-                        rel = str(self.cfg_path).split("workloads/", 1)[1]
-                    except Exception:
-                        rel = None
-                    if rel:
-                        alt = (
-                            _P(__file__).parents[2]
-                            / "workloads"
-                            / rel.split("/", 1)[-1]
-                        )
-                        if alt.exists():
-                            with open(alt, "r", encoding="utf-8") as f:
-                                cfg_text = f.read()
-                                try:
-                                    y = yaml.safe_load(cfg_text) or {}
-                                    clients = int(y.get("clients", clients) or clients)
-                                except Exception:
-                                    pass
+            cfg_text = _load_cfg_text(self.cfg_path)
+            y = yaml.safe_load(cfg_text) or {}
+            clients = int(y.get("concurrency", y.get("clients", clients)) or clients)
         except Exception:
-            cfg_text = ""
+            pass
         try:
             dbg = []
             dbg.append(f"cfg_path={self.cfg_path or ''}\n")
@@ -387,28 +457,7 @@ class KeeperBench:
             ysrc = yaml.safe_load(cfg_text) or {}
         except Exception:
             ysrc = {}
-        try:
-            bases = set()
-            for spec in ysrc.get("ops") or []:
-                try:
-                    pfx = str(spec.get("path_prefix", "")).strip()
-                except Exception:
-                    pfx = ""
-                if pfx.startswith("/"):
-                    bases.add(pfx)
-            for base in sorted(bases):
-                full = "/"
-                for seg in [s for s in base.split("/") if s]:
-                    full = full.rstrip("/") + "/" + seg
-                    try:
-                        sh(
-                            self.node,
-                            f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" || true",
-                        )
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        _precreate_paths(self.node, ysrc)
         try:
             if parse_bool(os.environ.get("KEEPER_DEBUG")):
                 ls_out = []
@@ -438,8 +487,7 @@ class KeeperBench:
         except Exception:
             pass
         # Write config inside the container
-        sh(self.node, "mkdir -p /tmp || true")
-        sh(self.node, "cat > /tmp/keeper_bench.yaml <<'YAML'\n" + cfg_dump + "YAML\n")
+        _write_cfg_to_tmp(self.node, cfg_dump)
         try:
             w = int(getenv_int("KEEPER_BENCH_WARMUP_S", 0))
             if w > 0:
@@ -564,12 +612,7 @@ class KeeperBench:
         # Execute the bench tool (replay mode or generator mode)
         # Hard-cap execution: duration + 30s, if `timeout` is available in container
         hard_cap = max(5, int(self.duration_s) + 30)
-        prefix = ""
-        try:
-            if has_bin(self.node, "timeout"):
-                prefix = f"timeout {hard_cap}"
-        except Exception:
-            prefix = ""
+        prefix = _timeout_prefix(self.node, hard_cap)
         # Fallback metric: capture pre-run znode count from this node
         pre_zc = None
         try:

@@ -20,6 +20,66 @@ from .settings import (
 )
 
 
+def _feature_flags_xml(flags):
+    if not flags:
+        return ""
+    try:
+        parts = []
+        for k, v in (flags or {}).items():
+            try:
+                if isinstance(v, (bool, int)):
+                    val = int(v)
+                elif isinstance(v, float) and v.is_integer():
+                    val = int(v)
+                else:
+                    val = v
+            except Exception:
+                val = v
+            parts.append(f"<{k}>{val}</{k}>")
+        return "<feature_flags>" + "".join(parts) + "</feature_flags>"
+    except Exception:
+        return ""
+
+
+def _coord_settings_xml(rocks_backend):
+    try:
+        return (
+            "<coordination_settings>"
+            "<operation_timeout_ms>10000</operation_timeout_ms>"
+            "<session_timeout_ms>30000</session_timeout_ms>"
+            "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
+            "<shutdown_timeout>5000</shutdown_timeout>"
+            + ("<experimental_use_rocksdb>1</experimental_use_rocksdb>" if rocks_backend else "")
+            + "</coordination_settings>"
+        )
+    except Exception:
+        return ""
+
+
+def _prometheus_block_xml():
+    try:
+        return (
+            "<prometheus>"
+            "<endpoint>/metrics</endpoint>"
+            f"<port>{PROM_PORT}</port>"
+            "<metrics>true</metrics>"
+            "<events>true</events>"
+            "<asynchronous_metrics>true</asynchronous_metrics>"
+            "</prometheus>"
+        )
+    except Exception:
+        return ""
+
+
+def _listen_hosts_xml():
+    return (
+        '<listen_host remove="1">::</listen_host>'
+        '<listen_host remove="1">::1</listen_host>'
+        "<listen_host>0.0.0.0</listen_host>"
+        "<listen_try>1</listen_try>"
+    )
+
+
 class ClusterBuilder:
     def __init__(self, file_anchor):
         self.file_anchor = file_anchor
@@ -110,39 +170,8 @@ class ClusterBuilder:
         if coord_overrides_xml:
             extra_coord += coord_overrides_xml
         # Minimal, broadly-supported coordination settings
-        coord_settings = (
-            "<coordination_settings>"
-            "<operation_timeout_ms>10000</operation_timeout_ms>"
-            "<session_timeout_ms>30000</session_timeout_ms>"
-            "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
-            "<shutdown_timeout>5000</shutdown_timeout>"
-            + (
-                "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
-                if rocks_backend
-                else ""
-            )
-            + "</coordination_settings>"
-        )
-        feature_flags_xml = ""
-        if ff:
-            try:
-                parts = []
-                for k, v in ff.items():
-                    try:
-                        if isinstance(v, (bool, int)):
-                            val = int(v)
-                        elif isinstance(v, float) and v.is_integer():
-                            val = int(v)
-                        else:
-                            val = v
-                    except Exception:
-                        val = v
-                    parts.append(f"<{k}>{val}</{k}>")
-                feature_flags_xml = (
-                    "<feature_flags>" + "".join(parts) + "</feature_flags>"
-                )
-            except Exception:
-                feature_flags_xml = ""
+        coord_settings = _coord_settings_xml(rocks_backend)
+        feature_flags_xml = _feature_flags_xml(ff)
         enable_ctrl = bool(CONTROL_PORT) and parse_bool(
             os.environ.get("KEEPER_ENABLE_CONTROL", "0")
         )
@@ -217,15 +246,7 @@ class ClusterBuilder:
         )
         # Avoid emitting additional top-level sections that may already exist in base config
         # Explicitly enable Prometheus endpoint for Keeper metrics collection
-        prom_block = (
-            "<prometheus>"
-            "<endpoint>/metrics</endpoint>"
-            f"<port>{PROM_PORT}</port>"
-            "<metrics>true</metrics>"
-            "<events>true</events>"
-            "<asynchronous_metrics>true</asynchronous_metrics>"
-            "</prometheus>"
-        )
+        prom_block = _prometheus_block_xml()
         # Do not inject <zookeeper> for keeper_server tests to avoid collisions with base configs
         zk_block = ""
         # If control is enabled, prefer probing the control port first.
@@ -260,14 +281,8 @@ class ClusterBuilder:
                 + disk_select
                 + "</keeper_server>"
             )
-            macros_block = ""
             # Ensure server listens on container IPs; do not duplicate tcp_port
-            net_block = (
-                '<listen_host remove="1">::</listen_host>'
-                '<listen_host remove="1">::1</listen_host>'
-                "<listen_host>0.0.0.0</listen_host>"
-                "<listen_try>1</listen_try>"
-            )
+            net_block = _listen_hosts_xml()
             full_xml = (
                 "<clickhouse>"
                 + keeper_server

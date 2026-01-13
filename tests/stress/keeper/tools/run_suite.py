@@ -6,11 +6,6 @@ import sys
 from pathlib import Path
 
 
-def run(cmd, cwd):
-    p = subprocess.run(cmd, cwd=cwd)
-    return p.returncode
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--files", default=os.environ.get("KEEPER_SCENARIO_FILE", "all"))
@@ -61,33 +56,14 @@ def main():
         env.setdefault("KEEPER_EXTRA_SCENARIOS", args.extra)
     if args.include_ids:
         env.setdefault("KEEPER_INCLUDE_IDS", args.include_ids)
-    base = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        tests_path,
-        f"--duration={args.duration}",
-    ]
+    base = [sys.executable, "-m", "pytest", "-q"]
+    if args.jobs:
+        base += ["-n", args.jobs]
+    base += [tests_path, f"--duration={args.duration}"]
     if args.matrix_backends:
         base += [f"--matrix-backends={args.matrix_backends}"]
     if args.matrix_topologies:
         base += [f"--matrix-topologies={args.matrix_topologies}"]
-    if args.jobs:
-        base = [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-q",
-            "-n",
-            args.jobs,
-            tests_path,
-            f"--duration={args.duration}",
-        ]
-        if args.matrix_backends:
-            base += [f"--matrix-backends={args.matrix_backends}"]
-        if args.matrix_topologies:
-            base += [f"--matrix-topologies={args.matrix_topologies}"]
 
     seq = []
     if args.include_faults_off:
