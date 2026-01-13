@@ -1413,7 +1413,7 @@ void registerInputFormatParquet(FormatFactory & factory)
         }
     );
     LOG_DEBUG(log, "beginning registerRandomAccessInputFormat");
-    factory.registerRandomAccessInputFormat(
+    factory.registerRandomAccessInputFormatWithMetadata(
         "Parquet",
         [](ReadBuffer & buf,
            const Block & sample,
@@ -1421,7 +1421,8 @@ void registerInputFormatParquet(FormatFactory & factory)
            const ReadSettings & read_settings,
            bool is_remote_fs,
            FormatParserSharedResourcesPtr parser_shared_resources,
-           FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
+           FormatFilterInfoPtr format_filter_info,
+           const std::optional<RelativePathWithMetadata> & metadata) -> InputFormatPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
             size_t min_bytes_for_seek
@@ -1437,7 +1438,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
                     min_bytes_for_seek,
-                    metadata_cache
+                    metadata_cache,
+                    metadata
                 );
             }
             else
@@ -1467,9 +1469,12 @@ void registerParquetSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<ParquetBucketSplitter>();
         });
-    factory.registerSchemaReader(
+    factory.registerSchemaReaderWithMetadata(
         "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
+        [](
+            ReadBuffer & buf,
+            const FormatSettings & settings,
+            const std::optional<RelativePathWithMetadata> & metadata) -> SchemaReaderPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
             LOG_DEBUG(lambda_logger, "checking for v3 reader setting in registerSchemaReader");
@@ -1477,7 +1482,7 @@ void registerParquetSchemaReader(FormatFactory & factory)
             {
                 LOG_DEBUG(lambda_logger, "using native reader v3 in ParquetSchemaReader with metadata cache");
                 auto metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
-                return std::make_shared<NativeParquetSchemaReader>(buf, settings, metadata_cache);
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings, metadata_cache, metadata);
             }
             else
             {

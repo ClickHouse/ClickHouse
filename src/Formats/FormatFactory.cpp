@@ -14,6 +14,7 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
@@ -415,7 +416,8 @@ InputFormatPtr FormatFactory::getInput(
     bool need_only_count,
     const std::optional<UInt64> & max_block_size_bytes,
     const std::optional<UInt64> & min_block_size_rows,
-    const std::optional<UInt64> & min_block_size_bytes) const
+    const std::optional<UInt64> & min_block_size_bytes,
+    const std::optional<RelativePathWithMetadata> & metadata) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
@@ -509,6 +511,19 @@ InputFormatPtr FormatFactory::getInput(
     {
         format = creators.random_access_input_creator(
             buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
+        /// for passing object store metadata to parquet metadata cache
+        if (metadata.has_value())
+        {
+            format = creators.random_access_input_creator_with_metadata(
+                buf,
+                sample,
+                format_settings,
+                context->getReadSettings(),
+                is_remote_fs,
+                parser_shared_resources,
+                format_filter_info,
+                metadata);
+        }
     }
     else
     {

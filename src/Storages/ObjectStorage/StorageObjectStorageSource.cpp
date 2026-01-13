@@ -646,8 +646,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 && !object_info->getObjectMetadata()->etag.empty())
             {
                 LOG_DEBUG(cache_log, "setting mapping for {} -> {}", object_info->getPath(), object_info->getObjectMetadata()->etag);
-                std::shared_ptr<ParquetMetadataCache> metadata_cache = context_->getParquetMetadataCache();
-                metadata_cache->key_map.setEtagForFile(object_info->getPath(), object_info->getObjectMetadata()->etag);
+                const std::optional<RelativePathWithMetadata> metadata = object_info->relative_path_with_metadata;
+                input_format = FormatFactory::instance().getInput(
+                    object_info->getFileFormat().value_or(configuration->format),
+                    *read_buf,
+                    initial_header,
+                    context_,
+                    max_block_size,
+                    format_settings,
+                    parser_shared_resources,
+                    filter_info,
+                    true /* is_remote_fs */,
+                    compression_method,
+                    need_only_count,
+                    std::nullopt /*min_block_size_bytes*/,
+                    std::nullopt /*min_block_size_rows*/,
+                    std::nullopt /*max_block_size_bytes*/,
+                    metadata
+                );
             }
             else
             {

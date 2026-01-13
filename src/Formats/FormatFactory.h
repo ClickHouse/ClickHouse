@@ -7,6 +7,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
 #include <Interpreters/Context_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
 #include <Common/NamePrompter.h>
@@ -111,6 +112,17 @@ private:
         bool is_remote_fs,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info)>;
+        //const std::optional<RelativePathWithMetadata> & metadata)>;
+
+    using RandomAccessInputCreatorWithMetadata = std::function<InputFormatPtr(
+        ReadBuffer & buf,
+        const Block & header,
+        const FormatSettings & settings,
+        const ReadSettings & read_settings,
+        bool is_remote_fs,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
+        const std::optional<RelativePathWithMetadata> & metadata)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -131,6 +143,11 @@ private:
     using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
+    using SchemaReaderCreatorWithMetadata = std::function<SchemaReaderPtr(
+        ReadBuffer & in,
+        const FormatSettings & settings,
+        const std::optional<RelativePathWithMetadata> & metadata)>;
+
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
     /// Some formats can extract different schemas from the same source depending on
@@ -153,9 +170,11 @@ private:
         FileBucketInfoCreator file_bucket_info_creator;
         BucketSplitterCreator bucket_splitter_creator;
         RandomAccessInputCreator random_access_input_creator;
+        RandomAccessInputCreatorWithMetadata random_access_input_creator_with_metadata;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
         SchemaReaderCreator schema_reader_creator;
+        SchemaReaderCreatorWithMetadata schema_reader_creator_with_metadata;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
@@ -197,7 +216,8 @@ public:
         bool need_only_count = false,
         const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
         const std::optional<UInt64> & min_block_size_rows = std::nullopt,
-        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt,
+        const std::optional<RelativePathWithMetadata> & metadata = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -250,6 +270,7 @@ public:
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
+    void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
     /// Register file extension for format
@@ -261,6 +282,7 @@ public:
 
     /// Register schema readers for format its name.
     void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);
+    void registerSchemaReaderWithMetadata(const String & name, SchemaReaderCreatorWithMetadata schema_reader_creator_with_metadata);
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
