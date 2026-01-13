@@ -33,7 +33,7 @@ This table is primarily intended for debugging purposes.
 | `file_path`    | [String](../../sql-reference/data-types/string.md)    | Path to the root metadata JSON file, Avro manifest list, or manifest file.                   |
 | `content`      | [String](../../sql-reference/data-types/string.md)    | Content in JSON format (raw metadata from .json, Avro metadata, or Avro entry).              |
 | `row_in_file`  | [Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md)) | Row number in the file, if applicable. Present for `ManifestListEntry` and `ManifestFileEntry` content types. |
-| `pruning_status`  | [Nullable](../../sql-reference/data-types/nullable.md)([Enum8](../../sql-reference/data-types/enum.md)) | Pruning status for the entry. 'NotPruned', 'PartitionPruned', 'MinMaxIndexPruned'. Pay attention that Partition pruning is done before minmax pruning so 'PartitionPruned' means that the entry was pruned by partition filter and minmax pruning was not even attempted. Present for `ManifestFileEntry` content type. |
+| `pruning_status`  | [Nullable](../../sql-reference/data-types/nullable.md)([Enum8](../../sql-reference/data-types/enum.md)) | Pruning status for the entry. 'NotPruned', 'PartitionPruned', 'MinMaxIndexPruned'. Pay attention that partition pruning is done before minmax pruning so 'PartitionPruned' means that the entry was pruned by partition filter and minmax pruning was not even attempted. Present for `ManifestFileEntry` content type. |
 
 ## `content_type` values {#content-type-values}
 
