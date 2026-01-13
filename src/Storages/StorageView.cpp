@@ -155,35 +155,76 @@ StorageView::StorageView(
     setInMemoryMetadata(storage_metadata);
 }
 
+/// Helper to extract the first table expression from a SELECT query (forward declaration exists in this file)
+static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query);
+
 QueryProcessingStage::Enum StorageView::getQueryProcessingStage(
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum /*to_stage*/,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
+    ContextPtr context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
-    /// If view_query is set with ORDER BY (injected by planner for distributed optimization),
-    /// we need to return a higher stage so the outer query uses merge sort instead of full sort.
-    if (query_info.view_query)
+    /// For simple views over a single table, delegate to the underlying storage.
+    /// This preserves the underlying storage's capabilities, e.g.:
+    /// - Distributed tables can sort on shards with merge sort at coordinator
+    /// - Other storages may support higher processing stages
+    ///
+    /// This makes the VIEW transparent with respect to query processing stage.
+
+    ASTPtr inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
+
+    if (auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>())
     {
-        if (auto * select_with_union = query_info.view_query->as<ASTSelectWithUnionQuery>())
+        /// Only handle simple views: single SELECT, no UNION
+        if (select_with_union->list_of_selects->children.size() == 1)
         {
-            if (!select_with_union->list_of_selects->children.empty())
+            if (auto * inner_select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>())
             {
-                if (auto * inner_select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>())
+                /// Skip views with JOINs - they have complex semantics
+                if (!hasJoin(*inner_select))
                 {
-                    if (inner_select->orderBy())
+                    /// Try to get the underlying table
+                    if (inner_select->tables() && !inner_select->tables()->children.empty())
                     {
-                        /// The VIEW's inner query has ORDER BY, which means:
-                        /// - If reading from Distributed table, shards will sort their data
-                        /// - Coordinator should merge sorted streams
-                        /// Return WithMergeableStateAfterAggregation to enable merge sort at outer level
-                        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+                        auto * select_element = inner_select->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+                        if (select_element && select_element->table_expression)
+                        {
+                            auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
+                            if (table_expression && table_expression->database_and_table_name)
+                            {
+                                if (auto * table_id_ast = table_expression->database_and_table_name->as<ASTTableIdentifier>())
+                                {
+                                    try
+                                    {
+                                        /// Resolve database name (use current database if not specified)
+                                        StorageID table_id = table_id_ast->getTableId();
+                                        if (table_id.database_name.empty())
+                                            table_id.database_name = context->getCurrentDatabase();
+
+                                        /// Get the underlying storage
+                                        auto underlying_storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                                        if (underlying_storage)
+                                        {
+                                            /// Delegate to the underlying storage
+                                            auto underlying_snapshot = underlying_storage->getStorageSnapshot(
+                                                underlying_storage->getInMemoryMetadataPtr(), context);
+                                            return underlying_storage->getQueryProcessingStage(
+                                                context, to_stage, underlying_snapshot, query_info);
+                                        }
+                                    }
+                                    catch (...)
+                                    {
+                                        /// If table lookup fails, fall back to default behavior
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
-    
+
     return QueryProcessingStage::FetchColumns;
 }
 

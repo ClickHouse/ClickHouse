@@ -45,12 +45,6 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTIdentifier.h>
-
-#include <Analyzer/SortNode.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -1375,10 +1369,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
-            auto table_expression_to_plan = table_expression;
-
             auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(table_expression_to_plan, subquery_options, subquery_planner_context);
+            Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
             subquery_planner.buildQueryPlanIfNeeded();
@@ -2643,70 +2635,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       * Examples: Distributed, Merge storages.
       */
     auto left_table_expression = table_expressions_stack.front();
-    
-    /// Try to push ORDER BY from outer query into VIEW for distributed optimization
-    /// When reading from a VIEW over a distributed table with ORDER BY, we want:
-    /// 1. Each shard to sort its data
-    /// 2. The coordinator to merge sorted streams (instead of full sort)
-    auto left_table_expression_to_use = left_table_expression;
-    SelectQueryInfo modified_select_query_info = select_query_info;
-    const auto * outer_query_node = query_node->as<QueryNode>();
-    const auto * table_node = left_table_expression->as<TableNode>();
-    
-    bool is_view = table_node && table_node->getStorage() && table_node->getStorage()->isView();
-    
-    if (outer_query_node && is_view && outer_query_node->hasOrderBy())
-    {
-        /// For VIEWs with outer ORDER BY, we need to inject the ORDER BY into the VIEW's inner query.
-        /// StorageView::read uses query_info.view_query if set, so we modify that.
-        /// Get the VIEW's inner query and add ORDER BY from outer query.
-        const auto & view_storage = table_node->getStorage();
-        auto storage_snapshot = view_storage->getStorageSnapshot(view_storage->getInMemoryMetadataPtr(), planner_context->getQueryContext());
-        auto view_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
-        
-        /// Add ORDER BY from outer query to the view's inner query
-        if (auto * select_with_union = view_inner_query->as<ASTSelectWithUnionQuery>())
-        {
-            if (!select_with_union->list_of_selects->children.empty())
-            {
-                if (auto * inner_select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>())
-                {
-                    /// Build ORDER BY AST from outer query's ORDER BY nodes
-                    /// We need to extract just the column names without internal table aliases
-                    auto order_by_list = std::make_shared<ASTExpressionList>();
-                    for (const auto & sort_node : outer_query_node->getOrderBy().getNodes())
-                    {
-                        const auto * sort_column_node = sort_node->as<SortNode>();
-                        if (!sort_column_node)
-                            continue;
-                        
-                        const auto & sort_expression = sort_column_node->getExpression();
-                        const auto * column_node = sort_expression->as<ColumnNode>();
-                        if (!column_node)
-                            continue;
-                        
-                        /// Create ORDER BY element with just the column name
-                        auto order_by_element = std::make_shared<ASTOrderByElement>();
-                        order_by_element->direction = sort_column_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
-                        order_by_element->nulls_direction = order_by_element->direction;
-                        order_by_element->children.push_back(std::make_shared<ASTIdentifier>(column_node->getColumnName()));
-                        order_by_list->children.push_back(order_by_element);
-                    }
-                    
-                    if (!order_by_list->children.empty())
-                    {
-                        inner_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by_list));
-                        modified_select_query_info.view_query = std::move(view_inner_query);
-                    }
-                }
-            }
-        }
-    }
-    
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
-        left_table_expression_to_use,
+        left_table_expression,
         parent_join_tree,
-        modified_select_query_info,
+        select_query_info,
         select_query_options,
         planner_context,
         is_single_table_expression,
@@ -2820,60 +2752,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
               * table expression in subquery.
               */
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
-            
-            /// For VIEWs in JOINs, also propagate ORDER BY for distributed optimization  
-            auto table_expression_to_use = table_expression;
-            SelectQueryInfo loop_modified_query_info = select_query_info;
-            const auto * loop_outer_query = query_node->as<QueryNode>();
-            const auto * loop_table_node = table_expression->as<TableNode>();
-            bool loop_is_view = loop_table_node && loop_table_node->getStorage() && loop_table_node->getStorage()->isView();
-            
-            if (loop_outer_query && loop_is_view && loop_outer_query->hasOrderBy())
-            {
-                /// Same logic as for left table expression - inject ORDER BY into VIEW's inner query
-                const auto & loop_view_storage = loop_table_node->getStorage();
-                auto loop_storage_snapshot = loop_view_storage->getStorageSnapshot(loop_view_storage->getInMemoryMetadataPtr(), planner_context->getQueryContext());
-                auto loop_view_inner_query = loop_storage_snapshot->metadata->getSelectQuery().inner_query->clone();
-                
-                if (auto * loop_select_with_union = loop_view_inner_query->as<ASTSelectWithUnionQuery>())
-                {
-                    if (!loop_select_with_union->list_of_selects->children.empty())
-                    {
-                        if (auto * loop_inner_select = loop_select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>())
-                        {
-                            auto loop_order_by_list = std::make_shared<ASTExpressionList>();
-                            for (const auto & sort_node : loop_outer_query->getOrderBy().getNodes())
-                            {
-                                const auto * sort_column_node = sort_node->as<SortNode>();
-                                if (!sort_column_node)
-                                    continue;
-                                
-                                const auto & sort_expression = sort_column_node->getExpression();
-                                const auto * column_node = sort_expression->as<ColumnNode>();
-                                if (!column_node)
-                                    continue;
-                                
-                                auto order_by_element = std::make_shared<ASTOrderByElement>();
-                                order_by_element->direction = sort_column_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
-                                order_by_element->nulls_direction = order_by_element->direction;
-                                order_by_element->children.push_back(std::make_shared<ASTIdentifier>(column_node->getColumnName()));
-                                loop_order_by_list->children.push_back(order_by_element);
-                            }
-                            
-                            if (!loop_order_by_list->children.empty())
-                            {
-                                loop_inner_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(loop_order_by_list));
-                                loop_modified_query_info.view_query = std::move(loop_view_inner_query);
-                            }
-                        }
-                    }
-                }
-            }
-            
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
-                table_expression_to_use,
+                table_expression,
                 parent_join_tree,
-                loop_modified_query_info,
+                select_query_info,
                 select_query_options,
                 planner_context,
                 is_single_table_expression,
