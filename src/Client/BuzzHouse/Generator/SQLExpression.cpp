@@ -522,7 +522,13 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 {
-    /// predMask[static_cast<size_t>(PredOp::Literal)] = true;
+    if (this->fc.max_depth <= this->depth)
+    {
+        /// In the worst case, not a single option can be picked
+        this->generateLiteralValue(rg, true, expr);
+        return;
+    }
+
     predMask[static_cast<size_t>(PredOp::UnaryExpr)] = this->fc.max_depth > this->depth;
     predMask[static_cast<size_t>(PredOp::BinaryExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 1);
     predMask[static_cast<size_t>(PredOp::BetweenExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 2);
@@ -537,9 +543,6 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 
     switch (static_cast<PredOp>(predGen.nextOp())) /// drifts over time
     {
-        case PredOp::Literal:
-            this->generateLiteralValue(rg, true, expr);
-            break;
         case PredOp::UnaryExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             UnaryExpr * unexp = cexpr->mutable_unary_expr();

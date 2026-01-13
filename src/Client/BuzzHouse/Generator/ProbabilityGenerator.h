@@ -331,8 +331,10 @@ private:
             sum_min += bounds[i].min;
             sum_max += bounds[i].max;
         }
-        if (sum_min > 1.0 + 1e-12 || sum_max < 1.0 - 1e-12)
-            throw std::runtime_error("Inconsistent bounds for enabled subset (cannot sum to 1)");
+        if (sum_min > 1.0 + 1e-12)
+            throw std::runtime_error("Inconsistent bounds for enabled subset (cannot min sum to 1)");
+        if (sum_max < 1.0 - 1e-12)
+            throw std::runtime_error("Inconsistent bounds for enabled subset (cannot max sum to 1)");
 
         std::vector<bool> fixed(nvalues, false);
         for (int iter = 0; iter < 10; ++iter)

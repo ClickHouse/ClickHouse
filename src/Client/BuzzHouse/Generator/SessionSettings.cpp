@@ -1490,7 +1490,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.insert(
             {{"force_aggregation_in_order", trueOrFalseSettingNoOracle},
-             {"force_data_skipping_indices", trueOrFalseSettingNoOracle},
+             {"force_data_skipping_indices",
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
              {"force_grouping_standard_compatibility", trueOrFalseSettingNoOracle},
              {"force_index_by_date", trueOrFalseSettingNoOracle},
              {"force_optimize_projection", trueOrFalseSettingNoOracle},

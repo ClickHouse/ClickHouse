@@ -267,8 +267,7 @@ private:
 
     enum class PredOp
     {
-        Literal = 0,
-        UnaryExpr,
+        UnaryExpr = 0,
         BinaryExpr,
         BetweenExpr,
         InExpr,

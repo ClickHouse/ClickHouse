@@ -145,23 +145,24 @@ StatementGenerator::StatementGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
-              {0.01, 0.50}, /// HugeInt
-              {0.01, 0.50}, /// UHugeInt
-              {0.01, 0.50}, /// Int
-              {0.01, 0.50}, /// UInt
-              {0.01, 0.50}, /// Time
-              {0.01, 0.50}, /// Date
-              {0.01, 0.50}, /// DateTime
-              {0.01, 0.50}, /// Decimal
-              {0.01, 0.50}, /// RandStr
-              {0.01, 0.50}, /// IPv4
-              {0.01, 0.50}, /// IPv6
-              {0.01, 0.50}, /// Geo
-              {0.01, 0.50}, /// Str
-              {0.01, 0.50}, /// Special
-              {0.01, 0.50}, /// JSON
-              {0.01, 0.50}, /// NULLVal
-              {0.01, 0.50} /// Fraction
+              {0.01, 0.10}, /// LitHugeInt
+              {0.01, 0.10}, /// LitUHugeInt
+              {0.01, 0.35}, /// LitInt
+              {0.01, 0.35}, /// LitUInt
+              {0.01, 0.10}, /// LitTime
+              {0.01, 0.10}, /// LitDate
+              {0.01, 0.10}, /// LitDateTime
+              {0.01, 0.15}, /// LitDecimal
+              {0.01, 0.30}, /// LitRandStr
+              {0.01, 0.05}, /// LitUUID
+              {0.01, 0.05}, /// LitIPv4
+              {0.01, 0.05}, /// LitIPv6
+              {0.01, 0.10}, /// LitGeo
+              {0.01, 0.30}, /// LitStr
+              {0.01, 0.25}, /// LitSpecial
+              {0.01, 0.10}, /// LitJSON
+              {0.01, 0.05}, /// LitNULLVal
+              {0.01, 0.10} /// LitFraction
           }})))
     , expGen(ProbabilityGeneratorT(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
@@ -191,16 +192,15 @@ StatementGenerator::StatementGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
-              {0.01, 0.01}, /// Literal
-              {0.05, 0.10}, /// UnaryExpr
-              {0.10, 0.35}, /// BinaryExpr
+              {0.03, 0.30}, /// UnaryExpr
+              {0.10, 0.50}, /// BinaryExpr
               {0.05, 0.20}, /// BetweenExpr
-              {0.02, 0.10}, /// InExpr
-              {0.02, 0.10}, /// AnyExpr
-              {0.05, 0.15}, /// IsNullExpr
-              {0.02, 0.10}, /// ExistsExpr
-              {0.03, 0.15}, /// LikeExpr
-              {0.10, 0.30}, /// SearchExpr
+              {0.02, 0.15}, /// InExpr
+              {0.02, 0.15}, /// AnyExpr
+              {0.05, 0.20}, /// IsNullExpr
+              {0.02, 0.15}, /// ExistsExpr
+              {0.03, 0.20}, /// LikeExpr
+              {0.10, 0.35}, /// SearchExpr
               {0.03, 0.05} /// OtherExpr
           }})))
     , queryGen(ProbabilityGeneratorT(ProbabilityConfig(
@@ -212,7 +212,7 @@ StatementGenerator::StatementGenerator(
               {0.15, 0.80}, /// Table
               {0.10, 0.40}, /// View
               {0.05, 0.15}, /// RemoteUDF
-              {0.04, 0.10}, /// GenerateSeriesUDF
+              {0.04, 0.20}, /// GenerateSeriesUDF
               {0.02, 0.05}, /// SystemTable
               {0.01, 0.05}, /// MergeUDF
               {0.05, 0.15}, /// ClusterUDF
