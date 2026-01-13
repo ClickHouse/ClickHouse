@@ -52,7 +52,7 @@ void MutatePlainMergeTreeTask::prepare()
     if (mutation_ids.size() == 1)
         mutation_ids_for_log = mutation_ids.front();
     else
-        mutation_ids_for_log = fmt::format("{}..{}", mutation_ids.front(), mutation_ids.back());
+        mutation_ids_for_log = mutation_ids.front() + ".." + mutation_ids.back();
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
