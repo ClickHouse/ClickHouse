@@ -904,7 +904,7 @@ int deserializeChangelog(
                             col_idx = 0;
                             add_log_entry_info();
                             add_request_general_info();
-                            add_request_info(multi_request->requests[sub_request_idx], sub_request_idx + 1);
+                            add_request_info(std::dynamic_pointer_cast<ZooKeeperRequest>(multi_request->requests[sub_request_idx]), sub_request_idx + 1);
                         }
                     }
                 }

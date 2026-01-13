@@ -191,7 +191,7 @@ public:
 
     Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode);
 
-    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false, bool atomic = true);
 
     void createIfNotExists(const std::string & path, const std::string & data);
 
@@ -221,9 +221,9 @@ public:
 
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
 
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false, bool atomic = true);
 
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false, bool atomic = true);
 
     ///
     /// mirror ZooKeeper interface: Async functions
@@ -233,8 +233,8 @@ public:
 
     zkutil::ZooKeeper::FutureGet asyncTryGet(std::string path);
 
-    zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
-    zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
+    zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops, bool atomic = true);
+    zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops, bool atomic = true);
 
     zkutil::ZooKeeper::FutureRemove asyncTryRemove(std::string path, int32_t version = -1);
 

@@ -544,8 +544,9 @@ bool deserializeTxn(Storage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_N
         else
         {
             /// Skip failed multirequests
-            if (request->getOpNum() == Coordination::OpNum::Multi && hasErrorsInMultiRequest(request))
-                return true;
+            if (request->getOpNum() == Coordination::OpNum::Multi || request->getOpNum() == Coordination::OpNum::NonAtomicMulti)
+                if (hasErrorsInMultiRequest(request))
+                    return true;
 
             storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false);
             storage.processRequest(request, session_id, zxid, /* check_acl = */ false);

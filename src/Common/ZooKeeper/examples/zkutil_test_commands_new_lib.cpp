@@ -193,7 +193,7 @@ try
         ops.emplace_back(std::make_shared<RemoveRequest>(std::move(remove_request)));
     }
 
-    zk.multi(ops, [&](const MultiResponse & response)
+    zk.multi(ops, /*atomic=*/true, [&](const MultiResponse & response)
     {
         if (response.error != Coordination::Error::ZOK)
             std::cerr << "Error (multi): " << errorMessage(response.error) << '\n';

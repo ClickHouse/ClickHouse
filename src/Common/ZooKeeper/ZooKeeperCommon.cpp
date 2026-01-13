@@ -944,7 +944,15 @@ void ZooKeeperMultiRequest::checkOperationType(OperationType type)
 
 OpNum ZooKeeperMultiRequest::getOpNum() const
 {
-    return !operation_type.has_value() || *operation_type == OperationType::Write ? OpNum::Multi : OpNum::MultiRead;
+    const bool is_write = !operation_type.has_value() || *operation_type == OperationType::Write;
+
+    if (!atomic)
+    {
+        chassert(is_write);
+        return OpNum::NonAtomicMulti;
+    }
+
+    return is_write ? OpNum::Multi : OpNum::MultiRead;
 }
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
@@ -987,6 +995,11 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::Reque
         {
             checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
+        }
+        else if (const auto * concrete_request_multi = dynamic_cast<const ZooKeeperMultiRequest *>(generic_request.get()))
+        {
+            checkOperationType(Write);
+            requests.push_back(std::make_shared<ZooKeeperMultiRequest>(*concrete_request_multi));
         }
         else if (const auto * concrete_request_get = dynamic_cast<const ZooKeeperGetRequest *>(generic_request.get()))
         {
@@ -1041,8 +1054,9 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperMultiRequest::sizeImpl() const
 {
     size_t total_size = 0;
-    for (const auto & zk_request : requests)
+    for (const auto & sub_request : requests)
     {
+        const auto zk_request = std::dynamic_pointer_cast<ZooKeeperRequest>(sub_request);
         bool done = false;
         int32_t error = -1;
 
@@ -1271,7 +1285,7 @@ ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const
 ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const
 {
     std::shared_ptr<ZooKeeperMultiResponse> response;
-    if (getOpNum() == OpNum::Multi)
+    if (getOpNum() == OpNum::Multi || getOpNum() == OpNum::NonAtomicMulti)
        response = std::make_shared<ZooKeeperMultiWriteResponse>(requests);
     else
        response = std::make_shared<ZooKeeperMultiReadResponse>(requests);
@@ -1516,15 +1530,30 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
         auto res = std::make_shared<RequestT>();
 
         if constexpr (num == OpNum::MultiRead)
+        {
             res->operation_type = ZooKeeperMultiRequest::OperationType::Read;
+        }
         else if constexpr (num == OpNum::Multi)
+        {
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
+        }
+        else if constexpr (num == OpNum::NonAtomicMulti)
+        {
+            res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
+            res->atomic = false;
+        }
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
+        {
             res->not_exists = true;
+        }
         else if constexpr (num == OpNum::Create2)
+        {
             res->include_stats = true;
+        }
         else if constexpr (num == OpNum::CheckStat)
+        {
             res->stat_to_check.emplace();
+        }
 
         return res;
     });
@@ -1550,6 +1579,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Reconfig, ZooKeeperReconfigRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::MultiRead, ZooKeeperMultiRequest>(*this);
+    registerZooKeeperRequest<OpNum::NonAtomicMulti, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::CreateIfNotExists, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);

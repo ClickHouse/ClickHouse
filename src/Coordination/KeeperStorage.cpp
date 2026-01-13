@@ -30,6 +30,9 @@
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
 
+#include <algorithm>
+#include <concepts>
+#include <iterator>
 #include <shared_mutex>
 #include <base/defines.h>
 
@@ -586,6 +589,7 @@ struct FailedMultiDelta
 // Denotes end of a subrequest in multi request
 struct SubDeltaEnd
 {
+    int32_t multi_nesting;
 };
 
 struct AddAuthDelta
@@ -1036,11 +1040,11 @@ void KeeperStorage<Container>::UncommittedState::rollback(int64_t rollback_zxid)
             rollback_deltas.splice(rollback_deltas.end(), deltas, delta_it.base(), deltas.end());
     }
 
-    rollback(std::move(rollback_deltas));
+    rollback(std::move(rollback_deltas), /*need_cleanup_nodes=*/true);
 }
 
 template<typename Container>
-void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollback_deltas)
+void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollback_deltas, bool need_cleanup_nodes)
 {
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
@@ -1111,10 +1115,12 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
         zxid_to_nodes.erase(it);
     };
 
-    /// first cleanup nodes that were not modified by those transactions
-    cleanup_uncommitted_nodes(0);
-    std::ranges::for_each(rollbacked_zxids, cleanup_uncommitted_nodes);
-
+    if (need_cleanup_nodes)
+    {
+        /// first cleanup nodes that were not modified by those transactions
+        cleanup_uncommitted_nodes(0);
+        std::ranges::for_each(rollbacked_zxids, cleanup_uncommitted_nodes);
+    }
 }
 
 template<typename Container>
@@ -1491,6 +1497,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(static_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
         case Coordination::OpNum::Multi:
         case Coordination::OpNum::MultiRead:
+        case Coordination::OpNum::NonAtomicMulti:
             return function(static_cast<const Coordination::ZooKeeperMultiRequest &>(zk_request));
         case Coordination::OpNum::Auth:
             return function(static_cast<const Coordination::ZooKeeperAuthRequest &>(zk_request));
@@ -2988,18 +2995,31 @@ processLocal(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & s
 /// CHECK Request ///
 
 /// MULTI Request ///
+static bool isMultiRequest(const Coordination::ZooKeeperRequest & request)
+{
+    const auto op_num = request.getOpNum();
+    return op_num == Coordination::OpNum::Multi
+        || op_num == Coordination::OpNum::MultiRead
+        || op_num == Coordination::OpNum::NonAtomicMulti;
+}
+
 using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
     for (const auto & concrete_request : zk_request.requests)
     {
-        if (!callOnConcreteRequestType(
-                *concrete_request, [&](const auto & subrequest) { return checkAuth(subrequest, storage, session_id, is_local); }))
+        const bool check_subrequest_auth = callOnConcreteRequestType(
+            dynamic_cast<const Coordination::ZooKeeperRequest &>(*concrete_request),
+            [&](const auto & subrequest) { return checkAuth(subrequest, storage, session_id, is_local); });
+
+        if (!check_subrequest_auth)
             return false;
     }
     return true;
 }
+
+static thread_local int32_t multi_nesting = 0;
 
 template <typename Storage>
 std::list<KeeperStorageBase::Delta> preprocess(
@@ -3011,6 +3031,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * digest,
     const KeeperContext & keeper_context)
 {
+    ++multi_nesting;
+    SCOPE_EXIT({ --multi_nesting; });
+
     ProfileEvents::increment(ProfileEvents::KeeperMultiRequest);
     std::vector<Coordination::Error> response_errors;
     const auto & subrequests = zk_request.requests;
@@ -3028,51 +3051,82 @@ std::list<KeeperStorageBase::Delta> preprocess(
     std::list<KeeperStorageBase::Delta> new_deltas;
     for (size_t i = 0; i < subrequests.size(); ++i)
     {
+        const auto zk_subrequest = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(subrequests[i]);
+
         auto new_subdeltas = callOnConcreteRequestType(
-            *subrequests[i],
+            *zk_subrequest,
             [&](const auto & subrequest)
             { return preprocess(subrequest, storage, zxid, session_id, time, /*digest=*/nullptr, keeper_context); });
 
+        Coordination::Error error = Coordination::Error::ZOK;
         if (!new_subdeltas.empty())
         {
-            if (auto * error = std::get_if<ErrorDelta>(&new_subdeltas.back().operation);
-                error && zk_request.getOpNum() == Coordination::OpNum::Multi)
+            if (auto * single_op_error = std::get_if<ErrorDelta>(&new_subdeltas.back().operation))
+                error = single_op_error->error;
+            else if (auto * multi_error = std::get_if<FailedMultiDelta>(&new_subdeltas.back().operation))
+                error = multi_error->global_error;
+        }
+
+        if (error != Coordination::Error::ZOK)
+        {
+            if (zk_request.getOpNum() == Coordination::OpNum::Multi)
             {
-                storage.uncommitted_state.rollback(std::move(new_deltas));
-                response_errors.push_back(error->error);
+                storage.uncommitted_state.rollback(std::move(new_deltas), /*need_cleanup_nodes=*/multi_nesting == 1);
+                response_errors.push_back(error);
 
                 for (size_t j = i + 1; j < subrequests.size(); ++j)
                     response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
 
-                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{std::move(response_errors)}}};
+                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{std::move(response_errors), error}}};
+            }
+            else if (zk_request.getOpNum() == Coordination::OpNum::NonAtomicMulti)
+            {
+                response_errors.push_back(error);
+            }
+            else if (zk_request.getOpNum() == Coordination::OpNum::MultiRead)
+            {
+                response_errors.push_back(Coordination::Error::ZOK);
+            }
+            else
+            {
+                UNREACHABLE();
             }
         }
+        else
+        {
+            response_errors.push_back(Coordination::Error::ZOK);
+        }
 
-        new_subdeltas.emplace_back(zxid, SubDeltaEnd{});
-        response_errors.push_back(Coordination::Error::ZOK);
+        new_subdeltas.emplace_back(zxid, SubDeltaEnd{multi_nesting});
 
-        // manually add deltas so that the result of previous request in the transaction is used in the next request
-        storage.uncommitted_state.applyDeltas(new_subdeltas, current_digest_ptr);
+        /// Manually add deltas so that the result of previous request in the transaction is used in the next request
+        /// Multi requests already applied their deltas to uncommitted state.
+        if (!isMultiRequest(*zk_subrequest))
+            storage.uncommitted_state.applyDeltas(new_subdeltas, current_digest_ptr);
+
         new_deltas.splice(new_deltas.end(), std::move(new_subdeltas));
     }
 
     if (digest)
         *digest = current_digest;
 
-    storage.uncommitted_state.addDeltas(std::move(new_deltas));
+    if (multi_nesting > 1)
+        return new_deltas;
+
+    storage.uncommitted_state.addDeltas(new_deltas);
     return {};
 }
 
 KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
 {
+    chassert(multi_nesting > 0);
     std::list<KeeperStorageBase::Delta> subdeltas;
     auto it = deltas.begin();
 
     for (; it != deltas.end(); ++it)
-    {
-        if (std::holds_alternative<SubDeltaEnd>(it->operation))
-            break;
-    }
+        if (const auto * sub_delta = std::get_if<SubDeltaEnd>(&it->operation))
+            if (sub_delta->multi_nesting == multi_nesting)
+                break;
 
     KeeperStorageBase::DeltaRange result{.begin_it = deltas.begin(), .end_it = it};
     ++it;
@@ -3084,8 +3138,11 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
+    ++multi_nesting;
+    SCOPE_EXIT({ --multi_nesting; });
+
     std::shared_ptr<Coordination::ZooKeeperMultiResponse> response;
-    if (zk_request.getOpNum() == Coordination::OpNum::Multi)
+    if (zk_request.getOpNum() == Coordination::OpNum::Multi || zk_request.getOpNum() == Coordination::OpNum::NonAtomicMulti)
         response = std::make_shared<Coordination::ZooKeeperMultiWriteResponse>();
     else
         response = std::make_shared<Coordination::ZooKeeperMultiReadResponse>();
@@ -3104,7 +3161,11 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
             response->responses[i]->error = failed_multi->error_codes[i];
         }
 
-        response->error = failed_multi->global_error;
+        /// Let's set error only if it is submulti because root multi should always have ZOK as status
+        /// to be able to correctly deserialized on client side.
+        if (multi_nesting > 1)
+            response->error = failed_multi->global_error;
+
         return response;
     }
 
@@ -3112,7 +3173,8 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
     {
         auto subdeltas = extractSubdeltas(deltas);
         response->responses.push_back(callOnConcreteRequestType(
-            *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
+            dynamic_cast<const Coordination::ZooKeeperRequest &>(*multi_subrequest),
+            [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
 
     response->error = Coordination::Error::ZOK;
@@ -3122,6 +3184,9 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
+    ++multi_nesting;
+    SCOPE_EXIT({ --multi_nesting; });
+
     ProfileEvents::increment(ProfileEvents::KeeperMultiReadRequest);
     auto response = std::make_shared<Coordination::ZooKeeperMultiReadResponse>();
     response->responses.reserve(zk_request.requests.size());
@@ -3130,7 +3195,8 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
     {
         auto subdeltas = extractSubdeltas(deltas);
         response->responses.push_back(callOnConcreteRequestType(
-            *multi_subrequest, [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas), session_id); }));
+            dynamic_cast<const Coordination::ZooKeeperRequest &>(*multi_subrequest),
+            [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas), session_id); }));
     }
 
     response->error = Coordination::Error::ZOK;
@@ -3144,6 +3210,9 @@ std::pair<KeeperResponsesForSessions, Int64> processWatches(
     Storage & storage,
     int64_t session_id)
 {
+    ++multi_nesting;
+    SCOPE_EXIT({ --multi_nesting; });
+
     KeeperResponsesForSessions result;
 
     if (deltas.empty() || std::get_if<FailedMultiDelta>(&deltas.front().operation))
@@ -3155,7 +3224,7 @@ std::pair<KeeperResponsesForSessions, Int64> processWatches(
     {
         auto subdeltas = extractSubdeltas(deltas);
         auto responses = callOnConcreteRequestType(
-            *generic_request,
+            dynamic_cast<const Coordination::ZooKeeperRequest &>(*generic_request),
             [&](const auto & subrequest)
             {
                 auto [rsp, removed_watches] = processWatches(subrequest, subdeltas, storage, session_id);
@@ -3576,7 +3645,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
         if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
         {
             /// Multi requests handle failures using FailedMultiDelta
-            if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
+            if (isMultiRequest(concrete_zk_request))
             {
                 const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
                 std::vector<Coordination::Error> response_errors;
@@ -3797,9 +3866,10 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
                 for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
                 {
-                    if (subrequest->has_watch)
+                    const auto zk_subrequest = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(subrequest);
+                    if (zk_subrequest->has_watch)
                     {
-                        update_watches(subrequest, subresponse);
+                        update_watches(zk_subrequest, subresponse);
                     }
                 }
             }

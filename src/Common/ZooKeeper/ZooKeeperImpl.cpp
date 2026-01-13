@@ -1,5 +1,7 @@
 #include <chrono>
+#include <memory>
 #include <Common/Stopwatch.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -1114,10 +1116,11 @@ void ZooKeeper::receiveEvent()
 
             for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
             {
-                if (subrequest->watch_callback)
+                const auto zk_subrequest = std::dynamic_pointer_cast<ZooKeeperRequest>(subrequest);
+                if (zk_subrequest->watch_callback)
                 {
                     chassert(isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES));
-                    update_watch_callbacks(subrequest, subresponse, subrequest->watch_callback);
+                    update_watch_callbacks(zk_subrequest, subresponse, zk_subrequest->watch_callback);
                 }
             }
         }
@@ -1728,9 +1731,10 @@ void ZooKeeper::reconfig(
 
 void ZooKeeper::multi(
     const Requests & requests,
+    bool atomic,
     MultiCallback callback)
 {
-    multi(std::span(requests), std::move(callback));
+    multi(std::span(requests), atomic, std::move(callback));
 }
 
 void ZooKeeper::getACL(const String & path, GetACLCallback callback)
@@ -1749,6 +1753,7 @@ void ZooKeeper::getACL(const String & path, GetACLCallback callback)
 
 void ZooKeeper::multi(
     std::span<const RequestPtr> requests,
+    bool atomic,
     MultiCallback callback)
 {
     // If path_acls is not empty, iterate through requests and apply path-specific ACLs to create requests
@@ -1779,6 +1784,7 @@ void ZooKeeper::multi(
     }
 
     ZooKeeperMultiRequest request(requests, default_acls);
+    request.atomic = atomic;
 
     if (request.getOpNum() == OpNum::MultiRead)
     {
@@ -1786,8 +1792,17 @@ void ZooKeeper::multi(
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
         for (const auto & subrequest : request.requests)
-            if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
+        {
+            const auto zk_subrequest = std::dynamic_pointer_cast<ZooKeeperRequest>(subrequest);
+            if (zk_subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+        }
+    }
+
+    if (request.getOpNum() == OpNum::NonAtomicMulti)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::NON_ATOMIC_MULTI))
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "NonAtomicMulti request type cannot be used because it's not supported by the server");
     }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeMulti);
@@ -1970,7 +1985,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeep
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request->requests, multi_response->responses))
     {
-        observeOperation(subrequest.get(), dynamic_cast<const ZooKeeperResponse *>(subresponse.get()), elapsed_microseconds);
+        observeOperation(dynamic_cast<const ZooKeeperRequest *>(subrequest.get()), dynamic_cast<const ZooKeeperResponse *>(subresponse.get()), elapsed_microseconds);
     }
 }
 

@@ -104,10 +104,12 @@ public:
 
     void multi(
         const Requests & requests,
+        bool atomic,
         MultiCallback callback) override;
 
     void multi(
         std::span<const RequestPtr> requests,
+        bool atomic,
         MultiCallback callback) override;
 
     void getACL(const String & path, GetACLCallback callback) override;

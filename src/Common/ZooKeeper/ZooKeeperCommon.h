@@ -706,7 +706,7 @@ struct ZooKeeperSetWatch2Response : SetWatches2Response, ZooKeeperResponse
     size_t bytesSize() const override { return SetWatches2Response::bytesSize(); }
 };
 
-struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeeperRequest
+struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 {
     OpNum getOpNum() const override;
     ZooKeeperMultiRequest() = default;
@@ -736,6 +736,7 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     };
 
     std::optional<OperationType> operation_type;
+
 private:
     void checkOperationType(OperationType type);
 };
@@ -744,12 +745,12 @@ struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
 {
     ZooKeeperMultiResponse() = default;
 
-    explicit ZooKeeperMultiResponse(const std::vector<ZooKeeperRequestPtr> & requests)
+    explicit ZooKeeperMultiResponse(const Requests & requests)
     {
         responses.reserve(requests.size());
 
         for (const auto & request : requests)
-            responses.emplace_back(request->makeResponse());
+            responses.emplace_back(std::dynamic_pointer_cast<ZooKeeperRequest>(request)->makeResponse());
     }
 
     explicit ZooKeeperMultiResponse(const Responses & responses_)

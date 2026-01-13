@@ -629,6 +629,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST);
         case Coordination::OpNum::MultiRead:
             return feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ);
+        case Coordination::OpNum::NonAtomicMulti:
+            return feature_flags.isEnabled(KeeperFeatureFlag::NON_ATOMIC_MULTI);
         case Coordination::OpNum::CreateIfNotExists:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
         case Coordination::OpNum::CheckNotExists:

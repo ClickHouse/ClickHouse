@@ -599,10 +599,10 @@ struct ReconfigResponse : virtual Response
     size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
-template <typename T>
 struct MultiRequest : virtual Request
 {
-    std::vector<T> requests;
+    bool atomic = true;
+    std::vector<RequestPtr> requests;
 
     void addRootPath(const String & root_path) override
     {
@@ -798,10 +798,12 @@ public:
 
     virtual void multi(
         std::span<const RequestPtr> requests,
+        bool atomic,
         MultiCallback callback) = 0;
 
     virtual void multi(
         const Requests & requests,
+        bool atomic,
         MultiCallback callback) = 0;
 
     virtual void getACL(const String & path, GetACLCallback  callback) = 0;
