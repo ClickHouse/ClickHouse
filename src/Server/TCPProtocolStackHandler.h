@@ -66,7 +66,7 @@ public:
                         int sent = socket().sendBytes(message.data() + total_sent, static_cast<int>(message_size - total_sent));
                         if (sent < 0)
                         {
-                            LOG_ERROR(log, "Error while sending error message to blocked client (sendBytes returned {}, errno: {}).", sent, errno);
+                            LOG_ERROR(log, "Error while sending error message to blocked client (sendBytes returned {}).", sent);
                             break;
                         }
                         if (sent == 0)

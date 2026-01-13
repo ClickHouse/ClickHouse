@@ -36,7 +36,7 @@ def test_ip_block_message_ssl():
         if not data:
             pytest.fail("Connection closed without receiving error message")
             
-        error_msg = data.decode('utf-8', errors='ignore')
+        error_msg = data.decode('utf-8', errors='replace')
         
         # We expect our specific error message
         assert "IP address not allowed" in error_msg
@@ -67,7 +67,7 @@ def test_ip_block_message_plain():
         if not data:
             pytest.fail("Connection closed without receiving error message")
             
-        error_msg = data.decode('utf-8', errors='ignore')
+        error_msg = data.decode('utf-8', errors='replace')
         
         # We expect our specific error message
         assert "IP address not allowed" in error_msg
