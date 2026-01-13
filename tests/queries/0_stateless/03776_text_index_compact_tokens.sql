@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS t_sparse_grams;
 SET enable_full_text_index = 1;
+-- to have always local plan in EXPLAIN when running the test with enabled parallel replicas
+SET parallel_replicas_local_plan=1;
 
 CREATE TABLE t_sparse_grams
 (

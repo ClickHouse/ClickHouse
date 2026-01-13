@@ -201,6 +201,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
 private:
     static Int32 hashLong(Int64 value)
     {
@@ -352,6 +356,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 };
 
 REGISTER_FUNCTION(IcebergBucket)
