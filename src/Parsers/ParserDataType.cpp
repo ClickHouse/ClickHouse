@@ -475,14 +475,10 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
 
-    /// Handle DateTime64 specially
-    if (isDateTime64Type(type_name_upper))
+    /// Handle DateTime64 specially - only if it has parameters
+    /// DateTime64 without parameters is valid and defaults to precision 3
+    if (isDateTime64Type(type_name_upper) && pos->type == TokenType::OpeningRoundBracket)
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
-        {
-            expected.add(pos, "opening bracket for DateTime64 parameters");
-            return false;
-        }
         ++pos;
 
         auto dt64_node = std::make_shared<ASTDateTime64DataType>();
