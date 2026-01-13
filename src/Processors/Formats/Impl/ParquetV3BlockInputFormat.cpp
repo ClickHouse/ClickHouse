@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;

@@ -14,14 +14,12 @@ namespace ErrorCodes
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
-    bool send_over_whole_archive_,
-    bool use_bucket_splitting_)
+    bool send_over_whole_archive_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
     , connection_to_files(ids_of_nodes_.size())
     , ids_of_nodes(std::move(ids_of_nodes_))
     , iterator_exhausted(false)
-    , use_bucket_splitting(use_bucket_splitting_)
 {
 }
 
@@ -29,11 +27,6 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
 {
     LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
 
-    if (use_bucket_splitting)
-    {
-        auto res = iterator->next(0);
-        return res;
-    }
     // 1. Check pre-queued files first
     if (auto file = getPreQueuedFile(number_of_current_replica))
         return file;
@@ -196,6 +189,52 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     }
 
     return {};
+}
+
+StorageObjectStorageBucketTaskDistributor::StorageObjectStorageBucketTaskDistributor(std::shared_ptr<IObjectIterator> iterator_)
+    : iterator(iterator_)
+{
+}
+
+ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getAnyUnprocessedFile()
+{
+    for (auto & [replica, objects] : unprocessed_buckets)
+    {
+        if (!objects.empty())
+        {
+            auto result = objects.front();
+            objects.pop();
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getNextTask(size_t number_of_current_replica)
+{
+    if (!unprocessed_buckets.contains(number_of_current_replica))
+    {
+        auto obj = unprocessed_buckets[number_of_current_replica].front();
+        unprocessed_buckets[number_of_current_replica].pop();
+        return obj;
+    }
+    while (true)
+    {
+        auto obj = iterator->next(0);
+        if (!obj)
+            break;
+        if (file_to_replica.contains(obj->getFileName()))
+        {
+            auto replica_id = file_to_replica[obj->getFileName()];
+            unprocessed_buckets[replica_id].push(obj);
+            continue;
+        }
+
+        file_to_replica[obj->getFileName()] = number_of_current_replica;
+        return obj;
+    }
+
+    return getAnyUnprocessedFile();
 }
 
 }

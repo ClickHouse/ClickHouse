@@ -63,6 +63,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
@@ -634,7 +635,7 @@ void ParquetFileBucketInfo::unite(const ParquetFileBucketInfo & other)
     for (const auto & val : other.row_group_ids)
     {
         if (!row_group_ids.empty() && row_group_ids.back() >= val)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "WTF? {} {}", row_group_ids.back(), val);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not unite parquet file bucket info: {} {}", row_group_ids.back(), val);
         row_group_ids.push_back(val);
     }
 
