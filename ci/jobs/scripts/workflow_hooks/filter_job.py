@@ -121,9 +121,13 @@ def should_skip_job(job_name):
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL}' - run stateless test jobs only",
         )
 
+    is_benchmarks_job = job_name == JobNames.BENCHMARKS or job_name.startswith(
+        JobNames.BENCHMARKS + " ("
+    )
+
     if Labels.CI_PERFORMANCE in _info_cache.pr_labels and (
         "performance" not in job_name.lower()
-        and job_name != JobNames.BENCHMARKS
+        and not is_benchmarks_job
         and job_name
         not in (
             "Build (amd_release)",
@@ -139,7 +143,7 @@ def should_skip_job(job_name):
 
     if (
         Labels.CI_PERFORMANCE not in _info_cache.pr_labels
-        and job_name == JobNames.BENCHMARKS
+        and is_benchmarks_job
         and _info_cache.pr_number
     ):
         return True, "Skipped, not labeled with 'ci-performance'"
