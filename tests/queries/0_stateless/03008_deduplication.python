@@ -126,6 +126,108 @@ def get_logs_statement(args):
     return ""
 
 
+def get_basic_debug_statements(phase, src_table, dst_table, expected_src, expected_dst):
+    """Generate basic debug statements for source and destination tables"""
+    return f"""
+                -- DEBUG ({phase}) — only printed when counts mismatch
+                WITH (SELECT count() FROM {src_table}) AS c_src
+                SELECT 'DEBUG {phase}: Checking source table {src_table} counts' WHERE c_src != {expected_src};
+                
+                WITH (SELECT count() FROM {src_table}) AS c_src
+                SELECT 'DEBUG {phase} src expected/actual', toUInt64({expected_src}) AS expected, c_src AS actual
+                WHERE c_src != {expected_src};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG {phase}: Checking destination table {dst_table} counts' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG {phase} dst expected/actual', toUInt64({expected_dst}) AS expected, c_dst AS actual
+                WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG {phase}: Distribution across parts in {dst_table}' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT '_part', _part, count() FROM {dst_table} WHERE c_dst != {expected_dst}
+                GROUP BY _part ORDER BY _part;
+    """
+
+
+def get_table_data_debug(dst_table, expected_dst, columns):
+    """Generate debug statements for table data inspection"""
+    col_list = ", ".join(columns)
+    return f"""
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG: Sample rows from {dst_table}' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT {col_list} FROM {dst_table}
+                WHERE c_dst != {expected_dst}
+                ORDER BY {col_list};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG: Grouped counts in {dst_table} by ({col_list})' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT {col_list}, count()
+                FROM {dst_table}
+                WHERE c_dst != {expected_dst}
+                GROUP BY {col_list}
+                ORDER BY {col_list};
+    """
+
+
+def get_system_debug_statements(dst_table, expected_dst, tables_list, mv_list=[]):
+    """Generate debug statements for system tables inspection"""
+    all_tables = tables_list + mv_list
+    tables_str = ", ".join([f"'{t}'" for t in all_tables])
+    
+    debug = f"""
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT table, name, rows, bytes_on_disk
+                FROM system.parts
+                WHERE active AND database = currentDatabase()
+                  AND table IN ({", ".join([f"'{t}'" for t in tables_list])})
+                  AND c_dst != {expected_dst}
+                ORDER BY table, name;
+    """
+    
+    if mv_list:
+        debug += f"""
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG: Table definitions from system.tables' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT name, engine, create_table_query
+                FROM system.tables
+                WHERE database = currentDatabase()
+                  AND name IN ({tables_str})
+                  AND c_dst != {expected_dst}
+                ORDER BY name;
+        """
+    
+    debug += f"""
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != {expected_dst};
+
+                WITH (SELECT count() FROM {dst_table}) AS c_dst
+                SELECT name, value
+                FROM system.settings
+                WHERE name IN (
+                    'max_insert_threads',
+                    'max_block_size',
+                    'update_insert_deduplication_token_in_dependent_materialized_views',
+                    'deduplicate_blocks_in_dependent_materialized_views'
+                )
+                  AND c_dst != {expected_dst}
+                ORDER BY name;
+    """
+    return debug
+
+
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -202,6 +304,9 @@ class ArgsFactory:
         self.add_opt_get_logs()
         self.add_opt_insert_method()
         self.add_opt_uniq_blocks()
+        self.__parser.add_argument(
+            "--debug-on-fail", type=str2bool, nargs="?", const=True, default=True
+        )
 
 
 def test_insert_several_blocks(parser):
@@ -255,46 +360,58 @@ def test_insert_several_blocks(parser):
             {"" if not args.get_logs else "SELECT _part, count() FROM table_when_b_even GROUP BY _part ORDER BY _part;"}
             """
 
+        # Compute expected values once
         if args.insert_unique_blocks:
-            assert_first_insert_statements = f"""
-                SELECT throwIf( count() != 10 )
-                    FROM table_a_b;
-                SELECT throwIf( count() != 5 )
-                    FROM table_when_b_even;
-                """
-            assert_second_insert_statements = f"""
-               SELECT throwIf( count() != {10 if args.deduplicate_src_table else 20} )
-                   FROM table_a_b;
-               SELECT throwIf( count() != {5 if args.deduplicate_dst_table else 10} )
-                   FROM table_when_b_even;
-               """
+            expected_first_src = 10
+            expected_first_dst = 5
+            expected_second_src = 10 if args.deduplicate_src_table else 20
+            expected_second_dst = 5 if args.deduplicate_dst_table else 10
         else:
             if args.use_insert_token:
-                assert_first_insert_statements = """
-                                SELECT throwIf( count() != 10 )
-                                    FROM table_a_b;
-                                SELECT throwIf( count() != 10 )
-                                    FROM table_when_b_even;
-                                """
-                assert_second_insert_statements = f"""
-                               SELECT throwIf( count() != {10 if args.deduplicate_src_table else 20} )
-                                   FROM table_a_b;
-                               SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 20} )
-                                   FROM table_when_b_even;
-                               """
+                expected_first_src = 10
+                expected_first_dst = 10
+                expected_second_src = 10 if args.deduplicate_src_table else 20
+                expected_second_dst = 10 if args.deduplicate_dst_table else 20
             else:
-                assert_first_insert_statements = f"""
-                    SELECT throwIf( count() != {1 if args.deduplicate_src_table else 10} )
-                        FROM table_a_b;
-                    SELECT throwIf( count() != {1 if args.deduplicate_dst_table else 10} )
-                        FROM table_when_b_even;
-                    """
-                assert_second_insert_statements = f"""
-                    SELECT throwIf( count() != {1 if args.deduplicate_src_table else 20} )
-                        FROM table_a_b;
-                    SELECT throwIf( count() != {1 if args.deduplicate_dst_table else 20} )
-                        FROM table_when_b_even;
-                    """
+                expected_first_src = 1 if args.deduplicate_src_table else 10
+                expected_first_dst = 1 if args.deduplicate_dst_table else 10
+                expected_second_src = 1 if args.deduplicate_src_table else 20
+                expected_second_dst = 1 if args.deduplicate_dst_table else 20
+
+        # Use the computed values in assertions
+        assert_first_insert_statements = f"""
+            SELECT throwIf( count() != {expected_first_src} )
+                FROM table_a_b;
+            SELECT throwIf( count() != {expected_first_dst} )
+                FROM table_when_b_even;
+            """
+        
+        assert_second_insert_statements = f"""
+           SELECT throwIf( count() != {expected_second_src} )
+               FROM table_a_b;
+           SELECT throwIf( count() != {expected_second_dst} )
+               FROM table_when_b_even;
+           """
+
+        # Debug statements only when debug_on_fail is enabled
+        debug_before_first = ""
+        debug_before_second = ""
+        if args.debug_on_fail:
+            debug_before_first = (
+                get_basic_debug_statements("first", "table_a_b", "table_when_b_even", 
+                                          expected_first_src, expected_first_dst) +
+                get_table_data_debug("table_when_b_even", expected_first_dst, ["a", "b"]) +
+                get_system_debug_statements("table_when_b_even", expected_first_dst, 
+                                           ["table_a_b", "table_when_b_even"])
+            )
+            
+            debug_before_second = (
+                get_basic_debug_statements("second", "table_a_b", "table_when_b_even",
+                                          expected_second_src, expected_second_dst) +
+                get_table_data_debug("table_when_b_even", expected_second_dst, ["a", "b"]) +
+                get_system_debug_statements("table_when_b_even", expected_second_dst,
+                                           ["table_a_b", "table_when_b_even"])
+            )
 
         script = f"""
             {get_logs_statement(args)}
@@ -322,12 +439,16 @@ def test_insert_several_blocks(parser):
 
             {print_details_statements}
 
+            {debug_before_first}
+
             {assert_first_insert_statements}
 
             -- second insert, it is retry
             {insert_statement}
 
             {print_details_statements}
+
+            {debug_before_second}
 
             {assert_second_insert_statements}
 
@@ -391,52 +512,64 @@ def test_mv_generates_several_blocks(parser):
             {"" if not args.get_logs else "SELECT _part, a_src, a_join, b FROM table_when_b_even_and_joined ORDER BY _part;"}
         """
 
+        # Compute expected counts once
         if args.insert_unique_blocks:
-            assert_first_insert_statements = f"""
-                SELECT throwIf( count() != 5 )
-                    FROM table_a_b;
-
-                SELECT throwIf( count() != 9 )
-                    FROM table_when_b_even_and_joined;
-                """
-            assert_second_insert_statements = f"""
-                SELECT throwIf( count() != {5 if args.deduplicate_src_table else 10} )
-                    FROM table_a_b;
-
-                SELECT throwIf( count() != {9 if args.deduplicate_dst_table else 18} )
-                    FROM table_when_b_even_and_joined;
-                """
+            expected_first_src = 5
+            expected_first_dst = 9
+            expected_second_src = 5 if args.deduplicate_src_table else 10
+            expected_second_dst = 9 if args.deduplicate_dst_table else 18
         else:
             if args.use_insert_token:
-                assert_first_insert_statements = f"""
-                    SELECT throwIf( count() != {5 if args.deduplicate_src_table else 5} )
-                        FROM table_a_b;
-
-                    SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 10} )
-                        FROM table_when_b_even_and_joined;
-                    """
-                assert_second_insert_statements = f"""
-                    SELECT throwIf( count() != {5 if args.deduplicate_src_table else 10} )
-                        FROM table_a_b;
-
-                    SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 20} )
-                        FROM table_when_b_even_and_joined;
-                    """
+                expected_first_src = 5
+                expected_first_dst = 10
+                expected_second_src = 5 if args.deduplicate_src_table else 10
+                expected_second_dst = 10 if args.deduplicate_dst_table else 20
             else:
-                assert_first_insert_statements = f"""
-                    SELECT throwIf( count() != {1 if args.deduplicate_src_table else 5} )
-                       FROM table_a_b;
+                expected_first_src = 1 if args.deduplicate_src_table else 5
+                expected_first_dst = 2 if args.deduplicate_dst_table else 10
+                expected_second_src = 1 if args.deduplicate_src_table else 10
+                expected_second_dst = 2 if args.deduplicate_dst_table else 20
 
-                    SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 10} )
-                       FROM table_when_b_even_and_joined;
-                    """
-                assert_second_insert_statements = f"""
-                    SELECT throwIf( count() != {1 if args.deduplicate_src_table else 10} )
-                        FROM table_a_b;
+        # Always create assert statements using the computed values
+        assert_first_insert_statements = f"""
+            SELECT throwIf( count() != {expected_first_src} )
+                FROM table_a_b;
 
-                    SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 20} )
-                        FROM table_when_b_even_and_joined;
-                    """
+            SELECT throwIf( count() != {expected_first_dst} )
+                FROM table_when_b_even_and_joined;
+            """
+        
+        assert_second_insert_statements = f"""
+            SELECT throwIf( count() != {expected_second_src} )
+                FROM table_a_b;
+
+            SELECT throwIf( count() != {expected_second_dst} )
+                FROM table_when_b_even_and_joined;
+            """
+
+        # Debug statements only when debug_on_fail is enabled
+        debug_before_first = ""
+        debug_before_second = ""
+        if args.debug_on_fail:
+            debug_before_first = (
+                get_basic_debug_statements("first", "table_a_b", "table_when_b_even_and_joined",
+                                          expected_first_src, expected_first_dst) +
+                get_table_data_debug("table_when_b_even_and_joined", expected_first_dst, 
+                                   ["a_src", "a_join", "b"]) +
+                get_system_debug_statements("table_when_b_even_and_joined", expected_first_dst,
+                                           ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
+                                           ["mv_b_even"])
+            )
+            
+            debug_before_second = (
+                get_basic_debug_statements("second", "table_a_b", "table_when_b_even_and_joined",
+                                          expected_second_src, expected_second_dst) +
+                get_table_data_debug("table_when_b_even_and_joined", expected_second_dst,
+                                   ["a_src", "a_join", "b"]) +
+                get_system_debug_statements("table_when_b_even_and_joined", expected_second_dst,
+                                           ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
+                                           ["mv_b_even"])
+            )
 
         script = f"""
             {get_logs_statement(args)}
@@ -485,6 +618,8 @@ def test_mv_generates_several_blocks(parser):
 
             {details_print_statements}
 
+            {debug_before_first}
+
             -- first assertion
             {assert_first_insert_statements}
 
@@ -492,6 +627,8 @@ def test_mv_generates_several_blocks(parser):
             {insert_statement}
 
             {details_print_statements}
+
+            {debug_before_second}
 
             -- second assertion
             {assert_second_insert_statements}
@@ -542,52 +679,62 @@ def test_several_mv_into_one_table(parser):
             {"" if not args.get_logs else "SELECT _part, count() FROM table_dst GROUP BY _part ORDER BY _part;"}
         """
 
+        # Compute expected values once
         if args.insert_unique_blocks:
-            assert_first_insert_statements = f"""
-                SELECT throwIf( count() != 8 )
-                    FROM table_src;
-
-                SELECT throwIf( count() != 6 )
-                    FROM table_dst;
-                """
-            assert_second_insert_statements = f"""
-                SELECT throwIf( count() != {8 if args.deduplicate_src_table else 16} )
-                    FROM table_src;
-
-                SELECT throwIf( count() != {6 if args.deduplicate_dst_table else 12} )
-                    FROM table_dst;
-                """
+            expected_first_src = 8
+            expected_first_dst = 6
+            expected_second_src = 8 if args.deduplicate_src_table else 16
+            expected_second_dst = 6 if args.deduplicate_dst_table else 12
         else:
             if args.use_insert_token:
-                assert_first_insert_statements = f"""
-                    SELECT throwIf( count() != {8 if args.deduplicate_src_table else 8} )
-                        FROM table_src;
-
-                    SELECT throwIf( count() != {16 if args.deduplicate_dst_table else 16} )
-                        FROM table_dst;
-                    """
-                assert_second_insert_statements = f"""
-                    SELECT throwIf( count() != {8 if args.deduplicate_src_table else 16} )
-                        FROM table_src;
-
-                    SELECT throwIf( count() != {16 if args.deduplicate_dst_table else 32} )
-                        FROM table_dst;
-                    """
+                expected_first_src = 8
+                expected_first_dst = 16
+                expected_second_src = 8 if args.deduplicate_src_table else 16
+                expected_second_dst = 16 if args.deduplicate_dst_table else 32
             else:
-                assert_first_insert_statements = f"""
-                    SELECT throwIf( count() != {1 if args.deduplicate_src_table else 8} )
-                        FROM table_src;
+                expected_first_src = 1 if args.deduplicate_src_table else 8
+                expected_first_dst = 2 if args.deduplicate_dst_table else 16
+                expected_second_src = 1 if args.deduplicate_src_table else 16
+                expected_second_dst = 2 if args.deduplicate_dst_table else 32
 
-                    SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 16} )
-                        FROM table_dst;
-                    """
-                assert_second_insert_statements = f"""
-                    SELECT throwIf( count() != {1 if args.deduplicate_src_table else 16} )
-                        FROM table_src;
+        # Use the computed values in assertions
+        assert_first_insert_statements = f"""
+            SELECT throwIf( count() != {expected_first_src} )
+                FROM table_src;
 
-                    SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 32} )
-                        FROM table_dst;
-                    """
+            SELECT throwIf( count() != {expected_first_dst} )
+                FROM table_dst;
+            """
+        
+        assert_second_insert_statements = f"""
+            SELECT throwIf( count() != {expected_second_src} )
+                FROM table_src;
+
+            SELECT throwIf( count() != {expected_second_dst} )
+                FROM table_dst;
+            """
+
+        # Debug statements only when debug_on_fail is enabled
+        debug_before_first = ""
+        debug_before_second = ""
+        if args.debug_on_fail:
+            debug_before_first = (
+                get_basic_debug_statements("first", "table_src", "table_dst",
+                                          expected_first_src, expected_first_dst) +
+                get_table_data_debug("table_dst", expected_first_dst, ["a", "b"]) +
+                get_system_debug_statements("table_dst", expected_first_dst,
+                                           ["table_src", "table_dst"],
+                                           ["mv_b_even", "mv_b_even_even"])
+            )
+            
+            debug_before_second = (
+                get_basic_debug_statements("second", "table_src", "table_dst",
+                                          expected_second_src, expected_second_dst) +
+                get_table_data_debug("table_dst", expected_second_dst, ["a", "b"]) +
+                get_system_debug_statements("table_dst", expected_second_dst,
+                                           ["table_src", "table_dst"],
+                                           ["mv_b_even", "mv_b_even_even"])
+            )
 
         script = f"""
             {get_logs_statement(args)}
@@ -627,12 +774,16 @@ def test_several_mv_into_one_table(parser):
 
             {details_print_statements}
 
+            {debug_before_first}
+
             {assert_first_insert_statements}
 
             -- second insert, retry
             {insert_statement}
 
             {details_print_statements}
+
+            {debug_before_second}
 
             {assert_second_insert_statements}
 
