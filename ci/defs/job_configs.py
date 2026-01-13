@@ -105,7 +105,7 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
     timeout_shell_cleanup=
         """
-find ./tests/integration > ./ci/tmp/filelist.txt
+find ./tests/integration -ls > ./ci/tmp/filelist.txt
 tar -czf ./ci/tmp/logs.tar.gz \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
