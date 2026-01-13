@@ -7,6 +7,7 @@
 #include <Common/TraceSender.h>
 #include <Common/setThreadName.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <string_view>
 
@@ -40,6 +41,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     if (unlikely(inside_send))
         return;
     inside_send = true;
+    SCOPE_EXIT({ inside_send = false; });
     DENY_ALLOCATIONS_IN_SCOPE;
 
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
@@ -117,8 +119,6 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     /// Multiple threads are calling this function concurrently, so writes to pipe should be atomic (single flush).
     chassert(out.getFlushCount() == 1);
-
-    inside_send = false;
 }
 
 }
