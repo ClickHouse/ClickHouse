@@ -323,7 +323,13 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(command.column_name);
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
-                        dropped_columns.emplace(command.column_name);
+                    {
+                        /// We need to keep the clear command to also know to clear dependent indices
+                        if (command.clear)
+                            for_interpreter.push_back(command);
+                        else
+                            dropped_columns.emplace(command.column_name);
+                    }
                 }
             }
         }

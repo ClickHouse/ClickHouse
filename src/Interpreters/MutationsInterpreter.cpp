@@ -1065,10 +1065,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
             materialized_statistics.insert(command.column_name);
 
-            /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-            /// that depend on it. We should rebuild such projections and indices
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
+                /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
+                /// that depend on it. We should rebuild such projections and indices
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
                 if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
@@ -1111,6 +1111,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+        {
+            /// When clearing a column, we need to also clear any indices that depend on it
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                const auto & index_cols = index.expression->getRequiredColumns();
+                if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
+                    dropped_indices.insert(index.name);
+            }
+        }
         /// The following mutations handled separately:
         else if (command.type == MutationCommand::APPLY_DELETED_MASK
               || command.type == MutationCommand::APPLY_PATCHES
@@ -1120,7 +1130,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else
         {
-            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
+            throw Exception(
+                ErrorCodes::UNKNOWN_MUTATION_COMMAND,
+                "Unknown mutation command: {}",
+                command.ast ? command.ast->formatForLogging() : fmt::to_string(command.type));
         }
     }
 
