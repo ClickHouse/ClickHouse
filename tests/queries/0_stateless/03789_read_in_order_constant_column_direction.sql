@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 -- Test: read-in-order optimization should use InReverseOrder when constant ORDER BY columns are skipped
 -- Bug: ORDER BY tenant, event_time DESC with WHERE tenant='42' used InOrder instead of InReverseOrder
 -- because the constant 'tenant' column was setting the read direction.
@@ -14,11 +15,15 @@ ORDER BY (tenant, event_time, id);
 INSERT INTO test_03789 SELECT toString(number % 10), now() - number, number FROM numbers(1000);
 
 -- Case 1: ORDER BY event_time DESC (baseline - should be InReverseOrder)
-SELECT 'Case 1 (baseline): InReverseOrder expected';
-SELECT (SELECT explain FROM (EXPLAIN SELECT * FROM test_03789 WHERE tenant='5' ORDER BY event_time DESC LIMIT 5) WHERE explain LIKE '%ReadType%');
+SELECT 'baseline';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1 SELECT * FROM test_03789 WHERE tenant='5' ORDER BY event_time DESC LIMIT 5
+) WHERE explain LIKE '%InReverseOrder%';
 
 -- Case 2: ORDER BY tenant, event_time DESC - should ALSO be InReverseOrder since tenant is constant
-SELECT 'Case 2 (fixed): InReverseOrder expected';
-SELECT (SELECT explain FROM (EXPLAIN SELECT * FROM test_03789 WHERE tenant='5' ORDER BY tenant, event_time DESC LIMIT 5) WHERE explain LIKE '%ReadType%');
+SELECT 'with_constant_column';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1 SELECT * FROM test_03789 WHERE tenant='5' ORDER BY tenant, event_time DESC LIMIT 5
+) WHERE explain LIKE '%InReverseOrder%';
 
 DROP TABLE test_03789;

@@ -534,11 +534,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
             {
                 //std::cerr << "====== Found direct match" << std::endl;
 
-                /// If the matched sorting key column is fixed (constant due to WHERE),
-                /// skip both ORDER BY and key columns without affecting read direction.
+                /// If the ORDER BY column is fixed (constant due to WHERE clause),
+                /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
-                /// The 'tenant' column is constant, so effective ORDER BY is just 'event_time DESC'.
-                if (fixed_key_columns.contains(sort_column_node))
+                /// tenant is constant, so read direction should come from event_time DESC.
+                if (fixed_columns.contains(sort_node))
                 {
                     ++next_description_column;
                     ++next_sort_key;
