@@ -441,7 +441,7 @@ ManifestFileContent::ManifestFileContent(
                         common_partition_specification,
                         columns_infos,
                         file_format,
-                        /*reference_data_file_path = */ std::nullopt,
+                        /*reference_data_file_path_ = */ std::nullopt,
                         /*equality_ids*/ std::nullopt,
                         sort_order_id));
                 break;
@@ -509,7 +509,7 @@ ManifestFileContent::ManifestFileContent(
                         common_partition_specification,
                         columns_infos,
                         file_format,
-                        /*reference_data_file_path = */ std::nullopt,
+                        /*reference_data_file_path_ = */ std::nullopt,
                         equality_ids,
                         /*sort_order_id = */ std::nullopt));
                 break;
