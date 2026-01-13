@@ -674,7 +674,6 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
-        self.with_iceberg_gcs_catalog = False
         self.with_glue_catalog = False
         self.with_hms_catalog = False
 
@@ -1722,29 +1721,6 @@ class ClickHouseCluster:
         )
         return self.base_iceberg_catalog_cmd
 
-    def setup_iceberg_catalog_with_gcs_cmd(
-        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
-    ):
-        self.with_iceberg_gcs_catalog = True
-        file_name = "docker_compose_iceberg_gcs.yml"
-        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
-            file_name = extra_parameters["docker_compose_file_name"]
-        self.base_cmd.extend(
-            [
-                "--file",
-                p.join(
-                    docker_compose_yml_dir, file_name
-                ),
-            ]
-        )
-        self.base_iceberg_catalog_cmd = self.compose_cmd(
-            "--env-file",
-            instance.env_file,
-            "--file",
-            p.join(docker_compose_yml_dir, file_name),
-        )
-        return self.base_iceberg_catalog_cmd
-
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
@@ -1968,7 +1944,6 @@ class ClickHouseCluster:
         with_prometheus_reader=False,
         with_prometheus_receiver=False,
         with_iceberg_catalog=False,
-        with_iceberg_gcs_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
         with_ytsaurus=False,
@@ -2106,7 +2081,6 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
-            with_iceberg_gcs_catalog=with_iceberg_gcs_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
             use_old_analyzer=use_old_analyzer,
@@ -2323,13 +2297,6 @@ class ClickHouseCluster:
                 )
             )
         
-        if with_iceberg_gcs_catalog and not self.with_iceberg_gcs_catalog:
-            cmds.append(
-                self.setup_iceberg_catalog_with_gcs_cmd(
-                    instance, env_variables, docker_compose_yml_dir, extra_parameters
-                )
-            )
-
         if with_glue_catalog and not self.with_glue_catalog:
             cmds.append(
                 self.setup_glue_catalog_cmd(
@@ -4265,7 +4232,6 @@ class ClickHouseInstance:
         with_cassandra,
         with_ldap,
         with_iceberg_catalog,
-        with_iceberg_gcs_catalog,
         with_glue_catalog,
         with_hms_catalog,
         use_old_analyzer,
