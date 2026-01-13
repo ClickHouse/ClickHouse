@@ -121,6 +121,22 @@ def should_skip_job(job_name):
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL}' - run stateless test jobs only",
         )
 
+    # Temporary kludge: when ci-performance is set, run only amd_release build and amd Benchmarks.
+    # Everything else (including Performance Comparison, ARM builds/benchmarks) should be skipped.
+    if Labels.CI_PERFORMANCE in _info_cache.pr_labels and _info_cache.pr_number:
+        allowed_jobs = (
+            job_name == "Build (amd_release)"
+            or job_name.startswith("Benchmarks (amd_release")
+            or job_name == JobNames.DOCKER_BUILDS_AMD
+            or job_name in ("Config Workflow", "Finish Workflow")
+        )
+        if allowed_jobs:
+            return False, ""
+        return (
+            True,
+            "Skipped, labeled with 'ci-performance' - run Build (amd_release) + Benchmarks (amd_release) only",
+        )
+
     is_benchmarks_job = job_name == JobNames.BENCHMARKS or job_name.startswith(
         JobNames.BENCHMARKS + " ("
     )
