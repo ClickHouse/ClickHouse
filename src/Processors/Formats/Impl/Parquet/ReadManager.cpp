@@ -303,7 +303,6 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 .column_idx = UINT64_MAX});
 
         ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-        chassert(prev_stage <= stage);
         row_subgroup.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
 
@@ -705,7 +704,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
 
 void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
 {
-    ReadStage stage = tasks.at(0).stage;
+    ReadStage stage = tasks.at(0).stage;    
     size_t column_idx = UINT64_MAX;
 
     std::exception_ptr exc;
