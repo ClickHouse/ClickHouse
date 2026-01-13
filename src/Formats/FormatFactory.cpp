@@ -776,6 +776,17 @@ void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomA
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
+void FormatFactory::registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator)
+{
+    chassert(input_creator);
+    auto & creators = getOrCreateCreators(name);
+    if (creators.input_creator || creators.random_access_input_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
+    creators.random_access_input_creator_with_metadata = std::move(input_creator);
+    registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
+}
+
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
 {
     auto & target = getOrCreateCreators(name).non_trivial_prefix_and_suffix_checker;
@@ -896,6 +907,14 @@ void FormatFactory::registerFileSegmentationEngineCreator(const String & name, F
 void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator)
 {
     auto & target = getOrCreateCreators(name).schema_reader_creator;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
+    target = std::move(schema_reader_creator);
+}
+
+void FormatFactory::registerSchemaReaderWithMetadata(const String & name, SchemaReaderCreatorWithMetadata schema_reader_creator)
+{
+    auto & target = getOrCreateCreators(name).schema_reader_creator_with_metadata;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
     target = std::move(schema_reader_creator);
