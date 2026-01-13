@@ -5,6 +5,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ inline const char * toString(IdentifierLookupContext identifier_lookup_context)
         case IdentifierLookupContext::FUNCTION: return "FUNCTION";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "TABLE_EXPRESSION";
     }
+    UNREACHABLE();
 }
 
 inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_context)
@@ -35,6 +37,7 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
         case IdentifierLookupContext::FUNCTION: return "function";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "table expression";
     }
+    UNREACHABLE();
 }
 
 /** Structure that represent identifier lookup during query analysis.

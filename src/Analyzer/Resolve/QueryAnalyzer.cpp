@@ -1384,7 +1384,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
-        auto full_name = identifier_lookup.identifier.getFullName();
+        String full_name = identifier_lookup.identifier.getFullName();
+        const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+        if (use_standard_mode && !identifier_lookup.is_double_quoted)
+            full_name = Poco::toLower(full_name);
         auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
 
         /// CTE may reference table expressions with the same name, e.g.:
@@ -2765,7 +2768,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         case QueryTreeNodeType::IDENTIFIER:
         {
             auto & identifier_node = node->as<IdentifierNode &>();
-            auto unresolved_identifier = identifier_node.getIdentifier();
+            const auto & unresolved_identifier = identifier_node.getIdentifier();
+
             IdentifierLookup identifier_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
             if (node->hasOriginalAST())
                 identifier_lookup.original_ast_node = node->getOriginalAST();
@@ -2788,11 +2792,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             }
 
             if (!resolved_identifier_node && allow_lambda_expression)
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
+            {
+                IdentifierLookup function_lookup{unresolved_identifier, IdentifierLookupContext::FUNCTION};
+                function_lookup.is_double_quoted = identifier_lookup.is_double_quoted;
+                resolved_identifier_node = tryResolveIdentifier(function_lookup, scope).resolved_identifier;
+            }
 
             if (!resolved_identifier_node && allow_table_expression)
             {
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
+                IdentifierLookup table_lookup{unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION};
+                table_lookup.is_double_quoted = identifier_lookup.is_double_quoted;
+                resolved_identifier_node = tryResolveIdentifier(table_lookup, scope).resolved_identifier;
 
                 if (resolved_identifier_node)
                 {
@@ -3705,7 +3715,6 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             }
         }
 
-        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
         for (auto & [alias_column_to_resolve_name, alias_column_to_resolve] : alias_columns_to_resolve)
         {
             /** Alias column could be potentially resolved during resolve of other ALIAS column.
@@ -3713,10 +3722,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               *
               * During resolve of alias_value_1, alias_value_2 column will be resolved.
               */
-            alias_column_to_resolve = table_expression_data.column_name_to_column_node[alias_column_to_resolve_name];
+            alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
-            alias_column_resolve_scope.table_expression_data_for_alias_resolution = &table_expression_data;
+            alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
@@ -3730,8 +3739,11 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
-            table_expression_data.column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
+            column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
+            column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
+
+        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
     }
     else if (query_node || union_node)
     {
@@ -4831,7 +4843,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         bool subquery_is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
         if (!subquery_is_cte)
             continue;
-        const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        String cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+
+        const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+        if (use_standard_mode)
+            cte_name = Poco::toLower(cte_name);
 
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)

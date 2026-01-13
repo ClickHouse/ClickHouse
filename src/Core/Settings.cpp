@@ -7071,14 +7071,15 @@ Possible values:
 - `default` — Case-sensitive matching (current behavior). Identifiers must match exactly.
 - `standard` — SQL standard-like behavior:
   - Unquoted identifiers are case-insensitive
-  - Quoted identifiers (double-quotes or backticks) are case-sensitive
+  - Double-quoted identifiers ("...") are case-sensitive
+  - Backtick-quoted identifiers (`...`) are case-insensitive (like unquoted)
   - If multiple columns differ only by case, unquoted access throws an ambiguity error
   - Expression aliases follow the same rules
 
 Example with `standard` mode:
 - `SELECT FirstName FROM t` matches column `firstname`, `FIRSTNAME`, or `FirstName`
 - `SELECT "FirstName" FROM t` only matches column `FirstName` exactly
-- `SELECT `FirstName` FROM t` only matches column `FirstName` exactly
+- `SELECT `FirstName` FROM t` matches any case (same as unquoted)
 )", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.

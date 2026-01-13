@@ -79,7 +79,7 @@ struct AnalysisTableExpressionData
             if (column_identifier_first_parts.contains(lower_first))
                 return true;
         }
-        return tryGetSubcolumnInfo(identifier_view.getFullName()).has_value();
+        return tryGetSubcolumnInfo(identifier_view.getFullName(), use_case_insensitive).has_value();
     }
 
     ColumnNameToColumnNodeMap::const_iterator findColumnCaseInsensitive(
@@ -137,11 +137,19 @@ struct AnalysisTableExpressionData
         DataTypePtr subcolumn_type;
     };
 
-    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name) const
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name, bool use_case_insensitive = false) const
     {
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
             auto it = column_name_to_column_node.find(column_name);
+            if (it == column_name_to_column_node.end() && use_case_insensitive && use_standard_mode)
+            {
+                /// try case-insensitive lookup
+                String lower_column_name = Poco::toLower(String(column_name));
+                auto lower_it = lowercase_column_name_to_original_names.find(lower_column_name);
+                if (lower_it != lowercase_column_name_to_original_names.end() && !lower_it->second.empty())
+                    it = column_name_to_column_node.find(lower_it->second.front());
+            }
             if (it != column_name_to_column_node.end())
             {
                 if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
@@ -164,6 +172,7 @@ struct AnalysisTableExpressionData
             lowercase_column_name_to_original_names[lower_name].push_back(column_name);
         }
 
+        /// Add lowercase entries to column_identifier_first_parts for binding check
         std::vector<std::string> first_parts_to_add;
         for (const auto & first_part : column_identifier_first_parts)
         {

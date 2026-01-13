@@ -8,6 +8,13 @@ Test
 10	100
 20	200
 --- Self-join ---
+--- JOIN USING ---
+1	10	100
+2	20	200
+1	10	100
+2	20	200
+1
+2
 --- Subqueries ---
 10
 20
@@ -19,6 +26,12 @@ Test
 20
 30
 --- CTE ---
+10
+20
+30
+10
+20
+30
 10
 20
 30
@@ -39,10 +52,16 @@ Test
 10
 30
 10	30
---- Nested columns ---
+--- Nested columns (Tuple subcolumns) ---
 Alice
 Alice
 Alice
+25
+--- Nested subcolumns ---
+['a','b']
+['a','b']
+[1,2]
+[1,2]
 --- HAVING with aliases ---
 A	30
 B	40
@@ -55,3 +74,5 @@ B	40
 --- Default mode JOIN ---
 10	100
 20	200
+--- Default mode CTE ---
+1

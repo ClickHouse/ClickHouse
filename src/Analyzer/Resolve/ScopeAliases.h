@@ -3,6 +3,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Poco/String.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -39,6 +40,7 @@ struct ScopeAliases
             case IdentifierLookupContext::FUNCTION: return alias_name_to_lambda_node;
             case IdentifierLookupContext::TABLE_EXPRESSION: return alias_name_to_table_expression_node;
         }
+        UNREACHABLE();
     }
 
     std::unordered_map<std::string, std::vector<std::string>> & getLowercaseAliasMap(IdentifierLookupContext lookup_context)
@@ -49,6 +51,7 @@ struct ScopeAliases
             case IdentifierLookupContext::FUNCTION: return lowercase_lambda_alias_to_originals;
             case IdentifierLookupContext::TABLE_EXPRESSION: return lowercase_table_alias_to_originals;
         }
+        UNREACHABLE();
     }
 
     enum class FindOption
@@ -64,6 +67,7 @@ struct ScopeAliases
             case FindOption::FIRST_NAME: return identifier.front();
             case FindOption::FULL_NAME: return identifier.getFullName();
         }
+        UNREACHABLE();
     }
 
     QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option)

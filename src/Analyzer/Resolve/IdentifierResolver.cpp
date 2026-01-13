@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
 }
 
 namespace ErrorCodes
@@ -328,13 +329,25 @@ bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & ide
 
 bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.is_double_quoted;
+
+    const auto & identifier_name = identifier_lookup.identifier.getFullName();
+
     for (const auto * join_using : scope.join_using_columns)
     {
         for (const auto & [using_column_name, _] : *join_using)
         {
-            // std::cerr << identifier_lookup.identifier.getFullName() << " <===========> " << using_column_name << std::endl;
-            if (identifier_lookup.identifier.getFullName() == using_column_name)
+            if (use_case_insensitive)
+            {
+                if (Poco::icompare(identifier_name, using_column_name) == 0)
+                    return true;
+            }
+            else if (identifier_name == using_column_name)
+            {
                 return true;
+            }
         }
     }
 
@@ -416,7 +429,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     }
 
     const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive)
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive) 
         || table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
         return true;
 
@@ -519,7 +532,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     /// Check if it's a subcolumn
     if (!result_expression)
     {
-        if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
+        if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name, use_case_insensitive))
         {
             if (table_expression_data.supports_subcolumns)
                 result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
@@ -756,7 +769,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
     {
         if (use_case_insensitive)
-            return Poco::toLower(a) == Poco::toLower(b);
+            return Poco::icompare(a, b) == 0;
         return a == b;
     };
 
