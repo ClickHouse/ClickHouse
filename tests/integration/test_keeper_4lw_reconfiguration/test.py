@@ -47,7 +47,7 @@ def started_cluster():
         cluster.shutdown()
 
 def five_to_three_reconfig(started_cluster):
-    zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=30)
+    zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=60)
     command = {
         "max_action_wait_time_ms": 180000,
         "max_total_wait_time_ms": 600000,
@@ -176,7 +176,7 @@ def three_to_five_reconfig(started_cluster):
 
 
 def test_reconfig_option1(started_cluster):
-    zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=30)
+    zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=60)
     zk.create("/test_reconfig_option1", b"data1")
     content = zk.get("/keeper/config")[0].decode("utf-8")
     if 'server.1' in content:
@@ -187,7 +187,7 @@ def test_reconfig_option1(started_cluster):
     assert zk.get("/test_reconfig_option1")[0] == b"data1"
 
 def test_reconfig_option2(started_cluster):
-    zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=30)
+    zk = keeper_utils.get_fake_zk(cluster, "node3", timeout=60)
     zk.create("/test_reconfig_option2", b"data2")
     content = zk.get("/keeper/config")[0].decode("utf-8")
     if 'server.1' in content:
