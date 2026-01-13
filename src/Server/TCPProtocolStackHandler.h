@@ -57,17 +57,13 @@ public:
                 /// We should send an error message and close the connection.
                 try
                 {
-                    Exception ex("IP address not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-                    std::string message = Exception::getMessageForErrorLog(ex) + "\n";
+                    std::string message = Exception::getMessageForErrorLog(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "IP address not allowed") + "\n";
                     
-                    int total_sent = 0;
-                    const int message_size = static_cast<int>(message.size());
+                    size_t total_sent = 0;
+                    const size_t message_size = message.size();
                     while (total_sent < message_size)
                     {
-                        if (total_sent < 0 || total_sent >= message_size)
-                            break;
-
-                        int sent = socket().sendBytes(message.data() + total_sent, message_size - total_sent);
+                        int sent = socket().sendBytes(message.data() + total_sent, static_cast<int>(message_size - total_sent));
                         if (sent <= 0)
                         {
                             LOG_ERROR(log, "Failed to send full error message to blocked client (sendBytes returned {}).", sent);
