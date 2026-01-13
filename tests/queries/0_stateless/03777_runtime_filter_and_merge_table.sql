@@ -19,7 +19,7 @@ SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID'
 EXPLAIN --header=1, actions=1
 SELECT count()
 FROM foo_merge JOIN t2 USING Val
-SETTINGS enable_join_runtime_filters=1, enable_parallel_replicas=1
+SETTINGS enable_join_runtime_filters=1, parallel_replicas_local_plan=1
 );
 
 SELECT '=================================================';
