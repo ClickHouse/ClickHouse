@@ -1147,7 +1147,7 @@ void ReplicatedMergeTreeSink::onStart()
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
 
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onStart");
-    /** If write is with quorum, then we check that the required number of replicas is now live,
+    /** If write is with quorum, then we check that the required number of replicas is now alive,
     *  and also that for all previous parts for which quorum is required, this quorum is reached.
     * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
     * TODO Too complex logic, you can do better.
