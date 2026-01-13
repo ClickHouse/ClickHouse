@@ -22,7 +22,7 @@ def verify_ip_block_error(data):
     try:
         error_msg = data.decode('utf-8')
     except UnicodeDecodeError as e:
-        pytest.fail(f"Received non-UTF-8 data from server: {data!r}, decode error: {e}")
+        pytest.fail(f"Received non-UTF-8 data from server: {data!r}, {e}")
     
     # We expect our specific error message
     assert "IP address not allowed" in error_msg

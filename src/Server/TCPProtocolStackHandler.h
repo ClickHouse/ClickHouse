@@ -25,17 +25,17 @@ private:
     TCPServer & tcp_server;
     std::vector<TCPServerConnectionFactory::Ptr> stack;
     std::string conf_name;
-    bool access_denied;
+    bool ip_blocked;
     LoggerPtr log;
 
 public:
-    TCPProtocolStackHandler(IServer & server_, TCPServer & tcp_server_, const StreamSocket & socket, const std::vector<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_, bool access_denied_ = false)
+    TCPProtocolStackHandler(IServer & server_, TCPServer & tcp_server_, const StreamSocket & socket, const std::vector<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_, bool ip_blocked_ = false)
         : TCPServerConnection(socket)
         , server(server_)
         , tcp_server(tcp_server_)
         , stack(stack_)
         , conf_name(conf_name_)
-        , access_denied(access_denied_)
+        , ip_blocked(ip_blocked_)
         , log(getLogger("TCPProtocolStackHandler"))
     {}
 
@@ -48,7 +48,7 @@ public:
         for (auto & factory : stack)
         {
             /// If the IP is denied, we only allow TLS handshake to pass through to send a proper error message.
-            if (access_denied)
+            if (ip_blocked)
             {
                 if (factory->isSecure())
                 {
