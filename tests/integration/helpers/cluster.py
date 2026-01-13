@@ -2296,7 +2296,7 @@ class ClickHouseCluster:
                     instance, env_variables, docker_compose_yml_dir, extra_parameters
                 )
             )
-        
+
         if with_glue_catalog and not self.with_glue_catalog:
             cmds.append(
                 self.setup_glue_catalog_cmd(
