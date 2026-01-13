@@ -87,6 +87,10 @@ protected:
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
 
+std::optional<UInt64> getSegfaultAddress(const siginfo_t & info);
+std::string getSegfaultMemoryAccessType(const ucontext_t & context);
+std::string getSignalCodeDescription(int sig, int si_code);
+
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler
 extern thread_local bool asynchronous_stack_unwinding;

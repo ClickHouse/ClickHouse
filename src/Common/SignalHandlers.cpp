@@ -104,6 +104,12 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
 
+    std::string exception_message;
+    if (auto ex = std::current_exception())
+    {
+        exception_message = getExceptionMessage(ex, false, false);
+    }
+
     writeBinary(sig, out);
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
@@ -111,6 +117,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
+    writeBinary(exception_message, out);
     out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
@@ -322,6 +329,7 @@ void SignalListener::run()
             std::vector<FramePointers> thread_frame_pointers;
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
+            std::string exception_message;
 
             readPODBinary(info, in);
             readPODBinary(context, in);
@@ -330,8 +338,9 @@ void SignalListener::run()
             readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
+            readBinary(exception_message, in);
 
-            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
+            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_message);
         }
     }
 }
@@ -364,7 +373,8 @@ void SignalListener::onFault(
     const StackTrace & stack_trace,
     const std::vector<FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
-    DB::ThreadStatus * thread_ptr) const
+    DB::ThreadStatus * thread_ptr,
+    const std::string & exception_message) const
 try
 {
     ThreadStatus thread_status;
@@ -513,7 +523,25 @@ try
 
     /// Write crash to system.crash_log table if available.
     if (collectCrashLog)
-        collectCrashLog(sig, thread_num, query_id, stack_trace);
+    {
+        std::optional<UInt64> segfault_address;
+        String segfault_memory_access_type;
+        String si_code_description;
+
+        if (sig == SIGSEGV)
+        {
+            segfault_address = getSegfaultAddress(info);
+            segfault_memory_access_type = getSegfaultMemoryAccessType(*context);
+        }
+
+        si_code_description = getSignalCodeDescription(sig, info.si_code);
+
+        collectCrashLog(
+            sig, info.si_code, thread_num, query_id, query,
+            stack_trace, segfault_address, segfault_memory_access_type, si_code_description,
+            exception_message,
+            GIT_HASH, Poco::Environment::osArchitecture());
+    }
 
     Context::getGlobalContextInstance()->handleCrash();
 
