@@ -750,16 +750,9 @@ class Runner:
         ):
             for commit_author in env.COMMIT_AUTHORS:
                 try:
-                    pr_status = "open" if env.PR_NUMBER else "merged"
                     EventFeed.update(
                         commit_author,
-                        workflow_result.to_event(
-                            sha=env.SHA,
-                            pr_number=env.LINKED_PR_NUMBER or env.PR_NUMBER,
-                            branch=env.BRANCH,
-                            pr_status=pr_status,
-                            pr_title=env.PR_TITLE,
-                        ),
+                        workflow_result.to_event(),
                         s3_path=Settings.EVENTS_S3_PATH,
                         notify_slack=True,
                     )

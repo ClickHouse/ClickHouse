@@ -60,20 +60,16 @@ def publish_home_view(
                 ":pr_open:" if event.pr_status == "open" else ":pr_merged:"
             )
 
-            # Get PR link from event.result.links[0] if available
-            try:
-                if hasattr(event, "result") and event.result:
-                    links = event.result.get("links", [])
-                    if links and len(links) > 0:
-                        link = links[0]
-                        if "pull" in link:
-                            pr_link = link
-            except Exception:
-                pr_link = ""
+            # Get change URL from event.ext
+            change_url = event.ext.get("change_url", "")
 
             # Check if any job has failed or errored
             has_failures = False
-            if hasattr(event, "result") and event.result and event.result.get("results"):
+            if (
+                hasattr(event, "result")
+                and event.result
+                and event.result.get("results")
+            ):
                 has_failures = any(
                     r.get("status") in ["failure", "error"]
                     for r in event.result.get("results", [])
@@ -103,7 +99,24 @@ def publish_home_view(
             else:
                 report_url_text = f""
 
-            event_text = f"{pr_status_emoji} {ci_running_status_emoji} {ci_status_emoji} <{pr_link}|#{event.pr_number}> *{event.pr_title}*"
+            # Format identifier (sha or PR number) with link if available
+            if event.pr_number > 0:
+                # This is a PR
+                identifier = f"#{event.pr_number}"
+                title = event.pr_title
+            else:
+                # This is a commit (merged to master)
+                identifier = event.sha[:8] if event.sha else "commit"
+                title = (
+                    event.ext.get("commit_message", "").split("\n")[0]
+                    if event.ext.get("commit_message")
+                    else event.pr_title
+                )
+
+            identifier_text = (
+                f"<{change_url}|{identifier}>" if change_url else identifier
+            )
+            event_text = f"{pr_status_emoji} {ci_running_status_emoji} {ci_status_emoji} {identifier_text} *{title}*"
 
             # Aggregate results by status from workflow result
             if (
@@ -168,6 +181,35 @@ def publish_home_view(
 
                 if report_url_text:
                     event_text += "\n" + report_url_text
+
+                # Add related PRs if available
+                related_prs = event.ext.get("related_prs", [])
+                if related_prs:
+                    event_text += "\n\n*Related PRs:*"
+                    for pr_num in related_prs:
+                        # Try to get PR details from event.result.ext if available
+                        pr_info = {}
+                        if hasattr(event, "result") and event.result:
+                            result_ext = event.result.get("ext", {})
+                            related_pr_info = result_ext.get("related_pr_info", {})
+                            pr_info = related_pr_info.get(pr_num, {})
+
+                        pr_title = pr_info.get("pr_title", "")
+                        pr_change_url = pr_info.get("change_url", "")
+                        pr_report_url = pr_info.get("report_url", "")
+
+                        if pr_change_url:
+                            pr_link_text = f"<{pr_change_url}|#{pr_num}>"
+                        else:
+                            pr_link_text = f"#{pr_num}"
+
+                        pr_line = f"\n  • {pr_link_text}"
+                        if pr_title:
+                            pr_line += f" - {pr_title}"
+                        if pr_report_url:
+                            pr_line += f" (<{pr_report_url}|report>)"
+
+                        event_text += pr_line
 
             # Create individual section block for each event (without image accessory)
             blocks.append(
