@@ -21,7 +21,7 @@ for i in $(seq 1 $NUM_REPLICAS); do
     # the transaction is rolled back, but the data part from filesystem is deleted lazily (in the background thread),
     # and if the table is restarted, it will see an unexpected part at startup, which is in the filesystem,
     # but isn't present in Keeper. While this is a potential usability flaw and a source of questions,
-    # for the purpose of this test, we consider it normal.    "
+    # for the purpose of this test, we consider it normal.
 done
 
 valid_exceptions_to_retry='Quorum for previous write has not been satisfied yet|Another quorum insert has been already started|Unexpected logical error while adding block'
