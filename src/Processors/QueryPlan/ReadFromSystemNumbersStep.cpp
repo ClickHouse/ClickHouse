@@ -87,10 +87,24 @@ protected:
         UInt64 real_block_size = block_size;
         if (end.has_value())
         {
-            if (end.value() <= next)
+            /// Detect wraparound case: end is very small and next is very large
+            /// This means we should generate from next to UINT64_MAX, then the source stops
+            bool is_wraparound = (end.value() < step_between_chunks && next > std::numeric_limits<UInt64>::max() / 2);
+
+            if (!is_wraparound && end.value() <= next)
                 return {};
 
-            auto max_items_to_generate = itemCountInRange(next, *end, step_in_chunk);
+            UInt64 max_items_to_generate;
+            if (is_wraparound)
+            {
+                /// Generate from next to UINT64_MAX (inclusive)
+                /// Calculate how many values fit in [next, UINT64_MAX]
+                max_items_to_generate = (std::numeric_limits<UInt64>::max() - next) / step_in_chunk + 1;
+            }
+            else
+            {
+                max_items_to_generate = itemCountInRange(next, *end, step_in_chunk);
+            }
 
             real_block_size = std::min(block_size, max_items_to_generate);
         }
@@ -104,7 +118,26 @@ protected:
 
         iotaWithStepOptimized(pos, static_cast<size_t>(current_end - pos), curr, step_in_chunk);
 
-        next += step_between_chunks;
+        /// Check for overflow when incrementing next
+        /// If next + step would overflow, ensure proper termination
+        if (std::numeric_limits<UInt64>::max() - step_between_chunks < next)
+        {
+            /// After overflow, next would wrap to a small value
+            /// We should only continue if this is a wraparound source (end is small indicating wraparound)
+            if (end.has_value() && end.value() < next)
+            {
+                /// This is a wraparound source, calculate wrapped position
+                UInt64 overflow_amount = step_between_chunks - (std::numeric_limits<UInt64>::max() - next) - 1;
+                next = overflow_amount;
+            }
+            else
+            {
+                /// Not a wraparound source, stop generation by setting next >= end
+                next = end.has_value() ? end.value() : std::numeric_limits<UInt64>::max();
+            }
+        }
+        else
+            next += step_between_chunks;
 
         progress(column->size(), column->byteSize());
         return {Columns{std::move(column)}, real_block_size};
@@ -616,20 +649,37 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         return pipe;
     }
 
-    const auto end = std::invoke(
-        [&]() -> std::optional<UInt64>
-        {
-            if (numbers_storage.limit.has_value())
-                return *(numbers_storage.limit) + numbers_storage.offset;
-            return {};
-        });
-
     /// Fall back to NumbersSource
+    /// Check for overflow: if offset + limit would overflow UInt64, we need to handle wraparound
+    bool has_overflow = false;
+    std::optional<UInt64> end;
+    std::optional<UInt64> overflow_end;
+
+    if (numbers_storage.limit.has_value())
+    {
+        if (std::numeric_limits<UInt64>::max() - numbers_storage.offset >= *(numbers_storage.limit))
+        {
+            /// No overflow case
+            end = *(numbers_storage.limit) + numbers_storage.offset;
+        }
+        else
+        {
+            /// Overflow case: split into two ranges
+            /// High range: [offset, UINT64_MAX + 1) which wraps to [offset, 0) in UInt64 arithmetic
+            /// Low range: [0, overflow_amount)
+            has_overflow = true;
+            end = UInt64(0); /// This represents UINT64_MAX + 1 due to wraparound
+            UInt128 overflow_amount = UInt128(numbers_storage.offset) + UInt128(*numbers_storage.limit) - UInt128(std::numeric_limits<UInt64>::max()) - 1;
+            overflow_end = UInt64(overflow_amount);
+        }
+    }
+
     /// Range in a single block
     const auto block_range = max_block_size * numbers_storage.step;
     /// Step between chunks in a single source.
     /// It is bigger than block_range in case of multiple threads, because we have to account for other sources as well.
     const auto step_between_chunks = num_streams * block_range;
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         const auto source_offset = i * block_range;
@@ -648,13 +698,36 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
         if (end && i == 0)
         {
-            UInt64 rows_approx = itemCountInRange(numbers_storage.offset, *end, numbers_storage.step);
-            if (limit > 0 && limit < rows_approx)
-                rows_approx = query_info_limit;
-            source->addTotalRowsApprox(rows_approx);
+            UInt64 total_rows = numbers_storage.limit.has_value() ? *numbers_storage.limit : 0;
+            if (limit > 0 && limit < total_rows)
+                total_rows = query_info_limit;
+            source->addTotalRowsApprox(total_rows);
         }
 
         pipe.addSource(std::move(source));
+    }
+
+    /// If we have overflow, add sources for the wrapped range [0, overflow_end)
+    if (has_overflow && overflow_end.has_value())
+    {
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            const auto source_offset = i * block_range;
+
+            /// Check if this source would start beyond the overflow range
+            if (source_offset >= overflow_end.value())
+                break;
+
+            auto source = std::make_shared<NumbersSource>(
+                max_block_size,
+                source_offset,
+                overflow_end,
+                numbers_storage.column_name,
+                numbers_storage.step,
+                step_between_chunks);
+
+            pipe.addSource(std::move(source));
+        }
     }
 
     return pipe;
