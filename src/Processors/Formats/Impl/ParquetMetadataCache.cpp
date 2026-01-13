@@ -15,46 +15,6 @@ size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & k
     return std::hash<String>{}(key.file_path + key.etag);
 }
 
-ParquetMetadataKeyMap::ParquetMetadataKeyMap(size_t max_size_)
-    : max_size(max_size_ > 0 ? max_size_ : DEFAULT_MAX_SIZE)
-{
-    data.reserve(max_size);
-}
-
-size_t ParquetMetadataKeyMap::size() const
-{
-    std::lock_guard lock(mutex);
-    return data.size();
-}
-
-bool ParquetMetadataKeyMap::empty() const
-{
-    std::lock_guard lock(mutex);
-    return data.empty();
-}
-
-void ParquetMetadataKeyMap::clear()
-{
-    std::lock_guard lock(mutex);
-    data.clear();
-}
-
-String ParquetMetadataKeyMap::getEtagForFile(const String & file_path)
-{
-    std::lock_guard lock(mutex);
-    auto it = data.find(file_path);
-    if (it == data.end())
-        // TODO: can't return empty string, maybe throw an exception
-        return "";
-    return it->second;
-}
-
-void ParquetMetadataKeyMap::setEtagForFile(const String & file_path, const String & etag)
-{
-    std::lock_guard lock(mutex);
-    data[file_path] = etag;
-}
-
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
     : metadata(std::move(metadata_))
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
@@ -81,7 +41,6 @@ ParquetMetadataCache::ParquetMetadataCache(
         max_size_in_bytes,
         max_count,
         size_ratio)
-    , key_map(max_count)
     , log(getLogger("ParquetMetadataCache"))
 {
 }

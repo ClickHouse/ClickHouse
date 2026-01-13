@@ -1,5 +1,4 @@
 #pragma once
-#include <mutex>
 #include "config.h"
 
 #if USE_PARQUET
@@ -49,25 +48,6 @@ struct ParquetMetadataCacheKeyHash
     size_t operator()(const ParquetMetadataCacheKey & key) const;
 };
 
-// TODO: implement LRU eviction, right now this is unbounded size
-struct ParquetMetadataKeyMap
-{
-private:
-    static constexpr size_t DEFAULT_MAX_SIZE = 10000;
-    std::unordered_map<String, String> data;
-    size_t max_size;
-    mutable std::mutex mutex;
-    void evict();
-    void updateAccessOrder(const String & file_path);
-public:
-    explicit ParquetMetadataKeyMap(size_t max_size_);
-    size_t size() const;
-    bool empty() const;
-    void clear();
-    String getEtagForFile(const String & file_path);
-    void setEtagForFile(const String & file_path, const String & etag);
-};
-
 /// Cache cell containing Parquet metadata
 struct ParquetMetadataCacheCell : private boost::noncopyable
 {
@@ -91,7 +71,6 @@ class ParquetMetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetMe
 public:
     using Base = CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>;
     ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
-    ParquetMetadataKeyMap key_map;
     static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr);
     /// Get or load Parquet metadata with caching
     template <typename LoadFunc>
