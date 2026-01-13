@@ -2491,7 +2491,11 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {
-                    rpn_stack.back() = !rpn_stack.back();
+                    /// NOT x = 'acd' is always True with BloomFilter even if x = 'acd' was True.
+                    /// Hence rpn_stack.back() = !rpn_stack.back() will be wrong. We will
+                    /// push True by default for NOT. This could cause false positives for
+                    /// other skip indexes if NOT is used.
+                    rpn_stack.back() = true;
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
                 {
