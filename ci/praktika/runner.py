@@ -479,11 +479,6 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
-        if result.is_error():
-            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
-            # Add hook timeout once it's needed
-            Shell.check(result.get_on_error_hook(), verbose=True)
-
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 

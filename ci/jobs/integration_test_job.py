@@ -167,17 +167,11 @@ def main():
     is_targeted_check = False
 
     # Set on_error_hook to collect logs on hard timeout
-    Result.from_fs(info.job_name).set_on_error_hook(
-        """
-dmesg -T > ./ci/tmp/dmesg.log
-"""
-    ).set_files(
+    Result.from_fs(info.job_name).set_files(
         [
             "./ci/tmp/logs.tar.gz",
             "./ci/tmp/dmesg.log",
             "./ci/tmp/docker-in-docker.log",
-            "./ci/tmp/filelist.txt",
-            "./ci/tmp/tar.log",
         ],
         strict=False,
     )

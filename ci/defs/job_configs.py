@@ -105,15 +105,15 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
     timeout_shell_cleanup=
         """
-id > ./ci/tmp/filelist.txt
-sudo echo 1 2>&1 >>./ci/tmp/filelist.txt
-tar --dereference -czf ./ci/tmp/logs.tar.gz \
+dmesg -T >./ci/tmp/dmesg.log
+sudo chown -R $(id -u):$(id -g) ./tests/integration
+tar -czf ./ci/tmp/logs.tar.gz \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
-  ./ci/tmp/*.jsonl 2>./ci/tmp/tar.log || true
+  ./ci/tmp/*.jsonl || :
 docker rm -f praktika
 """,
-    timeout=600, #REMOVEME
+    timeout=300, #REMOVEME
 )
 
 BINARY_DOCKER_COMMAND = (
