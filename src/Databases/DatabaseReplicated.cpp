@@ -141,9 +141,6 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, 
 // Return <address, port, uuid>
 static inline std::tuple<String, UInt16, UUID> parseHostID(const String & content)
 {
-    if (content.empty())
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid host ID '{}'", content);
-
     auto pos = content.find_last_of(':');
     if (pos == std::string::npos || pos + 1 >= content.size())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid host ID '{}'", content);
