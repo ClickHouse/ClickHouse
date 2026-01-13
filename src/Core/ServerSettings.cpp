@@ -1022,11 +1022,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **See Also**
     - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
-    DECLARE(Bool, cpu_slot_preemption, false, R"(
+    DECLARE(Bool, cpu_slot_preemption, true, R"(
     Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 
-    - If `true` (recommended), accounting is done based on actual CPU time consumed. A fair number of CPU time would be allocated to competing workloads. Slots are allocated for a limited amount of time and re-requested after expiry. Slot requesting may block thread execution in case of CPU resource overload, i.e., preemption may happen. This ensures CPU-time fairness.
-    - If `false` (default), accounting is based on the number of CPU slots allocated. A fair number of CPU slots would be allocated to competing workloads. A slot is allocated when a thread starts, held continuously, and released when the thread ends execution. The number of threads allocated for query execution may only increase from 1 to `max_threads` and never decrease. This is more favorable to long-running queries and may lead to CPU starvation of short queries.
+    - If `true` (default), accounting is done based on actual CPU time consumed. A fair number of CPU time would be allocated to competing workloads. Slots are allocated for a limited amount of time and re-requested after expiry. Slot requesting may block thread execution in case of CPU resource overload, i.e., preemption may happen. This ensures CPU-time fairness.
+    - If `false`, accounting is based on the number of CPU slots allocated. A fair number of CPU slots would be allocated to competing workloads. A slot is allocated when a thread starts, held continuously, and released when the thread ends execution. The number of threads allocated for query execution may only increase from 1 to `max_threads` and never decrease. This is more favorable to long-running queries and may lead to CPU starvation of short queries.
 
     **Example**
 
