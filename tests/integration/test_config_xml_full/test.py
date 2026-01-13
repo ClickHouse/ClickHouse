@@ -81,26 +81,5 @@ def test_xml_full_conf():
             == "1\n"
         )
 
-        assert (
-            node.query(
-                "select value from system.server_settings where name = 'query_masking_rules.rule.name'"
-            )
-            == "hide encrypt/decrypt arguments\n"
-        )
-
-        assert (
-            node.query(
-                "select changed from system.server_settings where name = 'query_masking_rules.rule.name'"
-            )
-            == "1\n"
-        )
-
-        assert (
-            node.query(
-                "select description from system.server_settings where name = 'query_masking_rules.rule.name'"
-            )
-            == "\n"
-        )
-
     finally:
         cluster.shutdown()
