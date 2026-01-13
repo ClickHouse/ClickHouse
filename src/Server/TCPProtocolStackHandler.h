@@ -7,6 +7,7 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <limits>
 
 namespace DB
 {
@@ -69,7 +70,9 @@ public:
                     const size_t message_size = message.size();
                     while (total_sent < message_size)
                     {
-                        int sent = socket().sendBytes(message.data() + total_sent, static_cast<int>(message_size - total_sent));
+                        size_t remaining = message_size - total_sent;
+                        int to_send = static_cast<int>(std::min(remaining, static_cast<size_t>(std::numeric_limits<int>::max())));
+                        int sent = socket().sendBytes(message.data() + total_sent, to_send);
                         if (sent < 0)
                         {
                             LOG_ERROR(log, "Failed to send IP block error message to client {} due to socket error (sendBytes returned {}).", socket().peerAddress().toString(), sent);
@@ -80,7 +83,7 @@ public:
                             LOG_ERROR(log, "Connection closed by client {} while sending IP block error message (sent {} of {} bytes).", socket().peerAddress().toString(), total_sent, message_size);
                             break;
                         }
-                        total_sent += sent;
+                        total_sent += static_cast<size_t>(sent);
                     }
                     
                     if (total_sent != message_size)
