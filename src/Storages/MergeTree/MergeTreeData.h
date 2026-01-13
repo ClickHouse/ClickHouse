@@ -188,7 +188,7 @@ public:
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithMutableContext
+class MergeTreeData : public WithMutableContext, public IStorageWithBackgroundOperations
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.

@@ -11,6 +11,31 @@
 namespace DB
 {
 
+IStorageWithBackgroundOperations::IStorageWithBackgroundOperations(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
+    : IStorage(storage_id_, std::move(metadata_))
+{
+}
+
+BackgroundJobsAssignee::BackgroundJobsAssignee(IStorageWithBackgroundOperations & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
+    : WithContext(global_context_)
+    , type(type_)
+    , data(data_)
+    , rng(randomSeed())
+    , sleep_settings(getSettings())
+{
+}
+
+BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
+{
+    switch (type)
+    {
+        case Type::DataProcessing:
+            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
+        case Type::Moving:
+            return getContext()->getBackgroundMoveTaskSchedulingSettings();
+    }
+}
+
 BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
     , type(type_)

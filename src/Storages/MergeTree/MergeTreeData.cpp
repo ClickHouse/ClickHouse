@@ -644,8 +644,8 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     LoadingStrictnessLevel mode,
     BrokenPartCallback broken_part_callback_)
-    : IStorage(table_id_)
-    , WithMutableContext(context_->getGlobalContext())
+    : WithMutableContext(context_->getGlobalContext())
+    , IStorageWithBackgroundOperations(table_id_)
     , format_version(date_column_name.empty() ? MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING : MERGE_TREE_DATA_OLD_FORMAT_VERSION)
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)

@@ -30,6 +30,16 @@ struct BackgroundTaskSchedulingSettings
 
 class MergeTreeData;
 
+class IStorageWithBackgroundOperations : public IStorage
+{
+public:
+    explicit IStorageWithBackgroundOperations(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_ = nullptr);
+
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual Int32 getBiasBackoffSeconds() const { return 0; }
+};
+
 class BackgroundJobsAssignee : public WithContext
 {
 public:
