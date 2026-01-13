@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExternalLoader.h>
 #include <Common/quoteString.h>
 
@@ -52,7 +52,7 @@ protected:
     std::string resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const;
 
     /// Try convert qualified dictionary name to persistent UUID
-    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
+    std::string resolveDictionaryNameFromDatabaseCatalog(const std::string & name, ContextPtr local_context) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
