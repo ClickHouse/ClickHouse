@@ -40,6 +40,7 @@ def cluster():
             ],
             with_minio=True,
             stay_alive=True,
+            pids_limit=10000,
         )
         cluster.add_instance(
             "node_with_query_log_on_s3",

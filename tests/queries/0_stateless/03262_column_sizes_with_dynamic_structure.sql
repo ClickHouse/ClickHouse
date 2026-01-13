@@ -5,7 +5,7 @@ SET enable_json_type = 1;
 
 
 drop table if exists test;
-create table test (d Dynamic, json JSON) engine=MergeTree order by tuple() settings min_rows_for_wide_part=0, min_bytes_for_wide_part=1;
+create table test (d Dynamic, json JSON) engine=MergeTree order by tuple() settings min_rows_for_wide_part=0, min_bytes_for_wide_part=1, object_serialization_version='v2', dynamic_serialization_version='v2';
 insert into test select number, '{"a" : 42, "b" : "Hello, World"}' from numbers(10000000);
 
 SELECT

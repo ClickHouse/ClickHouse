@@ -1592,33 +1592,6 @@ void StorageWindowView::writeIntoWindowView(
 
     builder = select_block.buildQueryPipeline();
 
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        // Can't move chunk_infos here, that function could be called several times
-        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
-    });
-
-    bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
-    if (!disable_deduplication_for_children)
-    {
-        String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const SharedHeader & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const SharedHeader & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
-    }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", stream_header);
-    });
-#endif
-
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
@@ -1627,6 +1600,22 @@ void StorageWindowView::writeIntoWindowView(
                 local_context->getSettingsRef()[Setting::min_insert_block_size_rows],
                 local_context->getSettingsRef()[Setting::min_insert_block_size_bytes]);
         });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        // Can't move chunk_infos here, that function could be called several times
+        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        return std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        return std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(window_view.getStorageID(), stream_header);
+    });
 
     if (!window_view.is_proctime)
     {
@@ -1659,13 +1648,6 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", stream_header);
-    });
-#endif
-
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
@@ -1684,13 +1666,6 @@ void StorageWindowView::writeIntoWindowView(
 
         builder.addSimpleTransform([&](const SharedHeader & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", stream_header);
-    });
-#endif
 
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const SharedHeader & cur_header, Pipe::StreamType)

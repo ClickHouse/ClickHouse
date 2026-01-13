@@ -1,7 +1,6 @@
 #pragma once
 #include <memory>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
@@ -15,6 +14,9 @@ using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 
 class TextIndexPostingsCache;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
+
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
 
 enum class TextSearchMode : uint8_t
 {
@@ -69,6 +71,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    std::string getDescription() const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
