@@ -704,7 +704,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
 
 void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
 {
-    ReadStage stage = tasks.at(0).stage;    
+    ReadStage stage = tasks.at(0).stage;
     size_t column_idx = UINT64_MAX;
 
     std::exception_ptr exc;
