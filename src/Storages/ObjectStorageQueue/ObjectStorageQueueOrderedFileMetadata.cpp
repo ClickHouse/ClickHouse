@@ -472,7 +472,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             return {false, FileStatus::State::Failed};
         }
 
-        LOG_TEST(log, "Current max processed file {}. Processed node path: {}",
+        LOG_TEST(log, "Current max processed file is: {}. Processed node path is: {}",
                  state.last_processed_path.has_value() ? *state.last_processed_path : "",
                  processed_node_path);
 
@@ -550,7 +550,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         /// most likely the processing node id path node was removed or created so let's try again
         LOG_DEBUG(
             log, "Retrying setProcessing because processing node id path is "
-            "unexpectedly missing or was created (error code: {})", code);
+            "unexpectedly missing or was not created (error code: {})", code);
     }
 
     LOG_WARNING(
@@ -606,7 +606,7 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
         }
 
         LOG_TEST(
-            log, "Current max processed file: {}. Path {} hasn't been processed yet",
+            log, "Current max processed file is: {}. Path {} hasn't been processed yet",
             state.last_processed_path.value(), path);
     }
 
