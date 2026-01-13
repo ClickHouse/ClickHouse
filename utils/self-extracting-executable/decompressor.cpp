@@ -220,9 +220,10 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
                 perror("munmap");
         return 1;
     }
-    if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
+    /// Available space in bytes = free blocks * block size
+    if (fs_info.f_bavail * fs_info.f_frsize < decompressed_full_size)
     {
-        std::cerr << "Not enough space for decompression. Have " << fs_info.f_blocks * info_in.st_blksize << ", need " << decompressed_full_size << std::endl;
+        std::cerr << "Not enough space for decompression. Have " << fs_info.f_bavail * fs_info.f_frsize << ", need " << decompressed_full_size << std::endl;
         return 1;
     }
 

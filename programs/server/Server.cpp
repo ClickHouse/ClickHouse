@@ -1743,7 +1743,6 @@ try
         }
     }
 
-#if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
     {
         rlimit rlim;
@@ -1778,7 +1777,6 @@ try
                     "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries."));
         }
     }
-#endif
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
