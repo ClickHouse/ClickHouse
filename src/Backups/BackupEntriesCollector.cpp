@@ -547,10 +547,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
-            if (storage)
-                res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
-            else
-                res_table_info.should_backup_data = !backup_settings.structure_only;
+            res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
 
             if (res_table_info.should_backup_data)
             {
@@ -848,10 +845,11 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 bool BackupEntriesCollector::shouldBackupTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
 {
-    chassert(storage);
-
     if (backup_settings.structure_only)
         return false;
+
+    if (!storage)
+        return true;
 
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
         && BackupUtils::isTargetForReplaceRefreshableMaterializedView(storage->getStorageID(), context))
