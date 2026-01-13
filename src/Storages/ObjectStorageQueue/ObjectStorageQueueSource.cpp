@@ -1390,14 +1390,20 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
 void ObjectStorageQueueSource::prepareHiveProcessedRequests(
     Coordination::Requests & requests,
-    const HiveLastProcessedFileInfoMap & file_map)
+    const HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition)
 {
-    for (const auto & [node_path, file_info] : file_map)
+    for (const auto & [hive_partition_processed_path, last_processed_file_info] : last_processed_file_per_hive_partition)
     {
-        if (file_info.exists)
-            requests.push_back(zkutil::makeSetRequest(node_path, file_info.file_path, -1));
+        if (last_processed_file_info.exists)
+        {
+            requests.push_back(zkutil::makeSetRequest(
+                hive_partition_processed_path, last_processed_file_info.file_path, -1));
+        }
         else
-            requests.push_back(zkutil::makeCreateRequest(node_path, file_info.file_path, zkutil::CreateMode::Persistent));
+        {
+            requests.push_back(zkutil::makeCreateRequest(
+                hive_partition_processed_path, last_processed_file_info.file_path, zkutil::CreateMode::Persistent));
+        }
     }
 }
 
@@ -1477,17 +1483,17 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    HiveLastProcessedFileInfoMap file_map;
+    HiveLastProcessedFileInfoMap last_processed_file_per_hive_partition;
     // `created_nodes` is nullptr here, because it is required only in mutithread case,
     // when `requests` is filled with several `prepareCommitRequests` calls.
     prepareCommitRequests(
         requests,
         insert_succeeded,
         successful_objects,
-        file_map,
+        last_processed_file_per_hive_partition,
         /* created_nodes */ nullptr,
         exception_message);
-    prepareHiveProcessedRequests(requests, file_map);
+    prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
