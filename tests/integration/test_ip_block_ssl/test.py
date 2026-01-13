@@ -23,6 +23,8 @@ def verify_ip_block_error(data):
     
     # We expect our specific error message
     assert "IP address not allowed" in error_msg
+    # 195 is the ClickHouse server error code for IP_ADDRESS_NOT_ALLOWED.
+    # This test intentionally verifies the exact code in the user-visible error message.
     assert "Code: 195" in error_msg
 
 
