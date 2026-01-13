@@ -1297,7 +1297,7 @@ StorageWindowView::StorageWindowView(
             target_create_query->setTable(generateTargetTableName(table_id_));
 
             auto new_columns_list = make_intrusive<ASTColumns>();
-            new_columns_list->set(new_columns_list->columns, query.columns_list->getChild(*query.columns_list->columns));
+            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, to_table_engine);

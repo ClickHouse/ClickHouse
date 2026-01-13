@@ -1696,7 +1696,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");

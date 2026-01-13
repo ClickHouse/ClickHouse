@@ -69,6 +69,8 @@ public:
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
+    ASTPtr ptr() { return ASTPtr(this); }
+
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
 
@@ -106,15 +108,6 @@ public:
     {
         for (const auto & child : children)
             child->collectIdentifierNames(set);
-    }
-
-    ASTPtr getChild(const IAST & child) const
-    {
-        for (const auto & node :children)
-            if (node.get() == &child)
-                return node;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
     }
 
     template <typename T>

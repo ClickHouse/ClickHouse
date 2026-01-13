@@ -975,7 +975,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->set(query->storage->primary_key, query->columns_list->getChild(*query->columns_list->primary_key));
+        query->storage->set(query->storage->primary_key, query->columns_list->primary_key->ptr());
 
     }
 
@@ -987,7 +987,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->set(query->storage->primary_key, query->columns_list->getChild(*query->columns_list->primary_key_from_columns));
+        query->storage->set(query->storage->primary_key, query->columns_list->primary_key_from_columns->ptr());
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
@@ -1661,7 +1661,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.set(storage_ref.primary_key, query->columns_list->getChild(*query->columns_list->primary_key));
+        storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key->ptr());
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -1672,7 +1672,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.set(storage_ref.primary_key, query->columns_list->getChild(*query->columns_list->primary_key_from_columns));
+        storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key_from_columns->ptr());
     }
 
     boost::intrusive_ptr<ASTViewTargets> targets;
