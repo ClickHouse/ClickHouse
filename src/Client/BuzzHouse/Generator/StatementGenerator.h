@@ -219,8 +219,31 @@ private:
         Kill,
         ShowStatement
     };
-    ProbabilityGeneratorT sqlgen;
-    std::vector<bool> sqlMask;
+
+    enum class LitOp
+    {
+        LitHugeInt = 0,
+        LitUHugeInt,
+        LitInt,
+        LitUInt,
+        LitTime,
+        LitDate,
+        LitDateTime,
+        LitDecimal,
+        LitRandStr,
+        LitUUID,
+        LitIPv4,
+        LitIPv6,
+        LitGeo,
+        LitStr,
+        LitSpecial,
+        LitJSON,
+        LitNULLVal,
+        LitFraction
+    };
+
+    ProbabilityGeneratorT sqlgen, litGen;//, expGen, predGen, queryGen;
+    std::vector<bool> sqlMask, litMask;//, expMask, predMask, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);

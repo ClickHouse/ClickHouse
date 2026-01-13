@@ -167,208 +167,172 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         = (this->next_type_mask & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     uint32_t nested_prob = 0;
     LiteralValue * lv = expr->mutable_lit_val();
-    const uint32_t hugeint_lit = 20;
-    const uint32_t uhugeint_lit = 20;
-    const uint32_t int_lit = 80;
-    const uint32_t uint_lit = 80;
-    const uint32_t time_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_time) != 0);
-    const uint32_t date_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_dates) != 0);
-    const uint32_t datetime_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_datetimes) != 0);
-    const uint32_t dec_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
-    const uint32_t random_str = 30 * static_cast<uint32_t>(complex && this->allow_not_deterministic);
-    const uint32_t uuid_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_uuid) != 0);
-    const uint32_t ipv4_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv4) != 0);
-    const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv6) != 0);
-    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0 && allow_floats);
-    const uint32_t str_lit = 50;
-    const uint32_t special_val = 80;
-    const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);
-    const uint32_t null_lit = 10;
-    const uint32_t frac_lit = 25;
-    const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
-        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t noption = next_dist(rg.generator);
 
-    if (hugeint_lit && (noption < hugeint_lit + 1))
+    litMask[static_cast<size_t>(LitOp::LitHugeInt)] = (this->next_type_mask & allow_int128) != 0;
+    litMask[static_cast<size_t>(LitOp::LitUHugeInt)] = (this->next_type_mask & allow_int128) != 0;
+    /// litMask[static_cast<size_t>(LitOp::LitInt)] = true;
+    /// litMask[static_cast<size_t>(LitOp::LitUInt)] = true;
+    litMask[static_cast<size_t>(LitOp::LitTime)] = (this->next_type_mask & allow_time) != 0;
+    litMask[static_cast<size_t>(LitOp::LitDate)] = (this->next_type_mask & allow_dates) != 0;
+    litMask[static_cast<size_t>(LitOp::LitDateTime)] = (this->next_type_mask & allow_datetimes) != 0;
+    litMask[static_cast<size_t>(LitOp::LitDecimal)] = (this->next_type_mask & allow_decimals) != 0;
+    litMask[static_cast<size_t>(LitOp::LitRandStr)] = complex && this->allow_not_deterministic;
+    litMask[static_cast<size_t>(LitOp::LitUUID)] = (this->next_type_mask & allow_uuid) != 0;
+    litMask[static_cast<size_t>(LitOp::LitIPv4)] = (this->next_type_mask & allow_ipv4) != 0;
+    litMask[static_cast<size_t>(LitOp::LitIPv6)] = (this->next_type_mask & allow_ipv6) != 0;
+    litMask[static_cast<size_t>(LitOp::LitGeo)] = (this->next_type_mask & allow_geo) != 0 && allow_floats;
+    /// litMask[static_cast<size_t>(LitOp::LitStr)] = true;
+    /// litMask[static_cast<size_t>(LitOp::LitSpecial)] = true;
+    litMask[static_cast<size_t>(LitOp::LitJSON)] = (this->next_type_mask & allow_JSON) != 0;
+    /// litMask[static_cast<size_t>(LitOp::LitNULLVal)] = true;
+    /// litMask[static_cast<size_t>(LitOp::LitFraction)] = true;
+    litGen.setEnabled(litMask);
+
+    switch (static_cast<LitOp>(litGen.nextOp())) /// drifts over time
     {
-        IntLiteral * il = lv->mutable_int_lit();
-        HugeIntLiteral * huge = il->mutable_huge_lit();
+        case LitOp::LitHugeInt: {
+            IntLiteral * il = lv->mutable_int_lit();
+            HugeIntLiteral * huge = il->mutable_huge_lit();
 
-        huge->set_upper(rg.nextRandomInt64());
-        huge->set_lower(rg.nextRandomUInt64());
-        if (complex && rg.nextSmallNumber() < 9)
-        {
-            il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
+            huge->set_upper(rg.nextRandomInt64());
+            huge->set_lower(rg.nextRandomUInt64());
+            if (complex && rg.nextSmallNumber() < 9)
+            {
+                il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
+            }
         }
-    }
-    else if (uhugeint_lit && (noption < hugeint_lit + uhugeint_lit + 1))
-    {
-        IntLiteral * il = lv->mutable_int_lit();
-        UHugeIntLiteral * uhuge = il->mutable_uhuge_lit();
+        break;
+        case LitOp::LitUHugeInt: {
+            IntLiteral * il = lv->mutable_int_lit();
+            UHugeIntLiteral * uhuge = il->mutable_uhuge_lit();
 
-        uhuge->set_upper(rg.nextRandomUInt64());
-        uhuge->set_lower(rg.nextRandomUInt64());
-        if (complex && rg.nextSmallNumber() < 9)
-        {
-            il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);
+            uhuge->set_upper(rg.nextRandomUInt64());
+            uhuge->set_lower(rg.nextRandomUInt64());
+            if (complex && rg.nextSmallNumber() < 9)
+            {
+                il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);
+            }
         }
-    }
-    else if (int_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + 1))
-    {
-        IntLiteral * il = lv->mutable_int_lit();
+        break;
+        case LitOp::LitInt: {
+            IntLiteral * il = lv->mutable_int_lit();
 
-        il->set_int_lit(rg.nextRandomInt64());
-        if (complex && rg.nextSmallNumber() < 9)
-        {
-            std::uniform_int_distribution<uint32_t> integers_range(
-                static_cast<uint32_t>(Integers::Int8), static_cast<uint32_t>(Integers::Int));
+            il->set_int_lit(rg.nextRandomInt64());
+            if (complex && rg.nextSmallNumber() < 9)
+            {
+                std::uniform_int_distribution<uint32_t> integers_range(
+                    static_cast<uint32_t>(Integers::Int8), static_cast<uint32_t>(Integers::Int));
 
-            il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
+                il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
+            }
         }
-    }
-    else if (uint_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + 1))
-    {
-        IntLiteral * il = lv->mutable_int_lit();
+        break;
+        case LitOp::LitUInt: {
+            IntLiteral * il = lv->mutable_int_lit();
 
-        il->set_uint_lit(rg.nextRandomUInt64());
-        if (complex && rg.nextSmallNumber() < 9)
-        {
-            std::uniform_int_distribution<uint32_t> integers_range(1, static_cast<uint32_t>(Integers_MAX));
+            il->set_uint_lit(rg.nextRandomUInt64());
+            if (complex && rg.nextSmallNumber() < 9)
+            {
+                std::uniform_int_distribution<uint32_t> integers_range(1, static_cast<uint32_t>(Integers_MAX));
 
-            il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
+                il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
+            }
         }
-    }
-    else if (time_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + 1))
-    {
-        const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
-        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+        break;
+        case LitOp::LitTime: {
+            const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+            const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        this->allow_not_deterministic &= complex;
-        lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
-        this->allow_not_deterministic = prev_allow_not_deterministic;
-        delete tp;
-    }
-    else if (date_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + 1))
-    {
-        const SQLType * tp;
-        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-        std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
+            this->allow_not_deterministic &= complex;
+            lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
+            this->allow_not_deterministic = prev_allow_not_deterministic;
+            delete tp;
+        }
+        break;
+        case LitOp::LitDate: {
+            const SQLType * tp;
+            const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+            std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
 
-        this->allow_not_deterministic &= complex;
-        lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
-        this->allow_not_deterministic = prev_allow_not_deterministic;
-        delete tp;
-    }
-    else if (datetime_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + 1))
-    {
-        const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
-        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+            this->allow_not_deterministic &= complex;
+            lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
+            this->allow_not_deterministic = prev_allow_not_deterministic;
+            delete tp;
+        }
+        break;
+        case LitOp::LitDateTime: {
+            const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+            const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        this->allow_not_deterministic &= complex;
-        lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
-        this->allow_not_deterministic = prev_allow_not_deterministic;
-        delete tp;
-    }
-    else if (dec_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + 1))
-    {
-        const DecimalType * tp = static_cast<DecimalType *>(randomDecimalType(rg, std::numeric_limits<uint32_t>::max(), nullptr));
+            this->allow_not_deterministic &= complex;
+            lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
+            this->allow_not_deterministic = prev_allow_not_deterministic;
+            delete tp;
+        }
+        break;
+        case LitOp::LitDecimal: {
+            const DecimalType * tp = static_cast<DecimalType *>(randomDecimalType(rg, std::numeric_limits<uint32_t>::max(), nullptr));
 
-        lv->set_no_quote_str(DecimalType::appendDecimalValue(rg, complex && rg.nextSmallNumber() < 9, tp));
-        delete tp;
-    }
-    else if (
-        random_str
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + 1))
-    {
-        static const DB::Strings & funcs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
+            lv->set_no_quote_str(DecimalType::appendDecimalValue(rg, complex && rg.nextSmallNumber() < 9, tp));
+            delete tp;
+        }
+        break;
+        case LitOp::LitRandStr: {
+            static const DB::Strings & funcs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
 
-        lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(funcs), rg.nextStrlen()));
-    }
-    else if (
-        uuid_lit
-        && (noption
-            < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit + 1))
-    {
-        lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : ""));
-    }
-    else if (
-        ipv4_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + 1))
-    {
-        lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : ""));
-    }
-    else if (
-        ipv6_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + 1))
-    {
-        lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : ""));
-    }
-    else if (
-        geo_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + 1))
-    {
-        std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
-        const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
+            lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(funcs), rg.nextStrlen()));
+        }
+        break;
+        case LitOp::LitUUID:
+            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextUUID(), complex ? "::UUID" : ""));
+            break;
+        case LitOp::LitIPv4:
+            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv4(), complex ? "::IPv4" : ""));
+            break;
+        case LitOp::LitIPv6:
+            lv->set_no_quote_str(fmt::format("'{}'{}", rg.nextIPv6(), complex ? "::IPv6" : ""));
+            break;
+        case LitOp::LitGeo: {
+            std::uniform_int_distribution<uint32_t> geo_range(1, static_cast<uint32_t>(GeoTypes_MAX));
+            const GeoTypes gt = static_cast<GeoTypes>(geo_range(rg.generator));
 
-        lv->set_no_quote_str(fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : ""));
-    }
-    else if (
-        str_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + str_lit + 1))
-    {
-        lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
-    }
-    else if (
-        special_val
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + 1))
-    {
-        SpecialVal * val = lv->mutable_special_val();
-        std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
-        const SpecialVal_SpecialValEnum sval = static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator));
+            lv->set_no_quote_str(fmt::format("'{}'{}{}", strAppendGeoValue(rg, gt), complex ? "::" : "", complex ? GeoTypes_Name(gt) : ""));
+        }
+        break;
+        case LitOp::LitStr:
+            lv->set_string_lit(rg.nextString("'", true, rg.nextStrlen()));
+            break;
+        case LitOp::LitSpecial: {
+            SpecialVal * val = lv->mutable_special_val();
+            std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+            const SpecialVal_SpecialValEnum sval = static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator));
 
-        /// Can't use `*` on query oracles
-        val->set_val(
-            (sval != SpecialVal_SpecialValEnum_VAL_STAR || this->allow_not_deterministic
-             || this->levels[this->current_level].inside_aggregate)
-                ? sval
-                : SpecialVal_SpecialValEnum_VAL_NULL);
-        val->set_paren(complex && rg.nextBool());
-        nested_prob = 3;
-    }
-    else if (
-        json_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + 1))
-    {
-        std::uniform_int_distribution<int> jrange(1, 10);
+            /// Can't use `*` on query oracles
+            val->set_val(
+                (sval != SpecialVal_SpecialValEnum_VAL_STAR || this->allow_not_deterministic
+                 || this->levels[this->current_level].inside_aggregate)
+                    ? sval
+                    : SpecialVal_SpecialValEnum_VAL_NULL);
+            val->set_paren(complex && rg.nextBool());
+            nested_prob = 3;
+        }
+        break;
+        case LitOp::LitJSON: {
+            std::uniform_int_distribution<int> jrange(1, 10);
 
-        lv->set_no_quote_str(fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
-    }
-    else if (
-        null_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + 1))
-    {
-        lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
-    }
-    else if (
-        frac_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit + 1))
-    {
-        std::uniform_int_distribution<uint32_t> frange(1, 999);
+            lv->set_no_quote_str(
+                fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
+        }
+        break;
+        case LitOp::LitNULLVal:
+            lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
+            break;
+        case LitOp::LitFraction: {
+            std::uniform_int_distribution<uint32_t> frange(1, 999);
 
-        lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
-    }
-    else
-    {
-        UNREACHABLE();
+            lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
+        }
+        break;
     }
     addFieldAccess(rg, expr, nested_prob);
 }

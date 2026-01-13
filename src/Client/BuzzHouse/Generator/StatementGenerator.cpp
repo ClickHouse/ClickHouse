@@ -141,7 +141,30 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.04}, /// Kill
               {0.01, 0.01} /// ShowStatement
           }})))
+    , litGen(ProbabilityGeneratorT(ProbabilityConfig(
+          static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
+          rg.nextInFullRange(),
+          {{
+              {0.01, 0.50}, /// HugeInt
+              {0.01, 0.50}, /// UHugeInt
+              {0.01, 0.50}, /// Int
+              {0.01, 0.50}, /// UInt
+              {0.01, 0.50}, /// Time
+              {0.01, 0.50}, /// Date
+              {0.01, 0.50}, /// DateTime
+              {0.01, 0.50}, /// Decimal
+              {0.01, 0.50}, /// RandStr
+              {0.01, 0.50}, /// IPv4
+              {0.01, 0.50}, /// IPv6
+              {0.01, 0.50}, /// Geo
+              {0.01, 0.50}, /// Str
+              {0.01, 0.50}, /// Special
+              {0.01, 0.50}, /// JSON
+              {0.01, 0.50}, /// NULLVal
+              {0.01, 0.50} /// Fraction
+          }})))
     , sqlMask(static_cast<size_t>(SqlOp::ShowStatement) + 1, true)
+    , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
