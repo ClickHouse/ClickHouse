@@ -1424,7 +1424,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     - The default value is large enough,
     - For accepting client's connections server has separate thread.
 
-    So even if you have TcpExtListenOverflows (from `<nstat>`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
+    So even if you have `<TcpExtListenOverflows>` (from `<nstat>`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
     - Usually if `<4096>` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
     - It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
 
