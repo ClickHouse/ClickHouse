@@ -1278,10 +1278,8 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
-    /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
 
 

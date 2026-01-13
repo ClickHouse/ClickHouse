@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <Storages/IStorage.h>
 
 #include <pcg_random.hpp>
 
@@ -29,6 +30,7 @@ struct BackgroundTaskSchedulingSettings
 };
 
 class MergeTreeData;
+class BackgroundJobsAssignee;
 
 class IStorageWithBackgroundOperations : public IStorage
 {
@@ -69,12 +71,12 @@ public:
     ~BackgroundJobsAssignee();
 
     BackgroundJobsAssignee(
-        MergeTreeData & data_,
+        IStorageWithBackgroundOperations & data_,
         Type type,
         ContextPtr global_context_);
 
 private:
-    MergeTreeData & data;
+    IStorageWithBackgroundOperations & data;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;
