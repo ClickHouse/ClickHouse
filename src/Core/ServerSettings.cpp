@@ -1572,7 +1572,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        const auto & path-x = setting.getPath();
+        const auto & path = setting.getPath();
         try
         {
             if (config.has(path))
@@ -1773,55 +1773,5 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         res_columns[6]->insert(is_changeable ? changeable_settings_it->second.second : ChangeableWithoutRestart::No);
         res_columns[7]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
     }
-}
-
-void ServerSettings::dumpNonRegisteredConfigToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
-{
-    MutableColumns & res_columns = params.res_columns;
-    ContextPtr context = params.context;
-
-    const auto & config = context->getConfigRef();
-
-    std::unordered_set<String> excluded_prefixes = {
-        "application",
-        "system",
-        "users"
-    };
-
-    std::function<void(const std::string &)> process_config_path = [&](const std::string & prefix)
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(prefix, keys);
-
-        for (const auto & key : keys)
-        {
-            std::string full_path = prefix.empty() ? key : prefix + "." + key;
-
-            if (excluded_prefixes.contains(full_path)) {
-                continue;
-            }
-
-            Poco::Util::AbstractConfiguration::Keys sub_keys;
-            config.keys(full_path, sub_keys);
-
-            if (sub_keys.empty()) {
-                if (!ServerSettingsImpl::hasBuiltinPath(full_path)) {
-                    res_columns[0]->insert(full_path);
-                    res_columns[1]->insert(config.getString(full_path, ""));
-                    res_columns[2]->insert("");
-                    res_columns[3]->insert(true);
-                    res_columns[4]->insert("");
-                    res_columns[5]->insert("");
-                    res_columns[6]->insert(ChangeableWithoutRestart::No);
-                    res_columns[7]->insert(false);
-                }
-                continue;
-            }
-
-            process_config_path(full_path);
-        }
-    };
-
-    process_config_path("");
 }
 }

@@ -1870,7 +1870,7 @@ try
         fs::create_directories(path / "metadata_dropped");
     }
 
-    if (config().has("interserver_http_port") && config().has("interserver_https_port"))
+    if (server_settings[ServerSetting::interserver_http_port].changed && server_settings[ServerSetting::interserver_https_port].changed)
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
     static const auto interserver_tags =

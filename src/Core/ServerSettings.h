@@ -54,8 +54,6 @@ struct ServerSettings
 
     void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
 
-    void dumpNonRegisteredConfigToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
-
 private:
     std::unique_ptr<ServerSettingsImpl> impl;
 };

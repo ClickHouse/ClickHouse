@@ -37,6 +37,7 @@ class Server : public BaseDaemon, public IServer
 public:
     using ServerApplication::run;
 
+    // Please register settings in ServerSettings instead of accessing the config directly if possible.
     Poco::Util::LayeredConfiguration & config() const override
     {
         return BaseDaemon::config();
@@ -135,8 +136,6 @@ private:
     void stopServers(
         std::vector<ProtocolServerAdapter> & servers,
         const ServerType & server_type) const;
-
-    void dumpServerConfigToFile(const std::string & file_path) const;
 };
 
 }

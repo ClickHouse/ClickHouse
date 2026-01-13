@@ -143,8 +143,6 @@ public:
     static bool hasBuiltin(std::string_view name);
     bool hasCustom(std::string_view name) const;
 
-    static bool hasBuiltinPath(std::string_view p);
-
     const char * getTypeName(std::string_view name) const;
     const char * getDescription(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
@@ -373,14 +371,6 @@ template <typename TTraits>
 bool BaseSettings<TTraits>::hasBuiltin(std::string_view name)
 {
     name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    return (accessor.find(name) != static_cast<size_t>(-1));
-}
-
-template <typename TTraits>
-bool BaseSettings<TTraits>::hasBuiltinPath(std::string_view config_path)
-{
-    auto name = TTraits::resolvePath(config_path);
     const auto & accessor = Traits::Accessor::instance();
     return (accessor.find(name) != static_cast<size_t>(-1));
 }
@@ -909,7 +899,6 @@ SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
 }
 
 using AliasMap = std::unordered_map<std::string_view, std::string_view>;
-using PathMap = std::unordered_map<std::string_view, std::string_view>;
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
@@ -1010,16 +999,6 @@ using PathMap = std::unordered_map<std::string_view, std::string_view>;
             if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
                 return it->second; \
             return name; \
-        } \
-        static inline const PathMap paths_to_settings = { \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(DECLARE_SETTINGS_WITH_PATH_TRAITS_, SETTING_SKIP_TRAIT) \
-        }; \
-        \
-        static std::string_view resolvePath(std::string_view path) \
-        { \
-            if (auto it = paths_to_settings.find(path); it != paths_to_settings.end()) \
-                return it->second; \
-            return path; \
         } \
     };
 
