@@ -59,6 +59,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
+            {"array_shuffle_const_column_materialize", true, false, "Materialize const column in arrayShuffle and arrayPartialShuffle."},
+            {"array_random_sample_const_column_materialize", true, false, "Materialize const column in arrayRandomSample."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

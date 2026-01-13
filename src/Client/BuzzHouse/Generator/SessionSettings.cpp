@@ -364,6 +364,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"collect_hash_table_stats_during_joins", trueOrFalseSetting},
     {"compatibility_ignore_auto_increment_in_create_table", trueOrFalseSettingNoOracle},
     {"compatibility_ignore_collation_in_create_table", trueOrFalseSettingNoOracle},
+    {"array_shuffle_const_column_materialize", trueOrFalseSetting},
+    {"array_random_sample_const_column_materialize", trueOrFalseSetting},
     {"convert_query_to_cnf", trueOrFalseSettingNoOracle},
     {"correlated_subqueries_default_join_kind",
      CHSetting(

@@ -7305,6 +7305,12 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
+    DECLARE(Bool, array_shuffle_const_column_materialize, true, R"(
+Materialize const column in arrayShuffle and arrayPartialShuffle. Disable to keep compatibility with older versions.
+)", 0) \
+    DECLARE(Bool, array_random_sample_const_column_materialize, true, R"(
+Materialize const column in arrayRandomSample. Disable to keep compatibility with older versions.
+)", 0) \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
