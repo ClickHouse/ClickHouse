@@ -42,21 +42,21 @@ public:
     {
         quote_styles = std::move(styles);
     }
-    
-    IdentifierQuoteStyle getQuoteStyleAt(size_t index) const 
-    { 
-        return index < quote_styles.size() ? quote_styles[index] : IdentifierQuoteStyle::None; 
+
+    IdentifierQuoteStyle getQuoteStyleAt(size_t index) const
+    {
+        return index < quote_styles.size() ? quote_styles[index] : IdentifierQuoteStyle::None;
     }
 
-    void setQuoteStyle(IdentifierQuoteStyle style) 
-    { 
+    void setQuoteStyle(IdentifierQuoteStyle style)
+    {
         if (quote_styles.empty())
             quote_styles.resize(name_parts.empty() ? 1 : name_parts.size(), IdentifierQuoteStyle::None);
         quote_styles[0] = style;
     }
-    
-    bool isDoubleQuoted() const 
-    { 
+
+    bool isDoubleQuoted() const
+    {
         for (auto s : quote_styles)
             if (s == IdentifierQuoteStyle::DoubleQuote)
                 return true;

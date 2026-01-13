@@ -416,7 +416,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     }
 
     const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive) 
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive)
         || table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
         return true;
 
@@ -753,7 +753,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
 
-    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b) {
+    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
+    {
         if (use_case_insensitive)
             return Poco::toLower(a) == Poco::toLower(b);
         return a == b;
