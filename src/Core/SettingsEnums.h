@@ -410,6 +410,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     GLUE,
     ICEBERG_HIVE,
     ICEBERG_ONELAKE,
+    PAIMON_REST,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -541,5 +542,15 @@ enum class CaseInsensitiveNames : uint8_t
 };
 
 DECLARE_SETTING_ENUM(CaseInsensitiveNames)
+
+enum class DeduplicateInsertSelectMode : uint8_t
+{
+    DISABLE = 0,
+    FORCE_ENABLE,
+    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_EVEN_FOR_BAD_QUERIES
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
 
 }

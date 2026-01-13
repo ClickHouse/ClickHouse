@@ -379,8 +379,7 @@ private:
     size_t clearOldPartsAndRemoveFromZK();
     void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
-    template<bool async_insert>
-    friend class ReplicatedMergeTreeSinkImpl;
+    friend class ReplicatedMergeTreeSink;
     friend class ReplicatedMergeTreeSinkPatch;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
@@ -827,18 +826,17 @@ private:
     /// Creates new block number if block with such block_id does not exist
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
-    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
+    EphemeralLockInZooKeeper allocateBlockNumber(
         const String & partition_id,
         const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "",
+        const std::vector<std::string> & zookeeper_block_id_paths = {},
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
-    template<typename T>
-    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
+    EphemeralLockInZooKeeper allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const T & zookeeper_block_id_path,
+        const std::vector<std::string> & zookeeper_block_id_paths = {},
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 

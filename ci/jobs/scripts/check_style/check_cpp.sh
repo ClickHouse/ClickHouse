@@ -226,6 +226,7 @@ std_cerr_cout_excludes=(
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/Common/ProgressIndication.h
+    src/Common/ZooKeeper/KeeperClientCLI/KeeperClient.h
     src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(

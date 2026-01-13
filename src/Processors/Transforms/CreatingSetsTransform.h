@@ -31,7 +31,6 @@ public:
         SharedHeader in_header_,
         SharedHeader out_header_,
         SetAndKeyPtr set_and_key_,
-        StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_);
 
@@ -45,7 +44,6 @@ public:
 
 private:
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;
