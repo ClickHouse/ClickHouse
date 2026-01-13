@@ -6,7 +6,7 @@ CREATE TABLE WorksBeforeSubcolumnLimit
 ENGINE = MergeTree
 ORDER BY ID;
 
-SET max_subcolumns = 2;
+SET max_static_subcolumns = 2;
 
 CREATE TABLE FailsAfterSubcolumnLimit
 (
