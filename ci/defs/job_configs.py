@@ -966,6 +966,34 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
+    benchmarks_jobs = Job.Config(
+        name=JobNames.BENCHMARKS,
+        runs_on=["#from param"],
+        command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}" --test clickbench',
+        # TODO: switch to stateless-test image
+        run_in_docker="clickhouse/performance-comparison",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/performance/clickbench.xml",
+                "./ci/jobs/scripts/perf/",
+                "./ci/jobs/performance_tests.py",
+                "./ci/docker/performance-comparison",
+            ],
+        ),
+        timeout=2 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd_release, master_head",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, master_head",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+    )
     clickbench_master_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,

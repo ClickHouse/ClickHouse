@@ -123,6 +123,7 @@ def should_skip_job(job_name):
 
     if Labels.CI_PERFORMANCE in _info_cache.pr_labels and (
         "performance" not in job_name.lower()
+        and job_name != JobNames.BENCHMARKS
         and job_name
         not in (
             "Build (amd_release)",
@@ -135,6 +136,13 @@ def should_skip_job(job_name):
             True,
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
+
+    if (
+        Labels.CI_PERFORMANCE not in _info_cache.pr_labels
+        and job_name == JobNames.BENCHMARKS
+        and _info_cache.pr_number
+    ):
+        return True, "Skipped, not labeled with 'ci-performance'"
 
     if " Bug Fix" not in _info_cache.pr_body and "Bugfix" in job_name:
         return True, "Skipped, not a bug-fix PR"

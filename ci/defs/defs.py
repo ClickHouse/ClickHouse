@@ -334,6 +334,7 @@ class JobNames:
     STRESS = "Stress test"
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
+    BENCHMARKS = "Benchmarks"
     COMPATIBILITY = "Compatibility check"
     DOCS = "Docs check"
     CLICKBENCH = "ClickBench"
