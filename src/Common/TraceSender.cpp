@@ -20,7 +20,7 @@ namespace
     /// The performance test query ids can be surprisingly long like
     /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
     /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 100;
+    constexpr size_t QUERY_ID_MAX_LEN = 95;
     static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 }
 
