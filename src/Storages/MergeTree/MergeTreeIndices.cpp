@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/escapeForFileName.h>
 
 #include <numeric>
 
@@ -16,6 +17,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+String IMergeTreeIndex::getFileName() const
+{
+    return escapeForFileName(INDEX_FILE_PREFIX + index.name);
 }
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const

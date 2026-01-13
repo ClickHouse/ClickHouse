@@ -276,8 +276,8 @@ struct IMergeTreeIndex
 
     virtual ~IMergeTreeIndex() = default;
 
-    /// Returns filename without extension.
-    String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
+    /// Returns the escaped filename without extension.
+    String getFileName() const;
     size_t getGranularity() const { return index.granularity; }
 
     virtual bool isMergeable() const { return false; }
