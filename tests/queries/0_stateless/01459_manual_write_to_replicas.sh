@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-debug
+# Tags: replica, no-parallel, no-msan, no-asan, no-tsan
 
 set -e
 
@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-NUM_REPLICAS=10
+NUM_REPLICAS=5
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -q "

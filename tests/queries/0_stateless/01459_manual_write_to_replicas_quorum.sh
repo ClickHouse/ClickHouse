@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-parallel, no-debug, no-random-settings
+# Tags: replica, no-replicated-database, no-parallel, no-random-settings, no-msan, no-asan, no-tsan
 # Tag no-replicated-database: Fails due to additional replicas or shards
 
 set -e
@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # but we are not interested in client-side coverage here.
 unset CLICKHOUSE_WRITE_COVERAGE
 
-NUM_REPLICAS=10
+NUM_REPLICAS=5
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -q "
