@@ -1,7 +1,6 @@
 #include <Server.h>
 
 #include <memory>
-#include <Core/SettingsFields.h>
 #include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -717,7 +716,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(String(global_context->getServerSettings()[ServerSetting::path])) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
 void Server::defineOptions(Poco::Util::OptionSet & options)
@@ -3522,7 +3521,7 @@ void Server::createServers(
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(global_context->getServerSettings(), socket, listen_host, port);
+                auto address = socketBindListen(server_settings, socket, listen_host, port);
                 socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
                 socket.setSendTimeout(settings[Setting::http_send_timeout]);
                 return ProtocolServerAdapter(
