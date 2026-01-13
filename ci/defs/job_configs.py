@@ -111,7 +111,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
   ./ci/tmp/*.jsonl 2>/dev/null || true
 docker rm -f praktika
 """,
-    timeout=180, #REMOVEME
+    timeout=600, #REMOVEME
 )
 
 BINARY_DOCKER_COMMAND = (
