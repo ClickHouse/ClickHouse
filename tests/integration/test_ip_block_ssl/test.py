@@ -36,6 +36,9 @@ def test_ip_block_message_ssl():
         # Let's try to read immediately.
         
         data = wrapped_socket.recv(1024)
+        if not data:
+            pytest.fail("Connection closed without receiving error message")
+            
         error_msg = data.decode('utf-8', errors='ignore')
         
         # We expect our specific error message
@@ -64,6 +67,9 @@ def test_ip_block_message_plain():
         
         # Should receive error message immediately
         data = s.recv(1024)
+        if not data:
+            pytest.fail("Connection closed without receiving error message")
+            
         error_msg = data.decode('utf-8', errors='ignore')
         
         # We expect our specific error message
