@@ -30,7 +30,13 @@ private:
 
 public:
     TCPProtocolStackHandler(IServer & server_, TCPServer & tcp_server_, const StreamSocket & socket, const std::vector<TCPServerConnectionFactory::Ptr> & stack_, const std::string & conf_name_, bool access_denied_ = false)
-        : TCPServerConnection(socket), server(server_), tcp_server(tcp_server_), stack(stack_), conf_name(conf_name_), access_denied(access_denied_), log(getLogger("TCPProtocolStackHandler"))
+        : TCPServerConnection(socket)
+        , server(server_)
+        , tcp_server(tcp_server_)
+        , stack(stack_)
+        , conf_name(conf_name_)
+        , access_denied(access_denied_)
+        , log(getLogger("TCPProtocolStackHandler"))
     {}
 
     void run() override
