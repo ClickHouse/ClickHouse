@@ -1,0 +1,35 @@
+--- Unquoted vs double-quoted ---
+42
+42
+42
+42
+--- Backtick-quoted (case-insensitive) ---
+42
+42
+42
+--- Disambiguating with quotes ---
+100
+200
+--- Three-way ambiguity ---
+1
+2
+3
+--- Mixed quoting ---
+John	Doe
+John	Doe
+--- Compound identifiers with quoting ---
+888
+888
+888
+--- Alias quoting ---
+123
+123
+123
+--- Special characters in identifiers ---
+111
+222
+111
+222
+--- Default mode ---
+99
+99
