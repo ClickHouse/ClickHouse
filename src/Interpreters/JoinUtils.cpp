@@ -234,7 +234,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            column.column = column.column->convertToFullColumnIfConst();
+            column.column = column.column->convertToFullIfNeeded();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(column.column.get());
             if (!nullable_col)
             {

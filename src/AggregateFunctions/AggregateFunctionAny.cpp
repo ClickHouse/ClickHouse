@@ -414,19 +414,19 @@ This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 When a `SELECT` query has the `GROUP BY` clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the `SELECT`, `HAVING`, and `ORDER BY` clauses be calculated from keys or from aggregate functions.
 In other words, each column selected from the table must be used either in keys or inside aggregate functions.
 To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
-    )";
-    FunctionDocumentation::Syntax syntax = "any(column) [RESPECT NULLS]";
-    FunctionDocumentation::Arguments arguments = {
-        {"column", "The column name.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {R"(
-Returns the first value encountered.
 
 :::note
 The return type of the function is the same as the input, except for LowCardinality which is discarded.
 This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column).
 You might use the -OrNull combinator to modify this behaviour.
 :::
+    )";
+    FunctionDocumentation::Syntax syntax = "any(column)[ RESPECT NULLS]";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "The column name.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns the first value encountered.
     )",
     {"Any"}
     };
@@ -461,7 +461,7 @@ Selects the last encountered value of a column.
 
 :::warning
 As a query can be executed in arbitrary order, the result of this function is non-deterministic.
-If you need an arbitrary but deterministic result, use functions min or max.
+If you need an arbitrary but deterministic result, use functions [min](/sql-reference/aggregate-functions/reference/min) or [max](/sql-reference/aggregate-functions/reference/max).
 :::
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
@@ -471,12 +471,12 @@ However, if the function is used with the `RESPECT NULLS` modifier, it returns t
     FunctionDocumentation::Arguments anyLast_arguments = {
         {"column", "The column name.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue anyLast_returned_value = {"The last value encountered.", {"Any"}};
+    FunctionDocumentation::ReturnedValue anyLast_returned_value = {"Returns the last value encountered.", {"Any"}};
     FunctionDocumentation::Examples anyLast_examples = {
     {
         "Usage example",
         R"(
-CREATE TABLE tab (city Nullable(String)) ENGINE=Memory;
+CREATE TABLE tab(city Nullable(String)) ENGINE=Memory;
 INSERT INTO tab (city) VALUES ('Amsterdam'), (NULL), ('New York'), ('Tokyo'), ('Valencia'), (NULL);
 SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
         )",

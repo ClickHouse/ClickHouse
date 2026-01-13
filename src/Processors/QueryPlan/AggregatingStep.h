@@ -106,7 +106,6 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override
     {
-        // TODO(nickitat): support aggregation in order?
         return sort_description_for_merging.empty() && grouping_sets_params.empty();
     }
 

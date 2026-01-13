@@ -18,6 +18,9 @@ namespace DB::ErrorCodes
 namespace ProfileEvents
 {
     extern const Event ParquetFetchWaitTimeMicroseconds;
+    extern const Event ParquetPrefetcherReadRandomRead;
+    extern const Event ParquetPrefetcherReadSeekAndRead;
+    extern const Event ParquetPrefetcherReadEntireFile;
 }
 
 namespace DB::Parquet
@@ -96,6 +99,7 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
     {
         case ReadMode::RandomRead:
             nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
             break;
         case ReadMode::SeekAndRead:
         {
@@ -106,11 +110,13 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
             reader->seek(offset, SEEK_SET);
             reader->setReadUntilPosition(offset + n);
             nread = reader->readBig(to, n);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadSeekAndRead);
             break;
         }
         case ReadMode::EntireFileIsInMemory:
             memcpy(to, entire_file.data() + offset, n);
             nread = n;
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadEntireFile);
             break;
     }
     if (nread != n)

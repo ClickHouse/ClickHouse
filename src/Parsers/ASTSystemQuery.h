@@ -204,7 +204,7 @@ public:
     String instrumentation_function_name;
     String instrumentation_handler_name;
     Instrumentation::EntryType instrumentation_entry_type;
-    std::optional<std::variant<UInt64, bool>> instrumentation_point_id;
+    std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
     std::vector<InstrumentParameter> instrumentation_parameters;
     String instrumentation_subquery;
 #endif

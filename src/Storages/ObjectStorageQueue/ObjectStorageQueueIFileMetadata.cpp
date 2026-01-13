@@ -377,6 +377,9 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
     chassert(created_processing_node);
+    SCOPE_EXIT({
+        created_processing_node = false;
+    });
 
     auto state = file_status->state.load();
     if (state != FileStatus::State::Processing)
@@ -441,13 +444,14 @@ void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordinatio
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
-void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests)
+void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr created_nodes)
 {
     LOG_TRACE(log, "Setting file {} as processed (keeper path: {})", path, processed_node_path);
 
     try
     {
-        prepareProcessedRequestsImpl(requests);
+        prepareProcessedRequestsImpl(requests, created_nodes);
     }
     catch (...)
     {

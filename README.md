@@ -47,13 +47,20 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
+* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/312621832/) - January 10th, 2026
 * [Iceberg Meetup Menlo Park](https://luma.com/abggijbh) - January 21st, 2026
 * [Data & AI Paris Meetup](https://luma.com/3szhmv9h) - January 22nd, 2026
 * [Iceberg Meetup New York](https://luma.com/ifxnj82q) - January 23rd, 2026
+* [ClickHouse France Meetup](https://www.meetup.com/clickhouse-france-user-group/events/312295018/) - January 28th, 2026
+* [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/312679894/) - January 29th, 2026
 * [Iceberg Meetup Brussels](https://luma.com/yx3lhqu9) - January 30th, 2026
+* [ClickHouse Dinner at FOSDEM](https://luma.com/czvs584m) - January 31st, 2026
+* [ClickHouse Barcelona Meetup](https://www.meetup.com/clickhouse-barcelona-user-group/events/312714616/) - February 3rd, 2026
+* [ClickHouse Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/312714632/) - February 4th, 2026
+* [ClickHouse London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/312314505/) - February 10th, 2026
 
 Recent meetups
+* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
 * [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/311974739/) - December 15, 2025
 * [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/311988089/) - December 9, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/312075592) - December 8, 2025

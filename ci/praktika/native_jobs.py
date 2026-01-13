@@ -613,6 +613,26 @@ def _finish_workflow(workflow, job_name):
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
             continue
+        if workflow.enable_open_issues_check and (
+            (
+                result.has_label(Result.Label.ISSUE)
+                and not result.has_label(Result.Label.BLOCKER)
+            )
+            or (
+                result.results
+                and all(
+                    (
+                        sub_result.has_label(Result.Label.ISSUE)
+                        and not sub_result.has_label(Result.Label.BLOCKER)
+                    )
+                    for sub_result in result.results
+                )
+            )
+        ):
+            print(
+                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
+            )
+            continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
