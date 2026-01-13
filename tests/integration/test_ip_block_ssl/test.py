@@ -20,14 +20,14 @@ def test_ip_block_message_ssl():
     # Rejection happens after the SSL handshake completes, driven by <networks> in ssl_config.xml.
     
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(10)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     
-    wrapped_socket = context.wrap_socket(s, server_hostname='localhost')
-    
     try:
-        wrapped_socket.connect((instance.ip_address, 9440))
+        s.connect((instance.ip_address, 9440))
+        wrapped_socket = context.wrap_socket(s, server_hostname='localhost')
         
         # We expect our specific error message after the SSL handshake completes
         data = wrapped_socket.recv(1024)
