@@ -100,8 +100,8 @@ protected:
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<String> & block_ids);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
-    void consumePartsSimple(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationToken::TokenInfo> token_info);
-    void consumePartsBuffered(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationToken::TokenInfo> token_info);
+    void consumePartsSimple(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> deduplication_info);
+    void consumePartsBuffered(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> deduplication_info);
     void flushPartsBuffer(bool just_one_bucket);
 };
 }

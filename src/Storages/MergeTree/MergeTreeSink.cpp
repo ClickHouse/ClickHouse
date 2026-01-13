@@ -119,16 +119,10 @@ void MergeTreeSink::consume(Chunk & chunk)
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
 
-    auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
-    if (!token_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "TokenInfo is expected for consumed chunk in MergeTreeSink for table: {}",
-            storage.getStorageID().getNameForLogs());
-
     if (insert_parts_buffered)
-        consumePartsBuffered(std::move(part_blocks), std::move(token_info));
+        consumePartsBuffered(std::move(part_blocks), std::move(deduplication_info));
     else
-        consumePartsSimple(std::move(part_blocks), std::move(token_info));
+        consumePartsSimple(std::move(part_blocks), std::move(deduplication_info));
 
     ++num_blocks_processed;
 }
@@ -148,14 +142,9 @@ size_t MergeTreeSink::BufferedPartitionData::getMetric(const Settings & settings
     return settings[Setting::max_insert_parts_buffer_rows] ? bytes : rows;
 }
 
-void MergeTreeSink::consumePartsSimple(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationToken::TokenInfo> token_info)
+void MergeTreeSink::consumePartsSimple(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> deduplication_info)
 {
     const Settings & settings = context->getSettingsRef();
-
-    const bool need_to_define_dedup_token = !token_info->isDefined();
-    String block_dedup_token;
-    if (token_info->isDefined())
-        block_dedup_token = token_info->getToken();
 
     size_t total_streams = 0;
     bool support_parallel_write = false;
@@ -166,8 +155,12 @@ void MergeTreeSink::consumePartsSimple(BlocksWithPartition part_blocks, std::sha
     using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
     DelayedPartitions partitions;
 
+    size_t total_rows = 0;
+
     for (auto & current_block : part_blocks)
     {
+        total_rows += current_block.block->rows();
+
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
@@ -268,26 +261,26 @@ void MergeTreeSink::consumePartsSimple(BlocksWithPartition part_blocks, std::sha
 
         total_streams += current_streams;
     }
-    deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
+    deduplication_info->setPartWriterHashes(all_partwriter_hashes, total_rows);
 
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
 }
 
-void MergeTreeSink::consumePartsBuffered(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationToken::TokenInfo> /*token_info*/)
+void MergeTreeSink::consumePartsBuffered(BlocksWithPartition part_blocks, std::shared_ptr<DeduplicationInfo> /*deduplication_info*/)
 {
     const Settings & settings = context->getSettingsRef();
 
     auto bufferizeOnePart = [this, &settings] (BlockWithPartition & part_block)
     {
-        size_t addendum_rows = part_block.block.rows();
-        size_t addendum_bytes = max_parts_buffer_bytes.value_or(0) ? part_block.block.bytes() : 0; // Avoid counting bytes when unneeded
+        size_t addendum_rows = part_block.block->rows();
+        size_t addendum_bytes = max_parts_buffer_bytes.value_or(0) ? part_block.block->bytes() : 0; // Avoid counting bytes when unneeded
 
         auto key = BufferedPartitionKey{std::move(part_block.partition.value)};
         auto iter = parts_buffer.try_emplace(key).first;
         auto & data = iter->second;
-        data.blocks.push_back(std::move(part_block.block));
+        data.blocks.push_back(std::move(*part_block.block));
         parts_heap.erase({data.getMetric(settings), &*iter});
         data.rows += addendum_rows;
         data.bytes += addendum_bytes;
@@ -300,8 +293,6 @@ void MergeTreeSink::consumePartsBuffered(BlocksWithPartition part_blocks, std::s
 
     for (auto & part_block : part_blocks)
     {
-        chassert(part_block.offsets.empty() && part_block.tokens.empty());
-
         auto [rows, bytes] = bufferizeOnePart(part_block);
         parts_buffer_rows += rows;
         parts_buffer_bytes += bytes;
@@ -323,9 +314,9 @@ void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
         auto big_block = concatenateBlocks(data.blocks);
         data.blocks.clear();
 
-        auto block_with_partition = BlockWithPartition(std::move(big_block), Row(key.fields));
+        auto block_with_partition = BlockWithPartition(std::make_shared<Block>(std::move(big_block)), Row(key.fields));
         auto temp_part = storage.writer.writeTempPart(block_with_partition, metadata_snapshot, context);
-        block_with_partition.block.clear();
+        block_with_partition.block->clear();
         block_with_partition.partition.value.clear();
         temp_part->finalize();
 
@@ -334,7 +325,7 @@ void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
             auto lock = storage.lockParts();
             storage.fillNewPartName(temp_part->part, lock);
             storage.renameTempPartAndAdd(temp_part->part, transaction, lock, false);
-            transaction.commit(&lock);
+            transaction.commit(lock);
         }
 
         temp_part->prewarmCaches();
