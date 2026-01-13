@@ -1297,12 +1297,11 @@ void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr
 ZooKeeperWithFaultInjectionPtr ReplicatedMergeTreeSink::createKeeper(String name)
 {
     const auto & settings = context->getSettingsRef();
-    auto zookeeper = ZooKeeperWithFaultInjection::createInstance(
+    return ZooKeeperWithFaultInjection::createInstance(
         settings[Setting::insert_keeper_fault_injection_probability],
         settings[Setting::insert_keeper_fault_injection_seed],
         storage.getZooKeeper(),
         name,
         log);
-    return zookeeper;
 }
 }
