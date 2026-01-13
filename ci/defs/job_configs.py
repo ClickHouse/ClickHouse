@@ -110,7 +110,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
   ./ci/tmp/*.log \
   ./ci/tmp/*.jsonl 2>/dev/null || true
 docker rm -f praktika
-"""
+""",
     timeout=180, #REMOVEME
 )
 
