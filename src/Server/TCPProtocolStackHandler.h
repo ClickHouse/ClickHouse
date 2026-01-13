@@ -72,12 +72,12 @@ public:
                         int sent = socket().sendBytes(message.data() + total_sent, static_cast<int>(message_size - total_sent));
                         if (sent < 0)
                         {
-                            LOG_ERROR(log, "Error while sending error message to blocked client {} (sendBytes returned {}).", socket().peerAddress().toString(), sent);
+                            LOG_ERROR(log, "Failed to send IP block error message to client {} due to socket error (sendBytes returned {}).", socket().peerAddress().toString(), sent);
                             break;
                         }
                         if (sent == 0)
                         {
-                            LOG_ERROR(log, "Connection closed by client {} while sending error message to blocked client (sent {} of {} bytes so far).", socket().peerAddress().toString(), total_sent, message_size);
+                            LOG_ERROR(log, "Connection closed by client {} while sending IP block error message (sent {} of {} bytes).", socket().peerAddress().toString(), total_sent, message_size);
                             break;
                         }
                         total_sent += sent;
