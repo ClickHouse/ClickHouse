@@ -947,7 +947,11 @@ private:
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+                if (isColumnNullableOrLowCardinalityNullable(
+                        assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
+                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                else
+                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {

@@ -2103,25 +2103,33 @@ struct ConvertImpl
                 return arguments[0].column;
 
             Int64 conversion_factor = 1;
-            Int64 result_value;
 
             int from_position = static_cast<int>(from.kind);
             int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
+
+            bool is_const = isColumnConst(*arguments[0].column);
+            size_t calc_num_rows = is_const ? 1 : input_rows_count;
+            auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
+            auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
             if (from_position < to_position)
             {
                 for (int i = from_position; i < to_position; ++i)
                     conversion_factor *= interval_conversions[i];
-                result_value = arguments[0].column->getInt(0) / conversion_factor;
+                for (size_t row = 0; row < calc_num_rows; ++row)
+                    res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
             }
             else
             {
                 for (int i = from_position; i > to_position; --i)
                     conversion_factor *= interval_conversions[i];
-                result_value = arguments[0].column->getInt(0) * conversion_factor;
+                for (size_t row = 0; row < calc_num_rows; ++row)
+                    res_data[row] = arguments[0].column->getInt(row) * conversion_factor;
             }
 
-            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
+            if (is_const)
+                res_col = ColumnConst::create(std::move(res_col), input_rows_count);
+            return std::move(res_col);
         }
         else
         {
