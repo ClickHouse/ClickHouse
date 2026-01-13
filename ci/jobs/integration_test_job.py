@@ -176,6 +176,7 @@ dmesg -T > ./ci/tmp/dmesg.log
             "./ci/tmp/logs.tar.gz",
             "./ci/tmp/dmesg.log",
             "./ci/tmp/docker-in-docker.log",
+            "./ci/tmp/filelist.txt",
         ],
         strict=False,
     )
