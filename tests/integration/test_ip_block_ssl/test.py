@@ -25,6 +25,8 @@ def test_ip_block_message_ssl():
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     
+    wrapped_socket = None
+    
     try:
         s.connect((instance.ip_address, 9440))
         wrapped_socket = context.wrap_socket(s, server_hostname='localhost')
@@ -45,7 +47,10 @@ def test_ip_block_message_ssl():
     except Exception as e:
         pytest.fail(f"An unexpected error occurred: {e}")
     finally:
-        wrapped_socket.close()
+        if wrapped_socket:
+            wrapped_socket.close()
+        else:
+            s.close()
 
 def test_ip_block_message_plain():
     # Connect to the insecure port (9000).
