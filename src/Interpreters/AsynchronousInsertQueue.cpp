@@ -980,10 +980,7 @@ try
 
         /// This log line is useful to understand if async insert is flushed in the context of some query and which one
         if (auto query_context = current_query_thread_group->query_context.lock())
-            LOG_DEBUG(
-                getLogger("AsynchronousInsertQueue"),
-                "Processing async insert as a part of a query with query_id: {}",
-                query_context->getCurrentQueryId());
+            LOG_DEBUG(log, "Processing async insert as a part of a query with query_id: {}", query_context->getCurrentQueryId());
     }
     else
         query_scope = CurrentThread::QueryScope::create(insert_context);

@@ -114,7 +114,9 @@ public:
         explicit QueryScope(bool initialized_);
     public:
         QueryScope() = default;
+        QueryScope(QueryScope & other) = delete;
         QueryScope(QueryScope && other) noexcept;
+        QueryScope & operator=(QueryScope & other) = delete;
         QueryScope & operator=(QueryScope && other) noexcept;
 
         static QueryScope create(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
