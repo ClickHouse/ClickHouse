@@ -7,6 +7,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
@@ -130,6 +131,7 @@ namespace Setting
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
     extern const SettingsBool flatten_nested;
+    extern const SettingsBool force_primary_key_reverse_order;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -737,6 +739,50 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     return ConstraintsDescription{constraints_data};
 }
 
+namespace
+{
+
+void forceReverse(ASTPtr & node)
+{
+    if (auto * elem = node->as<ASTStorageOrderByElement>())
+    {
+        elem->direction = -1;
+        return;
+    }
+
+    auto new_elem = std::make_shared<ASTStorageOrderByElement>();
+    new_elem->direction = -1;
+    new_elem->children.push_back(node);
+    node = std::move(new_elem);
+}
+
+void applyForceReverseOrder(ASTStorage * storage)
+{
+    if (!storage || !storage->order_by)
+        return;
+
+    if (auto * func = storage->order_by->as<ASTFunction>(); func && func->name == "tuple" && func->arguments)
+    {
+        for (auto & child : func->arguments->children)
+            forceReverse(child);
+    }
+    else
+    {
+        if (auto * elem = storage->order_by->as<ASTStorageOrderByElement>())
+        {
+            elem->direction = -1;
+        }
+        else
+        {
+            auto new_elem = std::make_shared<ASTStorageOrderByElement>();
+            new_elem->direction = -1;
+            new_elem->children.push_back(storage->order_by->ptr());
+            storage->set(storage->order_by, std::move(new_elem));
+        }
+    }
+}
+
+}
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode) const
@@ -989,6 +1035,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     std::swap(create.as_table, as_table_saved);
     if (!as_table_saved.empty())
         create.is_create_empty = false;
+
+    if (getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+        applyForceReverseOrder(create.storage);
 
     return properties;
 }
