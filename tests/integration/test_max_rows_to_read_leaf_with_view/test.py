@@ -75,9 +75,9 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
         )
 
     for node in (node1, node2):
-        node.query("DROP VIEW IF EXISTS test_view")
-        node.query("DROP TABLE IF EXISTS distributed_table")
-        node.query("DROP TABLE IF EXISTS local_table")
+        node.query("DROP VIEW IF EXISTS test_view SYNC")
+        node.query("DROP TABLE IF EXISTS distributed_table SYNC")
+        node.query("DROP TABLE IF EXISTS local_table SYNC")
 
 
 if __name__ == "__main__":
