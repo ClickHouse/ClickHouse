@@ -23,23 +23,19 @@ def started_cluster():
 
 
 def get_ddl_worker_reset_count(node):
-    node1.query("SYSTEM FLUSH LOGS")
+    node.query("SYSTEM FLUSH LOGS")
     return int(
-        node1.query(
+        node.query(
             "SELECT count() FROM system.text_log WHERE (message='Resetting state as requested') AND (logger_name='DDLWorker') AND (level='Information')"
         ).strip()
     )
 
 
 def assert_ddl_worker_reset_with_retry(node, prev_reset_count: int):
-    for i in range(10):
-        current_reset = get_ddl_worker_reset_count(node)
-        if current_reset == prev_reset_count + 1:
-            return
-        time.sleep(5)
-
-    current_reset = get_ddl_worker_reset_count(node)
-    assert current_reset == prev_reset_count + 1
+    node.query_with_retry(
+        "SELECT count() FROM system.text_log WHERE (message='Resetting state as requested') AND (logger_name='DDLWorker') AND (level='Information')",
+        check_callback=lambda x: int(x.strip()) == prev_reset_count + 1,
+    )
 
 
 def test_reset_ddl_worker(started_cluster):
