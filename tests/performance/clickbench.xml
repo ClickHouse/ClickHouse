@@ -11,7 +11,7 @@
 
     <!-- Q2 -->
     <query>
-      SELECT COUNT(*) FROM hits_10m_single WHERE AdvEngineID != 0;  
+      SELECT COUNT(*) FROM hits_10m_single WHERE AdvEngineID &lt;&gt; 0;
     </query>
 
     <!-- Q3 -->
@@ -41,7 +41,7 @@
 
     <!-- Q8 -->
     <query>
-        SELECT AdvEngineID, COUNT(*) FROM hits_10m_single WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY COUNT(*) DESC;
+        SELECT AdvEngineID, COUNT(*) FROM hits_10m_single WHERE AdvEngineID &lt;&gt; 0 GROUP BY AdvEngineID ORDER BY COUNT(*) DESC;
     </query>
 
     <!-- Q9 -->
@@ -56,27 +56,27 @@
 
     <!-- Q11 -->
     <query>
-        SELECT MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+        SELECT MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE MobilePhoneModel &lt;&gt; '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
     </query>
 
     <!-- Q12 -->
     <query>
-        SELECT MobilePhone, MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+        SELECT MobilePhone, MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE MobilePhoneModel &lt;&gt; '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
     </query>
 
     <!-- Q13 -->
     <query>
-        SELECT SearchPhrase, COUNT(*) AS c FROM hits_10m_single WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+        SELECT SearchPhrase, COUNT(*) AS c FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
     </query>
 
     <!-- Q14 -->
     <query>
-        SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+        SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
     </query>
 
     <!-- Q15 -->
     <query>
-        SELECT SearchEngineID, SearchPhrase, COUNT(*) AS c FROM hits_10m_single WHERE SearchPhrase  '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;
+        SELECT SearchEngineID, SearchPhrase, COUNT(*) AS c FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;
     </query>
 
     <!-- Q16 -->
@@ -111,12 +111,12 @@
 
     <!-- Q22 -->
     <query>
-        SELECT SearchPhrase, MIN(URL), COUNT(*) AS c FROM hits_10m_single WHERE URL LIKE '%google%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+        SELECT SearchPhrase, MIN(URL), COUNT(*) AS c FROM hits_10m_single WHERE URL LIKE '%google%' AND SearchPhrase &lt;&gt; '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
     </query>
 
     <!-- Q23 -->
     <query>
-        SELECT SearchPhrase, MIN(URL), MIN(Title), COUNT(*) AS c, COUNT(DISTINCT UserID) FROM hits_10m_single WHERE Title LIKE '%Google%' AND URL NOT LIKE '%.google.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+        SELECT SearchPhrase, MIN(URL), MIN(Title), COUNT(*) AS c, COUNT(DISTINCT UserID) FROM hits_10m_single WHERE Title LIKE '%Google%' AND URL NOT LIKE '%.google.%' AND SearchPhrase &lt;&gt; '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
     </query>
 
     <!-- Q24 -->
@@ -126,27 +126,27 @@
 
     <!-- Q25 -->
     <query>
-        SELECT SearchPhrase FROM hits_10m_single WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+        SELECT SearchPhrase FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' ORDER BY EventTime LIMIT 10;
     </query>
 
     <!-- Q26 -->
     <query>
-        SELECT SearchPhrase FROM hits_10m_single WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+        SELECT SearchPhrase FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' ORDER BY SearchPhrase LIMIT 10;
     </query>
 
     <!-- Q27 -->
     <query>
-        SELECT SearchPhrase FROM hits_10m_single WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+        SELECT SearchPhrase FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' ORDER BY EventTime, SearchPhrase LIMIT 10;
     </query>
 
     <!-- Q28 -->
     <query>
-        SELECT CounterID, AVG(length(URL)) AS l, COUNT(*) AS c FROM hits_10m_single WHERE URL != '' GROUP BY CounterID HAVING COUNT(*) > 100000 ORDER BY l DESC LIMIT 25;
+        SELECT CounterID, AVG(length(URL)) AS l, COUNT(*) AS c FROM hits_10m_single WHERE URL &lt;&gt; '' GROUP BY CounterID HAVING COUNT(*) > 100000 ORDER BY l DESC LIMIT 25;
     </query>
 
     <!-- Q29 -->
     <query>
-        SELECT REGEXP_REPLACE(Referer, '^https?://(?:www\.)?([^/]+)/.*$', '\1') AS k, AVG(length(Referer)) AS l, COUNT(*) AS c, MIN(Referer) FROM hits_10m_single WHERE Referer != '' GROUP BY k HAVING COUNT(*) > 100000 ORDER BY l DESC LIMIT 25;
+        SELECT REGEXP_REPLACE(Referer, '^https?://(?:www\.)?([^/]+)/.*$', '\1') AS k, AVG(length(Referer)) AS l, COUNT(*) AS c, MIN(Referer) FROM hits_10m_single WHERE Referer &lt;&gt; '' GROUP BY k HAVING COUNT(*) > 100000 ORDER BY l DESC LIMIT 25;
     </query>
 
     <!-- Q30 -->
@@ -156,12 +156,12 @@
 
     <!-- Q31 -->
     <query>
-        SELECT SearchEngineID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10;
+        SELECT SearchEngineID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10;
     </query>
 
     <!-- Q32 -->
     <query>
-        SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
+        SELECT WatchID, ClientIP, COUNT(*) AS c, SUM(IsRefresh), AVG(ResolutionWidth) FROM hits_10m_single WHERE SearchPhrase &lt;&gt; '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
     </query>
 
     <!-- Q33 -->
@@ -186,17 +186,17 @@
 
     <!-- Q37 -->
     <query>
-        SELECT URL, COUNT(*) AS PageViews FROM hits_10m_single WHERE CounterID = 62 AND EventDate &gt;= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND DontCountHits = 0 AND IsRefresh = 0 AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+        SELECT URL, COUNT(*) AS PageViews FROM hits_10m_single WHERE CounterID = 62 AND EventDate &gt;= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND DontCountHits = 0 AND IsRefresh = 0 AND URL &lt;&gt; '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
     </query>
 
     <!-- Q38 -->
     <query>
-        SELECT Title, COUNT(*) AS PageViews FROM hits_10m_single WHERE CounterID = 62 AND EventDate &gt;= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND DontCountHits = 0 AND IsRefresh = 0 AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+        SELECT Title, COUNT(*) AS PageViews FROM hits_10m_single WHERE CounterID = 62 AND EventDate &gt;= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND DontCountHits = 0 AND IsRefresh = 0 AND Title &lt;&gt; '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
     </query>
 
     <!-- Q39 -->
     <query>
-        SELECT URL, COUNT(*) AS PageViews FROM hits_10m_single WHERE CounterID = 62 AND EventDate &gt;= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND IsRefresh = 0 AND IsLink != 0 AND IsDownload = 0 GROUP BY URL ORDER BY PageViews DESC LIMIT 10 OFFSET 1000;
+        SELECT URL, COUNT(*) AS PageViews FROM hits_10m_single WHERE CounterID = 62 AND EventDate &gt;= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND IsRefresh = 0 AND IsLink &lt;&gt; 0 AND IsDownload = 0 GROUP BY URL ORDER BY PageViews DESC LIMIT 10 OFFSET 1000;
     </query>
 
     <!-- Q40 -->
