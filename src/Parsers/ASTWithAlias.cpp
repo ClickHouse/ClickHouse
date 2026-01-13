@@ -3,7 +3,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-
+#include <iostream>
 
 namespace DB
 {
