@@ -522,25 +522,25 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 {
-    if (this->depth < this->fc.max_depth)
-    {
-        const uint32_t unary_expr = 100;
-        const uint32_t binary_expr = 200 * static_cast<uint32_t>(this->fc.max_width > (this->width + 1));
-        const uint32_t between_expr = 80 * static_cast<uint32_t>(this->fc.max_width > (this->width + 2));
-        const uint32_t in_expr = 100 * static_cast<uint32_t>(this->fc.max_width > this->width);
-        const uint32_t any_expr = 100 * static_cast<uint32_t>(this->fc.max_width > (this->width + 1));
-        const uint32_t is_null_expr = 100;
-        const uint32_t exists_expr = 100 * static_cast<uint32_t>(this->allow_subqueries);
-        const uint32_t like_expr = 100;
-        const uint32_t search_expr = 100;
-        const uint32_t other_expr = 10;
-        const uint32_t prob_space = unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr
-            + search_expr + other_expr;
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t noption = next_dist(rg.generator);
+    /// predMask[static_cast<size_t>(PredOp::Literal)] = true;
+    predMask[static_cast<size_t>(PredOp::UnaryExpr)] = this->fc.max_depth > this->depth;
+    predMask[static_cast<size_t>(PredOp::BinaryExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 1);
+    predMask[static_cast<size_t>(PredOp::BetweenExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 2);
+    predMask[static_cast<size_t>(PredOp::InExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > this->width;
+    predMask[static_cast<size_t>(PredOp::AnyExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 1);
+    predMask[static_cast<size_t>(PredOp::IsNullExpr)] = this->fc.max_depth > this->depth;
+    predMask[static_cast<size_t>(PredOp::ExistsExpr)] = this->fc.max_depth > this->depth && this->allow_subqueries;
+    predMask[static_cast<size_t>(PredOp::LikeExpr)] = this->fc.max_depth > this->depth;
+    predMask[static_cast<size_t>(PredOp::SearchExpr)] = this->fc.max_depth > this->depth;
+    predMask[static_cast<size_t>(PredOp::OtherExpr)] = this->fc.max_depth > this->depth;
+    predGen.setEnabled(predMask);
 
-        if (unary_expr && noption < (unary_expr + 1))
-        {
+    switch (static_cast<PredOp>(predGen.nextOp())) /// drifts over time
+    {
+        case PredOp::Literal:
+            this->generateLiteralValue(rg, true, expr);
+            break;
+        case PredOp::UnaryExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             UnaryExpr * unexp = cexpr->mutable_unary_expr();
 
@@ -557,8 +557,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             }
             this->depth--;
         }
-        else if (binary_expr && noption < (unary_expr + binary_expr + 1))
-        {
+        break;
+        case PredOp::BinaryExpr: {
             const bool limited = rg.nextBool();
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             BinaryExpr * bexpr = cexpr->mutable_binary_expr();
@@ -574,8 +574,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->width--;
             this->depth--;
         }
-        else if (between_expr && noption < (unary_expr + binary_expr + between_expr + 1))
-        {
+        break;
+        case PredOp::BetweenExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprBetween * bexpr = cexpr->mutable_expr_between();
 
@@ -590,8 +590,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->width -= 2;
             this->depth--;
         }
-        else if (in_expr && noption < (unary_expr + binary_expr + between_expr + in_expr + 1))
-        {
+        break;
+        case PredOp::InExpr: {
             const uint32_t nopt2 = rg.nextSmallNumber();
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
@@ -627,8 +627,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             }
             this->depth--;
         }
-        else if (any_expr && noption < (unary_expr + binary_expr + between_expr + in_expr + any_expr + 1))
-        {
+        break;
+        case PredOp::AnyExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprAny * eany = cexpr->mutable_expr_any();
             std::uniform_int_distribution<uint32_t> op_range(
@@ -643,8 +643,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->width--;
             this->depth--;
         }
-        else if (is_null_expr && noption < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + 1))
-        {
+        break;
+        case PredOp::IsNullExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprNullTests * enull = cexpr->mutable_expr_null_tests();
 
@@ -653,8 +653,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->generateExpression(rg, enull->mutable_expr());
             this->depth--;
         }
-        else if (exists_expr && noption < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + 1))
-        {
+        break;
+        case PredOp::ExistsExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprExists * exists = cexpr->mutable_expr_exists();
 
@@ -663,10 +663,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             generateSubquery(rg, exists->mutable_select());
             this->depth--;
         }
-        else if (
-            like_expr
-            && noption < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + 1))
-        {
+        break;
+        case PredOp::LikeExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprLike * elike = cexpr->mutable_expr_like();
             std::uniform_int_distribution<uint32_t> like_range(1, static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX));
@@ -680,36 +678,20 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->width--;
             this->depth--;
         }
-        else if (
-            search_expr
-            && noption
-                < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + search_expr + 1))
-        {
+        break;
+        case PredOp::SearchExpr:
             /// Use search functions more often
             this->depth++;
             this->generateExpression(rg, generatePartialSearchExpr(rg, expr));
             this->depth--;
-        }
-        else if (
-            other_expr
-            && noption
-                < (unary_expr + binary_expr + between_expr + in_expr + any_expr + is_null_expr + exists_expr + like_expr + search_expr
-                   + other_expr + 1))
-        {
+            break;
+        case PredOp::OtherExpr:
             this->depth++;
             this->generateExpression(rg, expr);
             this->depth--;
-        }
-        else
-        {
-            UNREACHABLE();
-        }
-        addFieldAccess(rg, expr, 0);
+            break;
     }
-    else
-    {
-        this->generateLiteralValue(rg, true, expr);
-    }
+    addFieldAccess(rg, expr, 0);
 }
 
 void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr)

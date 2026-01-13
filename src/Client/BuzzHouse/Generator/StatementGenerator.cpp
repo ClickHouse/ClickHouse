@@ -187,9 +187,26 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.03}, /// DictExpr
               {0.01, 0.02} /// StarExpr
           }})))
+    , predGen(ProbabilityGeneratorT(ProbabilityConfig(
+          static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
+          rg.nextInFullRange(),
+          {{
+              {0.01, 0.01}, /// Literal
+              {0.05, 0.10}, /// UnaryExpr
+              {0.10, 0.35}, /// BinaryExpr
+              {0.05, 0.20}, /// BetweenExpr
+              {0.02, 0.10}, /// InExpr
+              {0.02, 0.10}, /// AnyExpr
+              {0.05, 0.15}, /// IsNullExpr
+              {0.02, 0.10}, /// ExistsExpr
+              {0.03, 0.15}, /// LikeExpr
+              {0.10, 0.30}, /// SearchExpr
+              {0.03, 0.05} /// OtherExpr
+          }})))
     , sqlMask(static_cast<size_t>(SqlOp::ShowStatement) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)
+    , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 

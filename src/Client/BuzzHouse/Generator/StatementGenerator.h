@@ -265,8 +265,23 @@ private:
         StarExpr
     };
 
-    ProbabilityGeneratorT sqlgen, litGen, expGen; //, predGen, queryGen;
-    std::vector<bool> sqlMask, litMask, expMask; // predMask, queryMask;
+    enum class PredOp
+    {
+        Literal = 0,
+        UnaryExpr,
+        BinaryExpr,
+        BetweenExpr,
+        InExpr,
+        AnyExpr,
+        IsNullExpr,
+        ExistsExpr,
+        LikeExpr,
+        SearchExpr,
+        OtherExpr
+    };
+
+    ProbabilityGeneratorT sqlgen, litGen, expGen, predGen; //, queryGen;
+    std::vector<bool> sqlMask, litMask, expMask, predMask; //, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
