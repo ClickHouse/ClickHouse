@@ -129,15 +129,8 @@ Chunk ParquetV3BlockInputFormat::read()
             return std::move(res.chunk);
         if (buckets_to_read)
         {
-            auto rgs = std::unordered_set<size_t>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
-            if (!rgs.contains(res.row_group_id))
-            {
+            if (!buckets_to_read->row_group_ids.empty() && static_cast<Int32>(buckets_to_read->row_group_ids[0]) != res.row_group_id)
                 continue;
-            }
-
-            auto readed_bucket = buckets_to_read->row_group_ids[0];
-            if (static_cast<int>(readed_bucket) != res.row_group_id)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "wtf {} {}", readed_bucket, res.row_group_id);
             buckets_to_read->row_group_ids.pop_front();
         }
         previous_block_missing_values = res.block_missing_values;
@@ -152,16 +145,8 @@ bool ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & bucke
     if (!buckets_to_read_)
         return false;
 
-    auto find_max = [] (std::shared_ptr<ParquetFileBucketInfo> pq_info)
-    {
-        size_t max_val = 0;
-        for (const auto & rg : pq_info->row_group_ids)
-        {
-            max_val = std::max(max_val, rg);
-        }
-        return max_val;
-    };
-    if (last_rg >= find_max(std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_)))
+    auto parquet_buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+    if (!parquet_buckets_to_read->row_group_ids.empty() && last_rg >= parquet_buckets_to_read->row_group_ids.back())
     {
         return false;
     }

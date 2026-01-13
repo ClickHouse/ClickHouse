@@ -316,7 +316,6 @@ void StorageObjectStorageSource::lazyInitialize()
 
     std::optional<ReaderHolder> tmp_reader;
     {
-        std::lock_guard lock(mutex);
         tmp_reader = createReader();
     }
     if (tmp_reader)

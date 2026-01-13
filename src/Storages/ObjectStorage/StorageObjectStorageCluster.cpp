@@ -271,7 +271,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
             {
-                std::cerr << "task_distributor " << task->getIdentifier() << '\n';
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             }
             return std::make_shared<ClusterFunctionReadTaskResponse>();

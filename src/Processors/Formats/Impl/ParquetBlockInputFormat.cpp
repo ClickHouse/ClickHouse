@@ -624,7 +624,7 @@ String ParquetFileBucketInfo::getIdentifier() const
     return result;
 }
 
-ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
+ParquetFileBucketInfo::ParquetFileBucketInfo(const std::deque<size_t> & row_group_ids_)
     : row_group_ids(std::deque<size_t>(row_group_ids_.begin(), row_group_ids_.end()))
 {
 }
@@ -1377,7 +1377,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     for (int i = 0; i < metadata->num_row_groups(); ++i)
         bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
 
-    std::vector<std::vector<size_t>> buckets;
+    std::vector<std::deque<size_t>> buckets;
     size_t current_weight = 0;
     for (size_t i = 0; i < bucket_sizes.size(); ++i)
     {

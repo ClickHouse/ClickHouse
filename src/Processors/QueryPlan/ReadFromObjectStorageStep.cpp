@@ -93,8 +93,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     {
         /// The amount of keys (zero) was probably underestimated.
         /// We will keep one stream for this particular case.
+        num_streams = 1;
     }
-    num_streams = 1;
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
