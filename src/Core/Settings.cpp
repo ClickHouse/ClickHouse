@@ -7305,6 +7305,8 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
     DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
 Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", BETA, allow_experimental_qbit_type) \
+    DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
+Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
