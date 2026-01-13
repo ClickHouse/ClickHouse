@@ -688,7 +688,7 @@ def main():
             )
             force_ok_exit = True
     if is_llvm_coverage and test_result:
-        # do not block pipeline on llvm coverage job failures
+        # do not block pipeline on amd_llvm_coverage job failures
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         force_ok_exit = True
 

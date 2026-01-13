@@ -503,7 +503,7 @@ class Runner:
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
 
-        if run_exit_code == 0:
+        if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
             providing_artifacts = []
             if job.provides and workflow.artifacts:
                 for provides_artifact_name in job.provides:
