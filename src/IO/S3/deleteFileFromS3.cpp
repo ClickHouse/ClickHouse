@@ -5,7 +5,7 @@
 #include <Common/logger_useful.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
 
@@ -37,7 +37,9 @@ void deleteFileFromS3(
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
         ProfileEvents::increment(*profile_event);
 
+    Stopwatch watch;
     auto outcome = s3_client->DeleteObject(request);
+    auto elapsed = watch.elapsedMicroseconds();
 
     auto log = getLogger("deleteFileFromS3");
 
@@ -46,7 +48,7 @@ void deleteFileFromS3(
         LOG_TRACE(log, "Writing Delete operation for blob {}", key);
         blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                    bucket, key,
-                                   local_path_for_blob_storage_log, file_size_for_blob_storage_log,
+                                   local_path_for_blob_storage_log, file_size_for_blob_storage_log, elapsed,
                                    outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                    outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
     }
@@ -140,7 +142,9 @@ void deleteFilesFromS3(
             if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
                 ProfileEvents::increment(*profile_event);
 
+            Stopwatch watch;
             auto outcome = s3_client->DeleteObjects(request);
+            auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)
             {
@@ -151,9 +155,11 @@ void deleteFilesFromS3(
                     const String & local_path_for_blob_storage_log = (i < local_paths_for_blob_storage_log.size()) ? local_paths_for_blob_storage_log[i] : empty_string;
                     size_t file_size_for_blob_storage_log = (i < file_sizes_for_blob_storage_log.size()) ? file_sizes_for_blob_storage_log[i] : 0;
 
+                    /// For the elapsed time, record the average per file.
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
                                                bucket, keys[i],
                                                local_path_for_blob_storage_log, file_size_for_blob_storage_log,
+                                               elapsed / (current_position - first_position),
                                                outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                                outcome.IsSuccess() ? "" : outcome.GetError().GetMessage(),
                                                time_now);

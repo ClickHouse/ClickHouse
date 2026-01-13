@@ -180,8 +180,61 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
 
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Calculates the information value (IV) for categorical features in relation to a binary target variable.
+
+For each category, the function computes: `(P(tag = 1) - P(tag = 0)) × (log(P(tag = 1)) - log(P(tag = 0)))`
+
+where:
+- P(tag = 1) is the probability that the target equals 1 for the given category
+- P(tag = 0) is the probability that the target equals 0 for the given category
+
+Information Value is a statistic used to measure the strength of a categorical feature's relationship with a binary target variable in predictive modeling.
+Higher absolute values indicate stronger predictive power.
+
+The result indicates how much each discrete (categorical) feature `[category1, category2, ...]` contributes to a learning model which predicts the value of `tag`.
+    )";
+    FunctionDocumentation::Syntax syntax = "categoricalInformationValue(category1[, category2, ...,]tag)";
+    FunctionDocumentation::Arguments arguments = {
+        {"category1, category2, ...", "One or more categorical features to analyze. Each category should contain discrete values.", {"UInt8"}},
+        {"tag", "Binary target variable for prediction. Should contain values 0 and 1.", {"UInt8"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of Float64 values representing the information value for each unique combination of categories. Each value indicates the predictive strength of that category combination for the target variable.", {"Array(Float64)"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Basic usage analyzing age groups vs mobile usage",
+        R"(
+-- Using the metrica.hits dataset (available on https://sql.clickhouse.com/) to analyze age-mobile relationship
+SELECT categoricalInformationValue(Age < 15, IsMobile)
+FROM metrica.hits;
+        )",
+        R"(
+[0.0014814694805292418]
+        )"
+    },
+    {
+        "Multiple categorical features with user demographics",
+        R"(
+SELECT categoricalInformationValue(
+    Sex,                 -- 0=male, 1=female
+    toUInt8(Age < 25),   -- 0=25+, 1=under 25
+    toUInt8(IsMobile)    -- 0=desktop, 1=mobile
+) AS iv_values
+FROM metrica.hits
+WHERE Sex IN (0, 1);
+        )",
+        R"(
+[0.00018965785460692887,0.004973668839403392]
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, properties });
+    factory.registerFunction("categoricalInformationValue", { createAggregateFunctionCategoricalIV, properties, documentation });
 }
 
 }

@@ -454,7 +454,7 @@ void ColumnVariant::insertData(const char *, size_t)
 void ColumnVariant::insert(const Field & x)
 {
     if (!tryInsert(x))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} into column {}", toString(x), getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} into column {}", fieldToString(x), getName());
 }
 
 bool ColumnVariant::tryInsert(const DB::Field & x)

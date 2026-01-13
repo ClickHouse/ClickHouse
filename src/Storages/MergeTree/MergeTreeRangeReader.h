@@ -1,9 +1,12 @@
 #pragma once
+#include <Common/Logger.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
+
+#include <mutex>
 
 namespace DB
 {

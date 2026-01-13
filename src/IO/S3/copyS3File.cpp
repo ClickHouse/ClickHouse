@@ -7,7 +7,7 @@
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -151,10 +151,13 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+            Stopwatch watch;
             auto outcome = client_ptr->CreateMultipartUpload(request);
+            auto elapsed = watch.elapsedMicroseconds();
+
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate,
-                                           dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0, elapsed,
                                            outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
@@ -200,11 +203,13 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+                Stopwatch watch;
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
+                auto elapsed = watch.elapsedMicroseconds();
 
                 if (blob_storage_log)
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
-                                               dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                               dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0, elapsed,
                                                outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                                outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
@@ -236,10 +241,14 @@ namespace
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
+
+            Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
+            auto elapsed = watch.elapsedMicroseconds();
+
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort,
-                                           dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0, elapsed,
                                            outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
         }
@@ -479,10 +488,11 @@ namespace
 
                 Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
-                watch.stop();
+                auto elapsed = watch.elapsedMicroseconds();
+
                 if (blob_storage_log)
                     blob_storage_log->addEvent(BlobStorageLogElement::EventType::Upload,
-                                               dest_bucket, dest_key, /* local_path_ */ {}, size,
+                                               dest_bucket, dest_key, /* local_path_ */ {}, size, elapsed,
                                                outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                                outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
@@ -490,7 +500,7 @@ namespace
                 {
                     Int64 object_size = request.GetContentLength();
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, object_size);
-                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
                     LOG_TRACE(
                         log,
                         "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}",
@@ -565,10 +575,13 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
+            Stopwatch watch;
             auto outcome = client_ptr->UploadPart(req);
+            auto elapsed = watch.elapsedMicroseconds();
+
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                                           dest_bucket, dest_key, /* local_path_ */ {}, size,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, size, elapsed,
                                            outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 

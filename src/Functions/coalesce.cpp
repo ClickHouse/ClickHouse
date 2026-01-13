@@ -29,9 +29,8 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_)
-        : context(context_)
-        , is_not_null(FunctionFactory::instance().get("isNotNull", context))
+    explicit FunctionCoalesce(ContextPtr context)
+        : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
@@ -169,7 +168,6 @@ public:
     }
 
 private:
-    ContextPtr context;
     FunctionOverloadResolverPtr is_not_null;
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;

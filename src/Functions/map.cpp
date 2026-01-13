@@ -44,9 +44,8 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    explicit FunctionMap(ContextPtr context_)
-        : context(context_)
-        , use_variant_as_common_type(context->getSettingsRef()[Setting::use_variant_as_common_type])
+    explicit FunctionMap(ContextPtr context)
+        : use_variant_as_common_type(context->getSettingsRef()[Setting::use_variant_as_common_type])
         , function_array(FunctionFactory::instance().get("array", context))
         , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {
@@ -144,7 +143,6 @@ public:
     }
 
 private:
-    ContextPtr context;
     bool use_variant_as_common_type = false;
     FunctionOverloadResolverPtr function_array;
     FunctionOverloadResolverPtr function_map_from_arrays;

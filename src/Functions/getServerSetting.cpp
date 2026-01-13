@@ -19,13 +19,12 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetServerSetting : public IFunction, WithContext
+class FunctionGetServerSetting : public IFunction
 {
 public:
     static constexpr auto name = "getServerSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetServerSetting>(context_); }
-    explicit FunctionGetServerSetting(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
 
     String getName() const override { return name; }
 
@@ -71,7 +70,7 @@ private:
 
         std::string_view setting_name{column->getDataAt(0)};
 
-        return getContext()->getServerSettings().get(setting_name);
+        return Context::getGlobalContextInstance()->getServerSettings().get(setting_name);
     }
 };
 

@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Common/Exception.h>
-#include <Processors/Transforms/LazilyMaterializingTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -153,23 +153,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    auto can_skip_mark = [&](const DataPartPtr & data_part)
-    {
-        switch (data_part->storage.merging_params.mode)
-        {
-            case MergeTreeData::MergingParams::Replacing:
-            case MergeTreeData::MergingParams::Coalescing:
-                /**
-                 * When a text index created on a table with the ReplacingMergeTree or CoalescingMergeTree engine, marks cannot
-                 * be directly skipped due to search terms might exist only on the old parts but does not exist in new parts.
-                 * Replacing and Coalescing merge strategies would handle such cases but it still needs the range marks to operate.
-                 */
-                return false;
-            default:
-                return true;
-        }
-    };
-
     new_readers.main = create_reader(read_info->task_columns.columns, false);
 
     bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
@@ -179,13 +162,21 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
         if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
+        {
+            /// Do not skip marks for queries with FINAL in the reader,
+            /// because it may affect the result of the merging algorithm.
+            bool can_skip_marks = !index_read_task->is_final;
+
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                index_read_task->is_final && can_skip_mark(read_info->data_part) /* this condition only applies to a FINAL query. */));
+                can_skip_marks));
+        }
         else
+        {
             new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
+        }
 
         if (is_vector_search)
             new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
@@ -390,12 +381,17 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     Block block;
     if (read_result.num_rows != 0)
     {
-        for (const auto & column : read_result.columns)
+        for (auto & column : read_result.columns)
         {
-            /// We may have columns that has other references, usually it is a constant column that has been created during analysis
-            /// (that will not be const here anymore, i.e. after materialize()), and we do not need to shrink it anyway.
+            /// We may have columns that have other references, usually it is a constant column that has been created during analysis
+            /// (that will not be const here anymore, i.e. after materialize()). The contract is - not to shrink if column is shared.
+            /// But if some subcolumns are shared, we'll clone them via IColumn::mutate() and then safely shrink
             if (column->use_count() == 1)
-                column->assumeMutableRef().shrinkToFit();
+            {
+                auto mutable_column = IColumn::mutate(std::move(column));
+                mutable_column->shrinkToFit();
+                column = std::move(mutable_column);
+            }
         }
         block = sample_block.cloneWithColumns(read_result.columns);
     }

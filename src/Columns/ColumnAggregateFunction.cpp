@@ -11,8 +11,10 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/defines.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
@@ -32,6 +34,12 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char column_aggregate_function_ensureOwnership_exception[];
 }
 
 
@@ -226,28 +234,43 @@ void ColumnAggregateFunction::ensureOwnership()
         size_t size_of_state = func->sizeOfData();
         size_t align_of_state = func->alignOfData();
 
+        bool inject_memory_limit_exceeded = false;
+        /// Avoid checking failpoint in a loop, since it uses atomic's
+        fiu_do_on(FailPoints::column_aggregate_function_ensureOwnership_exception,
+        {
+            inject_memory_limit_exceeded = true;
+        });
+
+        Container new_data;
+        new_data.resize_exact(size);
+
         size_t rollback_pos = 0;
         try
         {
             for (size_t i = 0; i < size; ++i)
             {
-                ConstAggregateDataPtr old_place = data[i];
-                data[i] = arena.alignedAlloc(size_of_state, align_of_state);
-                func->create(data[i]);
+                new_data[i] = arena.alignedAlloc(size_of_state, align_of_state);
+                func->create(new_data[i]);
                 ++rollback_pos;
-                func->merge(data[i], old_place, &arena);
+
+                if (unlikely(inject_memory_limit_exceeded))
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
+
+                func->merge(new_data[i], data[i], &arena);
             }
         }
         catch (...)
         {
             /// If we failed to take ownership, destroy all temporary data.
-
             if (!func->hasTrivialDestructor())
+            {
                 for (size_t i = 0; i < rollback_pos; ++i)
-                    func->destroy(data[i]);
-
+                    func->destroy(new_data[i]);
+            }
             throw;
         }
+
+        data = std::move(new_data);
 
         /// Now we own all data.
         src.reset();

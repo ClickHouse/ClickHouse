@@ -14,8 +14,6 @@ namespace
     class FunctionToBool : public IFunction
     {
     private:
-        ContextPtr context;
-
         static String getReturnTypeName(const DataTypePtr & argument)
         {
             return argument->isNullable() ? "Nullable(Bool)" : "Bool";

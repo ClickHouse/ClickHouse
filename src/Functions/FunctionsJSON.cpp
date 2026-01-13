@@ -528,7 +528,7 @@ private:
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver : public IFunctionOverloadResolver, WithContext
+class JSONOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -540,7 +540,10 @@ public:
         return std::make_unique<JSONOverloadResolver>(context_);
     }
 
-    explicit JSONOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit JSONOverloadResolver(ContextPtr context)
+        : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
+        , format_settings(getFormatSettings(context))
+    {}
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -573,8 +576,12 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
-            null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
+            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings);
     }
+
+private:
+    const bool allow_simdjson;
+    FormatSettings format_settings;
 };
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };

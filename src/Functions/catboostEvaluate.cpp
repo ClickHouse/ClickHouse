@@ -36,7 +36,7 @@ private:
 public:
     static constexpr auto name = "catboostEvaluate";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCatBoostEvaluate>(context_); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCatBoostEvaluate>(context_->getGlobalContext()); }
 
     explicit FunctionCatBoostEvaluate(ContextPtr context_) : WithContext(context_) {}
     String getName() const override { return name; }

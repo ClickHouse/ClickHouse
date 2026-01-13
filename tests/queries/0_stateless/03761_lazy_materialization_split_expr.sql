@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings, no-random-settings
+
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
 SET enable_analyzer=1;

@@ -11,6 +11,7 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .event import EventFeed
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -305,7 +306,7 @@ class Runner:
                     raise RuntimeError("Unsupported CPU architecture")
 
             docker = docker or f"{docker_name}:{docker_tag}"
-            docker_mount_dir = f"/praktika/"
+            current_dir = os.getcwd()
             for setting in settings:
                 if setting.startswith("--volume"):
                     volume = setting.removeprefix("--volume=").split(":")[0]
@@ -333,7 +334,7 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{docker_mount_dir} {extra_mounts} {gh_mount} --workdir={docker_mount_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run {tty} --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -405,6 +406,20 @@ class Runner:
                         process.get_latest_log(max_lines=20)
                     ).set_info("---")
             result.dump()
+
+        # When running Docker containers as root (non-rootless mode), any files created
+        # by the job will be owned by root. This causes issues when:
+        # 1. Files need to be read/compressed/uploaded by subsequent steps
+        # 2. Root-owned files remain in the repository working directory
+        # The ownership fix below ensures all root-owned files are changed to the current user
+        if job.run_in_docker and not no_docker and from_root:
+            print(f"--- Fixing file ownership after running docker as root")
+            # Get host user's UID and GID (not from inside the container)
+            uid = os.getuid()
+            gid = os.getgid()
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
+            print(f"--- Run ownership fix command [{chown_cmd}]")
+            Shell.check(chown_cmd, verbose=True)
 
         return exit_code
 
@@ -585,9 +600,15 @@ class Runner:
                                 "cidb",
                                 ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
+                                    failure_patterns=Settings.TEST_FAILURE_PATTERNS,
+                                    test_output=test_case_result.info,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
+                                    pr_base_branches=[
+                                        env.BASE_BRANCH,
+                                        Settings.MAIN_BRANCH,
+                                    ],
                                 ),
                             )
                     result.dump()
@@ -609,6 +630,7 @@ class Runner:
                 CacheRunnerHooks.post_run(workflow, job)
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
         if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
@@ -625,7 +647,7 @@ class Runner:
                 if is_final_job:
                     env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
 
-        # always in the end
+        # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
@@ -688,7 +710,7 @@ class Runner:
 
         if (
             workflow.enable_automerge
-            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and is_final_job
             and workflow.is_event_pull_request()
         ):
             try:
@@ -718,6 +740,25 @@ class Runner:
                 f"pipeline_status={pipeline_status}",
                 file=f,
             )
+
+        # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
+        # Updates are sent on initial job and final job
+        if (
+            workflow.enable_slack_feed
+            and env.COMMIT_AUTHORS
+            and (is_final_job or is_initial_job or not result.is_ok())
+        ):
+            for commit_author in env.COMMIT_AUTHORS:
+                try:
+                    EventFeed.update(
+                        commit_author,
+                        workflow_result.to_event(),
+                        s3_path=Settings.EVENTS_S3_PATH,
+                        notify_slack=True,
+                    )
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to update events for {commit_author}: {e}")
 
         return is_ok
 

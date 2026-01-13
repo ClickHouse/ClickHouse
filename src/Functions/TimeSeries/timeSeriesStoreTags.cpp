@@ -33,13 +33,13 @@ namespace ErrorCodes
 /// Function timeSeriesStoreTags(<id>, [('tag1_name', 'tag1_value'), ...], 'tag2_name', 'tag2_value', ...) returns <id>
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags : public IFunction, private WithContext
+class FunctionTimeSeriesStoreTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesStoreTags>(context_); }
-    explicit FunctionTimeSeriesStoreTags(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionTimeSeriesStoreTags(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -395,7 +395,7 @@ public:
     void extractIDsAndStoreTagsImpl(const IColumn & column_ids, std::vector<TagNamesAndValues> && tags_vector) const
     {
         auto ids = extractIDs<IDType>(column_ids);
-        getContext()->getQueryContext()->getTimeSeriesTagsCollector().add(ids, makeTagsPtrVector(std::move(tags_vector)));
+        context->getQueryContext()->getTimeSeriesTagsCollector().add(ids, makeTagsPtrVector(std::move(tags_vector)));
     }
 
     /// Extracts identifiers from the column.
@@ -419,6 +419,9 @@ public:
         }
         return res;
     }
+
+private:
+    const ContextPtr context;
 };
 
 

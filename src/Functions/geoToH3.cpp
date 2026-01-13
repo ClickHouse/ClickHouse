@@ -147,11 +147,11 @@ public:
 
             if (res > MAX_H3_RES)
                 throw Exception(
-                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                        toString(res),
-                        getName(),
-                        MAX_H3_RES);
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
+                    static_cast<uint8_t>(res),
+                    getName(),
+                    MAX_H3_RES);
 
             LatLng coord;
             coord.lng = degsToRads(lon);
