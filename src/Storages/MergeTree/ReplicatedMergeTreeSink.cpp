@@ -513,7 +513,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
             }
         }
 
-        // profile_events_scope has to be destroyed before
+        // profile_events_scope has to be destroyed in the scope above
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
         PartLog::addNewPart(
             storage.getContext(),
