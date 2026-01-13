@@ -9,7 +9,6 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheUtils.h>
-#include <Interpreters/Cache/OvercommitFileCachePriority.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
@@ -21,6 +20,9 @@
 #include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <Core/BackgroundSchedulePool.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#endif
 
 #include <exception>
 #include <filesystem>
