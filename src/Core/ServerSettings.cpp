@@ -1264,7 +1264,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, user_files_path, "/var/lib/clickhouse/user_files/", R"(
     The directory with user files. Used in the table function [file()](/sql-reference/table-functions/file), [fileCluster()](/sql-reference/table-functions/fileCluster).
-    
+
     **Example**
 
     ```xml
@@ -1273,7 +1273,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(
     The directory with dictionaries lib.
-    
+
     **Example**
 
     ```xml
@@ -1282,7 +1282,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(
     The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
-    
+
     **Example**
 
     ```xml
@@ -1291,7 +1291,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, top_level_domains, "/var/lib/clickhouse/top_level_domains/", R"(
     The directory with top level domains.
-    
+
     **Example**
 
     ```xml
@@ -1304,7 +1304,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     If omitted, it is defined in the same way as the `<hostname -f>` command.
 
     Useful for breaking away from a specific network interface.
-    
+
     **Example**
 
     ```xml
@@ -1313,7 +1313,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt64, interserver_http_port, 0, R"(
     Port for exchanging data between ClickHouse servers.
-    
+
     **Example**
 
     ```xml
@@ -1322,7 +1322,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, interserver_https_host, "", R"(
     Similar to `<interserver_http_host>`, except that this hostname can be used by other servers to access this server over `<HTTPS>`.
-    
+
     **Example**
 
     ```xml
@@ -1331,7 +1331,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt64, interserver_https_port, 0, R"(
     Port for exchanging data between ClickHouse servers over `<HTTPS>`.
-    
+
     **Example**
 
     ```xml
@@ -1342,7 +1342,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     The path to the file with substitutions. Both XML and YAML formats are supported.
 
     For more information, see the section [Configuration files](/operations/configuration-files).
-    
+
     **Example**
 
     ```xml
@@ -1351,9 +1351,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, tmp_path, "/var/lib/clickhouse/tmp/", R"(
     Path on the local filesystem to store temporary data for processing large queries.
-    
+
     :::note
-    - Only one option can be used to configure temporary data storage: tmp_path ,tmp_policy, temporary_data_in_cache.
+    - Only one option can be used to configure temporary data storage: tmp_path, tmp_policy, temporary_data_in_cache.
     - The trailing slash is mandatory.
     :::
 
@@ -1394,7 +1394,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
     DECLARE(Bool, remap_executable, false, R"(
     Setting to reallocate memory for machine code ("text") using huge pages.
-    
+
     :::note
     This feature is highly experimental.
     :::
@@ -1402,7 +1402,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **Example**
 
     ```xml
-    <remap_executable>false</remap_executable>   
+    <remap_executable>false</remap_executable>
     )", 0) \
     DECLARE(Bool, mlock_executable, false, R"(
     Perform `<mlockall>` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
@@ -1414,7 +1414,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **Example**
 
     ```xml
-    <mlock_executable>false</mlock_executable>  
+    <mlock_executable>false</mlock_executable>
     )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
@@ -1423,7 +1423,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Usually this value does not need to be changed, since:
     - The default value is large enough,
     - For accepting client's connections server has separate thread.
-    
+
     So even if you have `<TcpExtListenOverflows>` (from `<nstat>`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
     - Usually if `<4096>` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
     - It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
@@ -1486,7 +1486,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, openssl_server_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.server.caConfig") \
     DECLARE(String, openssl_server_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.server.verificationMode") \
     DECLARE(UInt64, openssl_server_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.server.verificationDepth") \
-    DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.server.loadDefaultCAFile") \
+    DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Determines wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.server.loadDefaultCAFile") \
     DECLARE(String, openssl_server_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.server.cipherList") \
     DECLARE(Bool, openssl_server_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.cacheSessions") \
     DECLARE(String, openssl_server_session_id_context, "application.name", R"(A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.)", 0, "openSSL.server.sessionIdContext") \
@@ -1506,7 +1506,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, openssl_client_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.client.caConfig") \
     DECLARE(String, openssl_client_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.client.verificationMode") \
     DECLARE(UInt64, openssl_client_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.client.verificationDepth") \
-    DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.client.loadDefaultCAFile") \
+    DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.client.loadDefaultCAFile") \
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
     DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
@@ -1572,7 +1572,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        const auto & path = setting.getPath();
+        const auto & path-x = setting.getPath();
         try
         {
             if (config.has(path))
@@ -1792,7 +1792,7 @@ void ServerSettings::dumpNonRegisteredConfigToSystemServerSettingsColumns(Server
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(prefix, keys);
-        
+
         for (const auto & key : keys)
         {
             std::string full_path = prefix.empty() ? key : prefix + "." + key;
@@ -1800,10 +1800,10 @@ void ServerSettings::dumpNonRegisteredConfigToSystemServerSettingsColumns(Server
             if (excluded_prefixes.contains(full_path)) {
                 continue;
             }
-            
+
             Poco::Util::AbstractConfiguration::Keys sub_keys;
             config.keys(full_path, sub_keys);
-            
+
             if (sub_keys.empty()) {
                 if (!ServerSettingsImpl::hasBuiltinPath(full_path)) {
                     res_columns[0]->insert(full_path);
@@ -1815,8 +1815,8 @@ void ServerSettings::dumpNonRegisteredConfigToSystemServerSettingsColumns(Server
                     res_columns[6]->insert(ChangeableWithoutRestart::No);
                     res_columns[7]->insert(false);
                 }
-                continue;    
-            } 
+                continue;
+            }
 
             process_config_path(full_path);
         }
