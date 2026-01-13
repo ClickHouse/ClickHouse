@@ -164,9 +164,11 @@
 #endif
 
 
-#include <incbin.h>
 /// A minimal file used when the server is run without installation
-INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
+constexpr unsigned char resource_embedded_xml[] =
+{
+#embed "embedded.xml"
+};
 
 namespace DB
 {
@@ -660,7 +662,7 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
-    ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
+    ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
