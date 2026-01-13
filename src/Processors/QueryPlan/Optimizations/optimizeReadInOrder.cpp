@@ -539,18 +539,35 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
 
-                current_direction = sort_column_description.direction * reverse_indicator;
-                if (match.monotonicity)
+                /// If the sorting key column is fixed (constant via WHERE clause), its direction
+                /// in ORDER BY doesn't matter - treat it as a fixed column to avoid direction conflicts.
+                /// Example: WHERE tenant = '42' ORDER BY tenant, event_time DESC
+                /// Here, 'tenant' is fixed, so we should not use its ASC direction from ORDER BY.
+                if (fixed_key_columns.contains(sort_column_node))
                 {
-                    current_direction *= match.monotonicity->direction;
-                    strict_monotonic = match.monotonicity->strict;
-                    match_infos.push_back({.source = sort_node, .monotonic = &match});
+                    if (next_sort_key == 0)
+                        can_optimize_virtual_row = false;
+
+                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    order_key_prefix_descr.push_back(sort_column_description);
+                    ++next_description_column;
+                    ++next_sort_key;
                 }
                 else
-                    match_infos.push_back({.source = sort_node});
+                {
+                    current_direction = sort_column_description.direction * reverse_indicator;
+                    if (match.monotonicity)
+                    {
+                        current_direction *= match.monotonicity->direction;
+                        strict_monotonic = match.monotonicity->strict;
+                        match_infos.push_back({.source = sort_node, .monotonic = &match});
+                    }
+                    else
+                        match_infos.push_back({.source = sort_node});
 
-                ++next_description_column;
-                ++next_sort_key;
+                    ++next_description_column;
+                    ++next_sort_key;
+                }
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {

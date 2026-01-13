@@ -1,0 +1,56 @@
+=== Case 1: WHERE tenant = 5 ORDER BY event_time DESC (baseline - should be InReverseOrder) ===
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Filter)
+        FilterTransform
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+=== Case 2: WHERE tenant = 5 ORDER BY tenant, event_time DESC (fixed column in ORDER BY) ===
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Filter)
+        FilterTransform
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+=== Case 3: WHERE tenant = 5 ORDER BY tenant ASC, event_time DESC ===
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Filter)
+        FilterTransform
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+=== Case 4: WHERE tenant = 5 ORDER BY tenant DESC, event_time DESC ===
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Filter)
+        FilterTransform
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+=== Verify results ===
+5	995
+5	995
+5	995
