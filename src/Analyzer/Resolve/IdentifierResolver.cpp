@@ -31,9 +31,9 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
+#include <Poco/String.h>
 #include <iostream>
 #include <ranges>
-#include <set>
 
 
 namespace DB
@@ -43,16 +43,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
-    extern const SettingsBool enable_case_insensitive_columns;
-    extern const SettingsBool enable_case_insensitive_tables;
-    extern const SettingsBool enable_case_insensitive_databases;
 }
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
     extern const int AMBIGUOUS_IDENTIFIER;
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
@@ -152,149 +147,6 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
     return expression_node;
 }
 
-namespace
-{
-struct QualifiedTable
-{
-    String database;
-    String table;
-
-    String toString() const { return database + "." + table; }
-
-    bool operator<(const QualifiedTable & other) const
-    {
-        return std::tie(database, table) < std::tie(other.database, other.table);
-    }
-};
-
-using QualifiedTableSet = std::set<QualifiedTable>;
-
-IdentifierResolveResult tryResolveTableIdentifierFallback(
-    const Identifier & table_identifier,
-    const ContextPtr & context,
-    const std::exception_ptr & swallowed_exception)
-{
-    const auto & settings = context->getSettingsRef();
-
-    const auto & parts = table_identifier.getParts();
-    QualifiedTable requested_table;
-    if (parts.size() == 1)
-    {
-        requested_table.database = context->getCurrentDatabase();
-        requested_table.table = parts[0];
-    }
-    else if (parts.size() == 2)
-    {
-        requested_table.database = parts[0];
-        requested_table.table = parts[1];
-    }
-    else
-    {
-        return {};
-    }
-
-    const bool ci_databases_on = settings[Setting::enable_case_insensitive_databases];
-    const bool ci_tables_on = settings[Setting::enable_case_insensitive_tables];
-
-    std::set<String> db_candidates;
-
-    if (!ci_databases_on && DatabaseCatalog::instance().isDatabaseExist(requested_table.database)) // works for specified DB and for current DB
-    {
-        db_candidates.insert(requested_table.database);
-    }
-    else if (ci_databases_on)
-    {
-        auto ci_dbs = DatabaseCatalog::instance().getDatabasesCaseInsensitive(requested_table.database);
-        db_candidates.insert(ci_dbs.begin(), ci_dbs.end());
-    }
-
-    /// for DB-only ambiguity
-    if (!ci_tables_on && db_candidates.size() > 1)
-    {
-        throw Exception(
-            ErrorCodes::AMBIGUOUS_IDENTIFIER,
-            "Database '{}' does not have a case-sensitive match. But it case-insensitively matches multiple databases: {}",
-            requested_table.database,
-            fmt::join(db_candidates, ", "));
-    }
-
-    if (db_candidates.empty())
-    {
-        if (swallowed_exception)
-            std::rethrow_exception(swallowed_exception);
-        return {};
-    }
-
-    // We do this by trying to resolve the table in the CI-matched database directly
-    if (!ci_tables_on && db_candidates.size() == 1 && parts.size() == 2)
-    {
-        const auto & resolved_db = *db_candidates.begin();
-
-        Identifier canonical {{ resolved_db, requested_table.table }};
-        if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
-            return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-
-        // Table not found
-        StorageID storage_id(resolved_db, requested_table.table);
-        DatabaseCatalog::instance().getTable(storage_id, context); // always throws if table doesn't exist
-        UNREACHABLE();
-    }
-
-    /// in selected DB collect case-insensitive table candidates
-    QualifiedTableSet ci_table_candidates;
-    String requested_table_lower = Poco::toLower(requested_table.table);
-
-    for (const auto & db_name : db_candidates)
-    {
-        auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(db_name);
-        if (!db_ptr)
-            continue;
-
-        for (const auto & tbl_name : db_ptr->getAllTableNames(context))
-        {
-            if (tbl_name == requested_table.table)
-            {
-                // table is full match and DB is CI match -> we still need to check other DBs for ambiguity
-                ci_table_candidates.insert({ db_name, tbl_name });
-                break;
-            }
-            else if (ci_tables_on && Poco::toLower(tbl_name) == requested_table_lower)
-            {
-                ci_table_candidates.insert({ db_name, tbl_name });
-            }
-        }
-    }
-
-    if (ci_table_candidates.empty())
-    {
-        if (swallowed_exception)
-            std::rethrow_exception(swallowed_exception);
-        return {};
-    }
-
-    /// no exact matches -> case-insensitive matches in exception
-    if (ci_table_candidates.size() > 1)
-    {
-        std::vector<String> ci_str;
-        ci_str.reserve(ci_table_candidates.size());
-        for (const auto & qt : ci_table_candidates)
-            ci_str.push_back(qt.toString());
-
-        throw Exception(
-            ErrorCodes::AMBIGUOUS_IDENTIFIER,
-            "Table identifier '{}' does not have a case-sensitive match. But it case-insensitively matches multiple tables: {}",
-            table_identifier.getFullName(),
-            fmt::join(ci_str, ", "));
-    }
-
-    const auto & match = *ci_table_candidates.begin();
-    Identifier canonical {{ match.database, match.table }};
-    if (auto resolved = IdentifierResolver::tryResolveTableIdentifier(canonical, context))
-        return { .resolved_identifier = std::move(resolved), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-    return {};
-}
-}
-
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
@@ -362,29 +214,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
 {
-    const auto & settings = context->getSettingsRef();
-    std::exception_ptr swallowed_exception; /// to preserve original message/hints
+    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+        return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
-    /// try exact resolution first, only swallow 'not found' cases to allow CI fallback
-    try
-    {
-        if (auto result = tryResolveTableIdentifier(table_identifier, context))
-            return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-    }
-    catch (const Exception & e)
-    {
-        bool do_fallback =
-            (e.code() == ErrorCodes::UNKNOWN_DATABASE && settings[Setting::enable_case_insensitive_databases]) ||
-            (e.code() == ErrorCodes::UNKNOWN_TABLE && settings[Setting::enable_case_insensitive_tables]);
-
-        if (!do_fallback)
-            throw;
-
-        swallowed_exception = std::current_exception();
-    }
-
-    if (settings[Setting::enable_case_insensitive_tables] || settings[Setting::enable_case_insensitive_databases])
-        return tryResolveTableIdentifierFallback(table_identifier, context, swallowed_exception);
     return {};
 }
 
@@ -584,7 +416,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return false;
     }
 
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
+    const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive) 
+        || table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
         return true;
 
     if (identifier.getPartsSize() == 1)
@@ -668,12 +502,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
+    /// In SQL standard mode, use case-insensitive lookup for non-double-quoted-identifiers
+    const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
+
+    if (use_case_insensitive)
+    {
+        String scope_description = scope.scope_node ? scope.scope_node->formatASTForErrorMessage() : "";
+        auto it = table_expression_data.findColumnCaseInsensitive(identifier_full_name, scope_description);
+        if (it != table_expression_data.column_name_to_column_node.end())
+            result_expression = it->second;
+    }
+    else if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
     {
         result_expression = it->second;
     }
+
     /// Check if it's a subcolumn
-    else
+    if (!result_expression)
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
         {
@@ -782,67 +627,22 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     if (!result_expression)
     {
-        /// case-insensitive fallback for columns
-        bool ci_columns_enabled = scope.context->getSettingsRef()[Setting::enable_case_insensitive_columns];
+        if (can_be_not_found)
+            return {};
+        std::unordered_set<Identifier> valid_identifiers;
+        TypoCorrection::collectTableExpressionValidIdentifiers(
+            identifier,
+            table_expression_node,
+            table_expression_data,
+            valid_identifiers);
 
-        std::set<String> ci_col_name_matches;
-        ColumnNodePtr ci_match_column;
-        if (ci_columns_enabled && !table_expression_data.column_name_to_column_node.empty())
-        {
-            String wanted_full_l = Poco::toLower(identifier_without_column_qualifier.getFullName());
-            for (const auto & [col_name, col_node] : table_expression_data.column_name_to_column_node)
-            {
-                if (Poco::toLower(col_name) == wanted_full_l)
-                {
-                    ci_col_name_matches.insert(col_name);
-                    ci_match_column = col_node;
-                }
-            }
-        }
+        auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
 
-        if (ci_col_name_matches.size() == 1)
-        {
-            result_expression = ci_match_column;
-            /// If nested path exists (like a.b), resolve it via compound if needed
-            if (!identifier_without_column_qualifier.isShort())
-            {
-                size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
-                result_expression = tryResolveIdentifierFromCompoundExpression(
-                    identifier, identifier_bind_size, result_expression, table_expression_source, scope, can_be_not_found);
-                if (can_be_not_found && !result_expression)
-                    return {};
-                clone_is_needed = false;
-            }
-        }
-        else if (ci_col_name_matches.size() > 1)
-        {
-            throw Exception(
-                ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
-                identifier.getFullName(),
-                fmt::join(ci_col_name_matches, ", "),
-                scope.scope_node->formatASTForErrorMessage());
-        }
-
-        if (!result_expression)
-        {
-            if (can_be_not_found)
-                return {};
-            std::unordered_set<Identifier> valid_identifiers;
-            TypoCorrection::collectTableExpressionValidIdentifiers(
-                identifier,
-                table_expression_node,
-                table_expression_data,
-                valid_identifiers);
-
-            auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
-
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
-                identifier.getFullName(),
-                table_expression_source,
-                scope.scope_node->formatASTForErrorMessage(),
-                getHintsErrorMessageSuffix(hints));
-        }
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
+            identifier.getFullName(),
+            table_expression_source,
+            scope.scope_node->formatASTForErrorMessage(),
+            getHintsErrorMessageSuffix(hints));
     }
 
     if (clone_is_needed)
@@ -923,16 +723,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
+    const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
+
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
-    if (table_expression_data.canBindIdentifier(IdentifierView(identifier)))
+    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
@@ -947,49 +749,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     }
 
     if (identifier.getPartsSize() == 1)
-    {
-        /// case-insensitive fallback for single-part identifiers against this table expression
-        bool ci_enabled = scope.context->getSettingsRef()[Setting::enable_case_insensitive_columns];
-        if (!ci_enabled)
-            return {};
-
-        std::set<String> matches;
-        ColumnNodePtr match_column;
-        for (const auto & [col_name, col_node] : table_expression_data.column_name_to_column_node)
-        {
-            if (Poco::toLower(col_name) == Poco::toLower(identifier.getParts().front()))
-            {
-                matches.insert(col_name);
-                match_column = col_node;
-            }
-        }
-
-        if (matches.size() == 1)
-        {
-            auto result = std::static_pointer_cast<IQueryTreeNode>(match_column);
-            return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        }
-        else if (matches.size() > 1)
-        {
-            throw Exception(
-                ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "Identifier '{}' does not match any column case-sensitively, but it case-insensitively matches multiple columns: {}. In scope {}",
-                identifier.getFullName(),
-                fmt::join(matches, ", "),
-                scope.scope_node->formatASTForErrorMessage());
-        }
         return {};
-    }
 
     const auto & table_name = table_expression_data.table_name;
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
+
+    /// Helper lambda for case-insensitive string comparison
+    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b) {
+        if (use_case_insensitive)
+            return Poco::toLower(a) == Poco::toLower(b);
+        return a == b;
+    };
+
+    if ((!table_name.empty() && strings_equal(path_start, table_name)) || (!table_alias.empty() && strings_equal(path_start, table_alias)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 2)
         return {};
 
     const auto & database_name = table_expression_data.database_name;
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (!database_name.empty() && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};

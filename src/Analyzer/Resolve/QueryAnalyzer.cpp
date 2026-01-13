@@ -36,6 +36,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -81,6 +82,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
 }
 
 
@@ -109,6 +111,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int SYNTAX_ERROR;
+    extern const int AMBIGUOUS_IDENTIFIER;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -1015,8 +1018,32 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     IdentifierResolveContext identifier_resolve_context)
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
+    const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    /// SQL standard: only double-quoted identifiers are case-sensitive, all other are case-insensitive
+    const bool use_case_insensitive = standard_mode && !identifier_lookup.is_double_quoted;
 
-    auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
+    QueryTreeNodePtr * it = nullptr;
+
+    if (use_case_insensitive)
+    {
+        /// SQL Standard mode with unquoted identifier: case-insensitive
+        std::vector<std::string> ambiguous_aliases;
+        it = scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME, &ambiguous_aliases);
+        if (!ambiguous_aliases.empty())
+        {
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Alias '{}' is ambiguous: matches multiple aliases with different cases: {}. In scope {}",
+                identifier_bind_part,
+                fmt::join(ambiguous_aliases, ", "),
+                scope.scope_node->formatASTForErrorMessage());
+        }
+    }
+    else
+    {
+        /// default mode or double-quoted identifier in standard mode: case-sensitive
+        it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
+    }
+
     if (it == nullptr)
         return {};
 
@@ -2742,6 +2769,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             IdentifierLookup identifier_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
             if (node->hasOriginalAST())
                 identifier_lookup.original_ast_node = node->getOriginalAST();
+
+            /// For SQL standard mode: double-quoted identifiers are case-sensitive, others are case-insensitive
+            /// check the column name (last part) since that's what gets looked up in the column map
+            size_t last_part_index = unresolved_identifier.getPartsSize() - 1;
+            identifier_lookup.is_double_quoted = identifier_node.isPartDoubleQuoted(last_part_index);
+
             auto resolve_identifier_expression_result = tryResolveIdentifier(identifier_lookup, scope);
 
             auto resolved_identifier_node = resolve_identifier_expression_result.resolved_identifier;
@@ -3708,6 +3741,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         Identifier column_name_identifier(column_name);
         table_expression_data.column_identifier_first_parts.insert(column_name_identifier.at(0));
     }
+
+    /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled
+    if (scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard)
+        table_expression_data.enableStandardMode();
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {

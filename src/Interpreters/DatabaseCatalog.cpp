@@ -21,7 +21,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/String.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -841,20 +840,6 @@ Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
         return databases;
 
     return databases_without_datalake_catalogs;
-}
-
-Strings DatabaseCatalog::getDatabasesCaseInsensitive(const String & database_name) const
-{
-    assert(!database_name.empty());
-    Strings result;
-    const String target = Poco::toLower(database_name);
-    std::lock_guard lock{databases_mutex};
-    for (const auto & [name, _] : databases)
-    {
-        if (Poco::toLower(name) == target)
-            result.push_back(name);
-    }
-    return result;
 }
 
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const

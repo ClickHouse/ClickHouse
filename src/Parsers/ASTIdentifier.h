@@ -19,12 +19,49 @@ class ASTTableIdentifier;
 /// FIXME: rewrite code about params - they should be substituted at the parsing stage,
 ///        or parsed as a separate AST entity.
 
+enum class IdentifierQuoteStyle : uint8_t
+{
+    None = 0,       /// Unquoted identifier (case-insensitive in SQL standard mode)
+    DoubleQuote,    /// "identifier" - case-sensitive in SQL standard mode  
+    Backtick,       /// `identifier` - also case-insensitive
+};
+
 /// Generic identifier. ASTTableIdentifier - for table identifier.
 class ASTIdentifier : public ASTWithAlias
 {
 public:
     explicit ASTIdentifier(const String & short_name, ASTPtr && name_param = {});
     explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false, ASTs && name_params = {});
+
+    const std::vector<IdentifierQuoteStyle> & getQuoteStyles() const
+    {
+        return quote_styles;
+    }
+
+    void setQuoteStyles(std::vector<IdentifierQuoteStyle> styles)
+    {
+        quote_styles = std::move(styles);
+    }
+    
+    IdentifierQuoteStyle getQuoteStyleAt(size_t index) const 
+    { 
+        return index < quote_styles.size() ? quote_styles[index] : IdentifierQuoteStyle::None; 
+    }
+
+    void setQuoteStyle(IdentifierQuoteStyle style) 
+    { 
+        if (quote_styles.empty())
+            quote_styles.resize(name_parts.empty() ? 1 : name_parts.size(), IdentifierQuoteStyle::None);
+        quote_styles[0] = style;
+    }
+    
+    bool isDoubleQuoted() const 
+    { 
+        for (auto s : quote_styles)
+            if (s == IdentifierQuoteStyle::DoubleQuote)
+                return true;
+        return false;
+    }
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
@@ -56,6 +93,7 @@ public:
 
     String full_name;
     std::vector<String> name_parts;
+    std::vector<IdentifierQuoteStyle> quote_styles;  /// One per name_part
 
 protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl

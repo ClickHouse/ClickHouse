@@ -198,8 +198,6 @@ public:
     /// these databases everywhere, but user must explicitly specify it.
     Databases getDatabases(GetDatabasesOptions options) const;
 
-    Strings getDatabasesCaseInsensitive(const String & database_name) const;
-
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
 

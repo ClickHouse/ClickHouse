@@ -599,12 +599,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
         auto identifier = Identifier(ast_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        auto identifier_node = std::make_shared<IdentifierNode>(std::move(identifier), ast_identifier->getQuoteStyles());
+        result = std::move(identifier_node);
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
         auto identifier = Identifier(table_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        auto identifier_node = std::make_shared<IdentifierNode>(std::move(identifier), table_identifier->getQuoteStyles());
+        result = std::move(identifier_node);
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {

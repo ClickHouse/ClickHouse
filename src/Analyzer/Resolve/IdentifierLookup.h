@@ -45,6 +45,9 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+    /// If true, identifier was double-quoted and should be treated as case-sensitive in case_insensitive_names = 'standard'
+    /// Quoted identifiers are case-sensitive in SQL standard mode
+    bool is_double_quoted = false;
 
     bool isExpressionLookup() const
     {

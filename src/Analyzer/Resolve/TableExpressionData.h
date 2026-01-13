@@ -2,10 +2,19 @@
 
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/Identifier.h>
 #include <DataTypes/NestedUtils.h>
+#include <Common/Exception.h>
+#include <Poco/String.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int AMBIGUOUS_IDENTIFIER;
+}
 
 struct StringTransparentHash
 {
@@ -29,6 +38,8 @@ struct StringTransparentHash
 };
 
 using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ColumnNodePtr, StringTransparentHash, std::equal_to<>>;
+/// Maps lowercase column name to the list of original column names that match (for ambiguity detection)
+using LowercaseToOriginalNamesMap = std::unordered_map<std::string, std::vector<std::string>>;
 
 struct AnalysisTableExpressionData
 {
@@ -43,15 +54,53 @@ struct AnalysisTableExpressionData
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
-    bool hasFullIdentifierName(IdentifierView identifier_view) const
+    LowercaseToOriginalNamesMap lowercase_column_name_to_original_names;
+
+    bool use_standard_mode = false;
+
+    bool hasFullIdentifierName(IdentifierView identifier_view, bool use_case_insensitive = false) const
     {
-        return column_name_to_column_node.contains(identifier_view.getFullName());
+        const auto & full_name = identifier_view.getFullName();
+        if (column_name_to_column_node.contains(full_name))
+            return true;
+        if (use_case_insensitive && use_standard_mode)
+            return hasColumnCaseInsensitive(full_name);
+        return false;
     }
 
-    bool canBindIdentifier(IdentifierView identifier_view) const
+    bool canBindIdentifier(IdentifierView identifier_view, bool use_case_insensitive = false) const
     {
-        return column_identifier_first_parts.contains(identifier_view.at(0)) || column_name_to_column_node.contains(identifier_view.at(0))
-            || tryGetSubcolumnInfo(identifier_view.getFullName());
+        const auto & first_part = identifier_view.at(0);
+        if (column_identifier_first_parts.contains(first_part) || column_name_to_column_node.contains(first_part))
+            return true;
+        if (use_case_insensitive && use_standard_mode)
+        {
+            String lower_first = Poco::toLower(String(first_part));
+            if (column_identifier_first_parts.contains(lower_first))
+                return true;
+        }
+        return tryGetSubcolumnInfo(identifier_view.getFullName()).has_value();
+    }
+
+    ColumnNameToColumnNodeMap::const_iterator findColumnCaseInsensitive(
+        std::string_view identifier_name,
+        const String & scope_description) const
+    {
+        auto it = lowercase_column_name_to_original_names.find(Poco::toLower(String(identifier_name)));
+        if (it == lowercase_column_name_to_original_names.end())
+            return column_name_to_column_node.end();
+
+        if (it->second.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' is ambiguous: matches multiple columns with different cases: {}. In scope {}",
+                identifier_name, fmt::join(it->second, ", "), scope_description);
+        return column_name_to_column_node.find(it->second.front());
+    }
+
+    bool hasColumnCaseInsensitive(std::string_view identifier_name) const
+    {
+        String lower_name = Poco::toLower(String(identifier_name));
+        return lowercase_column_name_to_original_names.contains(lower_name);
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
@@ -102,6 +151,30 @@ struct AnalysisTableExpressionData
 
         return std::nullopt;
     }
+
+    /// builds lowercase-to-original mappings for case-insensitive identifier resolution
+    void enableStandardMode()
+    {
+        use_standard_mode = true;
+        lowercase_column_name_to_original_names.clear();
+
+        for (const auto & [column_name, _] : column_name_to_column_node)
+        {
+            String lower_name = Poco::toLower(column_name);
+            lowercase_column_name_to_original_names[lower_name].push_back(column_name);
+        }
+
+        std::vector<std::string> first_parts_to_add;
+        for (const auto & first_part : column_identifier_first_parts)
+        {
+            String lower_part = Poco::toLower(first_part);
+            if (lower_part != first_part)
+                first_parts_to_add.push_back(lower_part);
+        }
+        for (const auto & part : first_parts_to_add)
+            column_identifier_first_parts.insert(part);
+    }
+
 };
 
 }

@@ -6820,7 +6820,7 @@ For testing purposes. Replaces all external table functions to Null to not initi
 Replace external dictionary sources to Null on restore. Useful for testing purposes
 )", 0) \
         /* Parallel replicas */ \
-    DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
+     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", 0, enable_parallel_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
@@ -7017,29 +7017,21 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
-    DECLARE(Bool, enable_case_insensitive_columns, false, R"(
-Enable case-insensitive matching for column identifiers in SELECT queries when identifiers are not quoted.
+    DECLARE(CaseInsensitiveNames, case_insensitive_names, CaseInsensitiveNames::Default, R"(
+Controls case sensitivity for identifier matching (database, table, column names).
 
-Behavior:
-- Applied only if there is no exact match
-- A match is used only if the lowercase form matches a single column unambiguously
-- If ambiguous, an error is thrown listing all candidates
-)", 0) \
-    DECLARE(Bool, enable_case_insensitive_tables, false, R"(
-Enable case-insensitive matching for table identifiers in SELECT queries when identifiers are not quoted.
+Possible values:
+- `default` — Case-sensitive matching (current behavior). Identifiers must match exactly.
+- `standard` — SQL standard-like behavior:
+  - Unquoted identifiers are case-insensitive
+  - Quoted identifiers (double-quotes or backticks) are case-sensitive
+  - If multiple columns differ only by case, unquoted access throws an ambiguity error
+  - Expression aliases follow the same rules
 
-Behavior:
-- Applied only if there is no exact match.
-- A match is used only if the lowercase form matches a single table unambiguously within the target database (current database if unspecified)
-- If ambiguous, an error is thrown listing all candidates
-)", 0) \
-    DECLARE(Bool, enable_case_insensitive_databases, false, R"(
-Enable case-insensitive matching for database identifiers in SELECT queries when identifiers are not quoted.
-
-Behavior:
-- Applied only if there is no exact match
-- A match is used only if the lowercase form matches a single database unambiguously
-- If ambiguous, an error is thrown listing all candidates
+Example with `standard` mode:
+- `SELECT FirstName FROM t` matches column `firstname`, `FIRSTNAME`, or `FirstName`
+- `SELECT "FirstName" FROM t` only matches column `FirstName` exactly
+- `SELECT `FirstName` FROM t` only matches column `FirstName` exactly
 )", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.

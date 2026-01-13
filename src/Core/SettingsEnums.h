@@ -534,4 +534,12 @@ enum class ArrowFlightDescriptorType : uint8_t
 
 DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
 
+enum class CaseInsensitiveNames : uint8_t
+{
+    Default = 0,    /// Case-sensitive
+    Standard = 1,   /// SQL standard: Double-quoted identifiers are case-sensitive, others are case-insensitive
+};
+
+DECLARE_SETTING_ENUM(CaseInsensitiveNames)
+
 }
