@@ -40,4 +40,5 @@ FROM
     (SELECT toUInt64(1) AS y WHERE 0) AS b
 SETTINGS query_plan_join_swap_table = 0;
 
-SELECT count() FROM numbers(1e12) t1, null('x UInt8') t2;
+SELECT count() FROM numbers(1e12) t1, null('x UInt8') t2
+SETTINGS query_plan_join_swap_table = 0;
