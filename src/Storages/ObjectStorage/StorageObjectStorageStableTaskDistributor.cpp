@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
+#include <mutex>
 #include <optional>
 
 namespace DB
@@ -212,7 +213,9 @@ ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getAnyUnprocessedFile()
 
 ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getNextTask(size_t number_of_current_replica)
 {
-    if (!unprocessed_buckets.contains(number_of_current_replica))
+    std::lock_guard lock(mutex);
+
+    if (!unprocessed_buckets[number_of_current_replica].empty())
     {
         auto obj = unprocessed_buckets[number_of_current_replica].front();
         unprocessed_buckets[number_of_current_replica].pop();
@@ -233,7 +236,6 @@ ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getNextTask(size_t numb
         file_to_replica[obj->getFileName()] = number_of_current_replica;
         return obj;
     }
-
     return getAnyUnprocessedFile();
 }
 

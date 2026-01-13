@@ -55,7 +55,7 @@ private:
 class StorageObjectStorageBucketTaskDistributor : public IStorageObjectStorageTaskDistributor
 {
 public:
-    StorageObjectStorageBucketTaskDistributor(std::shared_ptr<IObjectIterator> iterator_);
+    explicit StorageObjectStorageBucketTaskDistributor(std::shared_ptr<IObjectIterator> iterator_);
 
     ObjectInfoPtr getNextTask(size_t number_of_current_replica) override;
 
@@ -64,6 +64,8 @@ private:
 
     std::unordered_map<size_t, std::queue<ObjectInfoPtr>> unprocessed_buckets;
     std::unordered_map<String, size_t> file_to_replica;
+
+    std::mutex mutex;
 
     ObjectInfoPtr getAnyUnprocessedFile();
 };
