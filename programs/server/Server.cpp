@@ -376,7 +376,7 @@ namespace ServerSetting
     extern const ServerSettingsString user_files_path;
     extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
-    extern const ServerSettingsString top_level_domains;
+    extern const ServerSettingsString top_level_domains_path;
     extern const ServerSettingsString interserver_http_host;
     extern const ServerSettingsUInt64 interserver_http_port;
     extern const ServerSettingsString interserver_https_host;
@@ -1857,8 +1857,8 @@ try
 
     /// top_level_domains_lists
     {
-        const auto & top_level_domains_setting = server_settings[ServerSetting::top_level_domains];
-        const std::string & top_level_domains_path = top_level_domains_setting.changed ? top_level_domains_setting.value : String(path / "top_level_domains/");
+        const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
+        const std::string & top_level_domains_path = top_level_domains_path_setting.changed ? top_level_domains_path_setting.value : String(path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 

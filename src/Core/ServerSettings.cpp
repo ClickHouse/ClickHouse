@@ -1289,13 +1289,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
     ```
     )", 0) \
-    DECLARE(String, top_level_domains, "/var/lib/clickhouse/top_level_domains/", R"(
+    DECLARE(String, top_level_domains_path, "/var/lib/clickhouse/top_level_domains/", R"(
     The directory with top level domains.
 
     **Example**
 
     ```xml
-    <top_level_domains>/var/lib/clickhouse/top_level_domains/</top_level_domains>
+    <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
     ```
     )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
