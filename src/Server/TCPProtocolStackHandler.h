@@ -7,7 +7,6 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <limits>
 
 namespace DB
 {
@@ -53,10 +52,17 @@ public:
             {
                 if (factory->isSecure())
                 {
-                    std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server, stack_data));
-                    connection->run();
-                    if (stack_data.socket != socket())
-                        socket() = stack_data.socket;
+                    try
+                    {
+                        std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server, stack_data));
+                        connection->run();
+                        if (stack_data.socket != socket())
+                            socket() = stack_data.socket;
+                    }
+                    catch (...)
+                    {
+                        LOG_WARNING(log, "TLS handshake failed for blocked client {}: {}", socket().peerAddress().toString(), getCurrentExceptionMessage(false));
+                    }
                     continue;
                 }
 
@@ -66,29 +72,10 @@ public:
                 {
                     std::string message = Exception::getMessageForErrorLog(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "IP address not allowed") + "\n";
                     
-                    size_t total_sent = 0;
-                    const size_t message_size = message.size();
-                    while (total_sent < message_size)
+                    int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
+                    if (sent != static_cast<int>(message.size()))
                     {
-                        size_t remaining = message_size - total_sent;
-                        int to_send = static_cast<int>(std::min(remaining, static_cast<size_t>(std::numeric_limits<int>::max())));
-                        int sent = socket().sendBytes(message.data() + total_sent, to_send);
-                        if (sent < 0)
-                        {
-                            LOG_ERROR(log, "Failed to send IP block error message to client {} due to socket error (sendBytes returned {}).", socket().peerAddress().toString(), sent);
-                            break;
-                        }
-                        if (sent == 0)
-                        {
-                            LOG_ERROR(log, "Connection closed by client {} while sending IP block error message (sent {} of {} bytes).", socket().peerAddress().toString(), total_sent, message_size);
-                            break;
-                        }
-                        total_sent += static_cast<size_t>(sent);
-                    }
-                    
-                    if (total_sent != message_size)
-                    {
-                        LOG_ERROR(log, "Failed to send full error message to blocked client {} (sent {} of {} bytes).", socket().peerAddress().toString(), total_sent, message_size);
+                        LOG_ERROR(log, "Failed to send full IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
                     }
                 }
                 catch (...)
