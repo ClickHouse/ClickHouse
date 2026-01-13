@@ -225,7 +225,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
 
         auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
-        
+
         /// If the ORDER BY column matches a fixed (constant) key column,
         /// skip both without affecting read_direction - this column doesn't affect ordering.
         /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
@@ -236,7 +236,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             ++key_pos;
             continue;
         }
-        
+
         bool is_matched = match.direction && (read_direction == 0 || match.direction == read_direction);
 
         if (!is_matched)

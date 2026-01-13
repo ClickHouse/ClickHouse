@@ -540,6 +540,13 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// tenant is constant, so read direction should come from event_time DESC.
                 if (fixed_columns.contains(sort_node))
                 {
+                    /// Virtual row for fixed column from order by is not supported now.
+                    can_optimize_virtual_row = false;
+
+                    /// Still add the fixed column to the sort description (required for sort matching)
+                    /// but don't set current_direction so it won't influence read_direction.
+                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
                     continue;
