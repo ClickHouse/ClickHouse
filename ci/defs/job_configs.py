@@ -30,6 +30,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./utils/list-licenses",
+        "./utils/self-extracting-executable",
     ],
     with_git_submodules=True,
 )
@@ -709,6 +710,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
             ]
         ),
+        timeout=3600 * 2,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_asan",
