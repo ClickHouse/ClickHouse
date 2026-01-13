@@ -393,6 +393,9 @@ MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPar
 
 void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
+    if (delayed_parts.empty())
+        return;
+
     for (auto & partition : delayed_parts)
     {
         ExecutionStatus status;
