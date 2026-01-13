@@ -64,9 +64,14 @@ public:
                     while (total_sent < message_size)
                     {
                         int sent = socket().sendBytes(message.data() + total_sent, static_cast<int>(message_size - total_sent));
-                        if (sent <= 0)
+                        if (sent < 0)
                         {
-                            LOG_ERROR(log, "Failed to send full error message to blocked client (sendBytes returned {}).", sent);
+                            LOG_ERROR(log, "Error while sending error message to blocked client (sendBytes returned {}).", sent);
+                            break;
+                        }
+                        if (sent == 0)
+                        {
+                            LOG_ERROR(log, "Connection closed by client while sending error message to blocked client (sent {} of {} bytes so far).", total_sent, message_size);
                             break;
                         }
                         total_sent += sent;

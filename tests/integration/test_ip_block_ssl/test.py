@@ -17,7 +17,7 @@ def started_cluster():
 
 def test_ip_block_message_ssl():
     # Connect to the secure port (9440).
-    # Rejection should happen at the TCP stack level due to <networks> in ssl_config.xml.
+    # Rejection happens after the SSL handshake completes, driven by <networks> in ssl_config.xml.
     
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -49,7 +49,7 @@ def test_ip_block_message_ssl():
 
 def test_ip_block_message_plain():
     # Connect to the insecure port (9000).
-    # Rejection should happen immediately before any handshake.
+    # Rejection happens immediately after TCP connection, before any ClickHouse protocol exchange.
     
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(5)
