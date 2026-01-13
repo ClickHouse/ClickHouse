@@ -293,6 +293,16 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 `Iceberg` table engine and table function support metadata cache storing the information of manifest files, manifest list and metadata json. The cache is stored in memory. This feature is controlled by setting `use_iceberg_metadata_files_cache`, which is enabled by default.
 
+## Timezone for `timestamptz` data type {#timestamptz-timezone}
+
+Setting `iceberg_timezone_for_timestamptz` can be used to set custom timezone for column with Iceberg type `timestamptz`.
+
+Possible values:
+* Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+* empty value - use session timezone
+
+Default value is `UTC`.
+
 ## See also {#see-also}
 
 - [iceberg table function](/sql-reference/table-functions/iceberg.md)
