@@ -1281,7 +1281,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         }
         catch (const Exception & exception)
         {
-            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
         }
     }
 
@@ -1303,7 +1303,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         }
         catch (const Exception & exception)
         {
-            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
     metadata_copy.projections = std::move(new_projections);
