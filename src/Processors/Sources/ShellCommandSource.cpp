@@ -249,8 +249,8 @@ public:
                             }
                         }
 
-                        if (stderr_full_output)
-                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", *stderr_full_output);
+                        /// Don't throw here - let prepare() handle stderr exception after all reads complete
+                        /// This ensures we capture complete stderr and throw at the right time
                     }
                     break;
                 }
@@ -295,6 +295,12 @@ public:
             }
         }
     }
+
+    /// Check if stderr was accumulated (for THROW mode)
+    bool hasStderr() const { return stderr_full_output.has_value(); }
+
+    /// Get accumulated stderr content
+    const String & getStderr() const { return *stderr_full_output; }
 
 private:
     int stdout_fd;
@@ -560,6 +566,14 @@ namespace
                 for (auto & thread : send_data_threads)
                     if (thread.joinable())
                         thread.join();
+
+                /// Check if stderr was accumulated before checking exit code
+                /// This ensures stderr exceptions take priority over exit code exceptions
+                if (timeout_command_out.hasStderr())
+                {
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                                  "Executable generates stderr: {}", timeout_command_out.getStderr());
+                }
 
                 if (check_exit_code)
                 {

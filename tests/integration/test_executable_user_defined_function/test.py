@@ -417,11 +417,12 @@ def test_executable_function_python_exception_in_query_log(started_cluster):
     node.query("SYSTEM FLUSH LOGS")
 
     # Check query_log for the exception
+    # Note: type is 'ExceptionBeforeStart' because exception occurs during prepare(), not during block processing
     result = node.query(f"""
         SELECT exception
         FROM system.query_log
         WHERE query_id = '{query_id}'
-          AND type = 'ExceptionWhileProcessing'
+          AND type = 'ExceptionBeforeStart'
         FORMAT TabSeparated
     """)
 
