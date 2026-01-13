@@ -70,7 +70,15 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
             && position_deletes_object.reference_data_file_path != iceberg_data_path)
+        {
+            LOG_DEBUG(
+                log,
+                "Skipping position delete file {} for data file {} because position delete has another reference data file {}",
+                position_deletes_object.file_path,
+                iceberg_data_path,
+                position_deletes_object.reference_data_file_path.value());
             continue;
+        }
 
         auto object_path = position_deletes_object.file_path;
         auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
@@ -81,6 +89,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         if (boost::to_lower_copy(format) != "parquet")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
 
+        LOG_DEBUG(log, "Processing position delete file {} for data file {}", position_deletes_object.file_path, iceberg_data_path);
         Block initial_header;
         {
             std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log);
