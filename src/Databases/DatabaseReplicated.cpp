@@ -128,11 +128,41 @@ ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+/// Parse host_id format: escaped_hostname:port:uuid
+/// Returns tuple of (hostname, port, uuid)
+static inline std::tuple<String, UInt16, UUID> parseHostID(const String & host_id)
+{
+    /// Find the last colon to extract UUID
+    size_t last_colon = host_id.rfind(':');
+    if (last_colon == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid host_id format: {}", host_id);
+
+    String uuid_str = host_id.substr(last_colon + 1);
+    String host_port_str = host_id.substr(0, last_colon);
+
+    auto [hostname, port] = Cluster::Address::fromString(host_port_str);
+    UUID uuid = parseFromString<UUID>(uuid_str);
+
+    return std::make_tuple(hostname, port, uuid);
+}
+
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
-    auto host_port = global_context->getInterserverIOAddress();
+    /// Determine the advertised host using the fallback chain:
+    /// 1. replica_host (if configured)
+    /// 2. getFQDNOrHostName() (system hostname)
+    String host;
+    if (global_context->hasReplicaHost())
+    {
+        host = global_context->getReplicaHost();
+    }
+    else
+    {
+        host = getFQDNOrHostName();
+    }
+
     UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
-    return Cluster::Address::toString(host_port.first, port) + ':' + toString(db_uuid);
+    return Cluster::Address::toString(host, port) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -586,10 +616,42 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 
             if (replica_host_id != host_id && replica_host_id != host_id_default)
             {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
-                    replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+                /// This handles configuration changes like adding replica_host or network changes
+                try
+                {
+                    auto [old_hostname, old_port, old_uuid] = parseHostID(replica_host_id);
+                    auto [new_hostname, new_port, new_uuid] = parseHostID(host_id);
+
+                    if (old_uuid == new_uuid && old_port == new_port)
+                    {
+                        LOG_INFO(log, "Replica {} host configuration changed from '{}' to '{}', but UUID and port match. "
+                                      "Automatically updating ZooKeeper (old: {}:{}, new: {}:{})",
+                                 replica_name, old_hostname, new_hostname, old_hostname, old_port, new_hostname, new_port);
+                        current_zookeeper->set(replica_path, host_id, -1);
+                        createEmptyLogEntry(current_zookeeper);
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::REPLICA_ALREADY_EXISTS,
+                            "Replica {} of shard {} of replicated database at {} already exists with different UUID or port. "
+                            "Replica host ID: '{}' (UUID: {}, port: {}), current host ID: '{}' (UUID: {}, port: {})",
+                            replica_name, shard_name, zookeeper_path,
+                            replica_host_id, old_uuid, old_port, host_id, new_uuid, new_port);
+                    }
+                }
+                catch (const Exception & e)
+                {
+                    /// If we can't parse the host_id, fall back to the original error
+                    if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+                    {
+                        throw Exception(
+                            ErrorCodes::REPLICA_ALREADY_EXISTS,
+                            "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                            replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+                    }
+                    throw;
+                }
             }
 
             /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.

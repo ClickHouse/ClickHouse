@@ -445,6 +445,10 @@ struct ContextSharedPart : boost::noncopyable
     String interserver_scheme;                              /// http or https
     MultiVersion<InterserverCredentials> interserver_io_credentials;
 
+    /// Address that other replicas should use to reach this server (for DatabaseReplicated and cluster communication)
+    /// If empty, falls back to interserver_io_host or hostname
+    String replica_host;
+
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
@@ -4974,6 +4978,21 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
                         "in configuration file.");
 
     return { shared->interserver_io_host, shared->interserver_io_port };
+}
+
+void Context::setReplicaHost(const String & host)
+{
+    shared->replica_host = host;
+}
+
+String Context::getReplicaHost() const
+{
+    return shared->replica_host;
+}
+
+bool Context::hasReplicaHost() const
+{
+    return !shared->replica_host.empty();
 }
 
 void Context::setInterserverScheme(const String & scheme)

@@ -1101,6 +1101,11 @@ public:
     void setInterserverIOAddress(const String & host, UInt16 port);
     std::pair<String, UInt16> getInterserverIOAddress() const;
 
+    /// Address that other replicas should use to reach this server (for DatabaseReplicated and cluster communication)
+    void setReplicaHost(const String & host);
+    String getReplicaHost() const;
+    bool hasReplicaHost() const;
+
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
     InterserverCredentialsPtr getInterserverCredentials() const;

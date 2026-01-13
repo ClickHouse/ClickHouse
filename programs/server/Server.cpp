@@ -1870,6 +1870,13 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
+    if (config().has("replica_host"))
+    {
+        String replica_host = config().getString("replica_host");
+        global_context->setReplicaHost(replica_host);
+        LOG_DEBUG(log, "Configuration parameter 'replica_host' is set to '{}'.", replica_host);
+    }
+
     /// Set up caches.
 
     const size_t max_cache_size = static_cast<size_t>(physical_server_memory * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
