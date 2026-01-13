@@ -63,7 +63,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         return 0;
 
     size_t n = limit_step->getLimitForSorting();
-    if (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization)
+    if (!n || (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization))
         return 0;
 
     SortingStep::Type sorting_step_type = sorting_step->getType();

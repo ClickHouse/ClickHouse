@@ -298,7 +298,6 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     {
         MinMaxGranuleItem item{direction, 0, granule.granule_num, granule.min_or_max_value};
 
-        LOG_TRACE(getLogger("topK"), "getTopK granule value {} {}", (granule.min_or_max_value.dump()), granule.granule_num);
         if constexpr (!handle_ties) /// more common case
         {
             if (queue.size() < n)
