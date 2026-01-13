@@ -169,6 +169,7 @@ def main():
     # Set on_error_hook to collect logs on hard timeout
     Result.from_fs(info.job_name).set_on_error_hook(
         """
+find ./tests/integration >./ci/tmp/filelist.txt
 tar -czf ./ci/tmp/logs.tar.gz \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
@@ -180,6 +181,7 @@ dmesg -T > ./ci/tmp/dmesg.log
             "./ci/tmp/logs.tar.gz",
             "./ci/tmp/dmesg.log",
             "./ci/tmp/docker-in-docker.log",
+            "./ci/tmp/filelist.txt",
         ],
         strict=False,
     )
