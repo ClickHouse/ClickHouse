@@ -6361,7 +6361,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto table_id = getStorageID();
     auto alter_context = getContext();
 
-    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name, getContext());
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name, alter_context);
     bool is_in_replicated_database = database->getEngineName() == "Replicated";
 
     if (is_in_replicated_database)

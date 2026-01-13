@@ -336,21 +336,27 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const String & db_name, const ContextPtr & context)
+bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const String & database_name, ContextPtr context)
 {
-    if (db_name.empty())
-        return false;
+    return requireTemporaryDatabaseAccessIfNeeded(required_access, DatabaseCatalog::instance().tryGetDatabase(database_name, context));
+}
 
-    const auto & db = DatabaseCatalog::instance().tryGetDatabase(db_name, context);
+bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const DatabasePtr & db)
+{
     if (db && db->isTemporary())
     {
         // todo: duplicates in result?
         // we could skip check here at all because access already granted if the temporary database presents in context, but permissions may be changed since creation.
-        required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE, db_name);
+        required_access.emplace_back(AccessType::CREATE_TEMPORARY_DATABASE, db->getDatabaseName());
         return true;
     }
 
     return false;
+}
+
+void throwIfTemporaryDatabaseUsedOnCluster(const String & database_name, const ContextPtr & context)
+{
+    throwIfTemporaryDatabaseUsedOnCluster(DatabaseCatalog::instance().tryGetDatabase(database_name, context));
 }
 
 void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db)

@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -147,6 +148,7 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
 
     for (const auto & row_policy_name : query.names->full_names)
     {
+        // todo: is it right?
         if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
             res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
     }

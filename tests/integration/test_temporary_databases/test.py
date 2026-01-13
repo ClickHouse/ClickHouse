@@ -99,7 +99,6 @@ def test_attach_unsupported(request):
     session1, db1 = get_session_id_with_db_name(request, 1)
     with pytest.raises(Exception, match="Temporary databases or tables inside cannot be attached. Use CREATE instead"):
         query(session1, f"ATTACH TEMPORARY DATABASE `{db1}`")
-    # todo: tables
 
 
 def test_detach_unsupported(request):
@@ -114,23 +113,46 @@ def test_detach_unsupported(request):
     drop_db(session1, db1)
 
 
-def test_replicated_unsupported(request):
+def test_unsupported_engines(request):
     session1, db1 = get_session_id_with_db_name(request, 1)
+
     with pytest.raises(Exception, match="Replicated databases cannot be temporary"):
         query(session1, f"CREATE TEMPORARY DATABASE `{db1}` ENGINE = Replicated('some/path/r', 'shard1', 'replica1')")
+    with pytest.raises(Exception, match="Backup databases cannot be temporary"):
+        query(session1, f"CREATE TEMPORARY DATABASE `{db1}` ENGINE = Backup('database_name_inside_backup', 'backup_destination')")
 
 
 def test_on_cluster_unsupported(request):
     session1, db1 = get_session_id_with_db_name(request, 1)
-
-    with pytest.raises(Exception, match="ON CLUSTER cannot be used with temporary databases or tables inside"):
-        query(session1, f"CREATE TEMPORARY DATABASE `{db1}` ON CLUSTER default")
-
     create_db_with_table(session1, db1)
-    with pytest.raises(Exception, match="ON CLUSTER cannot be used with temporary databases or tables inside"):
-        query(session1, f"CREATE TABLE `{db1}`.`table2` ON CLUSTER default (x UInt64) ENGINE=MergeTree() ORDER BY x")
 
-    # todo: other queries
+    def assert_(sql: str):
+        with pytest.raises(Exception, match=f"ON CLUSTER cannot be used with temporary databases or tables inside"):
+            query(session1, sql)
+
+    db2 = get_db_name(request, 2)
+    assert_(f"CREATE TEMPORARY DATABASE `{db2}` ON CLUSTER default")
+    assert_(f"ALTER DATABASE `{db1}` ON CLUSTER default MODIFY COMMENT 'test comment'")
+    assert_(f"RENAME DATABASE `{db1}` TO `{db2}` ON CLUSTER default")
+    assert_(f"TRUNCATE DATABASE `{db1}` ON CLUSTER default")
+    assert_(f"DETACH DATABASE `{db1}` ON CLUSTER default")
+    assert_(f"DROP DATABASE `{db1}` ON CLUSTER default")
+
+
+    assert_(f"CREATE TABLE `{db1}`.`table2` ON CLUSTER default (x UInt64) ENGINE=MergeTree() ORDER BY x")
+
+    assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default ADD COLUMN y UInt64")
+    assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default MODIFY COLUMN y UInt64 COMMENT 'test comment'")
+    assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default RENAME COLUMN y TO y2")
+    assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default DROP COLUMN y2")
+
+    assert_(f"RENAME TABLE `{db1}`.`table1` TO `{db1}`.`table2` ON CLUSTER default")
+    assert_(f"EXCHANGE TABLES `{db1}`.`table2` AND `{db1}`.`table3` ON CLUSTER default")
+    assert_(f"DETACH TABLE `{db1}`.`table1` ON CLUSTER default")
+    assert_(f"DROP TABLE `{db1}`.`table1` ON CLUSTER default")
+
+    assert_(f"TRUNCATE TABLE `{db1}`.`table1` ON CLUSTER default")
+    assert_(f"OPTIMIZE TABLE `{db1}`.`table1` ON CLUSTER default")
 
     drop_db(session1, db1)
 
@@ -242,6 +264,9 @@ def test_restart(request, kill: bool):
     session1, db1 = get_session_id_with_db_name(request, 1)
     create_db_with_table(session1, db1)
 
+    db2 = get_db_name(request, 2)
+    query(session1, f"CREATE DATABASE `{db2}`")
+
     metadata_file = f"/var/lib/clickhouse/temporary/metadata/{db1}.sql"
 
     assert node1.file_exists_in_container(metadata_file)
@@ -250,6 +275,7 @@ def test_restart(request, kill: bool):
 
     node1.start_clickhouse()
     assert not node1.file_exists_in_container(metadata_file)
-
     assert_db_does_not_exist(session1, db1)
-    assert get_dbs_from_system_table(session1, [db1], True) == TSV([])
+    assert get_dbs_from_system_table(session1, [db1, db2], True) == TSV([[db2]])
+
+    drop_db(session1, db2)

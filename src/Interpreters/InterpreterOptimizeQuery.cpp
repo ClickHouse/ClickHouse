@@ -30,6 +30,8 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     if (!ast.cluster.empty())
     {
+        throwIfTemporaryDatabaseUsedOnCluster(ast.getDatabase(), getContext());
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

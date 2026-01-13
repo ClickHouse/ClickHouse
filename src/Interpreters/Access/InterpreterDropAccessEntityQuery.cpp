@@ -108,6 +108,7 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
                 const auto & context = getContext();
                 for (const auto & row_policy_name : query.row_policy_names->full_names)
                 {
+                    // todo: sure?
                     if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
                         res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
                 }

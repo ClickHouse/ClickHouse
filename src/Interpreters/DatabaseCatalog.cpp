@@ -230,9 +230,8 @@ StoragePtr TemporaryTableHolder::getTable() const
 
 TemporaryDatabaseHolder::~TemporaryDatabaseHolder() noexcept
 {
-    if (!database)
-        return;
-    DatabaseCatalog::instance().enqueueTemporaryDatabaseDrop(database);
+    if (database)
+        DatabaseCatalog::instance().enqueueTemporaryDatabaseDrop(database);
 }
 
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
@@ -648,7 +647,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     {
         std::lock_guard lock{databases_mutex};
         if (const auto it = databases.find(database_name); it != databases.end())
-            db = it->second;
+            db = it->second; // todo: check options
 
         if (!db)
             throw makeUnknownDatabaseException(database_name);
@@ -705,7 +704,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 }
 
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
-{
+{ // todo: check temporary?
     std::lock_guard lock{databases_mutex};
     assert(!databases.contains(new_name));
     auto it = databases.find(old_name);
@@ -1178,7 +1177,7 @@ void DatabaseCatalog::dropTemporaryDatabasesTask()
             {
                 tryLogCurrentException(log,fmt::format("Could not drop temporary database {}, will retry in next cycle. It's a bug, please report it", name));
                 std::lock_guard lock{drop_temporary_databases_mutex};
-                drop_temporary_databases_queue.emplace_back(std::move(db));
+                drop_temporary_databases_queue.emplace_back(std::move(db)); // todo: test
             }
         }
     }
@@ -1219,7 +1218,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 {
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
-    assert(dropped_metadata_path == getMetadataDropperFilePath(table_id, is_temporary_db));
+    assert(dropped_metadata_path == getMetadataDroppedFilePath(table_id, is_temporary_db));
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -2059,20 +2058,21 @@ bool DatabaseCatalog::canPerformReplicatedDDLQueries() const
     return replicated_ddl_queries_enabled;
 }
 
-Exception DatabaseCatalog::makeUnknownDatabaseException(const std::string_view & database_name) const
+Exception DatabaseCatalog::makeUnknownDatabaseException(const std::string_view & database_name, const bool & show_hints) const // todo: String & instead of std::string_view
 {
-    DatabaseNameHints hints(*this);
-    std::vector<String> names = hints.getHints(std::string{database_name});
-    if (names.empty())
+    if (show_hints)
     {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+        DatabaseNameHints hints(*this);
+        std::vector<String> names = hints.getHints(std::string{database_name});
+        if (!names.empty())
+            return Exception(
+                ErrorCodes::UNKNOWN_DATABASE,
+                "Database {} does not exist. Maybe you meant {}?",
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(names[0]));
     }
 
-    return Exception(
-        ErrorCodes::UNKNOWN_DATABASE,
-        "Database {} does not exist. Maybe you meant {}?",
-        backQuoteIfNeed(database_name),
-        backQuoteIfNeed(names[0]));
+    return Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 }
 
 static void maybeUnlockUUID(UUID uuid)

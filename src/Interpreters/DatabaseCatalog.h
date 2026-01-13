@@ -174,7 +174,7 @@ public:
     static fs::path getMetadataTmpFilePath(const String & database_name, const bool is_temporary) { return getMetadataDirPath(is_temporary) / (escapeForFileName(database_name) + ".sql.tmp"); }
 
     static fs::path getMetadataDroppedDirPath(const bool is_temporary) { return !is_temporary ? fs::path("metadata_dropped") : getTemporaryDir() / "metadata_dropped"; }
-    static fs::path getMetadataDropperFilePath(const StorageID & table_id, const bool is_temporary)
+    static fs::path getMetadataDroppedFilePath(const StorageID & table_id, const bool is_temporary)
     {
         return getMetadataDroppedDirPath(is_temporary) /
             fmt::format("{}.{}.{}.sql", escapeForFileName(table_id.getDatabaseName()), escapeForFileName(table_id.getTableName()), toString(table_id.uuid));
@@ -204,6 +204,7 @@ public:
 
     void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
+    Exception makeUnknownDatabaseException(const std::string_view & database_name, const bool & show_hints = true) const;
 
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
@@ -232,6 +233,7 @@ public:
     bool isTableExist(const StorageID & table_id, ContextPtr context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
+    /// Note: these methods bypass GetDatabaseOptions check, make sure this check is done before. todo: ?
     StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
@@ -268,7 +270,7 @@ public:
 
     bool hasUUIDMapping(const UUID & uuid);
 
-    /// Will bypass temporary databases access check
+    /// Will bypass temporary databases access check. todo: ?
     DatabaseAndTable tryGetWithTable(const UUID & uuid) const;
 
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay, bool is_temporary_db);
@@ -303,7 +305,7 @@ public:
         DiskPtr db_disk;
         String metadata_path;
         time_t drop_time{};
-        bool is_temporary_database;
+        bool is_temporary_database; // todo: ?
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
@@ -364,7 +366,6 @@ private:
 
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
-    Exception makeUnknownDatabaseException(const std::string_view & database_name) const;
 
     void reloadDisksTask();
 

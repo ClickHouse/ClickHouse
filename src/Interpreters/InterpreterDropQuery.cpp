@@ -49,20 +49,12 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
 }
-
-static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists, ContextPtr context)
-{
-    const auto opts = GetDatabasesOptions{.skip_temporary_owner_check = context->isInternalQuery()};
-    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name, context, opts) : DatabaseCatalog::instance().getDatabase(database_name, context, opts);
-}
-
 
 InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
@@ -87,14 +79,11 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
     const auto & context = getContext();
     if (drop.database)
     {
-        const auto & db = DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase(), context);
-        if (db && db->isTemporary()) // todo: access didn't leak test
-        {
-            if (!drop.cluster.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
-            if (drop.kind == ASTDropQuery::Kind::Detach)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases or tables inside cannot be detached. Use DROP instead");
-        }
+        const auto & db = DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase(), context, getDatabaseOptions());
+        if (!drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, context))
+            throwIfTemporaryDatabaseUsedOnCluster(db);
+        if (db && db->isTemporary() && drop.kind == ASTDropQuery::Kind::Detach)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases or tables inside cannot be detached. Use DROP instead");
     }
 
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, context))
@@ -161,7 +150,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    /// If table was already dropped by anyone, an exception will be thrown
+    /// If table was already dropped by anyone, an exception will be thrown todo: temporary access check
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
                                              : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
 
@@ -431,7 +420,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
     const auto & context = getContext();
 
-    database = tryGetDatabase(database_name, query.if_exists, context);
+    database = query.if_exists ?
+        DatabaseCatalog::instance().tryGetDatabase(database_name, context, getDatabaseOptions()) :
+        DatabaseCatalog::instance().getDatabase(database_name, context, getDatabaseOptions());
     if (!database)
         return {};
 
@@ -679,6 +670,12 @@ void InterpreterDropQuery::extendQueryLogElemImpl(DB::QueryLogElement & elem, co
     }
 }
 
+GetDatabasesOptions InterpreterDropQuery::getDatabaseOptions() const
+{
+    // isInternalQuery() check is done for temporary databases cleanup thread queries
+    return GetDatabasesOptions{.skip_temporary_owner_check = getContext()->isInternalQuery()};
+}
+
 AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() const
 {
     AccessRightsElements required_access;
@@ -689,7 +686,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach || drop.kind == ASTDropQuery::Kind::Drop)
+        if (drop.kind == ASTDropQuery::Kind::Detach)
+            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        else if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)

@@ -190,7 +190,6 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     const auto & context = getContext();
-    bool is_on_cluster = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     if (create.temporary)
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_temporary_databases])
@@ -204,8 +203,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.attach)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary databases or tables inside cannot be attached. Use CREATE instead");
 
-        if (create.storage && create.storage->engine && create.storage->engine->name == "Replicated")
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Replicated databases cannot be temporary");
+        if (create.storage && create.storage->engine && (create.storage->engine->name == "Replicated" || create.storage->engine->name == "Backup"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} databases cannot be temporary", create.storage->engine->name);
     }
 
 
@@ -216,9 +215,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {.skip_temporary_owner_check = true}))
     {
-        if (create.if_not_exists)
+        if (create.if_not_exists) // todo: case when another session has temporary db with this name? it is exists, but not accessible, so CREATE cannot be executed. it may confuse users.
             return {};
-
         if (db->isTemporary())
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Temporary database {} already exists.", database_name);
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
@@ -314,6 +312,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     else
     {
+        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
@@ -2396,25 +2395,24 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
-    bool is_create_database = create.database && !create.table;
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
-
-    if (create.database && !create.cluster.empty())
-    {
-        bool is_temp = create.temporary;
-        if (!is_temp)
-        {
-            // access check is not required here, because if db exists in context, and it's temporary - user has access anyway, and error will be appropriate.
-            const auto & db = DatabaseCatalog::instance().tryGetDatabase(create.getDatabase(), getContext());
-            is_temp = db && db->isTemporary();
-        }
-        if (is_temp)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
-    }
+    bool is_create_database = create.database && !create.table;
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        if (create.database)
+        {
+            bool is_temp = create.temporary;
+            if (!is_temp)
+            {
+                const auto & db = DatabaseCatalog::instance().tryGetDatabase(create.getDatabase(), getContext());
+                is_temp = db && db->isTemporary();
+            }
+            if (is_temp)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ON CLUSTER cannot be used with temporary databases or tables inside");
+        }
+
         if (create.attach_as_replicated.has_value())
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,

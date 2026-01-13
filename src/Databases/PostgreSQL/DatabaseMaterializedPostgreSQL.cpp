@@ -558,7 +558,8 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,
             args.database_name, configuration.database, connection_info,
-            std::move(postgresql_replica_settings), args.is_temporary);
+            std::move(postgresql_replica_settings),
+            args.is_temporary);
     };
     factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
         .supports_arguments = true,

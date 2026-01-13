@@ -217,7 +217,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     {
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
-        table_metadata_path_drop = DatabaseCatalog::getMetadataDropperFilePath(table->getStorageID(), isTemporary());
+        table_metadata_path_drop = DatabaseCatalog::getMetadataDroppedFilePath(table->getStorageID(), isTemporary());
 
         db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
 
