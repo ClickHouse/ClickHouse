@@ -538,11 +538,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
-
-                /// If the sorting key column is fixed (constant via WHERE clause), its direction
-                /// in ORDER BY doesn't matter - treat it as a fixed column to avoid direction conflicts.
-                /// Example: WHERE tenant = '42' ORDER BY tenant, event_time DESC
-                /// Here, 'tenant' is fixed, so we should not use its ASC direction from ORDER BY.
+                ///
+                /// However, if the sorting key column is fixed (constant via WHERE clause), its direction
+                /// in ORDER BY doesn't matter - we treat it as a fixed column to avoid direction conflicts.
+                /// Example: WHERE x = 42 ORDER BY x + 1, y + 1 DESC
+                /// Here, 'x + 1' is fixed (constant 43), so we should not use its ASC direction from ORDER BY,
+                /// allowing 'y + 1 DESC' to correctly determine InReverseOrder.
                 if (fixed_key_columns.contains(sort_column_node))
                 {
                     if (next_sort_key == 0)
