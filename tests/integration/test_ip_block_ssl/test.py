@@ -50,10 +50,6 @@ def test_ip_block_message_ssl():
         data = wrapped_socket.recv(1024)
         verify_ip_block_error(data)
         
-    except ssl.SSLError as e:
-        pytest.fail(f"SSL Handshake failed or connection broken without message: {e}")
-    except Exception as e:
-        pytest.fail(f"An unexpected error occurred: {e}")
     finally:
         if wrapped_socket:
             wrapped_socket.close()
@@ -77,7 +73,5 @@ def test_ip_block_message_plain():
         data = s.recv(1024)
         verify_ip_block_error(data)
         
-    except Exception as e:
-        pytest.fail(f"Connection failed or no message received: {e}")
     finally:
         s.close()
