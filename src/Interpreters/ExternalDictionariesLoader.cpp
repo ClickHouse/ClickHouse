@@ -183,7 +183,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     if (!qualified_name)
         return res;
 
-    std::string default_database_name = local_context->getSettingsRef()[Setting::default_dictionary_database];
+    const std::string & default_database_name = local_context->getSettingsRef()[Setting::default_dictionary_database];
     if (qualified_name->database.empty() && !default_database_name.empty())
     {
         /// Either database name is not specified and we should use default or current one
