@@ -6867,7 +6867,7 @@ For testing purposes. Replaces all external table functions to Null to not initi
 Replace external dictionary sources to Null on restore. Useful for testing purposes
 )", 0) \
         /* Parallel replicas */ \
-     DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
+    DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", 0, enable_parallel_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(

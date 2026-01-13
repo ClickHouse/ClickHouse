@@ -38,7 +38,7 @@ struct StringTransparentHash
 };
 
 using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ColumnNodePtr, StringTransparentHash, std::equal_to<>>;
-/// Maps lowercase column name to the list of original column names that match (for ambiguity detection)
+/// Maps lowercase column name to the list of original column names that match
 using LowercaseToOriginalNamesMap = std::unordered_map<std::string, std::vector<std::string>>;
 
 struct AnalysisTableExpressionData

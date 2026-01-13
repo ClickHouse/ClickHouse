@@ -753,7 +753,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
 
-    /// Helper lambda for case-insensitive string comparison
     auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b) {
         if (use_case_insensitive)
             return Poco::toLower(a) == Poco::toLower(b);

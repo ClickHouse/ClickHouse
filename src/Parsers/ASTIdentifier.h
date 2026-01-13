@@ -21,9 +21,9 @@ class ASTTableIdentifier;
 
 enum class IdentifierQuoteStyle : uint8_t
 {
-    None = 0,       /// Unquoted identifier (case-insensitive in SQL standard mode)
-    DoubleQuote,    /// "identifier" - case-sensitive in SQL standard mode  
-    Backtick,       /// `identifier` - also case-insensitive
+    None = 0,
+    DoubleQuote,
+    Backtick,
 };
 
 /// Generic identifier. ASTTableIdentifier - for table identifier.
