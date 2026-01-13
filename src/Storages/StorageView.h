@@ -30,6 +30,12 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info) const override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

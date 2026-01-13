@@ -155,6 +155,38 @@ StorageView::StorageView(
     setInMemoryMetadata(storage_metadata);
 }
 
+QueryProcessingStage::Enum StorageView::getQueryProcessingStage(
+    ContextPtr /*context*/,
+    QueryProcessingStage::Enum /*to_stage*/,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
+    SelectQueryInfo & query_info) const
+{
+    /// If view_query is set with ORDER BY (injected by planner for distributed optimization),
+    /// we need to return a higher stage so the outer query uses merge sort instead of full sort.
+    if (query_info.view_query)
+    {
+        if (auto * select_with_union = query_info.view_query->as<ASTSelectWithUnionQuery>())
+        {
+            if (!select_with_union->list_of_selects->children.empty())
+            {
+                if (auto * inner_select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>())
+                {
+                    if (inner_select->orderBy())
+                    {
+                        /// The VIEW's inner query has ORDER BY, which means:
+                        /// - If reading from Distributed table, shards will sort their data
+                        /// - Coordinator should merge sorted streams
+                        /// Return WithMergeableStateAfterAggregation to enable merge sort at outer level
+                        return QueryProcessingStage::WithMergeableStateAfterAggregation;
+                    }
+                }
+            }
+        }
+    }
+    
+    return QueryProcessingStage::FetchColumns;
+}
+
 void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,
