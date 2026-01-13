@@ -1446,6 +1446,8 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFinput, 0, 0, 1, 1),
     CHFunction(SQLTableFunc::TFjdbc, 0, 0, 1, 3),
     CHFunction(SQLTableFunc::TFmerge, 0, 0, 1, 2),
+    CHFunction(SQLTableFunc::TFmergeTreeAnalyzeIndexes, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFmergeTreeAnalyzeIndexesUUID, 0, 0, 1, 2),
     CHFunction(SQLTableFunc::TFmergeTreeIndex, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFmergeTreeProjection, 0, 0, 3, 3),
     CHFunction(SQLTableFunc::TFmongodb, 0, 0, 6, 8),
