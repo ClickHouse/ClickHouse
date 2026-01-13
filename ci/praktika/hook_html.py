@@ -146,9 +146,21 @@ class HtmlRunnerHooks:
         summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
             "git_branch", info.git_branch
         ).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
+            "commit_sha", env.SHA
+        ).add_ext_key_value(
             "commit_message", env.COMMIT_MESSAGE
+        ).add_ext_key_value(
+            "repo_name", env.REPOSITORY
+        ).add_ext_key_value(
+            "pr_number", env.PR_NUMBER
+        ).add_ext_key_value(
+            "related_prs", [env.LINKED_PR_NUMBER] if env.LINKED_PR_NUMBER else []
+        ).add_ext_key_value(
+            "run_url", env.RUN_URL
+        ).add_ext_key_value(
+            "change_url", env.CHANGE_URL
         )
-        summary_result.ext["report_url"] = report_url_current_sha
+
         summary_result.dump()
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         print(f"CI Status page url [{report_url_current_sha}]")
