@@ -65,7 +65,10 @@ class EventFeed:
     def add(self, event: Event):
         """Add event to the feed.
 
-        Simply appends the event to the list and applies retention policy.
+        Overwrites existing events that match:
+        - If pr_number != 0: matches by pr_number and repo_name
+        - If pr_number == 0: matches by sha and repo_name
+
         Nesting by parent_pr_number is done during rendering elsewhere.
 
         Retention policy:
@@ -75,6 +78,33 @@ class EventFeed:
         import time
 
         cutoff_timestamp = int(time.time()) - (MAX_TIMELINE_DAYS * 24 * 60 * 60)
+
+        # Remove existing events that match the incoming event
+        event_pr_number = event.ext.get("pr_number", 0)
+        event_repo_name = event.ext.get("repo_name", "")
+        event_sha = event.sha
+
+        filtered_events = []
+        for e in self.events:
+            e_pr_number = e.ext.get("pr_number", 0)
+            e_repo_name = e.ext.get("repo_name", "")
+            e_sha = e.sha
+
+            # Determine if this existing event should be replaced
+            should_remove = False
+            if event_pr_number != 0:
+                # Match by pr_number and repo_name
+                if e_pr_number == event_pr_number and e_repo_name == event_repo_name:
+                    should_remove = True
+            else:
+                # Match by sha and repo_name
+                if e_sha == event_sha and e_repo_name == event_repo_name:
+                    should_remove = True
+
+            if not should_remove:
+                filtered_events.append(e)
+
+        self.events = filtered_events
 
         # Append the new event
         self.events.append(event)

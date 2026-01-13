@@ -80,11 +80,11 @@ def publish_home_view(
             ci_running_status_emoji = ":checkered_flag:"
 
         if event.ci_status == "success":
-            ci_status_emoji = ":large_green_circle:"
+            ci_status_emoji = ":success_sign:"
         elif event.ci_status in ["pending", "running"]:
             ci_status_emoji = ":worry-stop:" if has_failures else ":frog-run:"
         else:
-            ci_status_emoji = ":red_circle:"
+            ci_status_emoji = ":failure_sign:"
 
         # Get report URL from result.ext if available
         report_url = ""
@@ -122,63 +122,42 @@ def publish_home_view(
 
         # Aggregate results by status from workflow result
         if hasattr(event, "result") and event.result and event.result.get("results"):
-            failure_jobs = []
-            error_jobs = []
-            dropped_jobs = []
-            success_jobs = []
-            skipped_jobs = []
-            pending_running_jobs = []
+            fail_cnt = 0
+            error_cnt = 0
+            success_cnt = 0
+            running_cnt = 0
+            total_cnt = 0
 
             for r in event.result.get("results", []):
                 status = r.get("status", "")
-                name = r.get("name", "")
+                total_cnt += 1
 
                 if status == "failure":
-                    failure_jobs.append(name)
+                    fail_cnt += 1
                 elif status == "error":
-                    error_jobs.append(name)
-                elif status == "dropped":
-                    dropped_jobs.append(name)
+                    error_cnt += 1
                 elif status == "success":
-                    success_jobs.append(name)
-                elif status == "skipped":
-                    skipped_jobs.append(name)
+                    success_cnt += 1
                 elif status in ["pending", "running"]:
-                    pending_running_jobs.append(name)
+                    running_cnt += 1
 
-            # Build summary text
-            summary_lines = []
+            # Build compact one-line summary
+            parts = []
+            if fail_cnt or error_cnt:
+                parts.append(f"{fail_cnt + error_cnt} failed")
+            if running_cnt:
+                parts.append(f"{running_cnt} running")
+            if success_cnt:
+                parts.append(f"{success_cnt} ok")
 
-            # Combine failures and errors
-            failed_or_errored = failure_jobs + error_jobs
-            if failed_or_errored:
-                summary_lines.append(
-                    f"\n{indent}{len(failed_or_errored)} job(s) finished with failure or error. First 5:"
-                )
-                for job_name in failed_or_errored[:5]:
-                    summary_lines.append(f"{indent}  • {job_name}")
-
-            if dropped_jobs:
-                summary_lines.append(f"{indent}{len(dropped_jobs)} job(s) dropped")
-
-            if pending_running_jobs:
-                summary_lines.append(
-                    f"{indent}{len(pending_running_jobs)} job(s) pending or running"
-                )
-
-            if success_jobs:
-                summary_lines.append(
-                    f"{indent}{len(success_jobs)} job(s) finished successfully"
-                )
-
-            if skipped_jobs:
-                summary_lines.append(f"{indent}{len(skipped_jobs)} job(s) skipped")
-
-            if summary_lines:
-                event_text += "\n" + "\n".join(summary_lines)
-
-            if report_url_text:
-                event_text += f"\n{indent}" + report_url_text
+            if parts:
+                summary = " · ".join(parts)
+                if report_url_text:
+                    event_text += f"\n{indent}{summary} · {report_url_text}"
+                else:
+                    event_text += f"\n{indent}{summary}"
+            elif report_url_text:
+                event_text += f"\n{indent}{report_url_text}"
 
             # Add related PRs if available (only for parent events)
             if not indent:
@@ -292,7 +271,7 @@ def publish_home_view(
                 )
                 for child_event in children_sorted:
                     child_text = format_event_text(
-                        child_event, pr_status, indent="    ┃ "
+                        child_event, pr_status, indent="        | "
                     )
                     event_text += "\n" + child_text
 
