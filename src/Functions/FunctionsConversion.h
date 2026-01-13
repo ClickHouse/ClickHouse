@@ -91,7 +91,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
-    extern const SettingsBool input_format_numbers_enum_on_conversion_error;
+    extern const SettingsBool check_conversion_from_numbers_to_enum;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
@@ -122,7 +122,6 @@ namespace ErrorCodes
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int BAD_ARGUMENTS;
 }
 
 struct FunctionConvertSettings
@@ -134,7 +133,7 @@ struct FunctionConvertSettings
     const bool cast_string_to_dynamic_use_inference;
     const bool input_format_ipv4_default_on_conversion_error;
     const bool input_format_ipv6_default_on_conversion_error;
-    const bool input_format_numbers_enum_on_conversion_error;
+    const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
@@ -149,7 +148,7 @@ struct FunctionConvertSettings
         , cast_string_to_dynamic_use_inference(context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference])
         , input_format_ipv4_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error])
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
-        , input_format_numbers_enum_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_numbers_enum_on_conversion_error])
+        , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
@@ -5771,7 +5770,7 @@ private:
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
         else if (isNativeNumber(from_type))
         {
-            if (!settings.input_format_numbers_enum_on_conversion_error)
+            if (!settings.check_conversion_from_numbers_to_enum)
             {
                 auto function = Function::createFromSettings(settings);
                 return createFunctionAdaptor(function, from_type);
@@ -5913,10 +5912,6 @@ private:
 
             const auto default_enum_value = result_type.getValues().front().second;
 
-            constexpr auto min_value = std::numeric_limits<FieldType>::min();
-            constexpr auto max_value = std::numeric_limits<FieldType>::max();
-            constexpr auto is_signed = is_signed_v<typename ColumnNumberType::ValueType>;
-
             const NullMap * null_map = nullptr;
             if (nullable_col)
                 null_map = &nullable_col->getNullMapData();
@@ -5929,15 +5924,8 @@ private:
                 }
                 else
                 {
-                    if constexpr (is_signed)
-                    {
-                        if (in_data[i] < min_value)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
-                    }
-
-                    if (in_data[i] > max_value)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(in_data[i]));
-
+                    // This checks the number value exists in Enum values.
+                    /// If not found, an error is thrown.
                     result_type.findByValue(static_cast<FieldType>(in_data[i]));
                     out_data[i] = static_cast<FieldType>(in_data[i]);
                 }

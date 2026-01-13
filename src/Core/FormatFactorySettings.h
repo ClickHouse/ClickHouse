@@ -729,7 +729,7 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
-    DECLARE(Bool, input_format_numbers_enum_on_conversion_error, false, R"(
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, false, R"(
 Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
 
 Disabled by default.

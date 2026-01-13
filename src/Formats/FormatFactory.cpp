@@ -147,7 +147,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
-    format_settings.input_format_numbers_enum_on_conversion_error = settings[Setting::input_format_numbers_enum_on_conversion_error];
+    format_settings.check_conversion_from_numbers_to_enum = settings[Setting::check_conversion_from_numbers_to_enum];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
     format_settings.bool_false_representation = settings[Setting::bool_false_representation];
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
