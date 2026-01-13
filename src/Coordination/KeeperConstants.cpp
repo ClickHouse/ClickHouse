@@ -273,6 +273,10 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
+    M(KeeperChangelogWrittenBytes) \
+    M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperSnapshotWrittenBytes) \
+    M(KeeperSnapshotFileSyncMicroseconds) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -410,6 +414,7 @@ extern const std::vector<Metric> keeper_metrics
     M(KeeperSendResponseTimeMetricFamily) \
     M(KeeperReadWaitForWriteTimeMetricFamily) \
     M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeBytesMetricFamily) \
 
 
 namespace HistogramMetrics

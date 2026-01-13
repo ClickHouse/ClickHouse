@@ -66,6 +66,13 @@ Time a read request waits for the write request it depends on to complete, in mi
 ### keeper_read_process_time_milliseconds_bucket {#keeper_read_process_time_milliseconds_bucket}
 Time to process a read request in Keeper, in milliseconds.
 
+### keeper_batch_size_elements_bucket {#keeper_batch_size_elements_bucket}
+Batch size sent to Raft, in elements.
+
+### keeper_batch_size_bytes_bucket {#keeper_batch_size_bytes_bucket}
+Batch size sent to Raft, in bytes.
+
+
 **See Also**
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](/operations/system-tables/events) — Contains a number of events that occurred.

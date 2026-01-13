@@ -23,13 +23,13 @@ python -m ci.praktika run "<JOB_NAME>"
 ### Run a Specific Test Within a CI Job
 ```bash
 python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
-  --test "test_named_collections/"
+  --test "test_named_collections"
 ```
 - With `--test`, the batch index in the job name (e.g., `4/5`) is irrelevant locally, but the job name must match an actual CI job to select the right configuration.
 - You can pass multiple test selectors:
   ```bash
   python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
-    --test "test_named_collections/test.py::test_default_access" "test_multiple_disks/"
+    --test "test_named_collections/test.py::test_default_access" "test_multiple_disks"
   ```
 - Tip: For local runs with `--test`, the batch index and build flavor are not required. You can use the alias `integration`:
   ```bash
