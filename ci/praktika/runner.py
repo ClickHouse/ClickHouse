@@ -11,6 +11,7 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .event import EventFeed
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -629,6 +630,7 @@ class Runner:
                 CacheRunnerHooks.post_run(workflow, job)
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
         if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
@@ -645,7 +647,7 @@ class Runner:
                 if is_final_job:
                     env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
 
-        # always in the end
+        # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
@@ -708,7 +710,7 @@ class Runner:
 
         if (
             workflow.enable_automerge
-            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and is_final_job
             and workflow.is_event_pull_request()
         ):
             try:
@@ -738,6 +740,25 @@ class Runner:
                 f"pipeline_status={pipeline_status}",
                 file=f,
             )
+
+        # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
+        # Updates are sent on initial job and final job
+        if (
+            workflow.enable_slack_feed
+            and env.COMMIT_AUTHORS
+            and (is_final_job or is_initial_job or not result.is_ok())
+        ):
+            for commit_author in env.COMMIT_AUTHORS:
+                try:
+                    EventFeed.update(
+                        commit_author,
+                        workflow_result.to_event(),
+                        s3_path=Settings.EVENTS_S3_PATH,
+                        notify_slack=True,
+                    )
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to update events for {commit_author}: {e}")
 
         return is_ok
 
