@@ -124,7 +124,7 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
     if (bit == 32) return length * sizeof(uint32_t);
     const size_t groups = (length + 3) / 4;
     const size_t words32 = (groups * size_t(bit) + 31) / 32;
-    return words32 * sizeof(Portable::m128i); // 16 bytes
+    return words32 * 16; // 16 bytes
 }
 
 [[maybe_unused]] static uint32_t maskForBit(uint32_t bit)
