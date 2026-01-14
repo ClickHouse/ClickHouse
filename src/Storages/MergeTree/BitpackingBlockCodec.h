@@ -49,9 +49,9 @@ struct BitpackingBlockCodecImpl<true>
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
         /// simdcomp expects __m128i* output pointer; we compute consumed bytes
         /// from the returned end pointer (in units of 16-byte vectors).
-        auto * m128_out = reinterpret_cast<__m128i *>(out.data());
-        auto * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
-        auto used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
+        __m128i * m128_out = reinterpret_cast<__m128i *>(out.data());
+        __m128i * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
+        size_t used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
         out = out.subspan(used);
         return used;
     }
@@ -62,9 +62,9 @@ struct BitpackingBlockCodecImpl<true>
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
         /// simdcomp expects __m128i* input pointer; we compute consumed bytes
         /// from the returned end pointer (in units of 16-byte vectors).
-        auto * m128i_in = reinterpret_cast<const __m128i *>(in.data());
-        auto * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
-        auto used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
+        const __m128i * m128i_in = reinterpret_cast<const __m128i *>(in.data());
+        const __m128i * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
+        size_t used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
         in = in.subspan(used);
         return used;
     }
@@ -141,9 +141,9 @@ struct BitpackingBlockCodecImpl<false>
     {
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-        auto * data_out = out.data();
-        auto * data_out_end = packingLength(in.data(), in.size(), data_out, max_bits);
-        auto used = static_cast<size_t>(data_out_end - data_out);
+        char * data_out = out.data();
+        char * data_out_end = packingLength(in.data(), in.size(), data_out, max_bits);
+        size_t used = static_cast<size_t>(data_out_end - data_out);
         out = out.subspan(used);
         return used;
     }
@@ -160,9 +160,9 @@ struct BitpackingBlockCodecImpl<false>
     {
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
-        const auto * data_in = reinterpret_cast<const char *>(in.data());
-        const auto * data_in_end = unpackingLength(data_in, n, out.data(), max_bits);
-        auto used = static_cast<size_t>(data_in_end - data_in);
+        const char * data_in = reinterpret_cast<const char *>(in.data());
+        const char * data_in_end = unpackingLength(data_in, n, out.data(), max_bits);
+        size_t used = static_cast<size_t>(data_in_end - data_in);
         in = in.subspan(used);
         return used;
     }
