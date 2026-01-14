@@ -1,8 +1,15 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDateTime64DataType.h>
+#include <Parsers/ASTDecimalDataType.h>
+#include <Parsers/ASTFixedStringDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -28,6 +35,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+}
+
+/// Helper to create Decimal data type from ASTDecimalDataType
+static DataTypePtr createDecimalFromParams(UInt32 precision, UInt32 scale)
+{
+    return createDecimal<DataTypeDecimal>(precision, scale);
+}
+
+/// Helper to create DateTime64 data type from ASTDateTime64DataType
+static DataTypePtr createDateTime64FromParams(UInt32 precision, const String & timezone)
+{
+    return std::make_shared<DataTypeDateTime64>(precision, timezone);
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
@@ -86,6 +105,18 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// Handle specialized ASTDecimalDataType directly
+    if (const auto * decimal_type = ast->as<ASTDecimalDataType>())
+        return createDecimalFromParams(decimal_type->precision, decimal_type->scale);
+
+    /// Handle specialized ASTDateTime64DataType directly
+    if (const auto * dt64_type = ast->as<ASTDateTime64DataType>())
+        return createDateTime64FromParams(dt64_type->precision, dt64_type->timezone);
+
+    /// Handle specialized ASTFixedStringDataType directly
+    if (const auto * fs_type = ast->as<ASTFixedStringDataType>())
+        return std::make_shared<DataTypeFixedString>(fs_type->n);
+
     if (const auto * type = ast->as<ASTDataType>())
     {
         return getImpl<nullptr_on_error>(type->name, type->arguments);

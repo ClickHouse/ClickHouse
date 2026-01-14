@@ -2,6 +2,9 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDateTime64DataType.h>
+#include <Parsers/ASTDecimalDataType.h>
+#include <Parsers/ASTFixedStringDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
@@ -9,6 +12,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Common/StringUtils.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -16,6 +21,36 @@ namespace DB
 
 namespace
 {
+
+bool isDecimalType(const String & type_name_upper)
+{
+    return type_name_upper == "DECIMAL" || type_name_upper == "DECIMAL32"
+        || type_name_upper == "DECIMAL64" || type_name_upper == "DECIMAL128"
+        || type_name_upper == "DECIMAL256";
+}
+
+bool isDateTime64Type(const String & type_name_upper)
+{
+    return type_name_upper == "DATETIME64";
+}
+
+bool isFixedStringType(const String & type_name_upper)
+{
+    return type_name_upper == "FIXEDSTRING";
+}
+
+bool parseUnsignedInteger(IParser::Pos & pos, UInt64 & result, Expected & /*expected*/)
+{
+    if (pos->type != TokenType::Number)
+        return false;
+
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    if (!tryReadIntText(result, in) || in.count() != pos->size())
+        return false;
+
+    ++pos;
+    return true;
+}
 
 /// Parser of Dynamic type argument: Dynamic(max_types=N)
 class DynamicArgumentParser : public IParserBase
@@ -227,6 +262,161 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    /// Handle Decimal types specially - only if first argument is a number
+    if (isDecimalType(type_name_upper) && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        if (pos->type == TokenType::Number)
+        {
+            auto decimal_node = std::make_shared<ASTDecimalDataType>();
+            decimal_node->name = type_name;
+
+            UInt64 first_param = 0;
+            if (!parseUnsignedInteger(pos, first_param, expected))
+            {
+                pos = saved_pos;
+                goto generic_parser;
+            }
+
+            if (type_name_upper == "DECIMAL")
+            {
+                decimal_node->precision = static_cast<UInt32>(first_param);
+
+                if (pos->type == TokenType::Comma)
+                {
+                    ++pos;
+                    if (pos->type != TokenType::Number)
+                    {
+                        pos = saved_pos;
+                        goto generic_parser;
+                    }
+                    UInt64 scale = 0;
+                    if (!parseUnsignedInteger(pos, scale, expected))
+                    {
+                        pos = saved_pos;
+                        goto generic_parser;
+                    }
+                    decimal_node->scale = static_cast<UInt32>(scale);
+                }
+                else
+                {
+                    decimal_node->scale = 0;
+                }
+            }
+            else
+            {
+                decimal_node->scale = static_cast<UInt32>(first_param);
+                if (type_name_upper == "DECIMAL32")
+                    decimal_node->precision = 9;
+                else if (type_name_upper == "DECIMAL64")
+                    decimal_node->precision = 18;
+                else if (type_name_upper == "DECIMAL128")
+                    decimal_node->precision = 38;
+                else if (type_name_upper == "DECIMAL256")
+                    decimal_node->precision = 76;
+            }
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+            {
+                pos = saved_pos;
+                goto generic_parser;
+            }
+            ++pos;
+
+            node = decimal_node;
+            return true;
+        }
+        pos = saved_pos;
+    }
+
+    /// Handle DateTime64 specially - only if first argument is a number
+    if (isDateTime64Type(type_name_upper) && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        if (pos->type == TokenType::Number)
+        {
+            auto dt64_node = std::make_shared<ASTDateTime64DataType>();
+            dt64_node->name = type_name;
+
+            UInt64 precision = 0;
+            if (!parseUnsignedInteger(pos, precision, expected))
+            {
+                pos = saved_pos;
+                goto generic_parser;
+            }
+            dt64_node->precision = static_cast<UInt32>(precision);
+
+            if (pos->type == TokenType::Comma)
+            {
+                ++pos;
+
+                if (pos->type != TokenType::StringLiteral)
+                {
+                    pos = saved_pos;
+                    goto generic_parser;
+                }
+
+                String timezone;
+                ReadBufferFromMemory in(pos->begin, pos->size());
+                if (!tryReadQuotedStringWithSQLStyle(timezone, in))
+                {
+                    pos = saved_pos;
+                    goto generic_parser;
+                }
+                ++pos;
+                dt64_node->timezone = timezone;
+            }
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+            {
+                pos = saved_pos;
+                goto generic_parser;
+            }
+            ++pos;
+
+            node = dt64_node;
+            return true;
+        }
+        pos = saved_pos;
+    }
+
+    /// Handle FixedString specially - only if argument is a number
+    if (isFixedStringType(type_name_upper) && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        if (pos->type == TokenType::Number)
+        {
+            auto fs_node = std::make_shared<ASTFixedStringDataType>();
+            fs_node->name = type_name;
+
+            UInt64 n = 0;
+            if (!parseUnsignedInteger(pos, n, expected))
+            {
+                pos = saved_pos;
+                goto generic_parser;
+            }
+            fs_node->n = n;
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+            {
+                pos = saved_pos;
+                goto generic_parser;
+            }
+            ++pos;
+
+            node = fs_node;
+            return true;
+        }
+        pos = saved_pos;
+    }
+
+generic_parser:
     auto data_type_node = std::make_shared<ASTDataType>();
     data_type_node->name = type_name;
 
