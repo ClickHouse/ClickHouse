@@ -140,7 +140,7 @@ const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 
 void ParquetV3BlockInputFormat::onCancel() noexcept
 {
-    std::unique_lock lock(reader_mutex);
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
