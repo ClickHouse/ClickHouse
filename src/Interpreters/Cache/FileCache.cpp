@@ -17,9 +17,13 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/FailPoint.h>
 #include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <Core/BackgroundSchedulePool.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#endif
 
 #if ENABLE_DISTRIBUTED_CACHE
 #include <Interpreters/Cache/OvercommitFileCachePriority.h>
@@ -62,6 +66,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace FailPoints
+{
+    extern const char file_cache_stall_free_space_ratio_keeping_thread[];
+}
+
 namespace FileCacheSetting
 {
     extern const FileCacheSettingsString path;
@@ -86,6 +95,9 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+#if ENABLE_DISTRIBUTED_CACHE
+    extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
+#endif
 }
 
 namespace
@@ -212,6 +224,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         case FileCachePolicy::LRU_OVERCOMMIT:
         {
             main_priority = std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
+                settings[FileCacheSetting::overcommit_eviction_evict_step],
                 settings[FileCacheSetting::max_size],
                 settings[FileCacheSetting::max_elements],
                 "overcommit");
@@ -220,6 +233,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         case FileCachePolicy::SLRU_OVERCOMMIT:
         {
             main_priority = std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
+                settings[FileCacheSetting::overcommit_eviction_evict_step],
                 settings[FileCacheSetting::max_size],
                 settings[FileCacheSetting::max_elements],
                 settings[FileCacheSetting::slru_size_ratio],
@@ -1313,6 +1327,9 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (shutdown)
         return;
 
+    while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     Stopwatch watch;
 
     std::unique_ptr<EvictionInfo> eviction_info;
@@ -1349,6 +1366,13 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
             return;
         }
+
+        LOG_TRACE(
+            log, "Starting an iteration to maintain desired size. "
+            "Current size {}/{}, elements {}/{}. Desired size: {}, desired elements: {}",
+            main_priority->getSize(lock), size_limit,
+            main_priority->getElementsCount(lock), elements_limit,
+            desired_size, desired_elements_num);
 
         eviction_info = main_priority->collectEvictionInfo(
             size_to_evict,
@@ -1408,8 +1432,8 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     watch.stop();
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
 
-    LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms (status: {})",
-              watch.elapsedMilliseconds(), desired_size_status);
+    LOG_TRACE(log, "Free space ratio keeping thread finished with status `{}` in {} ms",
+              desired_size_status, watch.elapsedMilliseconds());
 
     [[maybe_unused]] bool scheduled = false;
     switch (desired_size_status)

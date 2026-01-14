@@ -279,7 +279,7 @@ private:
                 Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
 
             for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+                ++histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[i]))];
         }
 
         {
@@ -314,7 +314,7 @@ private:
                     size_t positions[UNROLL_DISTANCE];
 
                     for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                        positions[p] = extractPart(pass, reader[i + p]);
+                        positions[p] = static_cast<size_t>(extractPart(pass, reader[i + p]));
 
                     for (size_t p = 0; p < UNROLL_DISTANCE; p++)
                     {
@@ -335,7 +335,7 @@ private:
             for (; i < size; i++)
             {
                 auto element = reader[i];
-                size_t pos = extractPart(pass, element);
+                auto pos = static_cast<size_t>(extractPart(pass, element));
 
                 if constexpr (SOFTWARE_PREFETCH)
                 {
@@ -343,7 +343,7 @@ private:
                     /// when we actually need it. This depends on CPU and memory subsystem.
                     if (i + PREFETCH_DISTANCE < size) [[likely]]
                     {
-                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                        auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                         __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                     }
                 }
@@ -370,12 +370,12 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto element = reader[i];
-                    size_t pos = extractPart(pass, element);
+                    auto pos = static_cast<size_t>(extractPart(pass, element));
                     if constexpr (SOFTWARE_PREFETCH)
                     {
                         if (i + PREFETCH_DISTANCE < size) [[likely]]
                         {
-                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                             __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                         }
                     }
@@ -388,12 +388,12 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto element = reader[i];
-                    size_t pos = extractPart(pass, element);
+                    auto pos = static_cast<size_t>(extractPart(pass, element));
                     if constexpr (SOFTWARE_PREFETCH)
                     {
                         if (i + PREFETCH_DISTANCE < size)
                         {
-                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                             __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                         }
                     }

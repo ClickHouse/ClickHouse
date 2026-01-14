@@ -1821,6 +1821,7 @@ protected:
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
+    void startStatisticsCache(UInt64 refresh_statistics_seconds);
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
@@ -1996,5 +1997,7 @@ struct CurrentlySubmergingEmergingTagger
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+
+String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage);
 
 }

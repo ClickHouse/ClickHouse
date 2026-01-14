@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -10,9 +10,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -77,6 +74,8 @@ public:
         {
             H3Index h3index = data[row];
             CellBoundary boundary{};
+
+            validateH3Cell(h3index);
 
             auto err = cellToBoundary(h3index, &boundary);
             if (err)

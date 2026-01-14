@@ -141,6 +141,8 @@ public:
 
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
+    void resetHoldSpace() { hold_space.reset(); }
+
 private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
