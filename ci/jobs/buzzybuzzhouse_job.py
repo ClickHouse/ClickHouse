@@ -184,6 +184,7 @@ def main():
 
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
+    server_log = workspace_path / "dolor.log"
     buzzconfig = workspace_path / "fuzz.json"
     # Generate BuzzHouse config
     generate_buzz_config(buzzconfig)
@@ -195,18 +196,18 @@ def main():
         Result.from_commands_run(
             name="dolor",
             command=f"python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse \
-                --server-config=./ci/tmp/config/config.xml \
-                --user-config=./ci/tmp/config/users.xml \
+                --server-config=./ci/jobs/scripts/server_fuzzer/config.xml \
+                --user-config=./ci/jobs/scripts/server_fuzzer/users.xml \
                 --client-binary={clickhouse_path} \
                 --server-binaries={clickhouse_path} \
                 --client-config={buzzconfig} \
-                --log-path=./ci/tmp/dolor.log \
+                --log-path={server_log} \
                 --timeout=30 --server-settings-prob=0 \
                 --kill-server-prob=50 --without-monitoring \
                 --replica-values=1 --shard-values=1 \
                 --add-remote-server-settings-prob=0 \
-                --add-disk-settings-prob=99 --number-disks=1,3 --add-policy-settings-prob=80\
-                --add-filesystem-caches-prob=80 -number-caches=1,1 \
+                --add-disk-settings-prob=99 --number-disks=1,3 --add-policy-settings-prob=80 \
+                --add-filesystem-caches-prob=80 --number-caches=1,1 \
                 --time-between-shutdowns=180,180 --restart-clickhouse-prob=75 \
                 --compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80 \
                 --keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk",
