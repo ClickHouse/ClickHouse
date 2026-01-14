@@ -226,9 +226,11 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         if (!t)
             return false;
 
-        if (auto id = t->getStorageID(); !access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+        const auto storage_id = t->getStorageID();
+        if (!access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))
             return false;
 
+        access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
         auto structure = t->getInMemoryMetadataPtr()->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
