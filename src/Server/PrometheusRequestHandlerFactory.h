@@ -78,9 +78,9 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         <url>/write</url>
 ///         <handler>
 ///             <type>remote_write</type>
-///             <!-- The remaining path after the prefix is treated as a table name (db.table or table). -->
+///             <!-- The URL is expected to start with /{db}/{table}/... -->
 ///             \verbatim
-///             <table_name_url_prefix>/write/</table_name_url_prefix>
+///             <enable_table_name_url_routing>true</enable_table_name_url_routing>
 ///             \endverbatim
 ///         </handler>
 ///     </my_rule2>

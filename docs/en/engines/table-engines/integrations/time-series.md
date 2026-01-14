@@ -52,11 +52,11 @@ Then this table can be used with the following protocols (a port must be assigne
 - [prometheus remote-write](/interfaces/prometheus#remote-write)
 - [prometheus remote-read](/interfaces/prometheus#remote-read)
 
-When configuring a Prometheus remote-write handler with `table_name_url_prefix`, make sure the handler's `<url>` rule matches paths that include the table name. For example:
+When configuring a Prometheus remote-write handler with `enable_table_name_url_routing`, the URL is expected to start with `/{database}/{table}/`. Make sure the handler's `<url>` rule matches paths that include the database and table name. For example:
 
 ```xml
-<url>regex:^/write/.*</url>
-<table_name_url_prefix>/write/</table_name_url_prefix>
+<url>regex:^/[^/]+/[^/]+/write$</url>
+<enable_table_name_url_routing>true</enable_table_name_url_routing>
 ```
 
 ## Target tables {#target-tables}

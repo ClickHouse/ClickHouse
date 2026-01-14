@@ -168,7 +168,7 @@ def test_remote_write_dynamic_routing():
     send_protobuf_to_remote_write(
         node.ip_address,
         9093,
-        "write/default.prometheus_dynamic",
+        "default/prometheus_dynamic/write",
         write_request,
     )
     assert_eq_with_retry(

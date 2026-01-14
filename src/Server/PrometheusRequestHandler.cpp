@@ -69,37 +69,35 @@ namespace
         const PrometheusRequestHandlerConfig & config,
         const HTTPServerRequest & request)
     {
-        if (!config.table_name_url_prefix)
+        if (!config.enable_table_name_url_routing)
             return config.time_series_table_name;
 
         const String path = getRequestPath(request);
-        const String & prefix = *config.table_name_url_prefix;
-        if (!startsWith(path, prefix))
+        auto start = path.begin();
+        if (start != path.end() && *start == '/')
+            ++start;
+        auto first_sep = std::find(start, path.end(), '/');
+        if (first_sep == path.end())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "URL path '{}' does not match table_name_url_prefix '{}'",
-                path,
-                prefix);
-
-        String table_part = path.substr(prefix.size());
-        if (!table_part.empty() && table_part.front() == '/')
-            table_part.erase(0, 1);
-        if (table_part.empty())
+                "URL path '{}' does not contain a database and a table name",
+                path);
+        auto second_sep = std::find(first_sep + 1, path.end(), '/');
+        if (second_sep == path.end())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "URL path '{}' does not contain a table name after prefix '{}'",
-                path,
-                prefix);
-
-        auto table_name = QualifiedTableName::tryParseFromString(table_part);
-        if (!table_name)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot parse table name '{}' from URL path '{}'",
-                table_part,
+                "URL path '{}' does not contain a database and a table name",
                 path);
 
-        return *table_name;
+        String database(start, first_sep);
+        String table(first_sep + 1, second_sep);
+        if (database.empty() || table.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a database and a table name",
+                path);
+
+        return QualifiedTableName{database, table};
     }
 #endif
 }
@@ -301,7 +299,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        const bool is_dynamic_routing = config().table_name_url_prefix.has_value();
+        const bool is_dynamic_routing = config().enable_table_name_url_routing;
         auto table_name = resolveTableNameFromRequest(config(), request);
         auto table = DatabaseCatalog::instance().getTable(StorageID{table_name}, context);
         auto time_series_storage = storagePtrToTimeSeries(table);

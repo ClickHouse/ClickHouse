@@ -40,7 +40,7 @@ struct PrometheusRequestHandlerConfig
 
     /// Settings for types RemoteWrite, RemoteRead:
     QualifiedTableName time_series_table_name;
-    std::optional<String> table_name_url_prefix;
+    bool enable_table_name_url_routing = false;
 
     size_t keep_alive_timeout = 0;
     bool is_stacktrace_enabled = true;
