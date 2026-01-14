@@ -1403,6 +1403,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <remap_executable>false</remap_executable>
+    ```
     )", 0) \
     DECLARE(Bool, mlock_executable, false, R"(
     Perform `<mlockall>` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
@@ -1415,6 +1416,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <mlock_executable>false</mlock_executable>
+    ```
     )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
@@ -1432,6 +1434,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <listen_backlog>4096</listen_backlog>
+    ```
     )", 0) \
     DECLARE(Bool, listen_reuse_port, false, R"(
     Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
@@ -1440,6 +1443,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <listen_reuse_port>0</listen_reuse_port>
+    ```
     )", 0) \
     DECLARE(Bool, listen_try, false, R"(
     The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
@@ -1448,6 +1452,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <listen_try>0</listen_try>
+    ```
     )", 0) \
     DECLARE(Bool, mysql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [mysql_port](/operations/server-configuration-parameters/settings#mysql_port). Connection with option `<--ssl-mode=none>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
     DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/operations/server-configuration-parameters/settings#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
@@ -1458,6 +1463,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+    ```
     )", 0)
 
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
