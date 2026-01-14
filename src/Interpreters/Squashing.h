@@ -93,7 +93,7 @@ private:
         const Chunk & peekFront() const { return chunks.front(); }
         Chunk pullFront();
         void dropFront() { chunks.pop_front(); }
-        void push(Chunk && chunk);
+        void pushBack(Chunk && chunk);
         size_t getOffset() const { return offset_first; }
         bool empty() const { return chunks.empty(); }
         std::pair<size_t, size_t> calculateConsumable(size_t max_rows, size_t max_bytes) const;

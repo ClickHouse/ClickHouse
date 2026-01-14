@@ -116,7 +116,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
 
 void Squashing::add(Chunk && input_chunk)
 {
-    pending.push(std::move(input_chunk));
+    pending.pushBack(std::move(input_chunk));
 }
 
 bool Squashing::canGenerate()
@@ -175,12 +175,20 @@ Chunk Squashing::generateUsingStrictBounds()
 
 Chunk Squashing::generateUsingOneMinBound(bool flush_if_enough_size)
 {
+    if (pending.empty() && oneMinReached())
+        return convertToChunk();
+
     while (!pending.empty())
     {
         auto input_chunk = pending.pullFront();
 
         if (!input_chunk || input_chunk.getNumRows() == 0)
+        {
+            if (pending.empty() && oneMinReached())
+                return convertToChunk();
+
             continue;
+        }
 
         /// Just read block is already enough.
         if (oneMinReached(input_chunk))
@@ -362,11 +370,11 @@ Chunks Squashing::AccumulatedChunks::extract()
     return std::move(chunks);
 }
 
-void Squashing::PendingQueue::push(Chunk && chunk)
+void Squashing::PendingQueue::pushBack(Chunk && chunk)
 {
     size_t rows = chunk.getNumRows();
     size_t bytes = chunk.bytes();
-    chunks.push_front(std::move(chunk));
+    chunks.push_back(std::move(chunk));
     total_rows += rows;
     total_bytes += bytes;
 }

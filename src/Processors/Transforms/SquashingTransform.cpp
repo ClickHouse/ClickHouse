@@ -76,6 +76,8 @@ void SimpleSquashingChunksTransform::consume(Chunk chunk)
 
 Chunk SimpleSquashingChunksTransform::generate()
 {
+    squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
+
     if (squashed_chunk.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
@@ -86,8 +88,7 @@ Chunk SimpleSquashingChunksTransform::generate()
 
 bool SimpleSquashingChunksTransform::canGenerate()
 {
-    squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
-    return squashed_chunk.hasRows();
+    return squashing.canGenerate();
 }
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
