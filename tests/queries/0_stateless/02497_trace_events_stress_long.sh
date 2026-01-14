@@ -19,6 +19,8 @@ function thread1()
                 query_profiler_real_time_period_ns = 10000000,
                 query_profiler_cpu_time_period_ns =  10000000,
                 memory_profiler_step = 1024,
+                memory_profiler_sample_min_allocation_size = 0,
+                memory_profiler_sample_max_allocation_size = 0,
                 memory_profiler_sample_probability = 0.9
             "
     done

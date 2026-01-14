@@ -259,11 +259,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
-    if (_sample_probability < 0)
+    if (_sample_probability < 0 && sample_probability > 0 && isSizeOkForSampling(size))
         _sample_probability = sample_probability;
-
-    if (!isSizeOkForSampling(size))
-        _sample_probability = 0;
 
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
@@ -550,11 +547,8 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 
 AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 {
-    if (_sample_probability < 0)
+    if (_sample_probability < 0 && sample_probability > 0 && isSizeOkForSampling(size))
         _sample_probability = sample_probability;
-
-    if (!isSizeOkForSampling(size))
-        _sample_probability = 0;
 
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {

@@ -3,6 +3,7 @@
         <default>
             <max_untracked_memory>1Mi</max_untracked_memory>
             <memory_profiler_step>1Mi</memory_profiler_step>
+            <memory_profiler_sample_probability>0.001</memory_profiler_sample_probability>
         </default>
     </profiles>
 </clickhouse>

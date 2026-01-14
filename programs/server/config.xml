@@ -475,7 +475,7 @@
           which is 4 MiB by default but can be lowered if 'total_memory_profiler_step' is lowered.
          You may want to set 'total_memory_profiler_step' to 1 for extra fine grained sampling.
       -->
-    <total_memory_tracker_sample_probability>0</total_memory_tracker_sample_probability>
+    <!-- <total_memory_profiler_sample_probability>0</total_memory_profiler_sample_probability> -->
 
     <!-- Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
          correct maximum value. -->

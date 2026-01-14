@@ -21,6 +21,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace CurrentMetrics
 {
 extern const Metric BackgroundSchedulePoolSize;
@@ -34,7 +39,7 @@ namespace DB
 
 // clang-format off
 
-#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -931,14 +936,14 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Seconds, replicated_fetches_http_send_timeout, 0, R"(HTTP send timeout for part fetch requests. Inherited from default profile `http_send_timeout` if not set explicitly.)", 0) \
     DECLARE(Seconds, replicated_fetches_http_receive_timeout, 0, R"(HTTP receive timeout for fetch part requests. Inherited from default profile `http_receive_timeout` if not set explicitly.)", 0) \
     DECLARE(UInt64, total_memory_profiler_step, 0, R"(Whenever server memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stack trace. Zero means disabled memory profiler. Values lower than a few megabytes will slow down server.)", 0) \
-    DECLARE(Double, total_memory_tracker_sample_probability, 0, R"(
+    DECLARE_WITH_ALIAS(Double, total_memory_tracker_sample_probability, 0, R"(
     Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](/operations/server-configuration-parameters/settings#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
 
     Possible values:
 
     - Positive double.
     - `0` — Writing of random allocations and de-allocations in the `system.trace_log` system table is disabled.
-    )", 0) \
+    )", 0, total_memory_profiler_sample_probability) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_max_allocation_size, 0, R"(Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(Bool, validate_tcp_client_information, false, R"(Determines whether validation of client information is enabled when a query packet is received.
@@ -1272,6 +1277,38 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         {
             e.addMessage("while parsing setting '{}' value", name);
             throw;
+        }
+    }
+
+    /// Try to load as an alias
+    auto settings_to_aliases = ServerSettingsTraits::settingsToAliases();
+    for (const auto & [setting, aliases] : settings_to_aliases)
+    {
+        for (const auto & alias : aliases)
+        {
+            const std::string alias_string = std::string(alias);
+            const std::string setting_string = std::string(setting);
+
+            try
+            {
+                if (config.has(alias_string))
+                {
+                    if (config.has(setting_string))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config contain both setting {} and alias {}", setting, alias_string);
+                    set(alias_string, config.getString(alias_string));
+                }
+                else if (settings_from_profile_allowlist.contains(alias_string) && config.has("profiles.default." + alias_string))
+                {
+                    if (config.has("profiles.default." + setting_string))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config contain both setting profiles.default.{} and alias profiles.default.{}", setting, alias_string);
+                    set(alias_string, config.getString("profiles.default." + alias_string));
+                }
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while parsing setting '{}' value", alias);
+                throw;
+            }
         }
     }
 }
