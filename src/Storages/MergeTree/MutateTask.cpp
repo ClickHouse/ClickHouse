@@ -293,9 +293,6 @@ static void splitAndModifyMutationCommands(
                         {
                             for (const auto & column : projection.required_columns)
                             {
-                                if (projection.with_parent_part_offset && column == "_part_offset")
-                                    continue;
-
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
                                 if (column_in_storage && !part_columns.has(*column_in_storage))
                                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
@@ -1463,23 +1460,20 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->count_lightweight_deleted_rows)
             existing_rows_count += MutationHelpers::getExistingRowsCount(cur_block);
 
-        UInt64 starting_offset = (*ctx->mutate_entry)->rows_written;
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             Chunk squashed_chunk;
 
             {
                 ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, starting_offset, ctx->context);
+                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, ctx->context);
 
                 /// Everything is deleted by lighweight delete
                 if (block_to_squash.rows() == 0)
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
-                    projection_squashes[i].getHeader());
+                squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
             }
 
             if (squashed_chunk)
@@ -1545,9 +1539,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        auto squashed_chunk = Squashing::squash(
-            projection_squashes[i].flush(),
-            projection_squashes[i].getHeader());
+        auto squashed_chunk = Squashing::squash(projection_squashes[i].flush());
         if (squashed_chunk)
             writeTempProjectionPart(i, std::move(squashed_chunk));
     }

@@ -38,7 +38,6 @@ WHERE explain LIKE '% Join: %' OR explain LIKE '% ResultRows: %' OR explain LIKE
 
 SELECT '========== with 10x hint =============';
 SET allow_statistics_optimize=0;
-SET query_plan_optimize_join_order_algorithm='greedy';
 -- Statistics hint with all values multiplied by 10 compared to real
 SET param__internal_join_table_stat_hints = '
 {

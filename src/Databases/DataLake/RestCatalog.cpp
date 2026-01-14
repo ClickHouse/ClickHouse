@@ -444,7 +444,7 @@ void RestCatalog::getNamespacesRecursive(
 
 Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::string & base_namespace) const
 {
-    std::vector<std::string_view> parts;
+    std::vector<std::string> parts;
     splitInto<'.'>(parts, base_namespace);
     std::string parent_param;
     for (const auto & part : parts)

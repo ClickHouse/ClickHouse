@@ -221,7 +221,7 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_names[i]);
+        const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
             column_nullable->getExtremesNullLast(min_value, max_value);
         else
@@ -2617,12 +2617,20 @@ UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
     return hash.get128();
 }
 
-String IMergeTreeDataPart::getNewPartBlockID() const
+String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
 {
     if (info.min_block != info.max_block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for part {} that contains more than one block", name);
 
-    const auto hash_value = getPartBlockIDHash();
+    if (token.empty())
+    {
+        const auto hash_value = getPartBlockIDHash();
+        return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+    }
+
+    SipHash hash;
+    hash.update(token.data(), token.size());
+    const auto hash_value = hash.get128();
     return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 

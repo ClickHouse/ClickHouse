@@ -134,14 +134,12 @@ def create_parser():
 
     _yaml_parser = subparsers.add_parser("yaml", help="Generate YAML workflows")
 
-    # TODO: Merge with infra
     _html_parser = subparsers.add_parser("html", help="Upload an HTML report page")
     _html_parser.add_argument(
         "--test",
         action="store_true",
         default="",
     )
-    _infra_parser = subparsers.add_parser("deploy", help="Deploy cloud infrastructure")
     return parser
 
 
@@ -153,10 +151,6 @@ def main():
     if args.command == "yaml":
         Validator().validate()
         YamlGenerator().generate()
-    elif args.command == "deploy":
-        from .mangle import _get_infra_config
-
-        _get_infra_config().deploy()
     elif args.command == "html":
         Html.prepare(args.test)
     elif args.command == "run":

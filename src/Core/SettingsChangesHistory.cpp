@@ -39,30 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.1",
-        {
-            {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
-            {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
-            {"distributed_cache_file_cache_name", "", "", "New setting."},
-            {"trace_profile_events_list", "", "", "New setting"},
-            {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
-            {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
-            {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},
-            {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},
-            {"max_insert_block_size_bytes", 0, 0, "New setting that allows to control the size of blocks in bytes during parsing of data in Row Input Format."},
-            {"max_insert_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "An alias for max_insert_block_size."},
-            {"join_runtime_filter_pass_ratio_threshold_for_disabling", 0.7, 0.7, "New setting"},
-            {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
-            {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
-            {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
-            {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
-            {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
-            {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
-            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_PROSSIBLE"},
-            {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
-            {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
-            {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
-        });
         addSettingsChanges(settings_changes_history, "25.12",
         {
             {"format_binary_max_object_size", 100000, 100000, "New setting that limits the maximum size of object during JSON type binary deserialization"},
@@ -1016,11 +992,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.1",
-        {
-            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
-            {"materialize_statistics_on_merge", true, true, "New setting"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},

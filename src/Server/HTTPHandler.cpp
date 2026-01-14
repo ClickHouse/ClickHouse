@@ -31,6 +31,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>

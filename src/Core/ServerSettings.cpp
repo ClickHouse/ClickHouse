@@ -570,13 +570,7 @@ namespace DB
     DECLARE(Bool, disable_internal_dns_cache, false, "Disables the internal DNS cache. Recommended for operating ClickHouse in systems with frequently changing infrastructure such as Kubernetes.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
-    DECLARE(UInt32, dns_max_consecutive_failures, 5, R"(
-    Stop further attempts to update a hostname's DNS cache after this number of consecutive failures. The information still remains in the DNS cache. Zero means unlimited.
-
-    **See also**
-
-    - [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system#drop-dns-cache)
-    )", 0) \
+    DECLARE(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv4, true, "Allows resolve names to ipv4 addresses.", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv6, true, "Allows resolve names to ipv6 addresses.", 0) \
     \
@@ -1072,9 +1066,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(UInt64, memory_worker_period_ms, 0, R"(
     Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source
-    )", 0) \
-    DECLARE(Double, memory_worker_purge_dirty_pages_threshold_ratio, 0.2, R"(
-    The threshold ratio for jemalloc dirty pages relative to the memory available to ClickHouse server. When dirty pages size exceeds this ratio, the background memory worker forces purging of dirty pages. If set to 0, forced purging is disabled.
     )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups

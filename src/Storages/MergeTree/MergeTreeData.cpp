@@ -2481,14 +2481,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
 
-    startStatisticsCache((*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds());
-}
-
-void MergeTreeData::startStatisticsCache(UInt64 refresh_statistics_seconds)
-{
+    auto refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     if (refresh_statistics_seconds && !refresh_stats_task)
     {
-        LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
             [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
@@ -8065,7 +8060,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
         buf << ".";
         if (!detached_precommitted_parts.empty())
         {
-            buf << " Rolling back parts state to temporary and removing from working set:";
+            buf << " Rollbacking parts state to temporary and removing from working set:";
             for (const auto & part : detached_precommitted_parts)
                 buf << " " << part->getDataPartStorage().getPartDirectory();
             buf << ".";
@@ -9702,7 +9697,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     /// Required by MergeTree sinks.
     pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return std::make_shared<AddDeduplicationInfoTransform>(header);
+        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
     });
 
     return QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));

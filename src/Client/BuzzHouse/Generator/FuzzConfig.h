@@ -68,7 +68,7 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
     allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
     allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
-    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45);
+    allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44);
 
 extern const DB::Strings compressionMethods;
 
@@ -254,7 +254,7 @@ public:
     DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
         http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings, hot_table_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server, http_server, azurite_server, kafka_server, dolor_server;
+        minio_server, http_server, azurite_server, dolor_server;
     std::unordered_map<String, PerformanceMetric> metrics;
     std::unordered_set<uint32_t> disallowed_error_codes, oracle_ignore_error_codes;
     String host = "localhost", keeper_map_path_prefix;
@@ -263,7 +263,7 @@ public:
          enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
          allow_async_requests = false, truncate_output = false, allow_transactions = true, enable_overflow_settings = false,
          random_limited_values = false, set_smt_disk = true, allow_query_oracles = true, allow_health_check = true,
-         enable_compatibility_settings = false, enable_memory_settings = false;
+         enable_compatibility_settings = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,

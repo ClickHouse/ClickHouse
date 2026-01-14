@@ -87,17 +87,9 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                     column->size(), filter.size());
 
             if (canInplaceFilter(column, filter.getColumn()))
-            {
-                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
-                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
-                auto mutable_column = IColumn::mutate(std::move(column));
-                mutable_column->filter(filter_data);
-                column = std::move(mutable_column);
-            }
+                column->assumeMutable()->filter(filter_data);
             else
-            {
                 column = column->filter(filter_data, filter.countBytesInFilter());
-            }
 
             if (column->empty())
             {
@@ -255,11 +247,11 @@ MergeTreeRangeReader::Stream::Stream(size_t from_mark, size_t to_mark, size_t cu
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read from mark №{} but total marks count is {}",
-            toString(from_mark), toString(marks_count));
+            toString(current_mark), toString(marks_count));
 
     if (last_mark > marks_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read to mark №{} but total marks count is {}",
-            toString(last_mark), toString(marks_count));
+            toString(current_mark), toString(marks_count));
 }
 
 void MergeTreeRangeReader::Stream::checkNotFinished() const
