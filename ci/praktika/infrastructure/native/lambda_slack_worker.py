@@ -124,7 +124,9 @@ def publish_home_view(
         if hasattr(event, "result") and event.result and event.result.get("results"):
             fail_cnt = 0
             error_cnt = 0
+            dropped_cnt = 0
             success_cnt = 0
+            skipped_cnt = 0
             running_cnt = 0
             total_cnt = 0
 
@@ -136,8 +138,12 @@ def publish_home_view(
                     fail_cnt += 1
                 elif status == "error":
                     error_cnt += 1
+                elif status == "dropped":
+                    dropped_cnt += 1
                 elif status == "success":
                     success_cnt += 1
+                elif status == "skipped":
+                    skipped_cnt += 1
                 elif status in ["pending", "running"]:
                     running_cnt += 1
 
@@ -145,10 +151,14 @@ def publish_home_view(
             parts = []
             if fail_cnt or error_cnt:
                 parts.append(f"{fail_cnt + error_cnt} failed")
+            if dropped_cnt:
+                parts.append(f"{dropped_cnt} dropped")
             if running_cnt:
                 parts.append(f"{running_cnt} running")
             if success_cnt:
                 parts.append(f"{success_cnt} ok")
+            if skipped_cnt:
+                parts.append(f"{skipped_cnt} skipped")
 
             if parts:
                 summary = " · ".join(parts)
@@ -283,10 +293,8 @@ def publish_home_view(
                 for child_event in children_sorted:
                     # Add divider before each child
                     blocks.append({"type": "divider"})
-                    
-                    child_text = format_event_text(
-                        child_event, pr_status, indent="> "
-                    )
+
+                    child_text = format_event_text(child_event, pr_status, indent="> ")
                     blocks.append(
                         {
                             "type": "section",
