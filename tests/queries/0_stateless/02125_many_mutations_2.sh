@@ -19,10 +19,9 @@ $CLICKHOUSE_CLIENT -q "select count() from many_mutations"
 
 job()
 {
-   for i in {1..1000}
-   do
-      echo "alter table many_mutations delete where y = ${i} * 2 settings mutations_sync = 0;"
-   done | $CLICKHOUSE_CLIENT
+   for i in {1..1000}; do
+     $CLICKHOUSE_CURL -sS $CLICKHOUSE_URL -d "alter table many_mutations delete where y = ${i} * 2 settings mutations_sync = 0"
+   done
 }
 
 job &
