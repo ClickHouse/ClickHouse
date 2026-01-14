@@ -429,7 +429,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     }
 
     const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive) 
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive)
         || table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
         return true;
 
