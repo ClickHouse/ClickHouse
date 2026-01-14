@@ -1016,20 +1016,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-void validateVirtualColumns(const IStorage & storage)
-{
-    auto virtual_columns = storage.getVirtualsPtr();
-    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
-    {
-        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
-                storage_column.name, storage.getName());
-        }
-    }
-}
-
 void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
@@ -1753,7 +1739,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode)
 {
     if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
     {
@@ -1762,6 +1748,39 @@ void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel
             "because storage {} doesn't support dynamic subcolumns",
             storage.getName());
     }
+}
+
+void validateVirtualColumns(IStorage & storage)
+{
+    auto virtual_columns = storage.getVirtualsPtr();
+    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
+    {
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, storage.getName());
+        }
+    }
+}
+
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode)
+try
+{
+    validateVirtualColumns(storage);
+    checkForUnsupportedColumns(storage, mode);
+}
+catch (...)
+{
+    try
+    {
+        storage.drop();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("validateStorage");
+    }
+    throw;
 }
 
 }
@@ -1788,8 +1807,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateVirtualColumns(*res);
-            checkForUnsupportedColumns(*res, mode);
+            validateStorage(*res, mode);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -1978,8 +1996,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateVirtualColumns(*res);
-    checkForUnsupportedColumns(*res, mode);
+    validateStorage(*res, mode);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2226,8 +2243,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateVirtualColumns(*res);
-        checkForUnsupportedColumns(*res, mode);
+        validateStorage(*res, mode);
         return res;
     };
 
