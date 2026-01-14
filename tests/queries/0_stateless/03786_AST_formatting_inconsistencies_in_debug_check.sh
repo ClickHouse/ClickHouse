@@ -21,3 +21,6 @@ echo "SELECT ((SELECT 1) AS a1), NOT ((SELECT 1) AS a1);" | "$CLICKHOUSE_FORMAT"
 
 # Test repeated alias for tuple after IN
 echo "SELECT tuple(1, 'a') as a1, tuple(1, 'a') IN (tuple(1, 'a') as a1);" | "$CLICKHOUSE_FORMAT"
+
+# Test alias in ON clause of JOIN
+echo "SELECT * FROM t1 JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2);" | "$CLICKHOUSE_FORMAT"
