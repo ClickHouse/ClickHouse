@@ -1,0 +1,44 @@
+--- Default mode: case-sensitive ---
+1	Alice
+2	Bob
+--- Default mode: wrong case should fail ---
+--- Standard mode: unquoted case-insensitive ---
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+--- Standard mode: double-quoted database case-sensitive ---
+1	Alice
+2	Bob
+--- Standard mode: double-quoted table case-sensitive ---
+1	Alice
+2	Bob
+--- Standard mode: mixed quoting ---
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+--- Standard mode: backtick-quoted case-insensitive ---
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+1	Alice
+2	Bob
+--- Ambiguity detection ---
+--- Double-quoted avoids ambiguity ---
+1
+2
+--- Table ambiguity detection ---

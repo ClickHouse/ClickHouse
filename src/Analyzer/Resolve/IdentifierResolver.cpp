@@ -187,7 +187,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     /// Case-insensitive resolution for table name (if not double-quoted)
     if (table_name_case_insensitive)
     {
-        String effective_db = database_name.empty() ? current_database : database_name;
+        String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
         auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
         if (database)
         {
