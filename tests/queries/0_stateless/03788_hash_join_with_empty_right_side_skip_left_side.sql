@@ -42,3 +42,6 @@ SETTINGS query_plan_join_swap_table = 0;
 
 SELECT count() FROM numbers(1e12) t1, null('x UInt8') t2
 SETTINGS query_plan_join_swap_table = 0, max_rows_to_read = 1e13;
+
+SELECT count() FROM numbers(1e12) t1, numbers(1e12) t2, numbers(1e12) t3, numbers(1e12) t4, null('x UInt8') t5
+SETTINGS query_plan_join_swap_table = 0, max_rows_to_read = 1e13;
