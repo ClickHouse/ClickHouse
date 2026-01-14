@@ -4068,6 +4068,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
 
+    if ((*settings_from_storage)[MergeTreeSetting::disk].changed)
+    {
+        const auto disk = local_context->getDisk((*settings_from_storage)[MergeTreeSetting::disk]);
+        if (disk->isCustomDisk())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE commands are not supported for tables configured with custom disks");
+    }
+
     if (!settings[Setting::allow_non_metadata_alters])
     {
         auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
