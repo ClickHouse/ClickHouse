@@ -123,7 +123,9 @@ public:
 
     bool contains(const PageCacheKey & key, bool inject_eviction) const;
 
-    void autoResize(Int64 memory_usage, size_t memory_limit);
+    /// Make the cache smaller by `memory_limit - memory_usage` bytes.
+    /// Returns true if succeeded, false if cache size was reduced as much as possible but it wasn't enough.
+    bool autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
     size_t sizeInBytes() const;
