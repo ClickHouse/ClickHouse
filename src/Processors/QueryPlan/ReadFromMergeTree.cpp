@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
@@ -195,6 +196,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool allow_statistics_optimize;
 }
 
 namespace MergeTreeSetting
@@ -2119,11 +2121,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool add_index_stat_row_for_pk_expand = false;
 
     {
+        std::optional<StatisticsPartPruner> statistics_pruner;
+        if (settings[Setting::allow_statistics_optimize] && !query_info_.isFinal())
+        {
+            const auto * filter_node = query_info_.filter_actions_dag ? query_info_.filter_actions_dag->getOutputs().front() : nullptr;
+            statistics_pruner = StatisticsPartPruner::build(metadata_snapshot, filter_node, context_);
+        }
+
         res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts,
             indexes->partition_pruner,
             indexes->minmax_idx_condition,
             indexes->part_values,
+            statistics_pruner,
             metadata_snapshot,
             data,
             context_,
@@ -3224,6 +3234,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "MinMax";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
+        case ReadFromMergeTree::IndexType::Statistics:
+            return "Statistics";
         case ReadFromMergeTree::IndexType::PrimaryKey:
             return "PrimaryKey";
         case ReadFromMergeTree::IndexType::Skip:

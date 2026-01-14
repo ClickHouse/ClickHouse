@@ -564,6 +564,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const std::optional<PartitionPruner> & partition_pruner,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
+    const std::optional<StatisticsPartPruner> & statistics_pruner,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const ContextPtr & context,
@@ -602,6 +603,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             minmax_idx_condition,
             minmax_columns_types,
             partition_pruner,
+            statistics_pruner,
             max_block_numbers_to_read,
             query_context,
             part_filter_counters,
@@ -613,6 +615,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             minmax_idx_condition,
             minmax_columns_types,
             partition_pruner,
+            statistics_pruner,
             max_block_numbers_to_read,
             part_filter_counters,
             query_status);
@@ -643,6 +646,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
+    }
+
+    if (statistics_pruner
+        && part_filter_counters.num_parts_after_statistics_pruner < part_filter_counters.num_parts_after_partition_pruner)
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Statistics,
+            .used_keys = statistics_pruner->getUsedColumns(),
+            .num_parts_after = part_filter_counters.num_parts_after_statistics_pruner,
+            .num_granules_after = part_filter_counters.num_granules_after_statistics_pruner});
     }
 
     return res;
@@ -2225,6 +2238,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<StatisticsPartPruner> & statistics_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters,
     QueryStatusPtr query_status)
@@ -2273,6 +2287,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
+        if (statistics_pruner)
+        {
+            auto estimates = part_or_projection->getEstimates();
+            if (!estimates.empty() && !statistics_pruner->checkPartCanMatch(estimates).can_be_true)
+                continue;
+        }
+
+        counters.num_parts_after_statistics_pruner += 1;
+        counters.num_granules_after_statistics_pruner += num_granules;
+
         res_parts.push_back(prev_part);
     }
     return res_parts;
@@ -2285,6 +2309,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<StatisticsPartPruner> & statistics_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,
@@ -2339,6 +2364,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
             counters.num_parts_after_partition_pruner += 1;
             counters.num_granules_after_partition_pruner += num_granules;
+
+            if (statistics_pruner)
+            {
+                auto estimates = part_or_projection->getEstimates();
+                if (!estimates.empty() && !statistics_pruner->checkPartCanMatch(estimates).can_be_true)
+                    continue;
+            }
+
+            counters.num_parts_after_statistics_pruner += 1;
+            counters.num_granules_after_statistics_pruner += num_granules;
 
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))

@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -146,6 +147,8 @@ private:
         size_t num_granules_after_minmax = 0;
         size_t num_parts_after_partition_pruner = 0;
         size_t num_granules_after_partition_pruner = 0;
+        size_t num_parts_after_statistics_pruner = 0;
+        size_t num_granules_after_statistics_pruner = 0;
     };
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
@@ -156,6 +159,7 @@ private:
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<StatisticsPartPruner> & statistics_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters,
         QueryStatusPtr query_status);
@@ -168,6 +172,7 @@ private:
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<StatisticsPartPruner> & statistics_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
@@ -204,12 +209,13 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Filter parts using minmax index and partition key.
+    /// Filter parts using minmax index and statistics and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
+        const std::optional<StatisticsPartPruner> & statistics_pruner,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const ContextPtr & context,
