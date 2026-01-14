@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 

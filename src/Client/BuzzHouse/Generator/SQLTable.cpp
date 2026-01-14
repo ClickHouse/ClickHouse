@@ -1,5 +1,3 @@
-#include <cstdint>
-
 #include <Common/checkStackSize.h>
 
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
