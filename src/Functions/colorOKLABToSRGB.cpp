@@ -65,7 +65,8 @@ The optional gamma argument specifies the exponent used when converting from lin
 sRGB to gamma-encoded RGB values. If not specified, a default gamma value is used
 for consistency with colorSRGBToOKLAB.
 
-For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab.
+For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab:wq
+.
     )";
     FunctionDocumentation::Syntax syntax = "colorOKLABToSRGB(tuple [, gamma])";
     FunctionDocumentation::Arguments arguments = {
@@ -74,22 +75,31 @@ For more information about the OKLab color space and its relationship to sRGB, s
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (R, G, B) representing sRGB color values.", {"Tuple(Float64, Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {
-    {
-        "Convert OKLAB to sRGB",
-        R"(
-SELECT colorOKLABToSRGB((0.4466, 0.0991, .44), 2.2) AS rgb
-WITH colorOKLABToSRGB((0.7, 0.1, .54)) as t SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
-        )",
-        R"(
-┌─rgb──────────────────────────────────────────────────────┐
-│ (127.03349738778945,66.06672044472008,37.11802592155851) │
-└──────────────────────────────────────────────────────────┘
-┌─RGB──────────┐
-│ (205,139,97) │
-└──────────────┘
-        )"
-    }
+        {
+            "Convert OKLAB to sRGB (Float)",
+            R"(
+                        SELECT colorOKLABToSRGB((0.4466, 0.0991, 0.44)) AS rgb
+                        )",
+            R"(
+                           ┌─rgb──────────────────────┐
+                           │ (198.07056923258935,0,0) │
+                           └──────────────────────────┘
+                        )"
+            },
+         {
+            "Convert OKLAB to sRGB (UInt8)",
+            R"(
+                        WITH colorOKLABToSRGB((0.7, 0.1, 0.54)) AS t
+                        SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+                        )",
+            R"(
+                        ┌─RGB──────────┐
+                        │ (205,0,0)    │
+                        └──────────────┘
+                        )"
+            }
     };
+
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

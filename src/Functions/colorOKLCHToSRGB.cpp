@@ -77,22 +77,31 @@ For references of colors in OKLCH space, and how they correspond to sRGB colors 
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (R, G, B) representing sRGB color values.", {"Tuple(Float64, Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {
-    {
-        "Convert OKLCH to sRGB",
-        R"(
-SELECT colorOKLCHToSRGB((0.4466, 0.0991, 45.44), 2.2) AS rgb
-WITH colorOKLCHToSRGB((0.7, 0.1, 54)) as t SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
-        )",
-        R"(
-┌─rgb──────────────────────────────────────────────────────┐
-│ (127.03349738778945,66.06672044472008,37.11802592155851) │
-└──────────────────────────────────────────────────────────┘
-┌─RGB──────────┐
-│ (205,139,97) │
-└──────────────┘
-        )"
-    }
+        {
+            "Convert OKLCH to sRGB",
+            R"(
+                            SELECT colorOKLCHToSRGB((0.6, 0.12, 40)) AS rgb
+                        )",
+            R"(
+                            ┌─rgb─────────────────────────────────────────────────────┐
+                            │(186.02058688365264,100.68677189684993,71.67819977081572)                                      │
+                            └─────────────────────────────────────────────────────────┘
+                        )"
+            },
+         {
+            "Convert OKLCH to sRGB (UInt8)",
+            R"(
+                            WITH colorOKLCHToSRGB((0.6, 0.12, 40)) AS t
+                            SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+                        )",
+            R"(
+                            ┌─RGB──────────┐
+                            │ (186,100,71) │
+                            └──────────────┘
+                        )"
+            }
     };
+
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
