@@ -383,7 +383,12 @@ ASTPtr tryBuildAdditionalFilterAST(
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
                     set_from_subquery && set_from_subquery->getSourceAST())
                 {
-                    const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+                    auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+
+                    /// Support running optimization multiple times
+                    auto source_ast = set_from_subquery->getSourceAST();
+                    if (auto * table_identifier = source_ast->as<ASTTableIdentifier>())
+                        temporary_table_name = table_identifier->name();
 
                     auto & external_table = (*external_tables)[temporary_table_name];
                     if (!external_table)
@@ -393,7 +398,9 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto columns = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context)->getNamesAndTypesList();
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
+                        NamesAndTypesList columns = header->getNamesAndTypesList();
+
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
                             ColumnsDescription{columns},

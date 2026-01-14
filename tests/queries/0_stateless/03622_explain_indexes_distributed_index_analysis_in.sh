@@ -26,33 +26,45 @@ $CLICKHOUSE_CLIENT -nm -q "
   select count(), sum(marks) from system.parts where database = currentDatabase() and table = 'test_1m' and active;
 "
 
-explain_opts=(
-  --format=LineAsString
-  --cluster_for_parallel_replicas=test_cluster_one_shard_two_replicas
-  --distributed_index_analysis=1
-  --max_parallel_replicas=2
-  --use_query_condition_cache=0
-  # parallel replicas changes explain output
-  --allow_experimental_parallel_reading_from_replicas=0
-)
+function explain_indexes()
+{
+  local explain_opts=(
+    --format=LineAsString
+    --cluster_for_parallel_replicas=test_cluster_one_shard_two_replicas
+    --distributed_index_analysis=1
+    --max_parallel_replicas=2
+    --use_query_condition_cache=0
+    --parallel_replicas_for_non_replicated_merge_tree=1
+  )
+
+  local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=0 -q "$@" | {
+    jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
+  })"
+  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=1 -q "$@" | {
+    jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
+  })"
+  if [ "$with_pr" != "$without_pr" ]; then
+    echo "EXPLAIN indexes with and without parallel replicas differs:"
+    echo "Without:"
+    echo "$without_pr"
+    echo "With"
+    echo "$with_pr"
+  else
+    echo "$with_pr"
+  fi
+}
+
 echo "IN (1000-element set)"
-$CLICKHOUSE_CLIENT "${explain_opts[@]}" -q "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select key from test_1m where (key % 1000) = 0)" | {
-  jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
-}
+explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select key from test_1m where (key % 1000) = 0)"
 echo "GLOBAL IN (1000-element set)"
-$CLICKHOUSE_CLIENT "${explain_opts[@]}" -q "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select key from test_1m where (key % 1000) = 0)" | {
-  jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
-}
+explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select key from test_1m where (key % 1000) = 0)"
 echo "IN (10-element set)"
-$CLICKHOUSE_CLIENT "${explain_opts[@]}" -q "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select * from numbers(1000, 10))" | {
-  jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
-}
+explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select * from numbers(1000, 10))"
 echo "GLOBAL IN (10-element set)"
-$CLICKHOUSE_CLIENT "${explain_opts[@]}" -q "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select * from numbers(1000, 10))" | {
-  jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
-}
+explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select * from numbers(1000, 10))"
+
 $CLICKHOUSE_CLIENT -q "
 system flush logs query_log;
 -- SKIP: current_database = $CLICKHOUSE_DATABASE
-select normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
+select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
 "
