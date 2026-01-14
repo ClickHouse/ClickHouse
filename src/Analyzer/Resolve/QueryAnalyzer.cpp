@@ -1093,6 +1093,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
+        /// Propagate is_double_quoted from the original lookup to maintain case-sensitivity behavior
+        alias_identifier_lookup.is_double_quoted = identifier_lookup.is_double_quoted;
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 
         scope_to_resolve_alias_expression->popExpressionNode();
@@ -4841,7 +4843,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         bool subquery_is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
         if (!subquery_is_cte)
             continue;
-        String cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        const String original_cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        String cte_name = original_cte_name;
 
         const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
         if (use_standard_mode)
@@ -4849,10 +4852,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "CTE with name {} already exists. In scope {}",
-                cte_name,
-                scope.scope_node->formatASTForErrorMessage());
+        {
+            if (use_standard_mode && cte_name != original_cte_name)
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name '{}' conflicts with another CTE (case-insensitive match). In scope {}",
+                    original_cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+            else
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name '{}' already exists. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions

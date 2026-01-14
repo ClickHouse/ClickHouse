@@ -88,6 +88,11 @@ struct ScopeAliases
         return const_cast<ScopeAliases *>(this)->find(lookup, find_option);
     }
 
+    const QueryTreeNodePtr * findCaseInsensitive(IdentifierLookup lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr) const
+    {
+        return const_cast<ScopeAliases *>(this)->findCaseInsensitive(lookup, find_option, ambiguous_aliases);
+    }
+
     /// case-insensitive find, does the same as find but sets ambiguous_aliases if multiple matches exist
     QueryTreeNodePtr * findCaseInsensitive(IdentifierLookup lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr)
     {

@@ -137,7 +137,10 @@ struct AnalysisTableExpressionData
         DataTypePtr subcolumn_type;
     };
 
-    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name, bool use_case_insensitive = false) const
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
+        std::string_view full_identifier_name,
+        bool use_case_insensitive,
+        const String & scope_description) const
     {
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
@@ -148,7 +151,13 @@ struct AnalysisTableExpressionData
                 String lower_column_name = Poco::toLower(String(column_name));
                 auto lower_it = lowercase_column_name_to_original_names.find(lower_column_name);
                 if (lower_it != lowercase_column_name_to_original_names.end() && !lower_it->second.empty())
+                {
+                    if (lower_it->second.size() > 1)
+                        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                            "Identifier '{}' is ambiguous: column '{}' matches multiple columns with different cases: {}. In scope {}",
+                            full_identifier_name, column_name, fmt::join(lower_it->second, ", "), scope_description);
                     it = column_name_to_column_node.find(lower_it->second.front());
+                }
             }
             if (it != column_name_to_column_node.end())
             {
@@ -158,6 +167,11 @@ struct AnalysisTableExpressionData
         }
 
         return std::nullopt;
+    }
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name, bool use_case_insensitive = false) const
+    {
+        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, "");
     }
 
     /// builds lowercase-to-original mappings for case-insensitive identifier resolution
