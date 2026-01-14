@@ -60,6 +60,21 @@ def test_crash_log_synchronous(started_node):
             == f"{crashes_count}\n"
         )
 
+    # Verify some columns are populated
+    assert started_node.query(
+        """
+        SELECT
+            count()
+        FROM system.crash_log
+        WHERE 1
+            AND signal = 11
+            AND signal_code = 0 -- SI_USER
+            AND signal_description = 'Sent by kill, sigsend.'
+            AND fault_access_type = ''
+            AND fault_address IS NULL
+        """
+    ) == "1\n"
+
 
 def test_pkill_query_log(started_node):
     if (

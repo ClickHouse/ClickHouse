@@ -117,6 +117,38 @@ std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t 
 
 std::string getSignalCodeDescription(int sig, int si_code)
 {
+    /// Signal codes that apply to all signals
+    switch (si_code)
+    {
+        case SI_USER:
+            return "Sent by kill, sigsend.";
+        case SI_KERNEL:
+            return "Sent by the kernel.";
+        case SI_QUEUE:
+            return "Sent by sigqueue.";
+        case SI_TIMER:
+            return "Sent by timer expiration.";
+        case SI_MESGQ:
+            return "Sent by real time mesq state change.";
+        case SI_ASYNCIO:
+            return "Sent by AIO completion.";
+#if defined(SI_SIGIO)
+        case SI_SIGIO:
+            return "Sent by queued SIGIO.";
+#endif
+#if defined(SI_TKILL)
+        case SI_TKILL:
+            return "Sent by tkill.";
+#endif
+#if defined(SI_ASYNCNL)
+        case SI_ASYNCNL:
+            return "Sent by asynch name lookup completion.";
+#endif
+        default:
+            break;
+    }
+
+    /// Signal-specific codes
     switch (sig)
     {
         case SIGSEGV:
