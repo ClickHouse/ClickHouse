@@ -41,8 +41,8 @@ ColumnsDescription CrashLogElement::getColumnsDescription()
         {"query", std::make_shared<DataTypeString>(), "Query text that was being executed when the crash occurred."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. Each element is a virtual memory address inside ClickHouse server process."},
         {"trace_full", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Stack trace at the moment of crash. Each element contains a called method inside ClickHouse server process."},
-        {"segfault_address", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For SIGSEGV, memory address that caused the segfault."},
-        {"segfault_memory_access_type", std::make_shared<DataTypeString>(), "For SIGSEGV, type of memory access that caused the segfault. (e.g., 'read', 'write')."},
+        {"fault_address", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Memory address that caused the fault."},
+        {"fault_access_type", std::make_shared<DataTypeString>(), "Type of memory access that caused the fault (e.g., 'read', 'write')."},
         {"signal_description", std::make_shared<DataTypeString>(), "Human-readable description based on signal_code (e.g., 'Address not mapped to object')."},
         {"current_exception", std::make_shared<DataTypeString>(), "Uncaught exception message with stack trace."},
         {"version", std::make_shared<DataTypeString>(), "ClickHouse server version."},
@@ -69,12 +69,12 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(trace);
     columns[i++]->insert(trace_full);
 
-    if (segfault_address.has_value())
-        columns[i++]->insert(*segfault_address);
+    if (fault_address.has_value())
+        columns[i++]->insert(*fault_address);
     else
         columns[i++]->insertDefault();
 
-    columns[i++]->insertData(segfault_memory_access_type.data(), segfault_memory_access_type.size());
+    columns[i++]->insertData(fault_access_type.data(), fault_access_type.size());
     columns[i++]->insertData(signal_description.data(), signal_description.size());
     columns[i++]->insertData(current_exception.data(), current_exception.size());
     columns[i++]->insert(VERSION_FULL);
@@ -98,8 +98,8 @@ void collectCrashLog(
     const String & query_id,
     const String & query,
     const StackTrace & stack_trace,
-    std::optional<UInt64> segfault_address,
-    const String & segfault_memory_access_type,
+    std::optional<UInt64> fault_address,
+    const String & fault_access_type,
     const String & signal_description,
     const String & current_exception)
 {
@@ -134,8 +134,8 @@ void collectCrashLog(
             query,
             trace,
             trace_full,
-            segfault_address,
-            segfault_memory_access_type,
+            fault_address,
+            fault_access_type,
             signal_description,
             current_exception,
             GIT_HASH,

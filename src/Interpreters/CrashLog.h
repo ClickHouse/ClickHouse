@@ -17,8 +17,8 @@ void collectCrashLog(
     const String & query_id,
     const String & query,
     const StackTrace & stack_trace,
-    std::optional<UInt64> segfault_address,
-    const String & segfault_memory_access_type,
+    std::optional<UInt64> fault_address,
+    const String & fault_access_type,
     const String & signal_description,
     const String & current_exception);
 
@@ -40,8 +40,8 @@ struct CrashLogElement
     String query;
     Array trace;
     Array trace_full;
-    std::optional<UInt64> segfault_address;
-    String segfault_memory_access_type;
+    std::optional<UInt64> fault_address;
+    String fault_access_type;
     String signal_description;
     String current_exception;
     String git_hash;

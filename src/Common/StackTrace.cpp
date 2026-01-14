@@ -70,12 +70,12 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
 
-    if (sig == SIGSEGV)
+    if (sig == SIGSEGV || sig == SIGBUS)
     {
         using namespace std::string_literals;
 
         std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
-        std::string access = getSegfaultMemoryAccessType(context);
+        std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
         return fmt::format("Address: {}. Access: {}. {}", address, access, message);
@@ -87,8 +87,12 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     return message;
 }
 
-std::optional<UInt64> getSegfaultAddress(const siginfo_t & info)
+std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
 {
+    /// Only these signals have meaningful fault addresses
+    if (sig != SIGSEGV && sig != SIGBUS && sig != SIGILL && sig != SIGFPE)
+        return std::nullopt;
+
     if (info.si_addr == nullptr)
         return 0;
 
@@ -98,20 +102,16 @@ std::optional<UInt64> getSegfaultAddress(const siginfo_t & info)
     return std::nullopt;
 }
 
-std::string getSegfaultMemoryAccessType([[maybe_unused]] const ucontext_t & context)
+std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
 {
-#if defined(__arm__)
-    return "";  // Not available on ARM
-#elif defined(__powerpc__)
-    return "";  // Not available on PowerPC
-#elif defined(OS_DARWIN)
-    return "";  // Not available on Darwin
-#elif defined(OS_FREEBSD)
-    return "";  // Not available on FreeBSD
-#elif !defined(__x86_64__)
-    return "";  // Not available
-#else
+    /// Only SIGSEGV and SIGBUS have meaningful memory access types
+    if (sig != SIGSEGV && sig != SIGBUS)
+        return "";
+
+#if defined(__x86_64__)
     return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#else
+    return "";  // Not available on this platform
 #endif
 }
 

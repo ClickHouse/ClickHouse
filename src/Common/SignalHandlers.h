@@ -51,8 +51,8 @@ __attribute__((__weak__)) void collectCrashLog(
     const String & query_id,
     const String & query,
     const StackTrace & stack_trace,
-    std::optional<UInt64> segfault_address,
-    const String & segfault_memory_access_type,
+    std::optional<UInt64> fault_address,
+    const String & fault_access_type,
     const String & signal_description,
     const String & current_exception);
 

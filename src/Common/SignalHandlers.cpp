@@ -526,21 +526,13 @@ try
     /// Write crash to system.crash_log table if available.
     if (collectCrashLog)
     {
-        std::optional<UInt64> segfault_address;
-        String segfault_memory_access_type;
-        String si_code_description;
-
-        if (sig == SIGSEGV)
-        {
-            segfault_address = getSegfaultAddress(info);
-            segfault_memory_access_type = getSegfaultMemoryAccessType(*context);
-        }
-
-        si_code_description = getSignalCodeDescription(sig, info.si_code);
+        const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
+        const String fault_access_type = getFaultMemoryAccessType(sig, *context);
+        const String si_code_description = getSignalCodeDescription(sig, info.si_code);
 
         collectCrashLog(
             sig, info.si_code, thread_num, query_id, query,
-            stack_trace, segfault_address, segfault_memory_access_type, si_code_description,
+            stack_trace, fault_address, fault_access_type, si_code_description,
             exception_message);
     }
 
