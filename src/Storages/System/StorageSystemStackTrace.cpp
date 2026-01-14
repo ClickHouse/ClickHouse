@@ -22,6 +22,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -33,7 +34,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <base/getThreadId.h>
 #include <sys/syscall.h>
 
 

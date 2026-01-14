@@ -4,22 +4,22 @@ Test without utilizing skip indexes for disjunctions
         Granules: 100/100
         Name: minmax_index
         Granules: 100/100
+        Name: text_index1
+        Granules: 100/100
         Name: set_index
         Granules: 100/100
         Name: bf_index
-        Granules: 100/100
-        Name: text_index1
         Granules: 100/100
 -- Mixed AND/OR condition
       PrimaryKey
         Granules: 50/100
         Name: minmax_index
         Granules: 50/50
+        Name: text_index1
+        Granules: 50/50
         Name: set_index
         Granules: 50/50
         Name: bf_index
-        Granules: 50/50
-        Name: text_index1
         Granules: 50/50
 Test with utilizing skip indexes for disjunctions
 -- Simple OR condition
@@ -27,11 +27,11 @@ Test with utilizing skip indexes for disjunctions
         Granules: 100/100
         Name: minmax_index
         Granules: 100/100
+        Name: text_index1
+        Granules: 100/100
         Name: set_index
         Granules: 100/100
         Name: bf_index
-        Granules: 100/100
-        Name: text_index1
         Granules: 100/100
         Name: <Combined skip indexes>
         Granules: 1/100
@@ -40,11 +40,11 @@ Test with utilizing skip indexes for disjunctions
         Granules: 50/100
         Name: minmax_index
         Granules: 50/50
+        Name: text_index1
+        Granules: 50/50
         Name: set_index
         Granules: 50/50
         Name: bf_index
-        Granules: 50/50
-        Name: text_index1
         Granules: 50/50
         Name: <Combined skip indexes>
         Granules: 0/50

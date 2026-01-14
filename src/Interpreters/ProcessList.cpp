@@ -53,6 +53,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
+    extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -277,7 +279,12 @@ ProcessList::EntryPtr ProcessList::insert(
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
+                    .metrics = {}, /// Metrics are set by child scopes
                 };
+
+                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
+
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
@@ -294,7 +301,22 @@ ProcessList::EntryPtr ProcessList::insert(
                 thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
                 thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
                 thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-                thread_group->performance_counters.setTraceProfileEvents(settings[Setting::trace_profile_events]);
+
+                /// Set up tracing of profile events
+                if (settings[Setting::trace_profile_events])
+                {
+                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
+                    if (!list_of_events_to_trace.empty())
+                    {
+                        /// Trace specific profile events
+                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
+                    }
+                    else
+                    {
+                        /// Trace all profile events
+                        thread_group->performance_counters.setTraceAllProfileEvents();
+                    }
+                }
             }
 
             thread_group->memory_tracker.setDescription("Query");
@@ -844,6 +866,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
             .buffer_size = settings[Setting::temporary_files_buffer_size],
+            .metrics = {}, /// Metrics are set by child scopes
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

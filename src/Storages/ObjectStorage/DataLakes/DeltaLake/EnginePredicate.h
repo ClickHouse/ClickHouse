@@ -4,6 +4,8 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/Exception.h>
+#include <Common/Logger.h>
+
 #include <delta_kernel_ffi.hpp>
 
 namespace DB

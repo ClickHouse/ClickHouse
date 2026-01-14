@@ -67,7 +67,6 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -361,7 +360,7 @@ static KeyCondition::ColumnIndexToBloomFilter buildColumnIndexToBF(
         }
 
         // Complex / nested types contain more than one index. We don't support those.
-        if (parquet_indexes.size() > 1)
+        if (parquet_indexes.size() != 1)
         {
             continue;
         }
@@ -576,16 +575,11 @@ const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
 
     const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[clickhouse_column_index].parquet_indexes;
 
-    // complex types like structs, tuples and maps will have more than one index.
-    // we don't support those for now
-    if (parquet_indexes.size() > 1)
+    /// Complex types like structs, tuples and maps will have more than one index; we don't support those for now.
+    /// Empty tuples are also not supported.
+    if (parquet_indexes.size() != 1)
     {
         return nullptr;
-    }
-
-    if (parquet_indexes.empty())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column maps to 0 parquet leaf columns, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
     }
 
     auto parquet_column_index = parquet_indexes[0];
@@ -1308,23 +1302,33 @@ NamesAndTypesList ArrowParquetSchemaReader::readSchema()
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
 
     /// When Parquet's schema is converted to Arrow's schema, logical types are lost (at least in
-    /// the currently used Arrow 11 version). Therefore, we manually add the logical types as metadata
-    /// to Arrow's schema. Logical types are useful for determining which ClickHouse column type to convert to.
+    /// the currently used Arrow 11 version). This is only a problem for JSON columns, which are
+    /// string columns with a piece of metadata saying that they should be converted to JSON.
+    /// Here's a hack to propagate logical types in simple cases.
     std::vector<std::shared_ptr<arrow::Field>> new_fields;
     new_fields.reserve(schema->num_fields());
+
+    ArrowFieldIndexUtil field_util(
+        format_settings.parquet.case_insensitive_column_matching,
+        format_settings.parquet.allow_missing_columns);
+    const auto field_indices = field_util.calculateFieldIndices(*schema);
 
     for (int i = 0; i < schema->num_fields(); ++i)
     {
         auto field = schema->field(i);
-        const auto * parquet_node = metadata->schema()->Column(i);
-        const auto * lt = parquet_node->logical_type().get();
-
-        if (lt and !lt->is_invalid())
+        auto it = field_indices.find(field->name());
+        if (it != field_indices.end() && it->second.second == 1)
         {
-            std::shared_ptr<arrow::KeyValueMetadata> kv = field->HasMetadata() ? field->metadata()->Copy() : arrow::key_value_metadata({}, {});
-            THROW_ARROW_NOT_OK(kv->Set("PARQUET:logical_type", lt->ToString()));
+            const auto * parquet_node = metadata->schema()->Column(it->second.first);
+            const auto * lt = parquet_node->logical_type().get();
 
-            field = field->WithMetadata(std::move(kv));
+            if (lt && !lt->is_invalid())
+            {
+                std::shared_ptr<arrow::KeyValueMetadata> kv = field->HasMetadata() ? field->metadata()->Copy() : arrow::key_value_metadata({}, {});
+                THROW_ARROW_NOT_OK(kv->Set("PARQUET:logical_type", lt->ToString()));
+
+                field = field->WithMetadata(std::move(kv));
+            }
         }
         new_fields.emplace_back(std::move(field));
     }

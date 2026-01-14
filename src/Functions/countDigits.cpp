@@ -194,7 +194,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
     };
     FunctionDocumentation::IntroducedIn introduced_in_countDigits = {20, 8};
     FunctionDocumentation::Category category_countDigits = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_countDigits = {description_countDigits, syntax_countDigits, arguments_countDigits, returned_value_countDigits, examples_countDigits, introduced_in_countDigits, category_countDigits};
+    FunctionDocumentation documentation_countDigits = {description_countDigits, syntax_countDigits, arguments_countDigits, {}, returned_value_countDigits, examples_countDigits, introduced_in_countDigits, category_countDigits};
 
     factory.registerFunction<FunctionCountDigits>(documentation_countDigits);
 }

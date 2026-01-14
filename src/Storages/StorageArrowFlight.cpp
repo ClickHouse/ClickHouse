@@ -1,6 +1,7 @@
 #include <Storages/StorageArrowFlight.h>
 
 #if USE_ARROWFLIGHT
+#include <Common/Logger.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>

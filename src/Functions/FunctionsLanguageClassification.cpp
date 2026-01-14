@@ -248,7 +248,7 @@ The longer the input, the more precise the language detection will be.
     };
     FunctionDocumentation::IntroducedIn introduced_in_detect = {22, 2};
     FunctionDocumentation::Category category_detect = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_detect = {description_detect, syntax_detect, arguments_detect, returned_value_detect, examples_detect, introduced_in_detect, category_detect};
+    FunctionDocumentation documentation_detect = {description_detect, syntax_detect, arguments_detect, {}, returned_value_detect, examples_detect, introduced_in_detect, category_detect};
 
     factory.registerFunction<FunctionDetectLanguage>(documentation_detect);
 
@@ -265,7 +265,7 @@ Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguage
     };
     FunctionDocumentation::IntroducedIn introduced_in_mixed = {22, 2};
     FunctionDocumentation::Category category_mixed = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_mixed = {description_mixed, syntax_mixed, arguments_mixed, returned_value_mixed, examples_mixed, introduced_in_mixed, category_mixed};
+    FunctionDocumentation documentation_mixed = {description_mixed, syntax_mixed, arguments_mixed, {}, returned_value_mixed, examples_mixed, introduced_in_mixed, category_mixed};
 
     factory.registerFunction<FunctionDetectLanguageMixed>(documentation_mixed);
 }

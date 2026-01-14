@@ -123,6 +123,10 @@ private:
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+
+    /// Remove transaction metadata files (txn_version.txt) from all parts for a table.
+    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 
     ASTPtr query_ptr;

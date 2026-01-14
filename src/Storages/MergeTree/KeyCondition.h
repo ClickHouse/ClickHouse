@@ -9,6 +9,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Set.h>
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -60,7 +61,8 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false);
+        bool single_point_ = false,
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key` setting. Useful for testing.
 
     struct BloomFilterData
     {
@@ -415,10 +417,23 @@ private:
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
-    bool tryPrepareSetIndex(
+    bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPNElement & out,
+        bool allow_constant_transformation);
+    bool tryPrepareSetIndexForHas(
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        RPNElement & out,
+        bool allow_constant_transformation);
+
+    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
+        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        DataTypes & data_types,
+        size_t & args_count,
+        const BuildInfo & info,
         bool allow_constant_transformation);
 
     /// Checks that the index can not be used.
