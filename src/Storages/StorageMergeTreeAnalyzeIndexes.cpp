@@ -128,6 +128,8 @@ protected:
         if (predicate)
         {
             auto execution_context = Context::createCopy(context);
+            execution_context->setSetting("enable_parallel_blocks_marshalling", false);
+
             auto expression = buildQueryTree(predicate, execution_context);
 
             auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
