@@ -1,4 +1,7 @@
+import json
+import re
 import pytest
+from typing import Optional, Any
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -163,3 +166,218 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_r
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} WHERE NOT sleepEachRow(1/100) order by id", settings=settings)) == list(range(10, 103)) + [104]
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+class LogEntry:
+    def __init__(self, position_delete_file: str, data_file: str, 
+                 lower_bound: Optional[str], upper_bound: Optional[str], action: str):
+        self.position_delete_file = position_delete_file
+        self.data_file = data_file
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.action = action
+
+
+class ManifestEntry:
+    def __init__(self, file_path: str, is_delete: bool, is_data: bool,
+                 lower_bound: Optional[str], upper_bound: Optional[str]):
+        self.file_path = file_path
+        self.is_delete = is_delete
+        self.is_data = is_data
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+
+
+def parse_log_entry(log_line: str) -> Optional[LogEntry]:
+    """
+    Parse a log line to extract data_file, position_delete_file, lower_bound, upper_bound.
+    """
+    skipping_pattern = r"Skipping position delete file (\S+) for data file (\S+).*\(lower bound: ([^,]+), upper bound: ([^)]+)\)"
+    processing_pattern = r"Processing position delete file: (\S+), data file: (\S+),.*\(lower bound: ([^,]+), upper bound: ([^)]+)\)"
+    
+    match = re.search(skipping_pattern, log_line)
+    if match:
+        return LogEntry(
+            position_delete_file=match.group(1),
+            data_file=match.group(2),
+            lower_bound=match.group(3) if match.group(3) != '[no lower bound]' else None,
+            upper_bound=match.group(4) if match.group(4) != '[no upper bound]' else None,
+            action='skipping'
+        )
+    
+    match = re.search(processing_pattern, log_line)
+    if match:
+        return LogEntry(
+            position_delete_file=match.group(1),
+            data_file=match.group(2),
+            lower_bound=match.group(3) if match.group(3) != '[no lower bound]' else None,
+            upper_bound=match.group(4) if match.group(4) != '[no upper bound]' else None,
+            action='processing'
+        )
+    
+    return None
+
+
+def unescape_path(path: Optional[str]) -> Optional[str]:
+    """
+    Unescape a path that has backslash-escaped forward slashes.
+    """
+    if path is None:
+        return None
+    return path.replace('\\/', '/')
+
+
+def get_bound_for_column(bounds: Any, column_id: int) -> Optional[str]:
+    """
+    Extract bound value for a specific column ID from bounds structure.
+    Bounds can be either a dict {column_id: value} or a list of {key: column_id, value: value}.
+    Returns unescaped path.
+    """
+    if bounds is None:
+        return None
+    value: Optional[str] = None
+    if isinstance(bounds, dict):
+        value = bounds.get(str(column_id))
+    elif isinstance(bounds, list):
+        for item in bounds:
+            if isinstance(item, dict) and item.get('key') == column_id:
+                value = item.get('value')
+                break
+    return unescape_path(value)
+
+
+def parse_manifest_entry(content_json: dict[str, Any]) -> ManifestEntry:
+    """
+    Parse manifest file entry JSON to extract file info and bounds for column 2147483546.
+    """
+    DATA_FILE_COLUMN_ID = 2147483546
+    
+    data_file = content_json.get('data_file', {})
+    file_path: str = data_file.get('file_path', '')
+    content_type: int = data_file.get('content', 0)  # 0 = data, 1 = position delete, 2 = equality delete
+    
+    lower_bounds = data_file.get('lower_bounds')
+    upper_bounds = data_file.get('upper_bounds')
+    
+    lower_bound = get_bound_for_column(lower_bounds, DATA_FILE_COLUMN_ID)
+    upper_bound = get_bound_for_column(upper_bounds, DATA_FILE_COLUMN_ID)
+    
+    return ManifestEntry(
+        file_path=file_path,
+        is_delete=(content_type == 1),  # position delete
+        is_data=(content_type == 0),
+        lower_bound=lower_bound,
+        upper_bound=upper_bound
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, storage_type):
+    """
+    Test that verifies position delete bounds filtering logs match manifest file entries.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_position_deletes_bounds_logging_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode'='merge-on-read',
+            'write.delete.mode'='merge-on-read',
+            'write.merge.mode'='merge-on-read'
+        )
+        """
+    )
+
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(0, 100)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 200)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(200, 300)")
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 50 AND id < 60")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150 AND id < 160")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 250 AND id < 260")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    expected_ids = list(range(0, 50)) + list(range(60, 150)) + list(range(160, 250)) + list(range(260, 300))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'")) == expected_ids
+
+    skipping_logs = instance.grep_in_log("Skipping position delete file")
+    processing_logs = instance.grep_in_log("Processing position delete file")
+
+    parsed_log_entries = []
+    for log_line in (skipping_logs or '').splitlines():
+        entry = parse_log_entry(log_line)
+        if entry:
+            parsed_log_entries.append(entry)
+    for log_line in (processing_logs or '').splitlines():
+        entry = parse_log_entry(log_line)
+        if entry:
+            parsed_log_entries.append(entry)
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    metadata_log_query = """
+        SELECT DISTINCT content
+        FROM system.iceberg_metadata_log 
+        WHERE content != '' AND content IS NOT NULL AND content_type = 'ManifestFileEntry'
+    """
+    metadata_log_result = instance.query(metadata_log_query)
+
+    delete_files_from_manifest: dict[str, ManifestEntry] = {}
+    data_files_from_manifest: set[str] = set()
+    
+    for line in metadata_log_result.strip().split('\n'):
+        if line:
+            try:
+                content_json = json.loads(line)
+                entry = parse_manifest_entry(content_json)
+                if entry.is_delete:
+                    file_name = entry.file_path.split('/')[-1]
+                    delete_files_from_manifest[file_name] = entry
+                elif entry.is_data:
+                    file_name = entry.file_path.split('/')[-1]
+                    data_files_from_manifest.add(file_name)
+            except json.JSONDecodeError:
+                pass
+
+    for log_entry in parsed_log_entries:
+        delete_file_name = log_entry.position_delete_file.split('/')[-1]
+        
+        assert delete_file_name in delete_files_from_manifest, \
+            f"Delete file {delete_file_name} from logs not found in manifest entries"
+        
+        manifest_entry = delete_files_from_manifest[delete_file_name]
+        
+        assert log_entry.lower_bound == manifest_entry.lower_bound, \
+            f"Lower bound mismatch for {delete_file_name}: log={log_entry.lower_bound}, manifest={manifest_entry.lower_bound}"
+        assert log_entry.upper_bound == manifest_entry.upper_bound, \
+            f"Upper bound mismatch for {delete_file_name}: log={log_entry.upper_bound}, manifest={manifest_entry.upper_bound}"
+
+        data_file_path = log_entry.data_file
+        lower = manifest_entry.lower_bound
+        upper = manifest_entry.upper_bound
+        
+        is_within_bounds = (lower is None or lower <= data_file_path) and (upper is None or upper >= data_file_path)
+        
+        if log_entry.action == 'skipping':
+            assert not is_within_bounds, \
+                f"Data file {data_file_path} was skipped but is within bounds [{lower}, {upper}]"
+        else:  # processing
+            assert is_within_bounds, \
+                f"Data file {data_file_path} was processed but is NOT within bounds [{lower}, {upper}]"
+
+    assert len(parsed_log_entries) > 0, "Expected to find position delete log entries"
+    assert len(delete_files_from_manifest) > 0, "Expected to find delete files in manifest"
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+

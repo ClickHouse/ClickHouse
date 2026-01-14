@@ -392,7 +392,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             {
                 LOG_DEBUG(
                     logger,
-                    "Processing position delete file: {}, data file: {}, reference data file bounds: "
+                    "Processing position delete file {} for data file {} with reference data file bounds: "
                     "(lower bound: {}, upper bound: {})",
                     position_delete->file_path,
                     data_file_path,
