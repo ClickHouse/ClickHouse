@@ -59,10 +59,6 @@ if __name__ == "__main__":
     title, body, labels = GH.get_pr_title_body_labels()
     if not title or not body:
         print("WARNING: Failed to get PR title or body, read from environment")
-
-    title, body, labels = GH.get_pr_title_body_labels()
-    if not title or not body:
-        print("WARNING: Failed to get PR title or body, read from environment")
         body = Info().pr_body
 
     error, category = get_category(body)

@@ -98,11 +98,28 @@ class _Environment(MetaClasses.Serializable):
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
                 USER_LOGIN = github_event["pull_request"]["user"]["login"]
-                sender_login = github_event.get("sender", {}).get("login", USER_LOGIN)
-                COMMIT_AUTHORS = [sender_login]
                 EVENT_TIME = github_event.get("pull_request", {}).get(
                     "updated_at", None
                 )
+                # Extract commit author emails using GitHub API (works with shallow repos) #FIXME
+                commit_authors = set()
+                try:
+                    commits_json = Shell.get_output(
+                        f"gh api repos/{REPOSITORY}/pulls/{PR_NUMBER}/commits --jq '.[].commit.author.email'",
+                        verbose=True,
+                    ).strip()
+                    if commits_json:
+                        # Validate emails contain @ symbol
+                        commit_authors = set(
+                            email
+                            for email in commits_json.split("\n")
+                            if email and "@" in email
+                        )
+                except Exception as e:
+                    print(
+                        f"Warning: Failed to extract commit authors from GitHub API: {e}"
+                    )
+                COMMIT_AUTHORS = list(commit_authors)
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -119,7 +136,10 @@ class _Environment(MetaClasses.Serializable):
                 EVENT_TIME = github_event.get("repository", {}).get("updated_at", None)
                 commit_authors = set()
                 for commit in github_event["commits"]:
-                    commit_authors.add(commit["author"]["username"])
+                    email = commit["author"]["email"]
+                    # Validate email contains @ symbol
+                    if email and "@" in email:
+                        commit_authors.add(email)
                 COMMIT_AUTHORS = list(commit_authors)
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
@@ -236,7 +256,12 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
-            JOB_KV_DATA={},
+            # TODO: Find a better way to store and pass commit authors data through workflow
+            JOB_KV_DATA={
+                "commit_authors": COMMIT_AUTHORS,
+                # parent pr number may be overwritten by user in workflow hooks
+                "parent_pr_number": LINKED_PR_NUMBER,
+            },
             WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
             WORKFLOW_STATUS_DATA=WORKFLOW_STATUS_DATA,
         )
