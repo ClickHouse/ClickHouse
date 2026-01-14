@@ -1113,7 +1113,7 @@ void ReadFromMerge::addVirtualColumns(
         String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
 
         String database_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_database" : table_alias + "._database";
-        String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
+        String table_column = table_alias.empty() || child.stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
 
         if (has_database_virtual_column && common_header->has(database_column)
             && child.stage == QueryProcessingStage::FetchColumns && !plan_header->has(database_column))
@@ -1589,12 +1589,25 @@ void ReadFromMerge::convertAndFilterSourceStream(
     size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
+
+    String qualifier;
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
+        if (!table_alias.empty() && child.stage != QueryProcessingStage::FetchColumns)
+            qualifier = table_alias + ".";
+    }
+
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
-        if (header.has(source_elem.name))
+        auto source_elem_name = source_elem.name;
+        if (!qualifier.empty() && source_elem_name.starts_with(qualifier))
+            source_elem_name = source_elem_name.substr(qualifier.size());
+
+        if (header.has(source_elem_name))
         {
-            converted_columns.push_back(header.getByName(source_elem.name));
+            converted_columns.push_back(header.getByName(source_elem_name));
         }
         else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
         {
