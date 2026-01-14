@@ -365,6 +365,7 @@ def test_backup_restore_correct_block_ids(cluster):
         azure_query(
             node,
             f"""
+            SET azure_max_single_part_upload_size = 1;
             SET azure_min_upload_part_size = {min_upload_size};
             SET azure_max_upload_part_size = {max_upload_size};
             SET azure_max_blocks_in_multipart_upload = {max_blocks};
