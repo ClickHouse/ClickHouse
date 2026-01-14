@@ -1772,13 +1772,16 @@ try
 }
 catch (...)
 {
-    try
+    if (mode <= LoadingStrictnessLevel::CREATE)
     {
-        storage.drop();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("validateStorage");
+        try
+        {
+            storage.drop();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("validateStorage");
+        }
     }
     throw;
 }
