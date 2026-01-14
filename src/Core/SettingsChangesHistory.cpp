@@ -83,6 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
+            {"default_dictionary_database", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -151,7 +152,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
-            {"default_dictionary_database", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
