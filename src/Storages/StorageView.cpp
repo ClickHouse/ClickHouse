@@ -227,7 +227,7 @@ QueryProcessingStage::Enum StorageView::getQueryProcessingStage(
                                                 context, to_stage, underlying_snapshot, query_info);
                                         }
                                     }
-                                    catch (...)
+                                    catch (...) // NOLINT(bugprone-empty-catch)
                                     {
                                         /// If table lookup fails, fall back to default behavior
                                     }
