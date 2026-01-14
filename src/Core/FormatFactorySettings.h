@@ -547,7 +547,7 @@ Possible values:
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
     DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
-When enabled, JSONs like {"a" : 42, "a" : {"b" : 42}} where some key is duplicated but one of them is a nested object are allowed to be parsed.
+When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
 )", 0) \
     DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
 When enabled, during parsing JSON object into JSON type regular expressions specified using SKIP REGEXP will require partial match to skip a path. When disabled, full match will be required.
@@ -726,6 +726,11 @@ Disabled by default.
 )", 0) \
     DECLARE(Bool, input_format_ipv6_default_on_conversion_error, false, R"(
 Deserialization of IPV6 will use default values instead of throwing exception on conversion error.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, false, R"(
+Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
 
 Disabled by default.
 )", 0) \

@@ -82,19 +82,23 @@ private:
         const std::string & processed_node_path_,
         LoggerPtr log_);
 
-    struct LastProcessedInfo
+    struct ProcessingStateFromKeeper
     {
-        std::optional<std::string> file_path;
-        bool is_failed = false;
+        explicit ProcessingStateFromKeeper(bool is_failed_) : is_failed(is_failed_) {}
+        ProcessingStateFromKeeper(const std::string & path, const std::string & last_processed_path_, bool is_failed_);
+
+        const std::optional<std::string> last_processed_path = std::nullopt;
+        const bool is_failed = false;
+        const bool is_processed = false;
     };
 
-    LastProcessedInfo getLastProcessedFile(
-        Coordination::Stat * stat,
+    ProcessingStateFromKeeper getProcessingStateFromKeeper(
+        Coordination::Stat * processed_node_stat,
         bool check_failed = false,
         LoggerPtr log_ = nullptr);
 
-    static LastProcessedInfo getLastProcessedFile(
-        Coordination::Stat * stat,
+    static ProcessingStateFromKeeper getProcessingStateFromKeeper(
+        Coordination::Stat * processed_node_stat,
         const std::string & processed_node_path_,
         const std::string & file_path,
         std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
@@ -102,7 +106,7 @@ private:
         LoggerPtr log_ = nullptr);
 
     static bool getMaxProcessedFilesByHivePartition(
-        std::unordered_map<std::string, std::string> & max_processed_files,
+        std::unordered_map<std::string, std::string> & last_processed_path_per_hive_partition,
         const std::string & processed_node_path_,
         LoggerPtr log_);
 
@@ -112,7 +116,7 @@ private:
         bool ignore_if_exists,
         LastProcessedFileInfoMapPtr created_nodes = nullptr);
 
-    void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_map) override;
+    void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition) override;
 
     /// Return hive part of path
     /// For path `/table/path/date=2025-01-01/city=New_Orlean/data.parquet` returns `date=2025-01-01/city=New_Orlean`
