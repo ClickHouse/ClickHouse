@@ -1892,6 +1892,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     if (!maybe_zk_log)
         return;
 
+    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
+        return;
+
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;
     Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
                                std::chrono::system_clock::now().time_since_epoch()
