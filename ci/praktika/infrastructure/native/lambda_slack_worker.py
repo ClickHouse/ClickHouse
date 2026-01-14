@@ -291,9 +291,6 @@ def publish_home_view(
                     children, key=lambda e: e.timestamp, reverse=True
                 )
                 for child_event in children_sorted:
-                    # Add divider before each child
-                    blocks.append({"type": "divider"})
-
                     child_text = format_event_text(child_event, pr_status, indent="> ")
                     blocks.append(
                         {
@@ -310,7 +307,6 @@ def publish_home_view(
 
     # Add footer with divider
     if github_login:
-        blocks.append({"type": "divider"})
         blocks.append(
             {
                 "type": "section",
