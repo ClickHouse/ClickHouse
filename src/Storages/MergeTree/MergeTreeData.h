@@ -328,7 +328,8 @@ public:
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level) const;
+    MergeTreeDataPartFormat
+    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -1099,12 +1100,9 @@ public:
     virtual bool canUseAdaptiveGranularity() const;
 
     /// Get constant pointer to storage settings.
-    /// Copy this pointer into your scope and you will
-    /// get consistent settings.
-    MergeTreeSettingsPtr getSettings() const
-    {
-        return storage_settings.get();
-    }
+    /// Copy this pointer into your scope and you will get consistent settings.
+    /// When `projection` is provided, apply projection-level overrides on top of the table settings.
+    MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
 
     StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
 
@@ -1823,6 +1821,7 @@ protected:
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
+    void startStatisticsCache(UInt64 refresh_statistics_seconds);
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
@@ -1998,5 +1997,7 @@ struct CurrentlySubmergingEmergingTagger
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+
+String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage);
 
 }

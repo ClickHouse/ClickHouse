@@ -231,9 +231,7 @@ requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType
 inline typename ToDataType::FieldType convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
-
     convertFromDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
-
     return result;
 }
 

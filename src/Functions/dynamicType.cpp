@@ -186,7 +186,7 @@ SELECT d, dynamicType(d) FROM test;
     };
     FunctionDocumentation::IntroducedIn dynamicType_introduced_in = {24, 1};
     FunctionDocumentation::Category dynamicType_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation dynamicType_documentation = {dynamicType_description, dynamicType_syntax, dynamicType_arguments, dynamicType_returned_value, dynamicType_examples, dynamicType_introduced_in, dynamicType_category};
+    FunctionDocumentation dynamicType_documentation = {dynamicType_description, dynamicType_syntax, dynamicType_arguments, {}, dynamicType_returned_value, dynamicType_examples, dynamicType_introduced_in, dynamicType_category};
 
     factory.registerFunction<FunctionDynamicType>(dynamicType_documentation);
 
@@ -227,7 +227,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
     };
     FunctionDocumentation::IntroducedIn isDynamicElementInSharedData_introduced_in = {24, 1};
     FunctionDocumentation::Category isDynamicElementInSharedData_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
+    FunctionDocumentation isDynamicElementInSharedData_documentation = {isDynamicElementInSharedData_description, isDynamicElementInSharedData_syntax, isDynamicElementInSharedData_arguments, {}, isDynamicElementInSharedData_returned_value, isDynamicElementInSharedData_examples, isDynamicElementInSharedData_introduced_in, isDynamicElementInSharedData_category};
 
     factory.registerFunction<FunctionIsDynamicElementInSharedData>(isDynamicElementInSharedData_documentation);
 }

@@ -57,23 +57,23 @@ if __name__ == "__main__":
                 )
         info.store_kv_data("file_diff", file_diff)
 
-    # store commit sha of release branch base to find binary for performance comparison in the job script later
-    # if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
-    release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
-    print(f"Release branch base sha: {release_branch_base_sha}")
-    assert release_branch_base_sha
-    release_branch_base_sha_with_predecessors = [
-        s.strip()
-        for s in Shell.get_output(
-            f"git rev-list --max-count=20 {release_branch_base_sha}", verbose=True
-        ).splitlines()
-    ]
-    assert all(len(s) == 40 for s in release_branch_base_sha_with_predecessors)
-    assert release_branch_base_sha_with_predecessors[0] == release_branch_base_sha
-    info.store_kv_data(
-        "release_branch_base_sha_with_predecessors",
-        release_branch_base_sha_with_predecessors,
-    )
-    print(
-        f"Found base commit sha for latest release branch with its predecessors: [{release_branch_base_sha_with_predecessors}]"
-    )
+    elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+        # store commit sha of release branch base to find binary for performance comparison in the job script later
+        release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
+        print(f"Release branch base sha: {release_branch_base_sha}")
+        assert release_branch_base_sha
+        release_branch_base_sha_with_predecessors = [
+            s.strip()
+            for s in Shell.get_output(
+                f"git rev-list --max-count=20 {release_branch_base_sha}", verbose=True
+            ).splitlines()
+        ]
+        assert all(len(s) == 40 for s in release_branch_base_sha_with_predecessors)
+        assert release_branch_base_sha_with_predecessors[0] == release_branch_base_sha
+        info.store_kv_data(
+            "release_branch_base_sha_with_predecessors",
+            release_branch_base_sha_with_predecessors,
+        )
+        print(
+            f"Found base commit sha for latest release branch with its predecessors: [{release_branch_base_sha_with_predecessors}]"
+        )

@@ -2450,7 +2450,7 @@ SELECT parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
     };
     FunctionDocumentation::IntroducedIn parseDateTime_introduced_in = {23, 3};
     FunctionDocumentation::Category parseDateTime_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime_documentation = {parseDateTime_description, parseDateTime_syntax, parseDateTime_arguments, parseDateTime_returned_value, parseDateTime_examples, parseDateTime_introduced_in, parseDateTime_category};
+    FunctionDocumentation parseDateTime_documentation = {parseDateTime_description, parseDateTime_syntax, parseDateTime_arguments, {}, parseDateTime_returned_value, parseDateTime_examples, parseDateTime_introduced_in, parseDateTime_category};
 
     /// parseDateTimeOrZero documentation
     FunctionDocumentation::Description parseDateTimeOrZero_description = R"(
@@ -2478,7 +2478,7 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
     };
     FunctionDocumentation::IntroducedIn parseDateTimeOrZero_introduced_in = {23, 3};
     FunctionDocumentation::Category parseDateTimeOrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeOrZero_documentation = {parseDateTimeOrZero_description, parseDateTimeOrZero_syntax, parseDateTimeOrZero_arguments, parseDateTimeOrZero_returned_value, parseDateTimeOrZero_examples, parseDateTimeOrZero_introduced_in, parseDateTimeOrZero_category};
+    FunctionDocumentation parseDateTimeOrZero_documentation = {parseDateTimeOrZero_description, parseDateTimeOrZero_syntax, parseDateTimeOrZero_arguments, {}, parseDateTimeOrZero_returned_value, parseDateTimeOrZero_examples, parseDateTimeOrZero_introduced_in, parseDateTimeOrZero_category};
 
     /// parseDateTimeOrNull documentation
     FunctionDocumentation::Description parseDateTimeOrNull_description = R"(
@@ -2506,7 +2506,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
     };
     FunctionDocumentation::IntroducedIn parseDateTimeOrNull_introduced_in = {23, 3};
     FunctionDocumentation::Category parseDateTimeOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeOrNull_documentation = {parseDateTimeOrNull_description, parseDateTimeOrNull_syntax, parseDateTimeOrNull_arguments, parseDateTimeOrNull_returned_value, parseDateTimeOrNull_examples, parseDateTimeOrNull_introduced_in, parseDateTimeOrNull_category};
+    FunctionDocumentation parseDateTimeOrNull_documentation = {parseDateTimeOrNull_description, parseDateTimeOrNull_syntax, parseDateTimeOrNull_arguments, {}, parseDateTimeOrNull_returned_value, parseDateTimeOrNull_examples, parseDateTimeOrNull_introduced_in, parseDateTimeOrNull_category};
 
     /// parseDateTime64 documentation
     FunctionDocumentation::Description parseDateTime64_description = R"(
@@ -2537,7 +2537,7 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
     };
     FunctionDocumentation::IntroducedIn parseDateTime64_introduced_in = {24, 11};
     FunctionDocumentation::Category parseDateTime64_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64_documentation = {parseDateTime64_description, parseDateTime64_syntax, parseDateTime64_arguments, parseDateTime64_returned_value, parseDateTime64_examples, parseDateTime64_introduced_in, parseDateTime64_category};
+    FunctionDocumentation parseDateTime64_documentation = {parseDateTime64_description, parseDateTime64_syntax, parseDateTime64_arguments, {}, parseDateTime64_returned_value, parseDateTime64_examples, parseDateTime64_introduced_in, parseDateTime64_category};
 
     /// parseDateTime64OrZero documentation
     FunctionDocumentation::Description parseDateTime64OrZero_description = R"(
@@ -2565,7 +2565,7 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
     };
     FunctionDocumentation::IntroducedIn parseDateTime64OrZero_introduced_in = {24, 11};
     FunctionDocumentation::Category parseDateTime64OrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64OrZero_documentation = {parseDateTime64OrZero_description, parseDateTime64OrZero_syntax, parseDateTime64OrZero_arguments, parseDateTime64OrZero_returned_value, parseDateTime64OrZero_examples, parseDateTime64OrZero_introduced_in, parseDateTime64OrZero_category};
+    FunctionDocumentation parseDateTime64OrZero_documentation = {parseDateTime64OrZero_description, parseDateTime64OrZero_syntax, parseDateTime64OrZero_arguments, {}, parseDateTime64OrZero_returned_value, parseDateTime64OrZero_examples, parseDateTime64OrZero_introduced_in, parseDateTime64OrZero_category};
 
     /// parseDateTime64OrNull documentation
     FunctionDocumentation::Description parseDateTime64OrNull_description = R"(
@@ -2593,7 +2593,7 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
     };
     FunctionDocumentation::IntroducedIn parseDateTime64OrNull_introduced_in = {24, 11};
     FunctionDocumentation::Category parseDateTime64OrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64OrNull_documentation = {parseDateTime64OrNull_description, parseDateTime64OrNull_syntax, parseDateTime64OrNull_arguments, parseDateTime64OrNull_returned_value, parseDateTime64OrNull_examples, parseDateTime64OrNull_introduced_in, parseDateTime64OrNull_category};
+    FunctionDocumentation parseDateTime64OrNull_documentation = {parseDateTime64OrNull_description, parseDateTime64OrNull_syntax, parseDateTime64OrNull_arguments, {}, parseDateTime64OrNull_returned_value, parseDateTime64OrNull_examples, parseDateTime64OrNull_introduced_in, parseDateTime64OrNull_category};
 
     /// parseDateTimeInJodaSyntax documentation
     FunctionDocumentation::Description parseDateTimeInJodaSyntax_description = R"(
@@ -2626,7 +2626,7 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
     };
     FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntax_introduced_in = {23, 3};
     FunctionDocumentation::Category parseDateTimeInJodaSyntax_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeInJodaSyntax_documentation = {parseDateTimeInJodaSyntax_description, parseDateTimeInJodaSyntax_syntax, parseDateTimeInJodaSyntax_arguments, parseDateTimeInJodaSyntax_returned_value, parseDateTimeInJodaSyntax_examples, parseDateTimeInJodaSyntax_introduced_in, parseDateTimeInJodaSyntax_category};
+    FunctionDocumentation parseDateTimeInJodaSyntax_documentation = {parseDateTimeInJodaSyntax_description, parseDateTimeInJodaSyntax_syntax, parseDateTimeInJodaSyntax_arguments, {}, parseDateTimeInJodaSyntax_returned_value, parseDateTimeInJodaSyntax_examples, parseDateTimeInJodaSyntax_introduced_in, parseDateTimeInJodaSyntax_category};
 
     /// parseDateTimeInJodaSyntaxOrZero documentation
     FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrZero_description = R"(
@@ -2654,7 +2654,7 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
     };
     FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntaxOrZero_introduced_in = {23, 3};
     FunctionDocumentation::Category parseDateTimeInJodaSyntaxOrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeInJodaSyntaxOrZero_documentation = {parseDateTimeInJodaSyntaxOrZero_description, parseDateTimeInJodaSyntaxOrZero_syntax, parseDateTimeInJodaSyntaxOrZero_arguments, parseDateTimeInJodaSyntaxOrZero_returned_value, parseDateTimeInJodaSyntaxOrZero_examples, parseDateTimeInJodaSyntaxOrZero_introduced_in, parseDateTimeInJodaSyntaxOrZero_category};
+    FunctionDocumentation parseDateTimeInJodaSyntaxOrZero_documentation = {parseDateTimeInJodaSyntaxOrZero_description, parseDateTimeInJodaSyntaxOrZero_syntax, parseDateTimeInJodaSyntaxOrZero_arguments, {}, parseDateTimeInJodaSyntaxOrZero_returned_value, parseDateTimeInJodaSyntaxOrZero_examples, parseDateTimeInJodaSyntaxOrZero_introduced_in, parseDateTimeInJodaSyntaxOrZero_category};
 
     /// parseDateTimeInJodaSyntaxOrNull documentation
     FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrNull_description = R"(
@@ -2682,7 +2682,7 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
     };
     FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntaxOrNull_introduced_in = {23, 3};
     FunctionDocumentation::Category parseDateTimeInJodaSyntaxOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTimeInJodaSyntaxOrNull_documentation = {parseDateTimeInJodaSyntaxOrNull_description, parseDateTimeInJodaSyntaxOrNull_syntax, parseDateTimeInJodaSyntaxOrNull_arguments, parseDateTimeInJodaSyntaxOrNull_returned_value, parseDateTimeInJodaSyntaxOrNull_examples, parseDateTimeInJodaSyntaxOrNull_introduced_in, parseDateTimeInJodaSyntaxOrNull_category};
+    FunctionDocumentation parseDateTimeInJodaSyntaxOrNull_documentation = {parseDateTimeInJodaSyntaxOrNull_description, parseDateTimeInJodaSyntaxOrNull_syntax, parseDateTimeInJodaSyntaxOrNull_arguments, {}, parseDateTimeInJodaSyntaxOrNull_returned_value, parseDateTimeInJodaSyntaxOrNull_examples, parseDateTimeInJodaSyntaxOrNull_introduced_in, parseDateTimeInJodaSyntaxOrNull_category};
 
     /// parseDateTime64InJodaSyntax documentation
     FunctionDocumentation::Description parseDateTime64InJodaSyntax_description = R"(
@@ -2715,7 +2715,7 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
     };
     FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntax_introduced_in = {24, 10};
     FunctionDocumentation::Category parseDateTime64InJodaSyntax_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64InJodaSyntax_documentation = {parseDateTime64InJodaSyntax_description, parseDateTime64InJodaSyntax_syntax, parseDateTime64InJodaSyntax_arguments, parseDateTime64InJodaSyntax_returned_value, parseDateTime64InJodaSyntax_examples, parseDateTime64InJodaSyntax_introduced_in, parseDateTime64InJodaSyntax_category};
+    FunctionDocumentation parseDateTime64InJodaSyntax_documentation = {parseDateTime64InJodaSyntax_description, parseDateTime64InJodaSyntax_syntax, parseDateTime64InJodaSyntax_arguments, {}, parseDateTime64InJodaSyntax_returned_value, parseDateTime64InJodaSyntax_examples, parseDateTime64InJodaSyntax_introduced_in, parseDateTime64InJodaSyntax_category};
 
     /// parseDateTime64InJodaSyntaxOrZero documentation
     FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrZero_description = R"(
@@ -2743,7 +2743,7 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
     };
     FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntaxOrZero_introduced_in = {24, 10};
     FunctionDocumentation::Category parseDateTime64InJodaSyntaxOrZero_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64InJodaSyntaxOrZero_documentation = {parseDateTime64InJodaSyntaxOrZero_description, parseDateTime64InJodaSyntaxOrZero_syntax, parseDateTime64InJodaSyntaxOrZero_arguments, parseDateTime64InJodaSyntaxOrZero_returned_value, parseDateTime64InJodaSyntaxOrZero_examples, parseDateTime64InJodaSyntaxOrZero_introduced_in, parseDateTime64InJodaSyntaxOrZero_category};
+    FunctionDocumentation parseDateTime64InJodaSyntaxOrZero_documentation = {parseDateTime64InJodaSyntaxOrZero_description, parseDateTime64InJodaSyntaxOrZero_syntax, parseDateTime64InJodaSyntaxOrZero_arguments, {}, parseDateTime64InJodaSyntaxOrZero_returned_value, parseDateTime64InJodaSyntaxOrZero_examples, parseDateTime64InJodaSyntaxOrZero_introduced_in, parseDateTime64InJodaSyntaxOrZero_category};
 
     /// parseDateTime64InJodaSyntaxOrNull documentation
     FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrNull_description = R"(
@@ -2771,7 +2771,7 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
     };
     FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntaxOrNull_introduced_in = {24, 10};
     FunctionDocumentation::Category parseDateTime64InJodaSyntaxOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation parseDateTime64InJodaSyntaxOrNull_documentation = {parseDateTime64InJodaSyntaxOrNull_description, parseDateTime64InJodaSyntaxOrNull_syntax, parseDateTime64InJodaSyntaxOrNull_arguments, parseDateTime64InJodaSyntaxOrNull_returned_value, parseDateTime64InJodaSyntaxOrNull_examples, parseDateTime64InJodaSyntaxOrNull_introduced_in, parseDateTime64InJodaSyntaxOrNull_category};
+    FunctionDocumentation parseDateTime64InJodaSyntaxOrNull_documentation = {parseDateTime64InJodaSyntaxOrNull_description, parseDateTime64InJodaSyntaxOrNull_syntax, parseDateTime64InJodaSyntaxOrNull_arguments, {}, parseDateTime64InJodaSyntaxOrNull_returned_value, parseDateTime64InJodaSyntaxOrNull_examples, parseDateTime64InJodaSyntaxOrNull_introduced_in, parseDateTime64InJodaSyntaxOrNull_category};
 
     factory.registerFunction<FunctionParseDateTime>(parseDateTime_documentation);
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);

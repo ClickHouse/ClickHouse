@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -96,6 +97,21 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << " GRANULARITY ";
         ostr << granularity;
     }
+}
+
+UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity)
+{
+    /// Text index is always built for the whole part and granularity is ignored.
+    if (type && type->name == "text")
+        return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+
+    if (granularity)
+        return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+    if (type && type->name == "vector_similarity")
+        return ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+
+    return ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
 }
 
 }

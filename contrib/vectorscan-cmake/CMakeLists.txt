@@ -275,7 +275,7 @@ add_library (_vectorscan ${SRCS})
 
 # library has too much debug information
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_vectorscan PRIVATE -g0)
+    target_compile_options (_vectorscan PRIVATE -g1)
 endif()
 
 target_include_directories (_vectorscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")

@@ -1167,6 +1167,19 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
     return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
 }
 
+void ColumnObject::filter(const Filter & filt)
+{
+    for (const auto & [path, column] : typed_paths)
+        column->assumeMutable()->filter(filt);
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+        column->filter(filt);
+
+    shared_data->filter(filt);
+
+    statistics.reset();
+}
+
 void ColumnObject::expand(const Filter & mask, bool inverted)
 {
     for (auto & [_, column] : typed_paths)
@@ -2186,6 +2199,17 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     if (new_shared_data->size() != size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of new shared data: {} != {}", new_shared_data->size(), size);
     shared_data = std::move(new_shared_data);
+}
+
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
 }
 
 }

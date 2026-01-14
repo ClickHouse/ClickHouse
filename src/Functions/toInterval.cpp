@@ -134,7 +134,7 @@ FROM numbers(5)
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInterval = {25, 4};
     FunctionDocumentation::Category category_toInterval = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInterval = {description_toInterval, syntax_toInterval, arguments_toInterval, returned_value_toInterval, examples_toInterval, introduced_in_toInterval, category_toInterval};
+    FunctionDocumentation documentation_toInterval = {description_toInterval, syntax_toInterval, arguments_toInterval, {}, returned_value_toInterval, examples_toInterval, introduced_in_toInterval, category_toInterval};
 
     factory.registerFunction<FunctionToInterval>(documentation_toInterval);
 }

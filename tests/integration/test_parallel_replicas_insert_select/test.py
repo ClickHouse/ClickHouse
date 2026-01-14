@@ -274,3 +274,57 @@ def test_insert_select_with_constant(start_cluster, max_parallel_replicas, paral
         )
         == f"{populate_count}\n"
     )
+
+
+@pytest.mark.parametrize(
+    "max_parallel_replicas",
+    [
+        pytest.param(2),
+        pytest.param(3),
+    ],
+)
+@pytest.mark.parametrize(
+    "parallel_replicas_local_plan",
+    [
+        pytest.param(False),
+        pytest.param(True),
+    ]
+)
+def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_replicas_local_plan):
+    populate_count = 1_000_000
+    count = int(populate_count / 10)
+    cluster_name = "test_1_shard_3_replicas"
+
+    source_table = "t_source"
+    create_tables(source_table, populate_count=populate_count, skip_last_replica=False)
+    target_table = "t_target"
+    create_tables(target_table, populate_count=0, skip_last_replica=False)
+
+    query_id = str(uuid.uuid4())
+    node1.query(
+        f"INSERT INTO {target_table} SELECT * FROM {source_table} WHERE key % 10 = 0",
+        settings={
+            "parallel_distributed_insert_select": 2,
+            "enable_parallel_replicas": 2,
+            "max_parallel_replicas": max_parallel_replicas,
+            "cluster_for_parallel_replicas": cluster_name,
+            "parallel_replicas_local_plan": parallel_replicas_local_plan,
+            "enable_analyzer": 1,
+        },
+        query_id=query_id
+    )
+    node1.query(f"SYSTEM SYNC REPLICA {target_table} LIGHTWEIGHT")
+    assert (
+        node1.query(
+            f"select count() from {target_table}"
+        )
+        == f"{count}\n"
+    )
+
+    # check that query executed in distributed way
+    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
+    number_of_queries = node1.query(
+            f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
+        settings={"skip_unavailable_shards": 1},
+    )
+    assert (int(number_of_queries) > 1)

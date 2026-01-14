@@ -588,15 +588,7 @@ REGISTER_FUNCTION(ArrayLevenshtein)
     };
     FunctionDocumentation::IntroducedIn introduced_in_arrayLevDis = {25, 4};
     FunctionDocumentation::Category category_arrayLevDis = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_arrayLevDis = {
-        description_arrayLevDis,
-        syntax_arrayLevDis,
-        arguments_arrayLevDis,
-        returned_value_arrayLevDis,
-        example_arrayLevDis,
-        introduced_in_arrayLevDis,
-        category_arrayLevDis
-    };
+    FunctionDocumentation documentation_arrayLevDis = {description_arrayLevDis, syntax_arrayLevDis, arguments_arrayLevDis, {}, returned_value_arrayLevDis, example_arrayLevDis, introduced_in_arrayLevDis, category_arrayLevDis};
 
     factory.registerFunction<FunctionArrayLevenshtein<SimpleLevenshtein>>(documentation_arrayLevDis);
 
@@ -621,15 +613,7 @@ The number of elements for the array and its weights should match.
         }
     };
     FunctionDocumentation::Category category_arrayLevDisW = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_arrayLevDisW = {
-        description_arrayLevDisW,
-        syntax_arrayLevDisW,
-        arguments_arrayLevDisW,
-        returned_value_arrayLevDisW,
-        examples_arrayLevDisW,
-        introduced_in_arrayLevDisW,
-        category_arrayLevDisW
-    };
+    FunctionDocumentation documentation_arrayLevDisW = {description_arrayLevDisW, syntax_arrayLevDisW, arguments_arrayLevDisW, {}, returned_value_arrayLevDisW, examples_arrayLevDisW, introduced_in_arrayLevDisW, category_arrayLevDisW};
 
     factory.registerFunction<FunctionArrayLevenshtein<Weighted>>(documentation_arrayLevDisW);
 
@@ -654,15 +638,7 @@ Calculates the similarity of two arrays from `0` to `1` based on weighted Levens
     };
     FunctionDocumentation::IntroducedIn introduced_in_arraySim = {25, 4};
     FunctionDocumentation::Category category_arraySim = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_arraySim = {
-        description_arraySim,
-        syntax_arraySim,
-        arguments_arraySim,
-        returned_value_arraySim,
-        examples_arraySim,
-        introduced_in_arraySim,
-        category_arraySim
-    };
+    FunctionDocumentation documentation_arraySim = {description_arraySim, syntax_arraySim, arguments_arraySim, {}, returned_value_arraySim, examples_arraySim, introduced_in_arraySim, category_arraySim};
 
     factory.registerFunction<FunctionArrayLevenshtein<Similarity>>(documentation_arraySim);
 }

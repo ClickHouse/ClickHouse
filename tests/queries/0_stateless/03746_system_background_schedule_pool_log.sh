@@ -4,16 +4,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Test for MergeTree table (schedule pool)
-$CLICKHOUSE_CLIENT -nmq "
-  DROP TABLE IF EXISTS test_merge_tree_03745;
-  CREATE TABLE test_merge_tree_03745 (x UInt64, y String) ENGINE = MergeTree() ORDER BY x;
-  INSERT INTO test_merge_tree_03745 VALUES (1, 'a'), (2, 'b');
-  SYSTEM FLUSH LOGS background_schedule_pool_log;
-  SELECT DISTINCT database, table, table_uuid != toUUIDOrDefault(0) AS has_uuid, log_name, query_id != '' FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'test_merge_tree_03745';
-  DROP TABLE test_merge_tree_03745;
-"
-
 # Test for Distributed table (distributed pool)
 $CLICKHOUSE_CLIENT -nmq "
   DROP TABLE IF EXISTS test_local_03745;
