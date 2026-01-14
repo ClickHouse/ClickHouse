@@ -22,10 +22,6 @@ public:
     }
 
     std::vector<Chunk> chunks = {};
-    size_t offset_first;
-    size_t length_first;
-    size_t offset_last;
-    size_t length_last;
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
