@@ -121,7 +121,7 @@ protected:
 
     /// Decrypt data with chosen method
     /// Throws exception if decryption is impossible or size of decrypted text is incorrect
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 private:
     EncryptionMethod encryption_method;
 };

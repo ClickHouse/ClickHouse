@@ -98,8 +98,12 @@ PostgreSQLHandler::PostgreSQLHandler(
     params.certificateFile = config.getString(prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, params.privateKeyFile);
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
-        auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
-        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, ctx->getCAPaths().caLocation);
+        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
+        if (params.caLocation.empty())
+        {
+            auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
+            params.caLocation = ctx->getCAPaths().caLocation;
+        }
 
         params.verificationMode = Poco::Net::SSLManager::VAL_VER_MODE;
         if (config.hasProperty(prefix + Poco::Net::SSLManager::CFG_VER_MODE))
@@ -339,7 +343,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
     message_transport->send('S', true);
-    auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
+    Poco::Net::Context::Ptr ctx;
     if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
     {
         ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix);
@@ -353,6 +357,10 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
             CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
             ctx = Poco::Net::SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
+    }
+    else
+    {
+        ctx = Poco::Net::SSLManager::instance().defaultServerContext();
     }
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));
     changeIO(*ss);

@@ -102,6 +102,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , mode(metadata->getTableMetadata().getMode())
     , enable_hash_ring_filtering(enable_hash_ring_filtering_)
     , storage_id(storage_id_)
+    , use_buckets_for_processing(metadata->useBucketsForProcessing())
+    , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -119,7 +121,10 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_, /*with_tags=*/ false);
+    object_storage_iterator = object_storage->iterate(
+        reading_path.cutGlobs(configuration->supportsPartialPathPrefix()),
+        list_objects_batch_size_,
+        /*with_tags=*/ false);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -137,9 +142,11 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
     }
 
-    if (metadata->useBucketsForProcessing())
+    if (use_buckets_for_processing)
     {
-        buckets_num = metadata->getBucketsNum();
+        if (!buckets_num)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
+
         for (size_t i = 0; i < buckets_num; ++i)
             keys_cache_per_bucket.emplace(i, std::make_unique<BucketInfo>());
     }
@@ -470,7 +477,11 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         ObjectInfoPtr object_info;
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
 
-        if (metadata->useBucketsForProcessing())
+        chassert(
+            use_buckets_for_processing == metadata->useBucketsForProcessing(),
+            fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
+
+        if (use_buckets_for_processing)
         {
             std::lock_guard lock(mutex);
             auto result = getNextKeyFromAcquiredBucket(processor);
@@ -550,7 +561,11 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata)
 {
     chassert(object_info);
-    if (metadata->useBucketsForProcessing())
+    chassert(
+        use_buckets_for_processing == metadata->useBucketsForProcessing(),
+        fmt::format("Current buckets: {}, expected: {}", metadata->getBucketsNum(), buckets_num));
+
+    if (use_buckets_for_processing)
     {
         const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
         std::lock_guard lock(mutex);
@@ -1258,7 +1273,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         insert_succeeded ? "Processed" : "Failed");
 
     const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
-    const bool use_buckets_for_processing = files_metadata->useBucketsForProcessing();
+    const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
     const bool is_path_with_hive_partitioning = files_metadata->isPathWithHivePartitioning();
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
@@ -1375,14 +1390,20 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
 void ObjectStorageQueueSource::prepareHiveProcessedRequests(
     Coordination::Requests & requests,
-    const HiveLastProcessedFileInfoMap & file_map)
+    const HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition)
 {
-    for (const auto & [node_path, file_info] : file_map)
+    for (const auto & [hive_partition_processed_path, last_processed_file_info] : last_processed_file_per_hive_partition)
     {
-        if (file_info.exists)
-            requests.push_back(zkutil::makeSetRequest(node_path, file_info.file_path, -1));
+        if (last_processed_file_info.exists)
+        {
+            requests.push_back(zkutil::makeSetRequest(
+                hive_partition_processed_path, last_processed_file_info.file_path, -1));
+        }
         else
-            requests.push_back(zkutil::makeCreateRequest(node_path, file_info.file_path, zkutil::CreateMode::Persistent));
+        {
+            requests.push_back(zkutil::makeCreateRequest(
+                hive_partition_processed_path, last_processed_file_info.file_path, zkutil::CreateMode::Persistent));
+        }
     }
 }
 
@@ -1462,17 +1483,17 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    HiveLastProcessedFileInfoMap file_map;
+    HiveLastProcessedFileInfoMap last_processed_file_per_hive_partition;
     // `created_nodes` is nullptr here, because it is required only in mutithread case,
     // when `requests` is filled with several `prepareCommitRequests` calls.
     prepareCommitRequests(
         requests,
         insert_succeeded,
         successful_objects,
-        file_map,
+        last_processed_file_per_hive_partition,
         /* created_nodes */ nullptr,
         exception_message);
-    prepareHiveProcessedRequests(requests, file_map);
+    prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
