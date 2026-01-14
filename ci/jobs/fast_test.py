@@ -56,6 +56,7 @@ def clone_submodules():
         "contrib/corrosion",
         "contrib/StringZilla",
         "contrib/rust_vendor",
+        "contrib/TurboPFor-Integer-Compression",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)

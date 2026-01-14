@@ -20,39 +20,47 @@ namespace MergeTreeSetting
 extern const MergeTreeSettingsString default_compression_codec;
 }
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
+/// Helper to retrieve a column, apply standard transformations and permutation, and cache the result to avoid redundant
+/// computations for overlapping columns in Primary Key, Skip Indices, and Projections Indices.
+ColumnWithTypeAndName
+getOrBuildPermutedColumn(const Block & source_block, const String & name, const IColumnPermutation * permutation, Block * cache)
+{
+    if (cache && cache->has(name))
+        return cache->getByName(name);
+
+    auto column_with_type = source_block.getColumnOrSubcolumnByName(name);
+    column_with_type.column = removeSpecialRepresentations(column_with_type.column);
+    column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
+    if (permutation)
+        column_with_type.column = column_with_type.column->permute(*permutation, 0);
+
+    if (cache)
+        cache->insert(column_with_type);
+    return column_with_type;
+}
+
+Block getIndexBlockAndPermute(
+    const Block & source_block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     Block result;
-    for (size_t i = 0, size = names.size(); i < size; ++i)
-    {
-        auto src_column = block.getColumnOrSubcolumnByName(names[i]);
-        src_column.column = removeSpecialRepresentations(src_column.column);
-        src_column.column = src_column.column->convertToFullColumnIfConst();
-        result.insert(i, src_column);
-
-        /// Reorder primary key columns in advance and add them to `primary_key_columns`.
-        if (permutation)
-        {
-            auto & column = result.getByPosition(i);
-            column.column = column.column->permute(*permutation, 0);
-        }
-    }
+    for (const auto & name : names)
+        result.insert(getOrBuildPermutedColumn(source_block, name, permutation, permuted_columns_cache));
 
     return result;
 }
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation)
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     Block result;
-    for (size_t i = 0; i < block.columns(); ++i)
+    size_t columns_size = block.columns();
+
+    for (size_t i = 0; i < columns_size; ++i)
     {
-        result.insert(i, block.getByPosition(i));
-        if (permutation)
-        {
-            auto & column = result.getByPosition(i);
-            column.column = column.column->permute(*permutation, 0);
-        }
+        const auto & col_name = block.getByPosition(i).name;
+        auto permuted_col = getOrBuildPermutedColumn(block, col_name, permutation, permuted_columns_cache);
+        result.insert(i, permuted_col);
     }
+
     return result;
 }
 

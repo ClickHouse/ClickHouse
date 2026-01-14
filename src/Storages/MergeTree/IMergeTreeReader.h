@@ -83,6 +83,8 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
+    virtual LargePostingListReaderStreamPtr getProjectionIndexPostingStreamPtr() const { return nullptr; }
+
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
@@ -129,6 +131,10 @@ protected:
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
     std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
+
+    /// Create a specialized reader stream for large posting lists used in projection index text.
+    LargePostingListReaderStreamPtr createLargePostingStream(
+        const String & stream_name, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type) const;
 
     NameSet partially_read_columns;
 

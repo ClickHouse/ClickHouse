@@ -1876,9 +1876,6 @@ void ReadFromMergeTree::buildIndexes(
 
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
 
-    if (all_indexes.empty())
-        return;
-
     std::unordered_set<std::string> ignored_index_names;
 
     if (settings[Setting::ignore_data_skipping_indices].changed)
@@ -1945,6 +1942,24 @@ void ReadFromMergeTree::buildIndexes(
                         index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n);
             if (settings[Setting::use_skip_indexes_on_data_read])
                 skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
+        }
+    }
+
+    if (filter_dag.predicate)
+    {
+        const auto & all_projections = metadata_snapshot->getProjections();
+        for (const auto & projection : all_projections)
+        {
+            if (projection.index)
+            {
+                auto index_helper = projection.index->getIndex();
+                if (index_helper)
+                {
+                    auto condition = index_helper->createIndexCondition(filter_dag.predicate, query_context);
+                    if (!condition->alwaysUnknownOrTrue())
+                        skip_indexes.useful_indices.emplace_back(index_helper, condition);
+                }
+            }
         }
     }
 

@@ -783,11 +783,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
 
         if (create.columns_list->projections)
+        {
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext(), mode);
+
+                const auto & settings = getContext()->getSettingsRef();
+                if (projection.index && projection.index->getName() == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
+                {
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                }
+
                 properties.projections.add(std::move(projection));
             }
+        }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }

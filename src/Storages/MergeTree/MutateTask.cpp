@@ -1413,10 +1413,22 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
-    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+    /// We split the materialization into multiple stages similar to the process of INSERT SELECT query.
+    for (const auto * projection : ctx->projections_to_build)
     {
-        // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+        if (projection->index && projection->index->getIndexDescription())
+        {
+            /// TODO(amos): In-memory merge for inverted indices within projections is not yet supported. Force
+            /// immediate flush (block size = 1) until the lazy-loading merge path is fully implemented.
+            projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), 1, 1);
+        }
+        else
+        {
+            projection_squashes.emplace_back(
+                std::make_shared<const Block>(ctx->updated_header),
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes]);
+        }
     }
 
     if (!ctx->text_indices_to_recalc.empty())
@@ -1855,10 +1867,21 @@ private:
 
         auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
 
-        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        std::vector<ProjectionDescriptionRawPtr> projection_indices_to_build;
+        for (ProjectionDescriptionRawPtr projection_index : ctx->projections_to_build)
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (projection_index->index && projection_index->index->getIndexDescription())
+                projection_indices_to_build.push_back(projection_index);
+        }
+
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices() || !projection_indices_to_build.empty())
+        {
+            auto indices_expression_dag
+                = ctx->data->getPrimaryKeyAndIndicesExpression(ctx->metadata_snapshot, skip_indices, projection_indices_to_build)
+                      ->getActionsDAG()
+                      .clone();
+            auto extracting_subcolumns_dag
+                = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
 
@@ -2877,6 +2900,35 @@ bool MutateTask::prepare()
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
                 projections_to_skip.emplace_back(&projection);
+        }
+
+        std::vector<ProjectionDescriptionRawPtr> projection_indices_to_build;
+        for (ProjectionDescriptionRawPtr projection_index : ctx->projections_to_recalc)
+        {
+            if (projection_index->index && projection_index->index->getIndexDescription())
+                projection_indices_to_build.push_back(projection_index);
+        }
+
+        if (!projection_indices_to_build.empty() && ctx->mutating_pipeline_builder.initialized())
+        {
+            ASTPtr expr_list = std::make_shared<ASTExpressionList>();
+            for (const auto & projection : projection_indices_to_build)
+            {
+                chassert(projection->index);
+                const auto * index_desc = projection->index->getIndexDescription();
+                chassert(index_desc);
+                chassert(index_desc->expression_list_ast);
+                for (const auto & index_expr : index_desc->expression_list_ast->children)
+                    expr_list->children.push_back(index_expr->clone());
+            }
+
+            auto syntax_result
+                = TreeRewriter(ctx->context).analyze(expr_list, ctx->mutating_pipeline_builder.getHeader().getNamesAndTypesList());
+            auto indices_expression_dag = ExpressionAnalyzer(expr_list, syntax_result, ctx->context).getActions(false);
+            ctx->mutating_pipeline_builder.addTransform(
+                std::make_shared<ExpressionTransform>(ctx->mutating_pipeline_builder.getSharedHeader(), indices_expression_dag));
+            ctx->mutating_pipeline_builder.addTransform(
+                std::make_shared<MaterializingTransform>(ctx->mutating_pipeline_builder.getSharedHeader()));
         }
 
         ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);

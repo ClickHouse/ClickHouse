@@ -529,7 +529,11 @@ private:
     {
         size_t size = queue.size();
         if (size < 2)
+        {
+            if constexpr (strategy == SortingQueueStrategy::Batch)
+                updateBatchSize();
             return;
+        }
 
         auto begin = queue.begin();
 

@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
@@ -204,6 +206,27 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+
+        ProjectionIndexDeserializationContext projection_index_context;
+        if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+        {
+            projection_index_context.large_posting_getter
+                = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListReaderStreamPtr
+            {
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type,
+                    substream_path,
+                    PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+                    data_part_info_for_read->getChecksums(),
+                    storage_settings);
+                chassert(stream_name);
+                auto posting_reader = large_posting_streams.at(*stream_name);
+                posting_reader->getDataBuffer(); /// Call init()
+                return posting_reader;
+            };
+            deserialize_settings.projection_index_context = &projection_index_context;
+        }
+
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {
@@ -504,6 +527,19 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 
     bool is_offsets = !substream.empty() && substream.back().type == ISerialization::Substream::ArraySizes;
     return !is_offsets || columns_for_offsets[column_pos]->level < ISerialization::getArrayLevel(substream);
+}
+
+LargePostingListReaderStreamPtr MergeTreeReaderCompact::getProjectionIndexPostingStreamPtr() const
+{
+    auto it = large_posting_streams.find("posting");
+    if (it == large_posting_streams.end())
+    {
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            "posting", {}, PROJECTION_INDEX_LARGE_POSTING_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+        chassert(stream_name);
+        return createLargePostingStream(*stream_name, profile_callback, clock_type);
+    }
+    return it->second;
 }
 
 }

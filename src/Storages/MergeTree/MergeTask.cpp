@@ -365,6 +365,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         }
     }
 
+    /// TODO(amos): Also do one column optimization like skip index when rebuilding projections
     for (const auto * projection : global_ctx->projections_to_rebuild)
     {
         for (const auto & column : projection->getRequiredColumns())
@@ -960,8 +961,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     const auto & settings = global_ctx->context->getSettingsRef();
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
-        ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
-            settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+    {
+        if (projection->index && projection->index->getIndexDescription())
+        {
+            /// TODO(amos): In-memory merge for inverted indices within projections is not yet supported. Force
+            /// immediate flush (block size = 1) until the lazy-loading merge path is fully implemented.
+            ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()), 1, 1);
+        }
+        else
+        {
+            ctx->projection_squashes.emplace_back(
+                std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes]);
+        }
+    }
 }
 
 
@@ -2331,23 +2345,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                 chassert(global_ctx->merged_part_offsets == nullptr);
                 chassert(std::find(merging_column_names.begin(), merging_column_names.end(), "_part_index") == merging_column_names.end());
                 global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
+                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Enabled);
                 merging_column_names.push_back("_part_index");
             }
             else
             {
                 global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
+                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Disabled);
             }
             break;
         }
     }
 
-    if (!global_ctx->merge_may_reduce_rows
-        && !global_ctx->text_indexes_to_merge.empty()
+    if (!global_ctx->merge_may_reduce_rows && !global_ctx->text_indexes_to_merge.empty()
         && (!global_ctx->merged_part_offsets || !global_ctx->merged_part_offsets->isMappingEnabled()))
     {
-        global_ctx->merged_part_offsets = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Enabled);
+        global_ctx->merged_part_offsets
+            = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Enabled);
         merging_column_names.push_back("_part_index");
     }
 
@@ -2523,6 +2537,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         subqueries = ttl_step->getSubqueries();
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
+    }
+
+    for (const auto * projection : global_ctx->projections_to_rebuild)
+    {
+        if (projection->index && projection->index->getIndexDescription())
+            global_ctx->merging_skip_indexes.push_back(*projection->index->getIndexDescription());
     }
 
     /// Secondary indices expressions

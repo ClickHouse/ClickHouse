@@ -763,6 +763,12 @@ namespace ErrorCodes
     If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
     0 - unlimited.
     )", 0) \
+    DECLARE(Bool, compact_parts_flush_per_column, true, R"(
+    Controls the physical layout of Compact parts. If true (default), each column in a granule
+    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
+    from disk. If false, multiple columns or granules are packed into the same compressed block,
+    improving compression ratio but requiring more data to be decompressed during reads.
+    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
