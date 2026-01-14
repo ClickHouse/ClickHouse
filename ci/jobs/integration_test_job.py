@@ -364,7 +364,7 @@ def main():
         "JAVA_PATH": java_path,
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%m-%p.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -464,7 +464,7 @@ def main():
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         if is_llvm_coverage:
-            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%m.profraw"
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%m-%p.profraw"
             print(
                 f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
             )
@@ -551,7 +551,9 @@ def main():
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
         
         if profraw_files:
-            print(f"Found {len(profraw_files)} .profraw files")
+            print(f"Found {len(profraw_files)} .profraw files:")
+            for f in profraw_files:
+                print(f"  {f}")
             
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None

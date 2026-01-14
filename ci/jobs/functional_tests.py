@@ -442,7 +442,7 @@ def main():
         print(step_name)
 
         if is_llvm_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%m.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%m-%p.profraw"
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
@@ -482,7 +482,7 @@ def main():
         res = results[-1].is_ok()
 
     if is_llvm_coverage:
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%m.profraw"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%m-%p.profraw"
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -708,7 +708,9 @@ def main():
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
         
         if profraw_files:
-            print(f"Found {len(profraw_files)} .profraw files")
+            print(f"Found {len(profraw_files)} .profraw files:")
+            for f in profraw_files:
+                print(f"  {f}")
             
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
