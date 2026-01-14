@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
@@ -62,10 +62,9 @@ void StorageFromMergeTreeProjection::read(
     }
     else
     {
-        Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(projection->sample_block)));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource (Projection)");
-        query_plan.addStep(std::move(read_from_pipe));
+        auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(projection->sample_block));
+        read_nothing->setStepDescription("Read from NullSource (Projection)");
+        query_plan.addStep(std::move(read_nothing));
     }
 }
 

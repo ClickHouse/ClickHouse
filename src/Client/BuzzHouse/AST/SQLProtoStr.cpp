@@ -2401,6 +2401,12 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         ret += ", ";
         ExprToString(ret, mfunc.pred());
     }
+    if (mfunc.has_part())
+    {
+        ret += ", '";
+        ret += mfunc.part();
+        ret += "'";
+    }
     ret += ")";
 }
 
