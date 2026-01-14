@@ -10,7 +10,7 @@
 #include <IO/S3Common.h>
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 
 #include <functional>

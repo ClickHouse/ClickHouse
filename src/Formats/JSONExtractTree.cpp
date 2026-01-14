@@ -1872,12 +1872,12 @@ private:
         String & error,
         bool is_root) const
     {
-        if (shouldSkipPath(current_path))
+        if (shouldSkipPath(current_path, insert_settings))
             return true;
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
-            std::unordered_set<std::string_view> visited_keys;
+            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
@@ -1888,12 +1888,34 @@ private:
                 else
                     path += key;
 
-                if (!visited_keys.insert(key).second)
+                auto it = visited_keys.find(key);
+                auto value_element_type = getJSONElementType(value);
+                if (it != visited_keys.end())
                 {
-                    if (format_settings.json.type_json_skip_duplicated_paths)
-                        continue;
-                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                    return false;
+                    if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
+                    {
+                        /// We can't have duplicated key with the same type (literal/object).
+                        if (it->second.contains(value_element_type))
+                        {
+                            if (format_settings.json.type_json_skip_duplicated_paths)
+                                continue;
+                            error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                            return false;
+                        }
+
+                        it->second.insert(value_element_type);
+                    }
+                    else
+                    {
+                        if (format_settings.json.type_json_skip_duplicated_paths)
+                            continue;
+                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", path);
+                        return false;
+                    }
+                }
+                else
+                {
+                    visited_keys[key].insert(value_element_type);
                 }
 
                 if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
@@ -1973,7 +1995,7 @@ private:
         return true;
     }
 
-    bool shouldSkipPath(const String & path) const
+    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -1987,8 +2009,16 @@ private:
 
         for (const auto & regexp : path_regexps_to_skip)
         {
-            if (re2::RE2::FullMatch(path, regexp))
-                return true;
+            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
+            {
+                if (re2::RE2::PartialMatch(path, regexp))
+                    return true;
+            }
+            else
+            {
+                if (re2::RE2::FullMatch(path, regexp))
+                    return true;
+            }
         }
 
         return false;
@@ -2246,6 +2276,23 @@ private:
     std::shared_ptr<SerializationDynamic> dynamic_serialization;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
+
+    enum class JSONElementType
+    {
+        LITERAL = 0,
+        OBJECT = 1,
+    };
+
+    JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
+    {
+        switch (element.type())
+        {
+            case ElementType::OBJECT:
+                return JSONElementType::OBJECT;
+            default:
+                return JSONElementType::LITERAL;
+        }
+    }
 };
 
 }

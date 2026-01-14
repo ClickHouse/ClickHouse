@@ -49,7 +49,7 @@ struct HexImpl
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            UInt8 byte = x >> offset;
+            UInt8 byte = static_cast<UInt8>(x >> offset);
 
             /// Skip leading zeros
             if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
@@ -135,7 +135,7 @@ struct BinImpl
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            UInt8 byte = x >> offset;
+            UInt8 byte = static_cast<UInt8>(x >> offset);
 
             /// Skip leading zeros
             if (byte == 0 && !was_nonzero && offset && skip_leading_zero)

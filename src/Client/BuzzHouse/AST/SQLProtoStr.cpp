@@ -91,13 +91,20 @@ CONV_FN(Function, func)
 
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
-    if (clause)
+    if (cl.has_cluster())
     {
-        ret += " ON CLUSTER ";
+        if (clause)
+        {
+            ret += " ON CLUSTER ";
+        }
+        ret += "'";
+        ret += cl.cluster();
+        ret += "'";
+        if (!clause)
+        {
+            ret += ", ";
+        }
     }
-    ret += "'";
-    ret += cl.cluster();
-    ret += "'";
 }
 
 CONV_FN(Window, win)
@@ -1843,13 +1850,11 @@ CONV_FN(JoinConstraint, jc)
         const UsingExpr & uexpr = jc.using_expr();
 
         ret += " USING (";
-        for (int i = 0; i < uexpr.columns_size(); i++)
+        ExprColumnToString(ret, uexpr.column());
+        for (int i = 0; i < uexpr.other_columns_size(); i++)
         {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ExprColumnToString(ret, uexpr.columns(i));
+            ret += ", ";
+            ExprColumnToString(ret, uexpr.other_columns(i));
         }
         ret += ")";
     }
@@ -1959,7 +1964,6 @@ CONV_FN(FileFunc, ff)
     if (ff.has_cluster() && ff.fname() == FileFunc_FName_fileCluster)
     {
         ClusterToString(ret, false, ff.cluster());
-        ret += ", ";
     }
     ret += "'";
     ret += ff.path();
@@ -2208,7 +2212,6 @@ CONV_FN(S3Func, sfunc)
     if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
     {
         ClusterToString(ret, false, sfunc.cluster());
-        ret += ", ";
     }
     ret += sfunc.credential();
     for (int i = 0; i < sfunc.params_size(); i++)
@@ -2231,7 +2234,6 @@ CONV_FN(AzureBlobStorageFunc, azure)
     if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
     {
         ClusterToString(ret, false, azure.cluster());
-        ret += ", ";
     }
     ret += azure.credential();
     for (int i = 0; i < azure.params_size(); i++)
@@ -2272,7 +2274,6 @@ CONV_FN(URLFunc, url)
     if (url.has_cluster() && url.fname() == URLFunc_FName_urlCluster)
     {
         ClusterToString(ret, false, url.cluster());
-        ret += ", ";
     }
     ret += "'";
     ret += url.uurl();
@@ -2356,7 +2357,6 @@ CONV_FN(ClusterFunc, cluster)
     }
     ret += "(";
     ClusterToString(ret, false, cluster.cluster());
-    ret += ", ";
     TableOrFunctionToString(ret, true, tof);
     if (cluster.has_sharding_key())
     {
@@ -2390,6 +2390,24 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += ", '";
     ProjectionToString(ret, mfunc.proj());
     ret += "')";
+}
+
+CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
+{
+    ret += "mergeTreeAnalyzeIndexes(";
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
+    if (mfunc.has_pred())
+    {
+        ret += ", ";
+        ExprToString(ret, mfunc.pred());
+    }
+    if (mfunc.has_part())
+    {
+        ret += ", '";
+        ret += mfunc.part();
+        ret += "'";
+    }
+    ret += ")";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2518,6 +2536,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFlight:
             ArrowFlightFuncToString(ret, tf.flight());
+            break;
+        case TableFunctionType::kMtanindex:
+            MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex());
             break;
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());
@@ -3050,6 +3071,11 @@ CONV_FN(DatabaseEngine, deng)
         }
         ret += ")";
     }
+    if (deng.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, deng.setting_values());
+    }
 }
 
 CONV_FN(CreateDatabase, create_database)
@@ -3072,11 +3098,6 @@ CONV_FN(CreateDatabase, create_database)
     }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
-    if (create_database.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, create_database.setting_values());
-    }
     if (create_database.has_comment())
     {
         ret += " COMMENT ";
@@ -5462,7 +5483,12 @@ CONV_FN(ShowStatement, sh)
             break;
         case ShowType::kCluster:
             ret += "CLUSTER ";
-            ClusterToString(ret, false, sh.cluster());
+            if (sh.cluster().has_cluster())
+            {
+                ret += "'";
+                ret += sh.cluster().cluster();
+                ret += "'";
+            }
             break;
         case ShowType::kClusters:
             ret += "CLUSTERS";

@@ -1004,7 +1004,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = Jemalloc::flushProfile("/tmp/jemalloc_clickhouse");
+            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
+            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
+            filename += ".symbolized";
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
@@ -1835,19 +1838,21 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
             }
             else
             {
-                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point.value());
             }
         }
     }
     catch (const DB::Exception & e)
     {
         String id;
-        if (query.instrumentation_point_id.has_value())
+        if (query.instrumentation_point.has_value())
         {
-            if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
+            if (std::holds_alternative<Instrumentation::All>(query.instrumentation_point.value()))
                 id = " and ALL ids";
+            else if (std::holds_alternative<String>(query.instrumentation_point.value()))
+                id = fmt::format(" and ids with function_name containing '{}'", std::get<String>(query.instrumentation_point.value()));
             else
-                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point_id.value()));
+                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point.value()));
         }
 
         throw Exception(

@@ -880,19 +880,34 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
-    bool single_point_)
+    bool single_point_,
+    bool skip_analysis_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
     {
         key_columns.try_emplace(name, key_index);
         ++key_index;
     }
+
+    /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
+    /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
+    /// `checkInHyperrectangle` or elsewhere, because bugs during `extractAtomFromTree` calls can lead to
+    /// unexpected exceptions.
+    /// This will lead to reading all granules with no primary key skipping.
+    if (skip_analysis_)
+    {
+        has_filter = (filter_dag.predicate != nullptr);
+        relaxed = true;
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
+    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);

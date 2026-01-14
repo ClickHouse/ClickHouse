@@ -1,3 +1,5 @@
+import re
+
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
@@ -45,6 +47,7 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
     "Stateless tests (amd_asan, flaky check)",
 ]
+
 
 _info_cache = None
 
@@ -174,5 +177,14 @@ def should_skip_job(job_name):
             # comparison with the latest release merge base - do not skip on master
             return False, ""
         return True, "Skipped, not labeled with 'pr-performance'"
+
+    # If only the functional tests script changed, run only the first batch of stateless tests
+    if changed_files and all(
+        f.startswith("ci/jobs/") and f.endswith(".py") for f in changed_files
+    ):
+        if JobNames.STATELESS in job_name:
+            match = re.search(r"(\d)/\d", job_name)
+            if match and match.group(1) != "1" or "sequential" in job_name:
+                return True, "Skipped, only job script changed - run first batch only"
 
     return False, ""
