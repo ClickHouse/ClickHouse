@@ -65,7 +65,7 @@ namespace boost::sp_adl_block
                         continue;
 
                     ptr = child.detach();
-                    chassert(thread_safe_counter::decrement(child->m_ref_counter) == 0);
+                    chassert(thread_safe_counter::decrement(ptr->m_ref_counter) == 0);
 
                     LinkedList * elem = LinkedList::create(ptr);
                     if (elem)
