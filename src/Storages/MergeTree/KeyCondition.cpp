@@ -3648,9 +3648,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<int> & key_col_to_sparse_pos,
     const Hyperrectangle & sparse_hyperrectangle,
-    const DataTypes & sparse_data_types,
-    const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+    const DataTypes & sparse_data_types) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3669,7 +3667,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -3729,9 +3726,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
                     rpn_stack.emplace_back(intersects, !contains);
 
-                    if (rpn_stack.back().can_be_true && element.bloom_filter_data)
-                        rpn_stack.back().can_be_true =
-                            mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
                 }
             }
 
@@ -3996,9 +3990,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
             rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
 
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -4041,14 +4032,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
         }
 
-        if (update_partial_disjunction_result_fn)
-        {
-            update_partial_disjunction_result_fn(
-                element_idx,
-                rpn_stack.back().can_be_true,
-                (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
-        }
     }
 
     if (rpn_stack.size() != 1)

@@ -114,9 +114,7 @@ public:
     BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_data_types,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
-        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
+        const DataTypes & sparse_data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
