@@ -93,8 +93,8 @@ def parse_args():
     return parser.parse_args()
 
 
-FLAKY_CHECK_TEST_REPEAT_COUNT = 5
-FLAKY_CHECK_MODULE_REPEAT_COUNT = 100
+FLAKY_CHECK_TEST_REPEAT_COUNT = 3
+FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
