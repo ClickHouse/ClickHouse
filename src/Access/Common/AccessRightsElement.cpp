@@ -370,6 +370,8 @@ void AccessRightsElement::makeBackwardCompatible()
         {"KAFKA", AccessType::KAFKA},
         {"NATS", AccessType::NATS},
         {"RABBITMQ", AccessType::RABBITMQ},
+        {"YTSAURUS", AccessType::YTSAURUS},
+        {"ARROWFLIGHT", AccessType::ARROW_FLIGHT},
     };
 
     auto is_enabled_read_write_grants = false;
