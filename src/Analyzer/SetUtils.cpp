@@ -367,6 +367,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             lhs_element_type = set_element_low_cardinality_type->getDictionaryType();
     }
 
+    const size_t num_elements = lhs_unpacked_types.size();
 
     auto buildFromArray = [&](const Field & rhs_value, const DataTypePtr & type)
     {
@@ -384,6 +385,38 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         return createBlockFromCollection(rhs_tuple, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
     };
 
+    auto buildFromSingleValue = [&](const Field & rhs_value, const DataTypePtr & type)
+    {
+        /// Maybe we can inline without this lambda? But this way it's more readable.
+        return createBlockFromCollection(Array{rhs_value}, DataTypes{type}, lhs_unpacked_types, lhs_is_nullable, params);
+    };
+
+    auto appendSetElements = [](ColumnsWithTypeAndName & destination, const ColumnsWithTypeAndName & source)
+    {
+        chassert(destination.size() == source.size());
+
+        for (size_t i = 0; i < destination.size(); ++i)
+        {
+            chassert(source[i].column);
+            chassert(destination[i].column);
+
+            if (source[i].column->empty())
+                continue;
+
+            if (destination[i].column->empty())
+            {
+                destination[i].column = source[i].column;
+                continue;
+            }
+
+            MutableColumnPtr merged = destination[i].column->cloneEmpty();
+            merged->reserve(destination[i].column->size() + source[i].column->size());
+            merged->insertRangeFrom(*destination[i].column, 0, destination[i].column->size());
+            merged->insertRangeFrom(*source[i].column, 0, source[i].column->size());
+            destination[i].column = std::move(merged);
+        }
+    };
+
 
     size_t lhs_type_depth = getCompoundTypeDepth(*lhs_expression_type);
     size_t rhs_type_depth = getCompoundTypeDepth(*rhs_type);
@@ -392,7 +425,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     if (lhs_type_depth == rhs_type_depth + 1)
     {
         if (rhs.isNull())
-            return createBlockFromCollection(Array{rhs}, DataTypes{rhs_type}, lhs_unpacked_types, lhs_is_nullable, params);
+            return buildFromSingleValue(rhs, rhs_type);
     }
     else if (lhs_type_depth == rhs_type_depth)
     {
@@ -410,13 +443,73 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
         if (lhs_is_tuple && rhs_which_type.isTuple() && is_null_in_rhs && (lhs_is_nullable || has_tuple_in_rhs))
         {
-            /// CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, ...)
-            /// Tuple(...) IN (NULL, NULL, Tuple(...), ...)
-            return buildFromTuple(rhs, rhs_type);
+            /// RHS tuple can represent either:
+            /// - a set of elements (NULLs and/or tuples): (NULL, NULL, (1, 2), ...)
+            /// - a tuple literal (not a set): (NULL, 42) for `Tuple(Nullable(...), ...)`
+            ///
+            /// Examples:
+            /// - CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, (1, 2), ...)
+            /// - Tuple(...) IN (NULL, NULL, (1, 2), ...)
+            /// - Nullable(Tuple(...)) IN (NULL, 42) SETTINGS transform_null_in = 1
+            ///
+            /// If RHS contains a non-null non-tuple element, it cannot be a set of tuples
+            const auto & rhs_tuple = rhs.safeGet<Tuple>();
+
+            bool rhs_tuple_all_null = true;
+            bool rhs_tuple_has_non_null_non_tuple = false;
+            for (const auto & elem : rhs_tuple)
+            {
+                if (elem.isNull())
+                    continue;
+
+                rhs_tuple_all_null = false;
+
+                if (elem.getType() != Field::Types::Tuple)
+                {
+                    rhs_tuple_has_non_null_non_tuple = true;
+                    break;
+                }
+            }
+
+            /// Treat as a set of elements:
+            /// - Tuple(...) IN (NULL, (1, 2), (3, 4))
+            /// - CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, (1, 2), ...)
+            if (!rhs_tuple_has_non_null_non_tuple)
+            {
+                auto res = buildFromTuple(rhs, rhs_type);
+
+                /// Additionally, for `Nullable(Tuple(...)) IN (NULL, NULL)` also treat RHS as a tuple literal `(NULL, NULL)`
+                /// when it can be cast to the LHS tuple type (so both interpretations are supported)
+                /// Example: tuple(NULL, NULL)::Nullable(Tuple(Nullable(UInt32), Nullable(UInt32))) IN (NULL, NULL) SETTINGS transform_null_in = 1
+                /// For `Nullable(Tuple(...)) IN (NULL, NULL)` also add a tuple-literal interpretation `(NULL, NULL)` when possible
+                if (lhs_is_nullable && rhs_tuple_all_null && rhs_tuple.size() == num_elements)
+                {
+                    /// Tuple literal `(NULL, NULL)` is representable only if all tuple elements are Nullable,
+                    /// otherwise it would require NULL -> non-nullable conversion (e.g. `Nullable(Tuple(Int64, Int64))`).
+                    bool all_tuple_elements_nullable = params.transform_null_in;
+                    for (const auto & element_type : lhs_unpacked_types)
+                    {
+                        if (!element_type->isNullable())
+                        {
+                            all_tuple_elements_nullable = false;
+                            break;
+                        }
+                    }
+
+                    /// `res` already contains the "set-of-elements" interpretation of RHS:
+                    /// (NULL, NULL) -> {NULL, NULL}
+                    /// If tuple literal `(NULL, NULL)` is representable for the LHS type, also add it:
+                    /// {NULL, NULL, (NULL, NULL)}
+                    if (all_tuple_elements_nullable)
+                        appendSetElements(res, buildFromSingleValue(rhs, rhs_type));
+                }
+
+                return res;
+            }
         }
 
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-        return createBlockFromCollection(Array{rhs}, DataTypes{rhs_type}, lhs_unpacked_types, lhs_is_nullable, params);
+        return buildFromSingleValue(rhs, rhs_type);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
