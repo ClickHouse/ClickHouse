@@ -7,8 +7,6 @@ title: 'Tuple(T1, T2, ...)'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Tuple(T1, T2, ...)
 
 A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
@@ -186,8 +184,6 @@ ORDER BY key ASC;
 ```
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
-
-<ExperimentalBadge/>
 
 :::warning Experimental Feature
 Requires `SET allow_experimental_nullable_tuple_type = 1`

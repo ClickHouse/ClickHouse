@@ -7,8 +7,6 @@ title: 'Nullable(T)'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Nullable(T)
 
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
@@ -21,7 +19,6 @@ Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that deno
 However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
 
 :::note Experimental: Nullable Tuples
-<ExperimentalBadge/>
 * [Nullable(Tuple(...))](../../sql-reference/data-types/tuple.md#nullable-tuple) is supported when `allow_experimental_nullable_tuple_type = 1` is enabled.
 :::
 
