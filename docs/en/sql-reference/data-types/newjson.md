@@ -71,7 +71,7 @@ The `JSON` type is designed for querying, filtering, and aggregating specific fi
 - Your use case involves semi-structured data like logs, events, or user-generated content with inconsistent schemas
 
 ### Use a `String` column (or structured types) when: {#use-string-type}
-- Your data structure is known and consistent - in this case, use normal columns, `Nested`, `Tuple`, `Array`, `Dynamic`, or `Variant` types instead
+- Your data structure is known and consistent - in this case, use normal columns, `Tuple`, `Array`, `Dynamic`, or `Variant` types instead
 - `JSON` documents are treated as opaque blobs that are only stored and retrieved in their entirety without field-level analysis
 - You don't need to query or filter on individual JSON fields within the database
 - The `JSON` is simply a transport/storage format, not analyzed within ClickHouse
