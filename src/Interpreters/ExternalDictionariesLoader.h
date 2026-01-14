@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
 #include <Common/quoteString.h>
 
