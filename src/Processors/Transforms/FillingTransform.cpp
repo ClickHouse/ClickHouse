@@ -242,10 +242,10 @@ FillingTransform::FillingTransform(
     std::vector<bool> is_fill_column(header_->columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
+        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].alias))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
-                fill_description[i].column_name);
+                fill_description[i].alias);
 
         size_t block_position = header_->getPositionByName(fill_description[i].column_name);
         is_fill_column[block_position] = true;
