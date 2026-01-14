@@ -124,6 +124,9 @@ bool Squashing::canGenerate()
     size_t total_rows = accumulated.getRows() + pending.getRows();
     size_t total_bytes = accumulated.getBytes() + pending.getBytes();
 
+    if (total_rows == 0 || total_bytes == 0)
+        return false;
+
     if (squash_with_strict_limits)
     {
         return  allMinReached(total_rows, total_bytes) || oneMaxReached(total_rows, total_bytes);
@@ -324,7 +327,7 @@ bool Squashing::allMinReached() const
 
 bool Squashing::allMinReached(size_t rows, size_t bytes) const
 {
-    return (rows != 0 && bytes != 0) && rows >= min_block_size_rows && bytes >= min_block_size_bytes;
+    return rows >= min_block_size_rows && bytes >= min_block_size_bytes;
 }
 
 bool Squashing::oneMaxReached(size_t rows, size_t bytes) const
