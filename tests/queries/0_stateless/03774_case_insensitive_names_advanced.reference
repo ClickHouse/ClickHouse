@@ -71,8 +71,30 @@ B	40
 --- Lambda expressions ---
 [2,4,6]
 [8,10,12]
+[2,4,6]
+[8,10,12]
+--- ARRAY JOIN ---
+1
+2
+3
+1
+2
+3
+--- CTE collision ---
 --- Default mode JOIN ---
 10	100
 20	200
 --- Default mode CTE ---
 1
+--- Window function aliases ---
+A	30
+A	30
+B	15
+A	30
+A	30
+B	15
+--- Distributed queries ---
+1	Alice
+2	Bob
+1	Alice
+2	Bob

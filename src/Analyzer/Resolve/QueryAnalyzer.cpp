@@ -170,7 +170,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
             if (node_type == QueryTreeNodeType::LIST)
             {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+                QueryExpressionsAliasVisitor visitor(scope.aliases, use_standard_mode);
                 visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             }
@@ -181,7 +182,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
+            const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, use_standard_mode);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -2642,7 +2644,8 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    QueryExpressionsAliasVisitor visitor(scope.aliases, use_standard_mode);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Replace lambda arguments with new arguments.
@@ -3732,7 +3735,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
-            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
+            const bool use_standard_mode_alias = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, use_standard_mode_alias);
             visitor.visit(alias_column_to_resolve->getExpression());
 
             resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -4775,7 +4779,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
     /// Initialize aliases in query node scope
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    QueryExpressionsAliasVisitor visitor(scope.aliases, use_standard_mode);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
     {
@@ -4783,7 +4788,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else
     {
-        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, use_standard_mode);
         alias_collector.visit(query_node_typed.getWithNode());
 
         scope.aliases = scope.global_with_aliases;
@@ -4846,7 +4851,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         const String original_cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
         String cte_name = original_cte_name;
 
-        const bool use_standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
         if (use_standard_mode)
             cte_name = Poco::toLower(cte_name);
 

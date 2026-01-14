@@ -188,6 +188,29 @@ SELECT '--- Lambda expressions ---';
 
 SELECT arrayMap(X -> X * 2, Arr) FROM test_lambda ORDER BY Arr;
 
+-- Lambda parameter case-insensitivity
+SELECT arrayMap(myvar -> MYVAR * 2, Arr) FROM test_lambda ORDER BY Arr;
+
+-- ARRAY JOIN with case-insensitive alias
+DROP TABLE IF EXISTS test_array_join;
+CREATE TABLE test_array_join (Ids Array(UInt8)) ENGINE = Memory;
+INSERT INTO test_array_join VALUES ([1, 2, 3]);
+
+SET case_insensitive_names = 'standard';
+SELECT '--- ARRAY JOIN ---';
+
+SELECT id FROM test_array_join ARRAY JOIN Ids AS Id;
+SELECT ID FROM test_array_join ARRAY JOIN Ids AS id;
+
+DROP TABLE IF EXISTS test_array_join;
+
+-- CTE name collision (case-insensitive)
+SET case_insensitive_names = 'standard';
+SELECT '--- CTE collision ---';
+
+-- This should fail due to case-insensitive collision
+WITH MyCTE AS (SELECT 1), mycte AS (SELECT 2) SELECT * FROM MyCTE; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+
 SET case_insensitive_names = 'default';
 SELECT '--- Default mode JOIN ---';
 
@@ -198,6 +221,31 @@ SELECT j1.val FROM test_j1 AS j1 INNER JOIN test_j2 AS j2 ON j1.id = j2.num; -- 
 SELECT '--- Default mode CTE ---';
 WITH myCte AS (SELECT 1 AS val) SELECT * FROM myCte; -- Works (exact match)
 WITH myCte AS (SELECT 1 AS val) SELECT * FROM MYCTE; -- { serverError UNKNOWN_TABLE }
+
+-- Window function case-insensitivity
+DROP TABLE IF EXISTS test_window;
+CREATE TABLE test_window (Category String, Amount Int32) ENGINE = Memory;
+INSERT INTO test_window VALUES ('A', 10), ('A', 20), ('B', 15);
+
+SET case_insensitive_names = 'standard';
+SELECT '--- Window function aliases ---';
+SELECT Category, sum(Amount) OVER (PARTITION BY Category) AS WindowSum FROM test_window ORDER BY Category, Amount;
+SELECT category, sum(amount) OVER (PARTITION BY category) AS windowsum FROM test_window ORDER BY category, amount;
+
+DROP TABLE IF EXISTS test_window;
+
+-- Distributed queries (using remote to localhost)
+DROP TABLE IF EXISTS test_distributed;
+CREATE TABLE test_distributed (Id UInt8, Name String) ENGINE = Memory;
+INSERT INTO test_distributed VALUES (1, 'Alice'), (2, 'Bob');
+
+SET case_insensitive_names = 'standard';
+SELECT '--- Distributed queries ---';
+
+SELECT id, name FROM remote('127.0.0.1', currentDatabase(), test_distributed) ORDER BY id;
+SELECT ID, NAME FROM remote('127.0.0.1', currentDatabase(), test_distributed) ORDER BY ID;
+
+DROP TABLE IF EXISTS test_distributed;
 
 DROP TABLE IF EXISTS test_ambig;
 DROP TABLE IF EXISTS test_mix;
