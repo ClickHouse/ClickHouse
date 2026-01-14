@@ -1,6 +1,6 @@
 -- Test for ORDER BY pushdown optimization into VIEWs over distributed tables
 -- This ensures that querying a VIEW with ORDER BY uses merge sorted streams
--- instead of full sort on coordinator (the bug fix).
+-- instead of full sort on coordinator.
 
 -- Tags: distributed
 
@@ -30,8 +30,8 @@ CREATE VIEW test_view_03788 AS
 SELECT id, val, ts FROM test_distributed_03788;
 
 -- Test: Both direct and VIEW queries should use "Merge sorted streams" optimization
--- Before the fix, VIEW query used "Sorting (Sorting for ORDER BY)" (full sort)
--- After the fix, VIEW query uses "Merge sorted streams" (efficient merge sort)
+-- The VIEW is transparent for query processing stage, so it delegates to the
+-- underlying Distributed table, enabling the merge sorted streams optimization.
 
 SELECT 'Direct query has merge sort:',
     (SELECT count() > 0 FROM (EXPLAIN SELECT id FROM test_distributed_03788 ORDER BY ts DESC LIMIT 10) 

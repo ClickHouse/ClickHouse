@@ -33,6 +33,8 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <Analyzer/QueryNode.h>
+
 namespace DB
 {
 namespace Setting
@@ -155,21 +157,34 @@ StorageView::StorageView(
     setInMemoryMetadata(storage_metadata);
 }
 
-/// Helper to extract the first table expression from a SELECT query (forward declaration exists in this file)
-static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query);
-
 QueryProcessingStage::Enum StorageView::getQueryProcessingStage(
     ContextPtr context,
     QueryProcessingStage::Enum to_stage,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
-    /// For simple views over a single table, delegate to the underlying storage.
-    /// This preserves the underlying storage's capabilities, e.g.:
-    /// - Distributed tables can sort on shards with merge sort at coordinator
-    /// - Other storages may support higher processing stages
+    /// For simple views over a single table (no UNION, no JOIN), we can delegate
+    /// to the underlying storage for ORDER BY optimization (merge sorted streams).
     ///
-    /// This makes the VIEW transparent with respect to query processing stage.
+    /// However, we must NOT delegate when the outer query requires aggregation,
+    /// because:
+    /// - Stages like WithMergeableState expect partial aggregate function states
+    /// - The VIEW's inner query produces raw columns, not aggregate states
+    /// - This would cause type conversion errors (e.g., UInt64 -> AggregateFunction)
+    ///
+    /// The `need_aggregate` flag captures both aggregate functions AND GROUP BY.
+    /// We also check for DISTINCT which has similar merging requirements.
+
+    if (query_info.need_aggregate)
+        return QueryProcessingStage::FetchColumns;
+
+    /// Check for DISTINCT which also requires special handling at coordinator
+    if (query_info.query_tree)
+    {
+        const auto * query_node = query_info.query_tree->as<QueryNode>();
+        if (query_node && query_node->isDistinct())
+            return QueryProcessingStage::FetchColumns;
+    }
 
     ASTPtr inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
