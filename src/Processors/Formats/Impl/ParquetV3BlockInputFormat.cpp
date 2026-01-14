@@ -91,7 +91,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             });
 
         {
-            std::unique_lock lock(reader_mutex);
+            std::lock_guard lock(reader_mutex);
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
