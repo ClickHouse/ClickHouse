@@ -55,8 +55,7 @@ Upcoming meetups
 * [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/312679894/) - January 29th, 2026
 * [Iceberg Meetup Brussels](https://luma.com/yx3lhqu9) - January 30th, 2026
 * [ClickHouse Dinner at FOSDEM](https://luma.com/czvs584m) - January 31st, 2026
-* [ClickHouse Barcelona Meetup](https://www.meetup.com/clickhouse-barcelona-user-group/events/312714616/) - February 3rd, 2026
-* [ClickHouse Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/312714632/) - February 4th, 2026
+* [ClickHouse Barcelona Meetup](https://www.meetup.com/clickhouse-barcelona-user-group/events/312714616/) - February 5th, 2026
 * [ClickHouse London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/312314505/) - February 10th, 2026
 
 Recent meetups

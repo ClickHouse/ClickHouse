@@ -120,9 +120,11 @@ def main():
     # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
     allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
+    max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 100)
     min_insert_rows = random.randint(1, 100)
-    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 1000)
+    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 5000)
     min_string_length = random.randint(0, 100)
+    max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 1000)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
         "max_depth": random.randint(2, 6),
@@ -133,11 +135,11 @@ def main():
         "max_dictionaries": random.randint(0, 10),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
-        "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
+        "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
         "min_insert_rows": min_insert_rows,
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
-        "max_string_length": random.randint(min_string_length, min_string_length + 500),
+        "max_string_length": random.randint(min_string_length, max_string_length),
         "max_parallel_queries": 1,
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
@@ -150,6 +152,7 @@ def main():
         "allow_infinite_tables": False,  # Creating too many issues
         "allow_health_check": False,  # I have to test this first
         "enable_compatibility_settings": random.randint(1, 4) == 1,
+        "enable_memory_settings": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
@@ -199,16 +202,17 @@ def main():
             "restore_replace_external_engines_to_null",
             "restore_replace_external_table_functions_to_null",
             # Not handy
+            "default_compression_codec",
             "insert_shard_id",
             "union_default_mode",
             "except_default_mode",
             "input_format_skip_unknown_fields",
+            "insert_quorum",
+            "trace_profile_events",
             "unknown_packet_in_send_data",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [
-            "add_minmax_index_for_numeric_columns",
-            "add_minmax_index_for_string_columns",
             "allow_coalescing_columns_in_partition_or_order_key",
             # "allow_experimental_replacing_merge_with_cleanup",
             "allow_experimental_reverse_key",
@@ -224,16 +228,9 @@ def main():
             "merge_max_block_size",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
-            "min_rows_for_full_part_storage",
-            "min_rows_for_wide_part",
             "ratio_of_defaults_for_sparse_serialization",
-            "remove_empty_parts",
             "string_serialization_version",
-            "ttl_only_drop_parts",
-            "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
-            "vertical_merge_algorithm_min_rows_to_activate",
-            "vertical_merge_algorithm_min_columns_to_activate",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

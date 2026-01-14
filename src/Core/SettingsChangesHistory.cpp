@@ -45,6 +45,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
+            {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
             {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},
             {"type_json_use_partial_match_to_skip_paths_by_regexp", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"},
             {"max_insert_block_size_bytes", 0, 0, "New setting that allows to control the size of blocks in bytes during parsing of data in Row Input Format."},
@@ -54,7 +56,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
+            {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
+            {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
+            {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
+            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_when_possible", "change the default behavior of deduplicate_insert_select to ENABLE_WHEN_PROSSIBLE"},
+            {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
+            {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
+            {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -100,6 +109,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
+            {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
+
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -1010,6 +1021,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
+            {"materialize_statistics_on_merge", true, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {

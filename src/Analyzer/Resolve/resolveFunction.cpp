@@ -1168,15 +1168,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     function_name,
                     function_node.formatASTForErrorMessage());
             }
-
-            frame = WindowFrame{
-                .is_default = false,
-                .type = WindowFrame::FrameType::ROWS,
-                .begin_type = WindowFrame::BoundaryType::Unbounded,
-                .begin_preceding = true,
-                .end_type = WindowFrame::BoundaryType::Unbounded,
-                .end_preceding = false,
-            };
         }
 
         if (window_node_is_identifier)
