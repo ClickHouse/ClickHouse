@@ -215,8 +215,8 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
     const auto & context = getContext();
     for (const auto & elem : rename.getElements())
     {
-        const bool from_temporary = !elem.from.getDatabase().empty() && requireTemporaryDatabaseAccessIfNeeded(required_access, elem.from.getDatabase(), context);
-        const bool to_temporary = !elem.from.getDatabase().empty() && requireTemporaryDatabaseAccessIfNeeded(required_access, elem.to.getDatabase(), context);
+        const bool from_temporary = requireTemporaryDatabaseAccessIfNeeded(required_access, elem.from.getDatabase(), context);
+        const bool to_temporary = requireTemporaryDatabaseAccessIfNeeded(required_access, elem.to.getDatabase(), context);
 
         switch (type)
         {

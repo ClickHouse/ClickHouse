@@ -338,6 +338,8 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
 
 bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const String & database_name, ContextPtr context)
 {
+    if (database_name.empty())
+        return false;
     return requireTemporaryDatabaseAccessIfNeeded(required_access, DatabaseCatalog::instance().tryGetDatabase(database_name, context));
 }
 

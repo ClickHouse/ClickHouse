@@ -10,7 +10,8 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
-    with_zookeeper=True,
+    with_zookeeper=True, # for test_unsupported_engines and test_on_cluster_unsupported
+    with_remote_database_disk=False, # for test_restart(requires access to local disk)
 )
 
 
@@ -276,6 +277,6 @@ def test_restart(request, kill: bool):
     node1.start_clickhouse()
     assert not node1.file_exists_in_container(metadata_file)
     assert_db_does_not_exist(session1, db1)
-    assert get_dbs_from_system_table(session1, [db1, db2], True) == TSV([[db2]])
 
+    assert get_dbs_from_system_table(session1, [db1, db2], True) == TSV([[db2]])
     drop_db(session1, db2)
