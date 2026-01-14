@@ -65,7 +65,7 @@ The optional gamma argument specifies the exponent used when converting from lin
 sRGB to gamma-encoded RGB values. If not specified, a default gamma value is used
 for consistency with colorSRGBToOKLAB.
 
-For more information about the OKLab color space and its relationship to sRGB, see https://oklch.com/.
+For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab.
     )";
     FunctionDocumentation::Syntax syntax = "colorOKLABToSRGB(tuple [, gamma])";
     FunctionDocumentation::Arguments arguments = {
