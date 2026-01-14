@@ -351,26 +351,14 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     bool lhs_is_tuple = false;
     /// Unpack if Tuple or Nullable(Tuple) and Tuple has more than 1 element
-    if (const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_expression_type.get()))
+    const auto * lhs_nullable_type = typeid_cast<const DataTypeNullable *>(lhs_expression_type.get());
+    if (const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_nullable_type ? lhs_nullable_type->getNestedType().get() : lhs_expression_type.get()))
     {
         lhs_is_tuple = true;
         /// Do not unpack if empty tuple or single element tuple
         if (lhs_tuple_type->getElements().size() > 1)
             lhs_unpacked_types = lhs_tuple_type->getElements();
     }
-
-    const auto * lhs_nullable_type = typeid_cast<const DataTypeNullable *>(lhs_expression_type.get());
-    if (lhs_nullable_type)
-    {
-        if (const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_nullable_type->getNestedType().get()))
-        {
-            lhs_is_tuple = true;
-            /// Do not unpack if empty tuple or single element tuple
-            if (lhs_tuple_type->getElements().size() > 1)
-                lhs_unpacked_types = lhs_tuple_type->getElements();
-        }
-    }
-
     bool lhs_is_nullable = (lhs_nullable_type != nullptr);
 
     for (auto & lhs_element_type : lhs_unpacked_types)
