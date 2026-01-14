@@ -14,6 +14,10 @@
 #include <Common/SymbolIndex.h>
 
 #include <Common/config_version.h>
+#include <Poco/Environment.h>
+
+
+extern const char * GIT_HASH;
 
 
 namespace DB
@@ -97,9 +101,7 @@ void collectCrashLog(
     std::optional<UInt64> segfault_address,
     const String & segfault_memory_access_type,
     const String & signal_description,
-    const String & current_exception,
-    const String & git_hash,
-    const String & architecture)
+    const String & current_exception)
 {
     using namespace DB;
 
@@ -136,8 +138,8 @@ void collectCrashLog(
             segfault_memory_access_type,
             signal_description,
             current_exception,
-            git_hash,
-            architecture};
+            GIT_HASH,
+            Poco::Environment::osArchitecture()};
         crash_log_owned->add(std::move(element));
     }
 }

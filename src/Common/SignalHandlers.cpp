@@ -35,6 +35,9 @@ extern const char * GIT_HASH;
 
 static const std::vector<FramePointers> empty_stack;
 
+/// Current exception message captured in terminate_handler.
+thread_local std::string terminate_current_exception_message;
+
 using namespace DB;
 
 
@@ -104,12 +107,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
 
-    std::string exception_message;
-    if (auto ex = std::current_exception())
-    {
-        exception_message = getExceptionMessage(ex, false, false);
-    }
-
     writeBinary(sig, out);
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
@@ -117,7 +114,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
-    writeBinary(exception_message, out);
+    writeBinary(terminate_current_exception_message, out);
     out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
@@ -154,9 +151,14 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     std::string log_message;
 
     if (std::current_exception())
-        log_message = "Terminate called for uncaught exception:\n" + getCurrentExceptionMessage(true);
+    {
+        terminate_current_exception_message = getCurrentExceptionMessage(true);
+        log_message = "Terminate called for uncaught exception:\n" + terminate_current_exception_message;
+    }
     else
+    {
         log_message = "Terminate called without an active exception";
+    }
 
     /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
     /// And the buffer should not be too small because our exception messages can be large.
@@ -539,8 +541,7 @@ try
         collectCrashLog(
             sig, info.si_code, thread_num, query_id, query,
             stack_trace, segfault_address, segfault_memory_access_type, si_code_description,
-            exception_message,
-            GIT_HASH, Poco::Environment::osArchitecture());
+            exception_message);
     }
 
     Context::getGlobalContextInstance()->handleCrash();

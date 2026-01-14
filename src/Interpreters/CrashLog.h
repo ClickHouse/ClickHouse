@@ -20,9 +20,7 @@ void collectCrashLog(
     std::optional<UInt64> segfault_address,
     const String & segfault_memory_access_type,
     const String & signal_description,
-    const String & current_exception,
-    const String & git_hash,
-    const String & architecture);
+    const String & current_exception);
 
 
 namespace DB
@@ -58,7 +56,7 @@ struct CrashLogElement
 class CrashLog : public SystemLog<CrashLogElement>
 {
     using SystemLog<CrashLogElement>::SystemLog;
-    friend void ::collectCrashLog(Int32, Int32, UInt64, const String &, const String &, const StackTrace &, std::optional<UInt64>, const String &, const String &, const String &, const String &, const String &);
+    friend void ::collectCrashLog(Int32, Int32, UInt64, const String &, const String &, const StackTrace &, std::optional<UInt64>, const String &, const String &, const String &);
 
     static std::weak_ptr<CrashLog> crash_log;
 

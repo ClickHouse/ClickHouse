@@ -54,9 +54,7 @@ __attribute__((__weak__)) void collectCrashLog(
     std::optional<UInt64> segfault_address,
     const String & segfault_memory_access_type,
     const String & signal_description,
-    const String & current_exception,
-    const String & git_hash,
-    const String & architecture);
+    const String & current_exception);
 
 
 void blockSignals(const std::vector<int> & signals);
