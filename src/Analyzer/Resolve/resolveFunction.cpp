@@ -132,6 +132,45 @@ std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
     return std::make_pair(if_node, proj);
 }
 
+/// Builds has() expression with proper null handling and NOT wrapping for IN rewrites
+ProjectionNames QueryAnalyzer::buildHasExpression(
+    QueryTreeNodePtr & node,
+    QueryTreeNodePtr array_arg,
+    QueryTreeNodePtr element_arg,
+    bool is_not_in,
+    bool transform_null_in,
+    const ProjectionNames & arguments_projection_names,
+    const ProjectionNames & parameters_projection_names,
+    IdentifierResolveScope & scope)
+{
+    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+
+    if (!transform_null_in)
+    {
+        auto [result_node, proj_names] = makeNullSafeHas(array_arg, element_arg, arguments_projection_names, scope);
+        if (is_not_in)
+        {
+            result_node = createNotWrapper(result_node);
+            resolveFunction(result_node, scope);
+        }
+        node = result_node;
+        return proj_names;
+    }
+
+    auto has_fn = std::make_shared<FunctionNode>("has");
+    has_fn->getArguments().getNodes() = {array_arg, element_arg};
+    QueryTreeNodePtr result_node = has_fn;
+    resolveFunction(result_node, scope);
+
+    if (is_not_in)
+    {
+        result_node = createNotWrapper(result_node);
+        resolveFunction(result_node, scope);
+    }
+    node = result_node;
+    return ProjectionNames{proj};
+}
+
 /// handles special case: NULL IN (tuple) with transform_null_in enabled
 ProjectionNames QueryAnalyzer::handleNullInTuple(
     const QueryTreeNodes & tuple_args,
@@ -816,40 +855,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 bool is_array_type = (candidate_name == "array") ||
                     (non_const_set_candidate->isResolved() && isArray(non_const_set_candidate->getResultType()));
                 bool is_tuple_type = (candidate_name == "tuple");
-                bool is_scalar_type = non_const_set_candidate->isResolved() &&
+                bool is_not_array_or_tuple_type = non_const_set_candidate->isResolved() &&
                     !isArray(non_const_set_candidate->getResultType()) &&
                     !isTuple(non_const_set_candidate->getResultType());
 
                 /// Case 1: array(..) or any function returning Array type -> rewrite to has()
                 if (is_array_type)
-                {
-                    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-
-                    if (!transform_null_in)
-                    {
-                        auto [result_node, proj_names] = makeNullSafeHas(fn_args[1], fn_args[0], arguments_projection_names, scope);
-                        if (is_not_in)
-                        {
-                            result_node = createNotWrapper(result_node);
-                            resolveFunction(result_node, scope);
-                        }
-                        node = result_node;
-                        return proj_names;
-                    }
-
-                    auto has_fn = std::make_shared<FunctionNode>("has");
-                    has_fn->getArguments().getNodes() = {fn_args[1], fn_args[0]};
-                    QueryTreeNodePtr result_node = has_fn;
-                    resolveFunction(result_node, scope);
-
-                    if (is_not_in)
-                    {
-                        result_node = createNotWrapper(result_node);
-                        resolveFunction(result_node, scope);
-                    }
-                    node = result_node;
-                    return ProjectionNames{proj};
-                }
+                    return buildHasExpression(node, fn_args[1], fn_args[0], is_not_in, transform_null_in,
+                        arguments_projection_names, parameters_projection_names, scope);
 
                 /// Case 2: tuple(..) -> convert to array, then rewrite to has()
                 /// If the left-hand side is a lambda, do not rewrite
@@ -873,35 +886,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
 
                     /// convert tuple to array and rewrite to has()
-                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
-                    function_name = "has";
-                    is_special_function_in = false;
-                    std::swap(fn_args[0], fn_args[1]);
-
-                    if (!transform_null_in)
-                    {
-                        auto [result_node, proj_names] = makeNullSafeHas(fn_args[0], fn_args[1], arguments_projection_names, scope);
-                        if (is_not_in)
-                        {
-                            result_node = createNotWrapper(result_node);
-                            resolveFunction(result_node, scope);
-                        }
-                        node = result_node;
-                        return proj_names;
-                    }
-
-                    if (is_not_in)
-                    {
-                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                        resolveFunction(node, scope);
-                        node = createNotWrapper(node);
-                        resolveFunction(node, scope);
-                        return ProjectionNames{proj};
-                    }
+                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope);
+                    return buildHasExpression(node, array_arg, in_first_argument, is_not_in, transform_null_in,
+                        arguments_projection_names, parameters_projection_names, scope);
                 }
 
                 /// Case 3: scalar-returning function -> rewrite to equals/notEquals
-                if (is_scalar_type)
+                if (is_not_array_or_tuple_type)
                 {
                     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                     auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
