@@ -82,7 +82,6 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -193,21 +192,14 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context_);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
-        sample_path,
+        getSampleURI(uri, context_),
         columns_.empty(),
         format_settings,
         context_);
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.columns,
-        context_,
-        format_settings,
-        PartitionStrategyFactory::StrategyType::NONE,
-        sample_path);
-
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -259,7 +251,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
         if (filter_dag)
         {
@@ -523,7 +515,7 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        (*pipeline).reset();
+        pipeline->reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
@@ -714,7 +706,6 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        cancelBuffers();
         releaseBuffers();
         throw;
     }
@@ -1091,7 +1082,7 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
@@ -1177,8 +1168,9 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -1192,9 +1184,6 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
-
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,
@@ -1204,10 +1193,10 @@ void IStorageURLBase::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1320,7 +1309,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
+    format_filter_info->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1384,10 +1374,10 @@ void StorageURLWithFailover::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1583,7 +1573,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")

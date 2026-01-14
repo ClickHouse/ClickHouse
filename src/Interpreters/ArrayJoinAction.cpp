@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -57,16 +56,15 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     ColumnWithTypeAndName array_col;
     array_col.name = src_col.name;
     array_col.type = getArrayJoinDataType(src_col.type);
-    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
+    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst());
     return array_col;
 }
 
-ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
+ArrayJoinAction::ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_)
     : columns(columns_.begin(), columns_.end())
     , is_left(is_left_)
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
-    , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
@@ -108,7 +106,7 @@ ArrayJoinResultIteratorPtr ArrayJoinAction::execute(Block block)
     if (columns.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
 
-    return std::make_unique<ArrayJoinResultIterator>(this, std::move(block), enable_lazy_columns_replication);
+    return std::make_unique<ArrayJoinResultIterator>(this, std::move(block));
 }
 
 static void updateMaxLength(ColumnUInt64 & max_length, UInt64 length)
@@ -141,8 +139,8 @@ static void updateMaxLength(ColumnUInt64 & max_length, const IColumn & length)
         max_lenght_data[row] = std::max(max_lenght_data[row], length_data[row]);
 }
 
-ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_)
-    : array_join(array_join_), block(std::move(block_)), enable_lazy_columns_replication(enable_lazy_columns_replication_), total_rows(block.rows()), current_row(0)
+ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_)
+    : array_join(array_join_), block(std::move(block_)), total_rows(block.rows()), current_row(0)
 {
     const auto & columns = array_join->columns;
     bool is_unaligned = array_join->is_unaligned;
@@ -151,8 +149,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     const auto & function_array_resize = array_join->function_array_resize;
     const auto & function_builder = array_join->function_builder;
 
-    /// TODO: avoid convertToFullColumnIfReplicated
-    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+    any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
     any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
     if (!any_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
@@ -239,7 +236,6 @@ Block ArrayJoinResultIterator::next()
     bool is_left = array_join->is_left;
     auto cut_any_col = any_array->cut(current_row, next_row - current_row);
     const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
-    ColumnPtr indexes_for_lazy_replication;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -263,11 +259,11 @@ Block ArrayJoinResultIterator::next()
                 {
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : current.column;
-                    array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    array_ptr = array_ptr->convertToFullColumnIfConst();
                 }
                 else
                 {
-                    ColumnPtr map_ptr = current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    ColumnPtr map_ptr = current.column->convertToFullColumnIfConst();
                     const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : map.getNestedColumnPtr();
@@ -285,16 +281,7 @@ Block ArrayJoinResultIterator::next()
         }
         else
         {
-            if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
-            {
-                if (!indexes_for_lazy_replication)
-                    indexes_for_lazy_replication = convertOffsetsToIndexes(cut_any_array->getOffsets());
-                current.column = ColumnReplicated::create(current.column, indexes_for_lazy_replication);
-            }
-            else
-            {
-                current.column = current.column->replicate(cut_any_array->getOffsets());
-            }
+            current.column = current.column->replicate(cut_any_array->getOffsets());
         }
 
         res.insert(std::move(current));

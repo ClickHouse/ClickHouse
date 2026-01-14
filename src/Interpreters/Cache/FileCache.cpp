@@ -16,7 +16,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -41,7 +40,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
-    extern const Event FilesystemCacheCheckCorrectness;
 }
 
 namespace CurrentMetrics
@@ -68,7 +66,6 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
-    extern const FileCacheSettingsDouble check_cache_probability;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsUInt64 background_download_threads;
@@ -116,27 +113,6 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releas
     }
 }
 
-double normalizeProbability(double probability)
-{
-    if (probability < 0.0)
-        probability = .0;
-    else if (probability > 1.0)
-        probability = 1.0;
-    return probability;
-}
-
-FileCache::CheckCacheProbability::CheckCacheProbability(double probability, UInt64 seed)
-    : rndgen(seed == 0 ? randomSeed() : seed)
-    , distribution(normalizeProbability(probability))
-{
-}
-
-bool FileCache::CheckCacheProbability::doCheck()
-{
-    std::lock_guard lock(mutex);
-    return distribution(rndgen);
-}
-
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
@@ -155,7 +131,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
                write_cache_per_user_directory)
-    , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
     switch (settings[FileCacheSetting::cache_policy].value)
     {
@@ -179,6 +154,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
+
+    if (settings[FileCacheSetting::cache_hits_threshold])
+    {
+        stash = std::make_unique<HitsCountStash>(
+            settings[FileCacheSetting::cache_hits_threshold],
+            settings[FileCacheSetting::max_elements]);
+    }
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
@@ -307,7 +289,7 @@ void FileCache::initializeImpl(bool load_metadata)
 
     if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
     {
-        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
+        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
 
@@ -492,7 +474,7 @@ FileSegments FileCache::createFileSegmentsFromRanges(
     {
         if (file_segments_limit && file_segments_count >= file_segments_limit)
             break;
-        auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings);
+        auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
         result.push_back(metadata_it->second->file_segment);
         ++file_segments_count;
     }
@@ -647,7 +629,7 @@ FileSegmentsHolderPtr FileCache::trySet(
     {
         /// If the file is unbounded, we can create a single file_segment_metadata for it.
         auto file_segment_metadata_it = addFileSegment(
-            *locked_key, offset, size, FileSegment::State::EMPTY, create_settings);
+            *locked_key, offset, size, FileSegment::State::EMPTY, create_settings, nullptr);
         file_segments = {file_segment_metadata_it->second->file_segment};
     }
     else
@@ -688,8 +670,7 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    size_t initial_range_right_offset = (file_size ? std::min(offset + size, file_size) : offset + size) - 1;
-    FileSegment::Range initial_range(offset, initial_range_right_offset);
+    FileSegment::Range initial_range(offset, std::min(offset + size, file_size) - 1);
     /// result_range is initial range, which will be adjusted according to
     /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
@@ -697,9 +678,7 @@ FileCache::getOrSet(
 
     const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
     const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
-    auto aligned_end_offset = (file_size
-        ? std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size)
-        : FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment)) - 1;
+    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
@@ -835,8 +814,6 @@ FileCache::getOrSet(
 
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
-    locked_key.reset();
-    assertCacheCorrectnessWithProbability();
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
@@ -851,9 +828,8 @@ FileSegmentsHolderPtr FileCache::get(
 
     assertInitialized();
 
-    std::unique_ptr<FileSegmentsHolder> holder;
-    if (auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, UserInfo(user_id));
-        locked_key != nullptr)
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, UserInfo(user_id));
+    if (locked_key)
     {
         FileSegment::Range range(offset, offset + size - 1);
 
@@ -872,15 +848,12 @@ FileSegmentsHolderPtr FileCache::get(
                 *locked_key, file_segments, range, offset + size - 1, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{});
 
             chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
-            holder = std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+            return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
         }
     }
 
-    if (!holder)
-        holder = std::make_unique<FileSegmentsHolder>(FileSegments{std::make_shared<FileSegment>(key, offset, size, FileSegment::State::DETACHED)});
-
-    assertCacheCorrectnessWithProbability();
-    return holder;
+    return std::make_unique<FileSegmentsHolder>(FileSegments{
+        std::make_shared<FileSegment>(key, offset, size, FileSegment::State::DETACHED)});
 }
 
 KeyMetadata::iterator FileCache::addFileSegment(
@@ -888,7 +861,8 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t offset,
     size_t size,
     FileSegment::State state,
-    const CreateFileSegmentSettings & create_settings)
+    const CreateFileSegmentSettings & create_settings,
+    const CachePriorityGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 
@@ -905,7 +879,41 @@ KeyMetadata::iterator FileCache::addFileSegment(
             range.toString(), intersecting_range->toString());
     }
 
-    FileSegment::State result_state = state;
+    FileSegment::State result_state;
+
+    /// `stash` - a queue of "stashed" key-offset pairs. Implements counting of
+    /// cache entries and allows caching only if cache hit threadhold is reached.
+    if (stash && state == FileSegment::State::EMPTY)
+    {
+        if (!lock)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Using stash requires cache_lock");
+
+        KeyAndOffset stash_key(key, offset);
+
+        auto record_it = stash->records.find(stash_key);
+        if (record_it == stash->records.end())
+        {
+            auto & stash_records = stash->records;
+
+            stash_records.emplace(
+                stash_key, stash->queue->add(locked_key.getKeyMetadata(), offset, 0, locked_key.getKeyMetadata()->user, *lock));
+
+            if (stash->queue->getElementsCount(*lock) > stash->queue->getElementsLimit(*lock))
+                stash->queue->pop(*lock);
+
+            result_state = FileSegment::State::DETACHED;
+        }
+        else
+        {
+            result_state = record_it->second->increasePriority(*lock) >= stash->hits_threshold
+                ? FileSegment::State::EMPTY
+                : FileSegment::State::DETACHED;
+        }
+    }
+    else
+    {
+        result_state = state;
+    }
 
     auto file_segment = std::make_shared<FileSegment>(
         key,
@@ -1311,11 +1319,6 @@ void FileCache::iterate(IterateFunc && func, const UserID & user_id)
     }, user_id);
 }
 
-FileCache::CacheIteratorPtr FileCache::getCacheIterator(const UserID & user_id)
-{
-    return metadata.getIterator(user_id);
-}
-
 void FileCache::removeKey(const Key & key, const UserID & user_id)
 {
     assertInitialized();
@@ -1351,9 +1354,19 @@ void FileCache::removePathIfExists(const String & path, const UserID & user_id)
 void FileCache::removeAllReleasable(const UserID & user_id)
 {
     assertInitialized();
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
+#endif
 
     metadata.removeAllKeys(/* if_releasable */true, user_id);
+
+    if (stash)
+    {
+        /// Remove all access information.
+        auto lock = lockCache();
+        stash->clear();
+    }
 }
 
 void FileCache::loadMetadata()
@@ -1457,7 +1470,9 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
+#endif
 }
 
 void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
@@ -1623,7 +1638,9 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 FileCache::~FileCache()
 {
     deactivateBackgroundOperations();
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
+#endif
 }
 
 void FileCache::deactivateBackgroundOperations()
@@ -1642,7 +1659,9 @@ void FileCache::deactivateBackgroundOperations()
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
 {
     assertInitialized();
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
+#endif
 
     std::vector<FileSegment::Info> file_segments;
     metadata.iterate([&](const LockedKey & locked_key)
@@ -1666,18 +1685,6 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
 {
     assertInitialized();
     return main_priority->dump(lockCache());
-}
-
-IFileCachePriority::Type FileCache::getEvictionPolicyType()
-{
-    assertInitialized();
-    return main_priority->getType();
-}
-
-std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPerClient()
-{
-    assertInitialized();
-    return main_priority->getUsageStatPerClient();
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -1716,22 +1723,8 @@ size_t FileCache::getFileSegmentsNum() const
     return main_priority->getElementsCountApprox();
 }
 
-void FileCache::assertCacheCorrectnessWithProbability()
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    if (check_cache_probability.doCheck())
-    {
-        assertCacheCorrectness();
-    }
-#endif
-}
-
 void FileCache::assertCacheCorrectness()
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    LOG_TEST(log, "Checking cache correctness");
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheCheckCorrectness);
-
     metadata.iterate([&](LockedKey & locked_key)
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
@@ -1746,7 +1739,6 @@ void FileCache::assertCacheCorrectness()
         return IFileCachePriority::IterationResult::CONTINUE;
     },
     lockCache());
-#endif
 }
 
 void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings)
@@ -1899,8 +1891,10 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
                 result_limits.max_elements = max_elements;
             }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
             cache_lock.unlock();
             assertCacheCorrectness();
+#endif
             throw;
         }
     }
@@ -1928,7 +1922,10 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & current_limi
     chassert(main_priority->getSizeLimit(lockCache()) == result_limits.max_size);
     chassert(main_priority->getElementsLimit(lockCache()) == result_limits.max_elements);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
+#endif
+
     return result_limits;
 }
 
@@ -2120,6 +2117,19 @@ std::vector<FileSegment::Info> FileCache::sync()
         file_segments.insert(file_segments.end(), broken.begin(), broken.end());
     }, getInternalUser().user_id);
     return file_segments;
+}
+
+FileCache::HitsCountStash::HitsCountStash(size_t hits_threashold_, size_t queue_size_)
+    : hits_threshold(hits_threashold_), queue_size(queue_size_), queue(std::make_unique<LRUFileCachePriority>(0, queue_size_))
+{
+    if (!queue_size_)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Queue size for hits queue must be non-zero");
+}
+
+void FileCache::HitsCountStash::clear()
+{
+    records.clear();
+    queue = std::make_unique<LRUFileCachePriority>(0, queue_size);
 }
 
 }

@@ -5,8 +5,8 @@ import urllib
 from pathlib import Path
 from typing import Optional
 
+from .runtime import RunConfig
 from .settings import Settings
-from .utils import Utils
 
 
 class Info:
@@ -58,10 +58,6 @@ class Info:
         return self.env.PR_TITLE
 
     @property
-    def updated_at(self):
-        return self.env.EVENT_TIME
-
-    @property
     def pr_url(self):
         return self.env.CHANGE_URL
 
@@ -98,16 +94,8 @@ class Info:
         return self.env.FORK_NAME
 
     @property
-    def commit_message(self):
-        return self.env.COMMIT_MESSAGE
-
-    @property
     def user_name(self):
         return self.env.USER_LOGIN
-
-    @property
-    def commit_authors(self):
-        return self.env.COMMIT_AUTHORS or []
 
     @property
     def run_url(self):
@@ -153,9 +141,6 @@ class Info:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
         return self.workflow.get_secret(name)
 
-    def get_job_url(self):
-        return f"{self.env.RUN_URL}/job/{self.env.WORKFLOW_JOB_DATA['check_run_id']}"
-
     def get_job_report_url(self, latest=False):
         url = self.get_report_url(latest=latest)
         return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
@@ -193,25 +178,6 @@ class Info:
         return res
 
     @staticmethod
-    def get_specific_report_url_static(pr_number, branch, sha, job_name, workflow_name):
-        from .settings import Settings
-
-        if pr_number:
-            ref_param = f"PR={pr_number}"
-        else:
-            assert branch
-            ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
-            if bucket in path:
-                path = path.replace(bucket, endpoint)
-                break
-        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
-        if job_name:
-            res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
-        return res
-
-    @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:
         from .settings import _Settings
 
@@ -224,29 +190,22 @@ class Info:
         return None
 
     def store_kv_data(self, key, value):
-        print(f"Store workflow kv data: key [{key}], value [{value}]")
-        self.env.JOB_KV_DATA[key] = value
-        self.env.dump()
+        assert (
+            self.env.JOB_NAME == "Config Workflow"
+        ), "Custom data can be stored only in Config Workflow Job"
+        workflow_config = RunConfig.from_fs(self.env.WORKFLOW_NAME)
+        workflow_config.custom_data[key] = value
+        workflow_config.dump()
 
-    def get_kv_data(self, key=None, source_job="config_workflow"):
-        if Utils.normalize_string(self.env.JOB_NAME) == Utils.normalize_string(
-            source_job
-        ):
-            kv_data = self.env.JOB_KV_DATA
-        else:
-            kv_data = json.loads(
-                self.env.WORKFLOW_STATUS_DATA.get(
-                    Utils.normalize_string(source_job), {}
-                )
-                .get("outputs", {})
-                .get("data", {})
-            )
+    def get_kv_data(self, key=None):
+        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
         if key:
-            return kv_data.get(key, None)
-        return kv_data
+            return custom_data.get(key, None)
+        return custom_data
 
     def get_changed_files(self):
-        return self.get_kv_data().get("changed_files", None)
+        custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+        return custom_data.get("changed_files", None)
 
     def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())
@@ -271,9 +230,3 @@ class Info:
                 print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
                 return False
         return True
-
-    def docker_tag(self, image_name):
-        runconfig = self.get_kv_data("workflow_config")
-        if runconfig:
-            return runconfig.get("digest_dockers", None).get(image_name, None)
-        return None
