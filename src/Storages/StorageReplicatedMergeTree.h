@@ -840,6 +840,7 @@ private:
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
+    using WatchEventByPath = std::unordered_map<std::string, Coordination::EventPtr>;
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
       *
@@ -850,18 +851,20 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                             Int64 wait_for_inactive_timeout, const String & error_context = {});
+                                             Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
+                                             const String & error_context = {});
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout);
+                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
     bool tryWaitForReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name,
-                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout = 0);
+                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout,
+                                            Coordination::EventPtr & watch_event);
 
     /// Depending on settings, do nothing or wait for this replica or all replicas process log entry.
-    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context = {});
+    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context = {});
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;

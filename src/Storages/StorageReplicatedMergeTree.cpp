@@ -6325,8 +6325,9 @@ bool StorageReplicatedMergeTree::optimize(
 
     table_lock.reset();
 
+    WatchEventByPath watch_events;
     for (auto & merge_entry : merge_entries)
-        waitForLogEntryToBeProcessedIfNecessary(merge_entry, query_context);
+        waitForLogEntryToBeProcessedIfNecessary(merge_entry, query_context, watch_events);
 
     return assigned;
 }
@@ -6753,7 +6754,9 @@ void StorageReplicatedMergeTree::alter(
     table_lock_holder.unlock();
 
     LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
-    waitForLogEntryToBeProcessedIfNecessary(*alter_entry, query_context, "Some replicas doesn't finish metadata alter: ");
+
+    WatchEventByPath watch_events;
+    waitForLogEntryToBeProcessedIfNecessary(*alter_entry, query_context, watch_events, "Some replicas doesn't finish metadata alter: ");
 
     if (mutation_znode)
     {
@@ -6924,7 +6927,8 @@ void StorageReplicatedMergeTree::dropPart(const String & part_name, bool detach,
 
     dropPartImpl(zookeeper, part_name, entry, detach, /*throw_if_noop=*/ true);
 
-    waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
+    WatchEventByPath watch_events;
+    waitForLogEntryToBeProcessedIfNecessary(entry, query_context, watch_events);
 }
 
 void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
@@ -6963,9 +6967,10 @@ void StorageReplicatedMergeTree::dropPartitions(const zkutil::ZooKeeperPtr & zoo
     std::vector<LogEntryPtr> entries;
     dropAllPartsInPartitions(*zookeeper, partition_ids, entries, query_context, detach);
 
+    WatchEventByPath watch_events;
     for (const auto & entry : entries)
     {
-        waitForLogEntryToBeProcessedIfNecessary(*entry, query_context);
+        waitForLogEntryToBeProcessedIfNecessary(*entry, query_context, watch_events);
         auto drop_range_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
         cleanLastPartNode(drop_range_info.getPartitionId());
     }
@@ -7180,7 +7185,8 @@ EphemeralLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(
 }
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
-    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout)
+    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
+    Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events)
 {
     LOG_DEBUG(log, "Waiting for all replicas to process {}", entry.znode_name);
 
@@ -7192,7 +7198,8 @@ Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
     {
         if (wait_for_inactive || zookeeper->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active"))
         {
-            if (!tryWaitForReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_inactive_timeout))
+            auto & watch_event = watch_events.emplace(replica, std::make_shared<Poco::Event>()).first->second;
+            if (!tryWaitForReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_inactive_timeout, watch_event))
                 unwaited.push_back(replica);
         }
         else
@@ -7206,9 +7213,11 @@ Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
 }
 
 void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
-    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout, const String & error_context)
+    const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
+    Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
+    const String & error_context)
 {
-    Strings unfinished_replicas = tryWaitForAllReplicasToProcessLogEntry(table_zookeeper_path, entry, wait_for_inactive_timeout);
+    Strings unfinished_replicas = tryWaitForAllReplicasToProcessLogEntry(table_zookeeper_path, entry, wait_for_inactive_timeout, watch_events);
     if (unfinished_replicas.empty())
         return;
 
@@ -7216,13 +7225,14 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
                     "Probably some replicas are inactive", error_context, fmt::join(unfinished_replicas, ", "), entry.znode_name);
 }
 
-void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context)
+void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context)
 {
     /// If necessary, wait until the operation is performed on itself or on all replicas.
     Int64 wait_for_inactive_timeout = query_context->getSettingsRef()[Setting::replication_wait_for_inactive_replica_timeout];
     if (query_context->getSettingsRef()[Setting::alter_sync] == 1)
     {
-        bool finished = tryWaitForReplicaToProcessLogEntry(zookeeper_path, replica_name, entry, wait_for_inactive_timeout);
+        auto & watch_event = watch_events.emplace(replica_name, std::make_shared<Poco::Event>()).first->second;
+        bool finished = tryWaitForReplicaToProcessLogEntry(zookeeper_path, replica_name, entry, wait_for_inactive_timeout, watch_event);
         if (!finished)
         {
             throw Exception(ErrorCodes::UNFINISHED, "{}Log entry {} is not precessed on local replica, "
@@ -7231,12 +7241,14 @@ void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const R
     }
     else if (query_context->getSettingsRef()[Setting::alter_sync] == 2)
     {
-        waitForAllReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_inactive_timeout, error_context);
+        waitForAllReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context);
     }
 }
 
 bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
-    const String & table_zookeeper_path, const String & replica, const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout)
+    const String & table_zookeeper_path, const String & replica,
+    const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout,
+    Coordination::EventPtr & watch_event)
 {
     String entry_str = entry.toString();
     String log_node_name;
@@ -7286,22 +7298,24 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            Coordination::EventPtr event = std::make_shared<Poco::Event>();
-
-            String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
+            String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, watch_event);
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
             {
                 pulled_to_queue = true;
                 break;
             }
 
+            if (stop_waiting())
+                break;
+
             /// Wait with timeout because we can be already shut down, but not dropped.
             /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
             /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
             /// but the query will never finish because the drop already shut down the table.
-            if (!stop_waiting())
-                event->tryWait(event_wait_timeout_ms);
-        } while (!stop_waiting());
+            watch_event->tryWait(event_wait_timeout_ms);
+            /// Reset the event state
+            (*watch_event).reset();
+        } while (true);
 
         if (!pulled_to_queue)
             return false;
@@ -8623,8 +8637,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
     background_operations_assignee.trigger();
 
+    WatchEventByPath watch_events;
     for (const auto & entry : entries)
-        waitForLogEntryToBeProcessedIfNecessary(*entry, query_context);
+        waitForLogEntryToBeProcessedIfNecessary(*entry, query_context, watch_events);
 }
 
 std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::replacePartitionFromImpl(
@@ -9160,7 +9175,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         lock2.reset();
 
-        dest_table_storage->waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
+        WatchEventByPath dest_watch_events;
+        dest_table_storage->waitForLogEntryToBeProcessedIfNecessary(entry, query_context, dest_watch_events);
 
         /// Create DROP_RANGE for the source table
         Coordination::Requests ops_src;
@@ -9188,7 +9204,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
         background_operations_assignee.trigger();
 
-        waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
+        WatchEventByPath watch_events;
+        waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context, watch_events);
 
         /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
         cleanLastPartNode(partition_id);
