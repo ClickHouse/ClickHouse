@@ -10,6 +10,7 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
+#include <base/sort.h>
 #include <atomic>
 #include <optional>
 #include <string_view>
@@ -122,6 +123,9 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
         throw DB::NetException(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
     }
 
+    /// `getaddrinfo` returns duplicate addresses with different socket types, but useless for `Poco::Net::IPAddress`
+    addresses.erase(std::unique(addresses.begin(), addresses.end()), addresses.end());
+
     return addresses;
 }
 
@@ -198,7 +202,9 @@ struct DNSResolver::Impl
         try
         {
             host_name.emplace(Poco::Net::DNS::hostName());
-            host_addresses.emplace(hostByName(*host_name));
+            auto addresses = hostByName(*host_name);
+            ::sort(addresses.begin(), addresses.end());
+            host_addresses.emplace(std::move(addresses));
         }
         catch (...)
         {
@@ -329,22 +335,13 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
 
 std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std::string & host, UInt16 port)
 {
-    if (Poco::Net::IPAddress ip; Poco::Net::IPAddress::tryParse(host, ip))
-        return std::vector<Poco::Net::SocketAddress>{{ip, port}};
+    auto ip_addresses = resolveHostAllInOriginOrder(host);
+    std::vector<Poco::Net::SocketAddress> socket_addresses(ip_addresses.size());
 
-    std::vector<Poco::Net::SocketAddress> addresses;
+    for (auto & ip_addresse : ip_addresses)
+        socket_addresses.emplace_back(ip_addresse, port);
 
-    if (!impl->disable_cache)
-        addToNewHosts(host);
-
-    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : resolveIPAddressWithCache(host);
-    auto ips_end = std::unique(ips.begin(), ips.end());
-
-    addresses.reserve(ips_end - ips.begin());
-    for (auto ip = ips.begin(); ip != ips_end; ++ip)
-        addresses.emplace_back(*ip, port);
-
-    return addresses;
+    return socket_addresses;
 }
 
 std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
@@ -407,6 +404,7 @@ bool DNSResolver::updateHostNameAndAddresses()
     {
         String updated_host_name = Poco::Net::DNS::hostName();
         DNSResolver::IPAddresses updated_host_addresses = hostByName(updated_host_name);
+        ::sort(updated_host_addresses.begin(), updated_host_addresses.end());
 
         std::lock_guard lock(impl->drop_mutex);
         if (!impl->host_name.has_value() || updated_host_name != *impl->host_name)
