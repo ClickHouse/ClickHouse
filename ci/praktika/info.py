@@ -33,6 +33,11 @@ class Info:
         """
         return self.env.LINKED_PR_NUMBER
 
+    def set_parent_pr_number(self, pr_number):
+        self.env.JOB_KV_DATA["parent_pr_number"] = pr_number
+        self.env.dump()
+        return self
+
     @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
@@ -98,12 +103,24 @@ class Info:
         return self.env.FORK_NAME
 
     @property
+    def commit_message(self):
+        return self.env.COMMIT_MESSAGE
+
+    @property
     def user_name(self):
         return self.env.USER_LOGIN
 
     @property
+    def commit_authors(self):
+        return self.env.COMMIT_AUTHORS or []
+
+    @property
     def run_url(self):
         return self.env.RUN_URL
+
+    @property
+    def run_id(self):
+        return self.env.RUN_ID
 
     @property
     def pr_labels(self):

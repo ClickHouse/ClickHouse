@@ -386,6 +386,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
+        {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -697,21 +698,49 @@ void FuzzConfig::validateClickHouseHealth()
     if (processServerQuery(
             false,
             fmt::format(
-                "(SELECT count() FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken')) UNION ALL (SELECT "
-                "ifNull(sum(\"lost_part_count\"), 0) FROM \"system\".\"replicas\") INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+                "SELECT x FROM ("
+                "(SELECT count() x, 1 y FROM \"system\".\"detached_parts\" WHERE startsWith(\"name\", 'broken'))"
+                " UNION ALL "
+                "(SELECT ifNull(sum(\"lost_part_count\"), 0) x, 2 y FROM \"system\".\"replicas\")"
+                " UNION ALL "
+                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
+                "'%POTENTIALLY_BROKEN_DATA_PART%' AND message NOT ILIKE '%UNION ALL%')"
+                " UNION ALL "
+                "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
+                " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)"
+                " UNION ALL "
+                "(SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE name = "
+                "'SharedCatalogDropDetachLocalTablesErrors')"
+                " UNION ALL "
+                "(SELECT count() x, 6 y FROM clusterAllReplicas(default, \"system\".\"replicas\") WHERE readonly_start_time IS NOT NULL)"
+                " UNION ALL "
+                "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
+                " WHERE exception != '' AND event_time > (now() - toIntervalSecond(30)) GROUP BY part_name HAVING count() > 5) tx)"
+                " UNION ALL "
+                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(30) AND message ILIKE "
+                "'%REPLICA_ALREADY_EXISTS%' AND message NOT ILIKE '%UNION ALL%')"
+                ") tx ORDER BY y INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_server_out.generic_string())))
     {
         String buf;
-        uint32_t i = 0;
+        size_t i = 0;
         std::ifstream infile(fuzz_client_out, std::ios::in);
+        static const DB::Strings & health_errors
+            = {"broken detached part(s)",
+               "broken replica(s)",
+               "broken data part(s)",
+               "shared catalog replica(s) needing recovery",
+               "shared catalog drop/detach error(s)",
+               "readonly replica(s)",
+               "part(s) with excessive errors",
+               "replica(s) with REPLICA_ALREADY_EXISTS errors"};
 
-        while (std::getline(infile, buf) && !buf.empty() && i < 2)
+        while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
             buf.erase(std::find_if(buf.rbegin(), buf.rend(), [](unsigned char c) { return !std::isspace(c); }).base(), buf.end());
             const uint32_t val = static_cast<uint32_t>(std::stoul(buf));
             if (val != 0)
             {
-                static const DB::Strings & health_errors = {"broken detached parts", "broken replicas"};
                 throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "ClickHouse health check: found {} {}", val, health_errors[i]);
             }
             i++;
