@@ -2041,6 +2041,40 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
+using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
+/// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
+/// Used for distributed index analysis
+static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const std::vector<std::string_view> & parts_to_analyze)
+{
+    /// Resolve part names to RangesInDataParts
+    RangesInDataParts parts_ranges_to_analyze;
+    for (const auto & part : parts_to_analyze)
+        parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
+
+    ReadFromMergeTree::IndexStats ignore_stats;
+    auto parts_ranges_res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_to_analyze, ignore_stats);
+
+    std::unordered_set<std::string_view> processed_parts;
+
+    /// Convert RangesInDataParts to IndexAnalysisPartsRanges
+    IndexAnalysisPartsRanges res;
+    for (const auto & part_ranges : parts_ranges_res)
+    {
+        const auto & part_name = part_ranges.data_part->name;
+        res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+    }
+
+    /// Add empty parts back, to take it into account in "Parts send"
+    for (const auto & part_name : parts_to_analyze)
+    {
+        if (processed_parts.contains(part_name))
+            continue;
+        res.emplace(part_name, MarkRanges{});
+    }
+
+    return res;
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const RangesInDataParts & parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -2213,35 +2247,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & part_ranges : res_parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
 
-            LocalIndexAnalysisCallback local_index_analysis_callback = [&](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
+            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
-                /// Resolve part names to RangesInDataParts
-                RangesInDataParts parts_ranges_to_analyze;
-                for (const auto & part : parts_to_analyze)
-                    parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
-
-                IndexStats ignore_stats;
-                auto parts_ranges_res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_to_analyze, ignore_stats);
-
-                std::unordered_set<std::string_view> processed_parts;
-
-                /// Convert RangesInDataParts to IndexAnalysisPartsRanges
-                IndexAnalysisPartsRanges res;
-                for (const auto & part_ranges : parts_ranges_res)
-                {
-                    const auto & part_name = part_ranges.data_part->name;
-                    res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
-                }
-
-                /// Add empty parts back, to take it into account in "Parts send"
-                for (const auto & part_name : parts_to_analyze)
-                {
-                    if (processed_parts.contains(part_name))
-                        continue;
-                    res.emplace(part_name, MarkRanges{});
-                }
-
-                return res;
+                return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
             };
 
             DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), primary_key_column_names, res_parts, local_index_analysis_callback, context_);
