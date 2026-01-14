@@ -24,10 +24,25 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "getSubcolumn")
+        /// Handle getSubcolumn function calls
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            if (function_node->getFunctionName() == "getSubcolumn")
+            {
+                processGetSubcolumnFunction(node, function_node);
+            }
             return;
+        }
 
+        /// Handle direct subcolumn ColumnNode references (e.g., from FunctionToSubcolumnsPass)
+        if (auto * column_node = node->as<ColumnNode>())
+        {
+            processSubcolumnNode(node, column_node);
+        }
+    }
+
+    void processGetSubcolumnFunction(QueryTreeNodePtr & node, FunctionNode * function_node)
+    {
         const auto & args = function_node->getArguments().getNodes();
         if (args.size() != 2)
             return;
@@ -55,6 +70,59 @@ public:
         if (!subcolumn_type)
             return;
 
+        pushdownSubcolumn(node, query_source, base_column_name, subcolumn_name, full_subcolumn_name, subcolumn_type, column_source);
+    }
+
+    void processSubcolumnNode(QueryTreeNodePtr & node, ColumnNode * column_node)
+    {
+        const String & column_name = column_node->getColumnName();
+
+        /// Check if this is a subcolumn reference (contains a dot)
+        auto dot_pos = column_name.find('.');
+        if (dot_pos == String::npos || dot_pos == 0 || dot_pos == column_name.size() - 1)
+            return;
+
+        auto column_source = column_node->getColumnSource();
+        auto * query_source = column_source->as<QueryNode>();
+        if (!query_source)
+            return;
+
+        /// Extract base column name and subcolumn name
+        String base_column_name = column_name.substr(0, dot_pos);
+        String subcolumn_name = column_name.substr(dot_pos + 1);
+
+        /// Validate that the base column exists in the projection and get its type
+        const auto & projection_columns = query_source->getProjectionColumns();
+        std::optional<DataTypePtr> base_column_type;
+        for (const auto & proj_col : projection_columns)
+        {
+            if (proj_col.name == base_column_name)
+            {
+                base_column_type = proj_col.type;
+                break;
+            }
+        }
+
+        if (!base_column_type)
+            return;
+
+        /// Check if the subcolumn is valid for this base column type
+        auto subcolumn_type = (*base_column_type)->tryGetSubcolumnType(subcolumn_name);
+        if (!subcolumn_type)
+            return;
+
+        pushdownSubcolumn(node, query_source, base_column_name, subcolumn_name, column_name, subcolumn_type, column_source);
+    }
+
+    void pushdownSubcolumn(
+        QueryTreeNodePtr & node,
+        QueryNode * query_source,
+        const String & base_column_name,
+        const String & subcolumn_name,
+        const String & full_subcolumn_name,
+        const DataTypePtr & subcolumn_type,
+        const QueryTreeNodePtr & column_source)
+    {
         /// Find and update the projection in the source query
         auto & projection_nodes = query_source->getProjection().getNodes();
 
@@ -100,7 +168,7 @@ public:
             projection_columns[i] = NameAndTypePair{full_subcolumn_name, subcolumn_type};
             query_source->resolveProjectionColumns(std::move(projection_columns));
 
-            /// Replace getSubcolumn(column, 'subcolumn') with direct column reference
+            /// Replace subcolumn reference with updated column reference
             NameAndTypePair new_column_name_and_type{full_subcolumn_name, subcolumn_type};
             node = std::make_shared<ColumnNode>(new_column_name_and_type, column_source);
 
