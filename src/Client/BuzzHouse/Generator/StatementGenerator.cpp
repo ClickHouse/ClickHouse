@@ -112,7 +112,7 @@ StatementGenerator::StatementGenerator(
     , deterministic_aggrs_limit(
           static_cast<size_t>(
               std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
-    , sqlgen(ProbabilityGeneratorT(ProbabilityConfig(
+    , sqlgen(ProbabilityGenerator(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -141,7 +141,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.04}, /// Kill
               {0.01, 0.01} /// ShowStatement
           }})))
-    , litGen(ProbabilityGeneratorT(ProbabilityConfig(
+    , litGen(ProbabilityGenerator(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -164,7 +164,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.05}, /// LitNULLVal
               {0.01, 0.10} /// LitFraction
           }})))
-    , expGen(ProbabilityGeneratorT(ProbabilityConfig(
+    , expGen(ProbabilityGenerator(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -188,7 +188,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.03}, /// DictExpr
               {0.01, 0.02} /// StarExpr
           }})))
-    , predGen(ProbabilityGeneratorT(ProbabilityConfig(
+    , predGen(ProbabilityGenerator(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -203,7 +203,7 @@ StatementGenerator::StatementGenerator(
               {0.10, 0.35}, /// SearchExpr
               {0.03, 0.05} /// OtherExpr
           }})))
-    , queryGen(ProbabilityGeneratorT(ProbabilityConfig(
+    , queryGen(ProbabilityGenerator(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
