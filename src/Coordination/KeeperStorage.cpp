@@ -3048,22 +3048,19 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     /// we cannot use `digest` directly in case we need to rollback Multi request
     uint64_t current_digest = 0;
-    uint64_t * current_digest_ptr = nullptr;
     if (digest)
-    {
         current_digest = *digest;
-        current_digest_ptr = &current_digest;
-    }
 
     std::list<KeeperStorageBase::Delta> new_deltas;
     for (size_t i = 0; i < subrequests.size(); ++i)
     {
         const auto zk_subrequest = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(subrequests[i]);
 
+        uint64_t subrequest_digest = current_digest;
         auto new_subdeltas = callOnConcreteRequestType(
             *zk_subrequest,
             [&](const auto & subrequest)
-            { return preprocess(subrequest, storage, zxid, session_id, time, /*digest=*/nullptr, keeper_context); });
+            { return preprocess(subrequest, storage, zxid, session_id, time, &subrequest_digest, keeper_context); });
 
         Coordination::Error error = Coordination::Error::ZOK;
         if (!new_subdeltas.empty())
@@ -3110,7 +3107,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
         /// Manually add deltas so that the result of previous request in the transaction is used in the next request
         /// Multi requests already applied their deltas to uncommitted state.
         if (!isMultiRequest(*zk_subrequest))
-            storage.uncommitted_state.applyDeltas(new_subdeltas, current_digest_ptr);
+            storage.uncommitted_state.applyDeltas(new_subdeltas, &current_digest);
+        else
+            current_digest = subrequest_digest;
 
         new_deltas.splice(new_deltas.end(), std::move(new_subdeltas));
     }
