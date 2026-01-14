@@ -2408,6 +2408,13 @@ Ignore ON CLUSTER clause for replicated access entities management queries.
     DECLARE(Bool, ignore_on_cluster_for_replicated_named_collections_queries, false, R"(
 Ignore ON CLUSTER clause for replicated named collections management queries.
 )", 0) \
+    /** Settings for auto fill on cluster */ \
+    DECLARE(Bool, automatic_fill_on_cluster_mode, false, R"(
+Allow query to fill ON CLUSTER value automatically when missing.
+)", 0) \
+    DECLARE(String, cluster_for_automatic_fill_mode, "", R"(
+Default ON CLUSTER value automatically to fill when missing.
+)", 0) \
     /** Settings for testing hedged requests */ \
     DECLARE(Milliseconds, sleep_in_send_tables_status_ms, 0, R"(
 Time to sleep in sending tables status response in TCPHandler

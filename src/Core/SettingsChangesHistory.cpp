@@ -73,6 +73,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
+            {"automatic_fill_on_cluster_mode", false, false, "New setting"},
+            {"cluster_for_automatic_fill_mode", "", "", "New setting"}
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
