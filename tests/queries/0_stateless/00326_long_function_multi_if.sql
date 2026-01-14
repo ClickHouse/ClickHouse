@@ -1,5 +1,4 @@
--- Tags: long, no-msan
--- no-msan: it takes a long time
+-- Tags: long
 
 SELECT 'Trivial case';
 

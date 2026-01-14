@@ -5,9 +5,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <Functions/GatherUtils/IValueSource.h>
-#include <Functions/GatherUtils/IArraySource.h>
-#include <Functions/GatherUtils/IArraySink.h>
+#include "IValueSource.h"
+#include "IArraySource.h"
+#include "IArraySink.h"
 
 /** These methods are intended for implementation of functions, that
   *  copy ranges from one or more columns to another column.

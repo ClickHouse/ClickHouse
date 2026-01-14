@@ -9,15 +9,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
 {
 class TableSnapshot;
-class TableChanges;
-using TableChangesPtr = std::shared_ptr<TableChanges>;
-using TableChangesVersionRange = std::pair<size_t, std::optional<size_t>>;
 }
 
 namespace DB
@@ -26,77 +22,38 @@ namespace DB
 class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {
 public:
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
-    const char * getName() const override { return name; }
-
-    DeltaLakeMetadataDeltaKernel(
-        ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
-        ContextPtr context);
+    DeltaLakeMetadataDeltaKernel(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
-    bool supportsWrites() const override { return true; }
+    bool update(const ContextPtr & context) override;
 
-    void update(const ContextPtr & context) override;
+    Strings getDataFiles() const override;
 
-    NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
+    NamesAndTypesList getTableSchema() const override;
 
-    ReadFromFormatInfo prepareReadingFromFormat(
-        const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context,
-        bool supports_subset_of_columns,
-        bool supports_tuple_elements) override;
+    NamesAndTypesList getReadSchema() const override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
 
-    void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
-
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr context)
+        ConfigurationObserverPtr configuration,
+        ContextPtr, bool)
     {
-        auto configuration_ptr = configuration.lock();
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, context);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
     }
 
-    ObjectIterator iterate(
-        const ActionsDAG * filter_dag,
-        FileProgressCallback callback,
-        size_t list_batch_size,
-        StorageMetadataPtr storage_metadata_snapshot,
+    bool supportsFileIterator() const override { return true; }
 
-        ContextPtr context) const override;
-
-    DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
-
-    DeltaLake::TableChangesPtr getTableChanges(
-        const DeltaLake::TableChangesVersionRange & version_range,
-        const Block & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context) const;
-
-    SinkToStoragePtr write(
-        SharedHeader sample_block,
-        const StorageID & table_id,
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+    ObjectIterator iterate() const override;
 
 private:
     const LoggerPtr log;
-    const DeltaLake::KernelHelperPtr kernel_helper;
-    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
-    const std::string format_name;
-    mutable std::mutex table_snapshot_mutex;
-
-    ObjectStoragePtr object_storage_common;
-    void logMetadataFiles(ContextPtr context) const;
+    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
 };
 
 }

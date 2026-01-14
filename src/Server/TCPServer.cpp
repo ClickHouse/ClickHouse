@@ -1,4 +1,3 @@
-#include <Poco/Net/TCPServer.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Server/TCPServer.h>
 
@@ -26,15 +25,12 @@ TCPServer::TCPServer(
     TCPServerConnectionFactory::Ptr factory_,
     Poco::ThreadPool & thread_pool,
     Poco::Net::ServerSocket & socket_,
-    Poco::Net::TCPServerParams::Ptr params,
-    const TCPServerConnectionFilter::Ptr & filter)
+    Poco::Net::TCPServerParams::Ptr params)
     : Poco::Net::TCPServer(new TCPServerConnectionFactoryImpl(*this, factory_), thread_pool, socket_, params)
     , factory(factory_)
     , socket(socket_)
     , is_open(true)
     , port_number(socket.address().port())
-{
-    setConnectionFilter(filter);
-}
+{}
 
 }

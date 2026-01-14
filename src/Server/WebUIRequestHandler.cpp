@@ -1,18 +1,19 @@
-#include <Server/WebUIRequestHandler.h>
-#include <Server/HTTPResponseHeaderWriter.h>
-
-#include <incbin.h>
-
-#include <Common/re2.h>
-#include <Core/ServerSettings.h>
-#include <IO/HTTPCommon.h>
-#include <IO/Operators.h>
-#include <Interpreters/Context.h>
+#include "WebUIRequestHandler.h"
+#include "IServer.h"
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Core/ServerSettings.h>
+#include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Common/re2.h>
+
+#include <incbin.h>
+
+#include "config.h"
 
 /// Embedded HTML pages
 INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
@@ -26,10 +27,8 @@ INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 namespace DB
 {
 
-static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
-                   std::unordered_map<String, String> http_response_headers_override = {})
+static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
-    applyHTTPResponseHeaders(response, http_response_headers_override);
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
@@ -43,7 +42,7 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize}, http_response_headers_override);
+    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
 }
 
 void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -61,28 +60,28 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
     RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
 
-    handle(request, response, html, http_response_headers_override);
+    handle(request, response, html);
 }
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize}, http_response_headers_override);
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize}, http_response_headers_override);
+    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize}, http_response_headers_override);
+        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize}, http_response_headers_override);
+        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
     }
     else
     {

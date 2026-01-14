@@ -1,9 +1,8 @@
--- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree, no-async-insert
+-- Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
 
 -- no-replicated-database:
 --   The number of replicas is doubled, so `SYSTEM STOP FETCHES` stop not enough replicas.
 -- no-shared-merge-tree: no quorum inserts
--- no-async-insert: async inserts are not supported with quorum inserts
 
 SET insert_quorum_parallel = false;
 

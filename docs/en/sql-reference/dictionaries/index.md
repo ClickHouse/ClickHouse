@@ -4,13 +4,11 @@ sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
 slug: /sql-reference/dictionaries
 title: 'Dictionaries'
-doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 import CloudDetails from '@site/docs/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Dictionaries
 
@@ -21,7 +19,8 @@ ClickHouse supports special functions for working with dictionaries that can be 
 ClickHouse supports:
 
 - Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
-- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/embedded-dict-functions.md).
+- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+
 
 :::tip Tutorial
 If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](tutorial.md).
@@ -50,10 +49,10 @@ The [dictionaries](/operations/system-tables/dictionaries) system table contains
 ## Creating a dictionary with a DDL query {#creating-a-dictionary-with-a-ddl-query}
 
 Dictionaries can be created with [DDL queries](../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
-- No additional records are added to server configuration files.
-- The dictionaries can be worked with as first-class entities, like tables or views.
-- Data can be read directly, using familiar SELECT rather than dictionary table functions. Note that when accessing a dictionary directly via a SELECT statement, cached dictionary will return only cached data, while non-cached dictionary - will return all of the data that it stores. 
-- The dictionaries can be easily renamed.
+- No additional records are added to server configuration files
+- The dictionaries can be worked with as first-class entities, like tables or views
+- Data can be read directly, using familiar SELECT rather than dictionary table functions
+- The dictionaries can be easily renamed
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
 
@@ -65,7 +64,7 @@ Creating a dictionary with a configuration file is not applicable to ClickHouse 
 
 The dictionary configuration file has the following format:
 
-```xml
+``` xml
 <clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
@@ -83,6 +82,7 @@ The dictionary configuration file has the following format:
 
 You can [configure](#configuring-a-dictionary) any number of dictionaries in the same file.
 
+
 :::note
 You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
 :::
@@ -93,7 +93,7 @@ You can convert values for a small dictionary by describing it in a `SELECT` que
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 
-```xml
+``` xml
 <dictionary>
     <name>dict_name</name>
 
@@ -117,7 +117,7 @@ If dictionary is configured using xml file, than dictionary configuration has th
 
 Corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md) has the following structure:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name
 (
     ... -- attributes
@@ -152,7 +152,7 @@ You can view the list of dictionaries and their statuses in the [system.dictiona
 
 The configuration looks like this:
 
-```xml
+``` xml
 <clickhouse>
     <dictionary>
         ...
@@ -168,7 +168,7 @@ The configuration looks like this:
 
 Corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md):
 
-```sql
+``` sql
 CREATE DICTIONARY (...)
 ...
 LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
@@ -206,8 +206,6 @@ Configuration example of a composite key (key has one element with [String](../.
 
 ## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
 
-Various methods of storing dictionary data in memory are associated with CPU and RAM-usage trade-offs. Decision tree published in [Choosing a Layout](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse#choosing-a-layout) paragraph of dictionary-related [blog post](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) is a good starting point for deciding which layout to use.
-
 - [flat](#flat)
 - [hashed](#hashed)
 - [sparse_hashed](#sparse_hashed)
@@ -237,7 +235,7 @@ This method provides the best performance among all available methods of storing
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <flat>
     <initial_array_size>50000</initial_array_size>
@@ -248,7 +246,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 ```
 
@@ -262,7 +260,7 @@ All types of sources are supported. When updating, data (from a file or from a t
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <hashed />
 </layout>
@@ -270,13 +268,13 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(HASHED())
 ```
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <hashed>
     <!-- If shards greater then 1 (default is `1`) the dictionary will load
@@ -307,7 +305,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
@@ -319,7 +317,7 @@ The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) 
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <sparse_hashed>
     <!-- <shards>1</shards> -->
@@ -331,7 +329,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
@@ -343,7 +341,7 @@ This type of storage is for use with composite [keys](#dictionary-key-and-fields
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <complex_key_hashed>
     <!-- <shards>1</shards> -->
@@ -355,7 +353,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
@@ -365,7 +363,7 @@ This type of storage is for use with composite [keys](#dictionary-key-and-fields
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <complex_key_sparse_hashed>
     <!-- <shards>1</shards> -->
@@ -377,7 +375,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
@@ -391,7 +389,7 @@ All types of sources are supported. When updating, data (from a file or from a t
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <hashed_array>
   </hashed_array>
@@ -400,7 +398,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(HASHED_ARRAY([SHARDS 1]))
 ```
 
@@ -410,7 +408,7 @@ This type of storage is for use with composite [keys](#dictionary-key-and-fields
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <complex_key_hashed_array />
 </layout>
@@ -418,7 +416,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 ```
 
@@ -426,11 +424,12 @@ LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
+The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
 
-```text
+``` text
 ┌─advertiser_id─┬─discount_start_date─┬─discount_end_date─┬─amount─┐
 │           123 │          2015-01-16 │        2015-01-31 │   0.25 │
 │           123 │          2015-01-01 │        2015-01-15 │   0.15 │
@@ -446,7 +445,7 @@ Values of `range_min` and `range_max` should fit in `Int64` type.
 
 Example:
 
-```xml
+``` xml
 <layout>
     <range_hashed>
         <!-- Strategy for overlapping ranges (min/max). Default: min (return a matching range with the min(range_min -> range_max) value) -->
@@ -470,7 +469,7 @@ Example:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY discounts_dict (
     advertiser_id UInt64,
     discount_start_date Date,
@@ -486,12 +485,12 @@ RANGE(MIN discount_start_date MAX discount_end_date)
 
 To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
 
-```sql
+``` sql
 dictGet('dict_name', 'attr_name', id, date)
 ```
 Query example:
 
-```sql
+``` sql
 SELECT dictGet('discounts_dict', 'amount', 1, '2022-10-20'::Date);
 ```
 
@@ -506,7 +505,7 @@ Details of the algorithm:
 
 Configuration example:
 
-```xml
+``` xml
 <clickhouse>
     <dictionary>
         ...
@@ -540,7 +539,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY somedict(
     Abcdef UInt64,
     StartTimeStamp UInt64,
@@ -659,7 +658,7 @@ The dictionary is stored in memory in the form of a hash table with an ordered a
 
 Configuration example:
 
-```sql
+``` sql
 CREATE DICTIONARY range_dictionary
 (
   CountryID UInt64,
@@ -697,7 +696,7 @@ All types of sources are supported.
 
 Example of settings:
 
-```xml
+``` xml
 <layout>
     <cache>
         <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
@@ -718,7 +717,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
@@ -743,7 +742,7 @@ Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionar
 
 The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 
-```xml
+``` xml
 <layout>
     <ssd_cache>
         <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
@@ -762,7 +761,7 @@ The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) 
 
 or
 
-```sql
+``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
     PATH '/var/lib/clickhouse/user_files/test_dict'))
 ```
@@ -781,7 +780,7 @@ All types of [sources](#dictionary-sources), except local files, are supported.
 
 Configuration example:
 
-```xml
+``` xml
 <layout>
   <direct />
 </layout>
@@ -789,7 +788,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 LAYOUT(DIRECT())
 ```
 
@@ -799,9 +798,7 @@ This type of storage is for use with composite [keys](#dictionary-key-and-fields
 
 ### ip_trie {#ip_trie}
 
-This dictionary is designed for IP address lookups by network prefix. It stores IP ranges in CIDR notation and allows fast determination of which prefix (e.g. subnet or ASN range) a given IP falls into, making it ideal for IP-based searches like geolocation or network classification.
-
-<iframe width="1024" height="576" src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="IP based search with the ip_trie dictionary" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
 **Example**
 
@@ -828,7 +825,7 @@ INSERT INTO my_ip_addresses VALUES
 
 Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
 
-```xml
+``` xml
 <structure>
     <key>
         <attribute>
@@ -859,7 +856,7 @@ Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requir
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY my_ip_trie_dictionary (
     prefix String,
     asn UInt32,
@@ -875,13 +872,13 @@ The key must have only one `String` type attribute that contains an allowed IP p
 
 The syntax is:
 
-```sql
+``` sql
 dictGetT('dict_name', 'attr_name', ip)
 ```
 
 The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
 
-```sql
+``` sql
 SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
 
 ┌─result─┐
@@ -917,7 +914,7 @@ Example of settings:
 
 <CloudDetails />
 
-```xml
+``` xml
 <dictionary>
     ...
     <lifetime>300</lifetime>
@@ -927,7 +924,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY (...)
 ...
 LIFETIME(300)
@@ -940,7 +937,7 @@ You can set a time interval for updates, and ClickHouse will choose a uniformly 
 
 Example of settings:
 
-```xml
+``` xml
 <dictionary>
     ...
     <lifetime>
@@ -953,7 +950,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 LIFETIME(MIN 300 MAX 360)
 ```
 
@@ -972,7 +969,7 @@ For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query th
 
 Example of settings:
 
-```xml
+``` xml
 <dictionary>
     ...
     <odbc>
@@ -985,7 +982,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 ...
 SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
 ...
@@ -998,7 +995,7 @@ It is also possible for `Flat`, `Hashed`, `HashedArray`, `ComplexKeyHashed` dict
 - If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 - If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
 - If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
-  - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+    - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
     ```sql
     ...
     SOURCE(CLICKHOUSE(...
@@ -1018,7 +1015,7 @@ If `update_field` option is set, additional option `update_lag` can be set. Valu
 
 Example of settings:
 
-```xml
+``` xml
 <dictionary>
     ...
         <clickhouse>
@@ -1032,7 +1029,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 ...
 SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
@@ -1046,7 +1043,7 @@ A dictionary can be connected to ClickHouse from many different sources.
 
 If the dictionary is configured using an xml-file, the configuration looks like this:
 
-```xml
+``` xml
 <clickhouse>
   <dictionary>
     ...
@@ -1063,7 +1060,7 @@ If the dictionary is configured using an xml-file, the configuration looks like 
 
 In case of [DDL-query](../../sql-reference/statements/create/dictionary.md), the configuration described above will look like:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name (...)
 ...
 SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
@@ -1075,7 +1072,7 @@ The source is configured in the `source` section.
 For source types [Local file](#local-file), [Executable file](#executable-file), [HTTP(s)](#https), [ClickHouse](#clickhouse)
 optional settings are available:
 
-```xml
+``` xml
 <source>
   <file>
     <path>/opt/dictionaries/os.tsv</path>
@@ -1089,7 +1086,7 @@ optional settings are available:
 
 or
 
-```sql
+``` sql
 SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
@@ -1101,20 +1098,19 @@ Types of sources (`source_type`):
 - [Executable Pool](#executable-pool)
 - [HTTP(S)](#https)
 - DBMS
-  - [ODBC](#odbc)
-  - [MySQL](#mysql)
-  - [ClickHouse](#clickhouse)
-  - [MongoDB](#mongodb)
-  - [Redis](#redis)
-  - [Cassandra](#cassandra)
-  - [PostgreSQL](#postgresql)
-  - [YTsaurus](#ytsaurus)
+    - [ODBC](#odbc)
+    - [MySQL](#mysql)
+    - [ClickHouse](#clickhouse)
+    - [MongoDB](#mongodb)
+    - [Redis](#redis)
+    - [Cassandra](#cassandra)
+    - [PostgreSQL](#postgresql)
 
 ### Local File {#local-file}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <file>
     <path>/opt/dictionaries/os.tsv</path>
@@ -1125,7 +1121,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
@@ -1146,7 +1142,7 @@ Working with executable files depends on [how the dictionary is stored in memory
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
@@ -1177,7 +1173,7 @@ Executable pool will spawn a pool of processes with the specified command and ke
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <executable_pool>
         <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
@@ -1210,7 +1206,7 @@ Working with an HTTP(S) server depends on [how the dictionary is stored in memor
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <http>
         <url>http://[::1]/os.tsv</url>
@@ -1231,7 +1227,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(HTTP(
     url 'http://[::1]/os.tsv'
     format 'TabSeparated'
@@ -1264,7 +1260,7 @@ You can use this method to connect any database that has an ODBC driver.
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <odbc>
         <db>DatabaseName</db>
@@ -1278,7 +1274,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(ODBC(
     db 'DatabaseName'
     table 'SchemaName.TableName'
@@ -1315,7 +1311,7 @@ When connecting to the database through the ODBC driver connection parameter `Se
 
 Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
-```text
+``` text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost
@@ -1328,7 +1324,7 @@ PASSWORD = test
 
 If you then make a query such as
 
-```sql
+``` sql
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
@@ -1340,13 +1336,13 @@ Ubuntu OS.
 
 Installing unixODBC and the ODBC driver for PostgreSQL:
 
-```bash
+``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that runs ClickHouse):
 
-```text
+``` text
     [DEFAULT]
     Driver = myconnection
 
@@ -1367,7 +1363,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that
 
 The dictionary configuration in ClickHouse:
 
-```xml
+``` xml
 <clickhouse>
     <dictionary>
         <name>table_name</name>
@@ -1402,7 +1398,7 @@ The dictionary configuration in ClickHouse:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY table_name (
     id UInt64,
     some_column UInt64 DEFAULT 0
@@ -1421,7 +1417,7 @@ Ubuntu OS.
 
 Installing the ODBC driver for connecting to MS SQL:
 
-```bash
+``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
@@ -1472,7 +1468,7 @@ Remarks:
 
 Configuring the dictionary in ClickHouse:
 
-```xml
+``` xml
 <clickhouse>
     <dictionary>
         <name>test</name>
@@ -1508,7 +1504,7 @@ Configuring the dictionary in ClickHouse:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY test (
     k UInt64,
     s String DEFAULT ''
@@ -1523,7 +1519,7 @@ LIFETIME(MIN 300 MAX 360)
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <mysql>
       <port>3306</port>
@@ -1549,7 +1545,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(MYSQL(
     port 3306
     user 'clickhouse'
@@ -1602,7 +1598,7 @@ MySQL can be connected to on a local host via sockets. To do this, set `host` an
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <mysql>
       <host>localhost</host>
@@ -1621,7 +1617,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(MYSQL(
     host 'localhost'
     socket '/path/to/socket/file.sock'
@@ -1640,7 +1636,7 @@ SOURCE(MYSQL(
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <clickhouse>
         <host>example01-01-1</host>
@@ -1658,7 +1654,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(CLICKHOUSE(
     host 'example01-01-1'
     port 9000
@@ -1693,7 +1689,7 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <mongodb>
         <host>localhost</host>
@@ -1709,7 +1705,7 @@ Example of settings:
 
 or
 
-```xml
+``` xml
 <source>
     <mongodb>
         <uri>mongodb://localhost:27017/test?ssl=true</uri>
@@ -1720,7 +1716,7 @@ or
 
 or
 
-```sql
+``` sql
 SOURCE(MONGODB(
     host 'localhost'
     port 27017
@@ -1744,7 +1740,7 @@ Setting fields:
 
 or
 
-```sql
+``` sql
 SOURCE(MONGODB(
     uri 'mongodb://localhost:27017/clickhouse'
     collection 'dictionary_source'
@@ -1758,11 +1754,12 @@ Setting fields:
 
 [More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
+
 #### Redis {#redis}
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <redis>
         <host>localhost</host>
@@ -1775,7 +1772,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(REDIS(
     host 'localhost'
     port 6379
@@ -1795,7 +1792,7 @@ Setting fields:
 
 Example of settings:
 
-```xml
+``` xml
 <source>
     <cassandra>
         <host>localhost</host>
@@ -1837,7 +1834,7 @@ The `column_family` or `where` fields cannot be used together with the `query` f
 
 Example of settings:
 
-```xml
+``` xml
 <source>
   <postgresql>
       <host>postgresql-hostname</hoat>
@@ -1855,7 +1852,7 @@ Example of settings:
 
 or
 
-```sql
+``` sql
 SOURCE(POSTGRESQL(
     port 5432
     host 'postgresql-hostname'
@@ -1878,9 +1875,9 @@ Setting fields:
 - `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `replica` – Section of replica configurations. There can be multiple sections:
-  - `replica/host` – The PostgreSQL host.
-  - `replica/port` – The PostgreSQL port.
-  - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    - `replica/host` – The PostgreSQL host.
+    - `replica/port` – The PostgreSQL port.
+    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
@@ -1892,51 +1889,11 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-### YTsaurus {#ytsaurus}
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::info
-This is an experimental feature that may change in backwards-incompatible ways in future releases.
-Enable usage of the YTsaurus dictionary source
-using setting [`allow_experimental_ytsaurus_dictionary_source`](/operations/settings/settings#allow_experimental_ytsaurus_dictionary_source).
-:::
-
-Example of settings:
-
-```xml
-<source>
-    <ytsaurus>
-        <http_proxy_urls>http://localhost:8000</http_proxy_urls>
-        <cypress_path>//tmp/test</cypress_path>
-        <oauth_token>password</oauth_token>
-        <check_table_schema>1</check_table_schema>
-    </ytsaurus>
-</source>
-```
-
-or
-
-```sql
-SOURCE(YTSAURUS(
-    http_proxy_urls 'http://localhost:8000'
-    cypress_path '//tmp/test'
-    oauth_token 'password'
-))
-```
-
-Setting fields:
-
-- `http_proxy_urls` –  URL to the YTsaurus http proxy.
-- `cypress_path` – Cypress path to the table source.
-- `oauth_token` –  OAuth token.
-
 ### Null {#null}
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
 
-```sql
+``` sql
 CREATE DICTIONARY null_dict (
     id              UInt64,
     val             UInt8,
@@ -1957,7 +1914,7 @@ The `structure` clause describes the dictionary key and fields available for que
 
 XML description:
 
-```xml
+``` xml
 <dictionary>
     <structure>
         <id>
@@ -1981,7 +1938,7 @@ Attributes are described in the elements:
 
 DDL query:
 
-```sql
+``` sql
 CREATE DICTIONARY dict_name (
     Id UInt64,
     -- attributes
@@ -2014,7 +1971,7 @@ Type: `UInt64`.
 
 Configuration example:
 
-```xml
+``` xml
 <id>
     <name>Id</name>
 </id>
@@ -2026,7 +1983,7 @@ Configuration fields:
 
 For DDL-query:
 
-```sql
+``` sql
 CREATE DICTIONARY (
     Id UInt64,
     ...
@@ -2047,7 +2004,7 @@ A composite key can consist of a single element. This makes it possible to use a
 
 The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](#dictionary-key-and-fields). Example:
 
-```xml
+``` xml
 <structure>
     <key>
         <attribute>
@@ -2065,10 +2022,10 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY (
     field1 String,
-    field2 UInt32
+    field2 String
     ...
 )
 PRIMARY KEY field1, field2
@@ -2081,7 +2038,7 @@ For a query to the `dictGet*` function, a tuple is passed as the key. Example: `
 
 Configuration example:
 
-```xml
+``` xml
 <structure>
     ...
     <attribute>
@@ -2098,7 +2055,7 @@ Configuration example:
 
 or
 
-```sql
+``` sql
 CREATE DICTIONARY somename (
     Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
 )
@@ -2122,7 +2079,7 @@ ClickHouse supports hierarchical dictionaries with a [numeric key](#numeric-key)
 
 Look at the following hierarchical structure:
 
-```text
+``` text
 0 (Common parent)
 │
 ├── 1 (Russia)
@@ -2150,11 +2107,11 @@ This table contains a column `parent_region` that contains the key of the neares
 
 ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
-The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
+The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
 
 For our example, the structure of dictionary can be the following:
 
-```xml
+``` xml
 <dictionary>
     <structure>
         <id>
@@ -2180,15 +2137,14 @@ For our example, the structure of dictionary can be the following:
 
 ## Polygon dictionaries {#polygon-dictionaries}
 
-This dictionary is optimized for point-in-polygon queries, essentially “reverse geocoding” lookups. Given a coordinate (latitude/longitude), it efficiently finds which polygon/region (from a set of many polygons, such as country or region boundaries) contains that point. It’s well-suited for mapping location coordinates to their containing region.
-
-<iframe width="1024" height="576" src="https://www.youtube.com/embed/FyRsriQp46E?si=Kf8CXoPKEpGQlC-Y" title="Polygon Dictionaries in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
+For example: defining a city area by geographical coordinates.
 
 Example of a polygon dictionary configuration:
 
 <CloudDetails />
 
-```xml
+``` xml
 <dictionary>
     <structure>
         <key>
@@ -2222,7 +2178,7 @@ Example of a polygon dictionary configuration:
 ```
 
 The corresponding [DDL-query](/sql-reference/statements/create/dictionary):
-```sql
+``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),
     name String,
@@ -2263,7 +2219,7 @@ An important difference is that here the keys will be the points for which you w
 
 Example of working with the dictionary defined above:
 
-```sql
+``` sql
 CREATE TABLE points (
     x Float64,
     y Float64
@@ -2280,7 +2236,7 @@ You can read columns from polygon dictionaries via SELECT query, just turn on th
 
 Query:
 
-```sql
+``` sql
 CREATE TABLE polygons_test_table
 (
     key Array(Array(Array(Tuple(Float64, Float64)))),
@@ -2304,7 +2260,7 @@ SELECT * FROM polygons_test_dictionary;
 
 Result:
 
-```text
+``` text
 ┌─key─────────────────────────────┬─name──┐
 │ [[[(3,1),(0,1),(0,-1),(3,-1)]]] │ Value │
 └─────────────────────────────────┴───────┘
@@ -2312,9 +2268,7 @@ Result:
 
 ## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
-This dictionary lets you map keys to values based on hierarchical regular-expression patterns. It’s optimized for pattern-match lookups (e.g. classifying strings like user agent strings by matching regex patterns) rather than exact key matching.
-
-<iframe width="1024" height="576" src="https://www.youtube.com/embed/ESlAhUJMoz8?si=sY2OVm-zcuxlDRaX" title="An intro to ClickHouse regex tree dictionaries" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of [user agent](https://en.wikipedia.org/wiki/User_agent) strings, which can be expressed elegantly with regexp tree dictionaries.
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Open-Source {#use-regular-expression-tree-dictionary-in-clickhouse-open-source}
 
@@ -2382,7 +2336,7 @@ With a powerful YAML configure file, we can use a regexp tree dictionaries as a 
 
 #### Collecting Attribute Values {#collecting-attribute-values}
 
-Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictgetall) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
 
 By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
 
@@ -2502,7 +2456,7 @@ clickhouse client \
 
 You can see how to [Insert Local Files](/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
 
-```sql
+``` sql
 CREATE DICTIONARY regexp_dict
 (
     regexp String,

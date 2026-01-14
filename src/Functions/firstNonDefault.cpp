@@ -144,9 +144,7 @@ REGISTER_FUNCTION(FirstNonDefault)
         {"nulls", "SELECT firstNonDefault(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
         {"nullable zero", "SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
     };
-    doc.category = {FunctionDocumentation::Category::Null};
 
-    doc.introduced_in = {25, 9};
     factory.registerFunction<FunctionFirstNonDefault>(doc, FunctionFactory::Case::Insensitive);
 }
 

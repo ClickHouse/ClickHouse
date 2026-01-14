@@ -48,7 +48,7 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (pos == end)
+        if (pos == nullptr)
             return false;
 
         if (first)
@@ -91,34 +91,7 @@ using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNames
 
 REGISTER_FUNCTION(ExtractURLParameterNames)
 {
-    /// extractURLParameterNames documentation
-    FunctionDocumentation::Description description_extractURLParameterNames = R"(
-Returns an array of name strings corresponding to the names of URL parameters.
-The values are not decoded.
-    )";
-    FunctionDocumentation::Syntax syntax_extractURLParameterNames = "extractURLParameterNames(url)";
-    FunctionDocumentation::Arguments arguments_extractURLParameterNames = {
-        {"url", "URL.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_extractURLParameterNames = {"Returns an array of name strings corresponding to the names of URL parameters.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples_extractURLParameterNames = {
-    {
-        "Usage example",
-        R"(
-SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2');
-        )",
-        R"(
-┌─extractURLPa⋯m2=value2')─┐
-│ ['param1','param2']      │
-└──────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_extractURLParameterNames = {1, 1};
-    FunctionDocumentation::Category category_extractURLParameterNames = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_extractURLParameterNames = {description_extractURLParameterNames, syntax_extractURLParameterNames, arguments_extractURLParameterNames, {}, returned_value_extractURLParameterNames, examples_extractURLParameterNames, introduced_in_extractURLParameterNames, category_extractURLParameterNames};
-
-    factory.registerFunction<FunctionExtractURLParameterNames>(documentation_extractURLParameterNames);
+    factory.registerFunction<FunctionExtractURLParameterNames>();
 }
 
 }
