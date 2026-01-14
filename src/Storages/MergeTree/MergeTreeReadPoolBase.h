@@ -62,11 +62,14 @@ public:
 
 protected:
     /// Initialized in constructor
+    /// Note: storage_snapshot must be declared before parts_ranges to ensure
+    /// correct destruction order. The storage must outlive the data parts,
+    /// since IMergeTreeDataPart::clearCaches() accesses the storage during destruction.
+    const StorageSnapshotPtr storage_snapshot;
     const RangesInDataParts parts_ranges;
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
     const IndexReadTasks index_read_tasks;
-    const StorageSnapshotPtr storage_snapshot;
     const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
