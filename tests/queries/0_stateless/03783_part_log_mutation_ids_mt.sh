@@ -29,6 +29,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 $CLICKHOUSE_CLIENT --query "
     SELECT part_name, event_type, mutation_ids \
     FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mt' \
+    AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;
 "
 
@@ -47,6 +48,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 $CLICKHOUSE_CLIENT --query "
     SELECT part_name, event_type, mutation_ids \
     FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mt' \
+    AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;
 "
 
