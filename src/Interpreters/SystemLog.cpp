@@ -415,6 +415,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
         background_schedule_pool_log->setDurationMillisecondsThreshold(duration_threshold_milliseconds);
     }
+
+    if (zookeeper_log)
+    {
+        size_t duration_threshold_microseconds = config.getUInt64("zookeeper_log.duration_threshold_microseconds", 0);
+        zookeeper_log->setDurationMicrosecondsThreshold(duration_threshold_microseconds);
+    }
 }
 
 std::vector<ISystemLog *> SystemLogs::getAllLogs() const

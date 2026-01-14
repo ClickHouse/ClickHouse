@@ -12,7 +12,7 @@ The Slack app integration consists of two AWS Lambda functions that work togethe
 
 ##### [lambda_slack_app.py](lambda_slack_app.py)
 Main Lambda function that handles synchronous Slack interactions:
-- **Slash commands**: `/praktika-ci subscribe <github_login>`, `/praktika-ci unsubscribe`
+- **Slash commands**: `/praktika subscribe [email]`, `/praktika unsubscribe`
 - **Interactive components**: Home tab app opened events
 - **Request verification**: Validates Slack request signatures
 - **User management**: Invokes worker Lambda to handle subscriptions
@@ -58,7 +58,7 @@ graph TB
     Worker -->|"EventFeed.from_s3()<br/>FeedSubscription.get_user_ids()"| S3
     Worker -->|"FeedSubscription.add_user_id()<br/>FeedSubscription.remove_user_id()"| S3
     
-    S3 -->|"EventFeed data<br/>(per GitHub user)"| Worker
+    S3 -->|"EventFeed data<br/>(per commit author email)"| Worker
     S3 -->|"FeedSubscription data<br/>(Slack user mappings)"| Worker
 
     style App fill:#e1f5ff
@@ -70,14 +70,14 @@ graph TB
 #### Data Flow
 
 1. **User subscribes** (Slack → Lambda App → Lambda Worker → S3)
-   - User runs `/praktika-ci subscribe maxknv` in Slack
+   - User runs `/praktika-ci subscribe` in Slack (auto-fetches email from Slack profile)
    - `lambda_slack_app` validates and invokes `lambda_slack_worker` with action="subscribe"
    - Worker calls `FeedSubscription.add_user_id()` to store mapping in S3
    - Worker loads `EventFeed.from_s3()` and publishes home view to Slack
 
 2. **CI workflow completes** (Workflow → S3 → Lambda Worker → Slack)
    - Workflow calls `Result.to_event()` to convert workflow result to Event
-   - `EventFeed.update()` saves Event to S3 at `{s3_path}/{github_login}.json.gz`
+   - `EventFeed.update()` saves Event to S3 at `{s3_path}/{email}.json.gz`
    - Workflow invokes `lambda_slack_worker` with action="update"
    - Worker reads EventFeed, finds subscribed users, publishes updated home view
 
@@ -91,9 +91,9 @@ graph TB
 
 ```
 s3://{bucket}/{prefix}/
-├── {github_login}.json.gz          # EventFeed: List of Events per GitHub user
-├── gh_{github_login}.json          # FeedSubscription: Slack user_ids subscribed to this GitHub user
-└── slack_{slack_user_id}.json      # Reverse lookup: Which GitHub user this Slack user subscribed to
+├── {email}.json.gz                 # EventFeed: List of Events per commit author email
+├── email_{email}.json              # FeedSubscription: Slack user_ids subscribed to this email
+└── slack_{slack_user_id}.json      # Reverse lookup: Which email this Slack user subscribed to
 ```
 
 #### Event Data Model

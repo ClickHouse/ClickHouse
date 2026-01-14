@@ -283,6 +283,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
+    , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     const auto & read_path = configuration->getPathForRead();
     if (read_path.path.empty())
@@ -310,29 +311,35 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
-    if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
+    bool is_path_with_hive_partitioning = false;
+    if (use_hive_partitioning)
     {
         hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
             columns, configuration->getRawPath().path, format_settings, context_);
-    }
 
-    auto hive_partition_columns_to_read_from_file_path_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+        is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
+        if (is_path_with_hive_partitioning)
+        {
+            auto hive_columns_set = hive_partition_columns_to_read_from_file_path.getNameSet();
+            for (const auto & column : columns.getAllPhysical())
+            {
+                auto hive_column = hive_columns_set.find(column.getNameInStorage());
+                if (hive_column == hive_columns_set.end())
+                    file_columns.emplace_back(column);
+                else
+                    hive_columns_set.erase(hive_column);
+            }
 
-    for (const auto & column : columns.getAllPhysical())
-    {
-        auto hive_column = hive_partition_columns_to_read_from_file_path_set.find(column.getNameInStorage());
-        if (hive_column == hive_partition_columns_to_read_from_file_path_set.end())
-            file_columns.emplace_back(column);
-        else
-            hive_partition_columns_to_read_from_file_path_set.erase(hive_column);
-    }
-
-    /// All hive columns must be in storage schema
-    if (!hive_partition_columns_to_read_from_file_path_set.empty())
-    {
-        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
-            "All hive partitioning columns must be in engine schema. Next columns not found: {}",
-            fmt::join(hive_partition_columns_to_read_from_file_path_set, ", "));
+            /// All hive columns must be in storage schema
+            if (!hive_columns_set.empty())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_QUERY_PARAMETER,
+                    "All hive partitioning columns must be in engine schema. "
+                    "Next columns not found: {}",
+                    fmt::join(hive_columns_set, ", "));
+            }
+        }
     }
 
     StorageInMemoryMetadata storage_metadata;
@@ -343,8 +350,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
-
-    bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
@@ -965,11 +970,20 @@ void StorageObjectStorageQueue::commit(
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap file_map;
-    LastProcessedFileInfoMapPtr created_nodes = std::make_shared<LastProcessedFileInfoMap>();
+
+    HiveLastProcessedFileInfoMap last_processed_file_per_hive_partition;
+    auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, created_nodes, exception_message, error_code);
-    ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, file_map);
+    {
+        source->prepareCommitRequests(
+            requests, insert_succeeded, successful_objects,
+            last_processed_file_per_hive_partition, created_nodes, exception_message, error_code);
+    }
+
+    if (use_hive_partitioning)
+        ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
+    else
+        chassert(last_processed_file_per_hive_partition.empty());
 
     if (requests.empty())
     {
