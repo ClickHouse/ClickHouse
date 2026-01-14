@@ -2326,7 +2326,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     }
     auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
+
     if (!res)
     {
         TableFunctionPtr table_function_ptr;
@@ -2487,6 +2493,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
         ///
         auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
+
+        std::lock_guard lock(table_function_results_mutex);
+        table_function_results[key] = res;
         if (hash != new_hash)
         {
             key = toString(new_hash);
@@ -2500,11 +2509,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
 
     if (!res)
     {
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        std::lock_guard lock(table_function_results_mutex);
+        /// In case of race, another thread might have inserted a result already.
+        /// We just overwrite it since both should be equivalent.
+        table_function_results[key] = res;
     }
 
     return res;
