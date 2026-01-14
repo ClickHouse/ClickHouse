@@ -1422,7 +1422,25 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+        /// each part is case-insensitive only if NOT double-quoted
+        bool database_name_case_insensitive = false;
+        bool table_name_case_insensitive = false;
+        if (standard_mode)
+        {
+            size_t parts_size = identifier_lookup.identifier.getPartsSize();
+            if (parts_size == 2)
+            {
+                database_name_case_insensitive = !identifier_lookup.isPartDoubleQuoted(0);
+                table_name_case_insensitive = !identifier_lookup.isPartDoubleQuoted(1);
+            }
+            else if (parts_size == 1)
+            {
+                table_name_case_insensitive = !identifier_lookup.isPartDoubleQuoted(0);
+            }
+        }
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier_lookup.identifier, scope.context, database_name_case_insensitive, table_name_case_insensitive);
     }
 
     it->second.count--;
@@ -3484,6 +3502,12 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
                 if (current_join_tree_node->hasOriginalAST())
                     table_identifier_lookup.original_ast_node = current_join_tree_node->getOriginalAST();
+
+                /// Populate per-part quote styles for case-sensitivity checks
+                size_t parts_size = from_table_identifier.getIdentifier().getPartsSize();
+                table_identifier_lookup.is_part_double_quoted.resize(parts_size);
+                for (size_t i = 0; i < parts_size; ++i)
+                    table_identifier_lookup.is_part_double_quoted[i] = from_table_identifier.isPartDoubleQuoted(i);
 
                 auto from_table_identifier_alias = from_table_identifier.getAlias();
 

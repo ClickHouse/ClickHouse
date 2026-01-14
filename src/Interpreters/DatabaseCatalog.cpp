@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMemory.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/String.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -81,12 +82,14 @@ namespace ErrorCodes
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
 {
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
     extern const SettingsBool fsync_metadata;
 }
 
@@ -611,6 +614,9 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     if (!database->isDatalakeCatalog())
         databases_without_datalake_catalogs.emplace(database_name, database);
 
+    String lowercase_name = Poco::toLower(database_name);
+    lowercase_db_to_original_names[lowercase_name].push_back(database_name);
+
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -635,6 +641,16 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             if (db_uuid != UUIDHelpers::Nil)
                 removeUUIDMapping(db_uuid);
             databases.erase(database_name);
+
+            /// Update case-insensitive lookup map
+            String lowercase_name = Poco::toLower(database_name);
+            if (auto lower_it = lowercase_db_to_original_names.find(lowercase_name); lower_it != lowercase_db_to_original_names.end())
+            {
+                auto & names = lower_it->second;
+                names.erase(std::remove(names.begin(), names.end(), database_name), names.end());
+                if (names.empty())
+                    lowercase_db_to_original_names.erase(lower_it);
+            }
         }
         if (auto it = databases_without_datalake_catalogs.find(database_name); it != databases_without_datalake_catalogs.end())
             databases_without_datalake_catalogs.erase(it);
@@ -831,6 +847,30 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
     return databases.contains(database_name);
+}
+
+String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view database_name) const
+{
+    assert(!database_name.empty());
+    std::lock_guard lock{databases_mutex};
+
+    if (databases.contains(database_name))
+        return String(database_name);
+
+    /// use precomputed map for lookup
+    String lowercase_name = Poco::toLower(String(database_name));
+    auto it = lowercase_db_to_original_names.find(lowercase_name);
+    if (it == lowercase_db_to_original_names.end() || it->second.empty())
+        return {};
+
+    if (it->second.size() > 1)
+    {
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Database name '{}' is ambiguous: matches multiple databases with different cases: {}",
+            database_name, fmt::join(it->second, ", "));
+    }
+
+    return it->second.front();
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

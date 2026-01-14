@@ -52,6 +52,12 @@ struct IdentifierLookup
     /// Quoted identifiers are case-sensitive in SQL standard mode
     bool is_double_quoted = false;
 
+    /// Per-part double-quote tracking for compound identifiers like "db".table
+    std::vector<bool> is_part_double_quoted = {};
+
+    IdentifierLookup(Identifier identifier_, IdentifierLookupContext lookup_context_)
+        : identifier(std::move(identifier_)), lookup_context(lookup_context_) {}
+
     bool isExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::EXPRESSION;
@@ -65,6 +71,13 @@ struct IdentifierLookup
     bool isTableExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::TABLE_EXPRESSION;
+    }
+
+    bool isPartDoubleQuoted(size_t index) const
+    {
+        if (index < is_part_double_quoted.size())
+            return is_part_double_quoted[index];
+        return is_double_quoted;  // Fallback to the overall flag
     }
 
     String dump() const

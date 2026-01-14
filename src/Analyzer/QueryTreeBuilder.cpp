@@ -912,12 +912,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
-                QueryTreeNodePtr table_identifier_node;
+                std::shared_ptr<IdentifierNode> table_identifier_node;
 
                 if (table_expression_modifiers)
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier, *table_expression_modifiers);
                 else
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
+
+                /// Preserve quote styles for SQL standard case-sensitivity
+                table_identifier_node->setQuoteStyles(table_identifier_typed.getQuoteStyles());
 
                 table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
                 table_identifier_node->setOriginalAST(table_element.table_expression);

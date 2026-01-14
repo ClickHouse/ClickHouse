@@ -151,7 +151,11 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool database_name_case_insensitive,
+    bool table_name_case_insensitive)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -170,6 +174,27 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     else
     {
         table_name = table_identifier[0];
+    }
+
+    /// Case-insensitive resolution for database name (if not double-quoted)
+    if (database_name_case_insensitive && !database_name.empty())
+    {
+        String resolved_db = DatabaseCatalog::instance().tryResolveDatabaseNameCaseInsensitive(database_name);
+        if (!resolved_db.empty())
+            database_name = resolved_db;
+    }
+
+    /// Case-insensitive resolution for table name (if not double-quoted)
+    if (table_name_case_insensitive)
+    {
+        String effective_db = database_name.empty() ? current_database : database_name;
+        auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
+        if (database)
+        {
+            String resolved_table = database->tryResolveTableNameCaseInsensitive(table_name, context);
+            if (!resolved_table.empty())
+                table_name = resolved_table;
+        }
     }
 
     StorageID storage_id(database_name, table_name);
@@ -213,9 +238,13 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     return result;
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool database_name_case_insensitive,
+    bool table_name_case_insensitive)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, database_name_case_insensitive, table_name_case_insensitive))
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};
