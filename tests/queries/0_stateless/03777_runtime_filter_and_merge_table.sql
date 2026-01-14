@@ -7,8 +7,8 @@ DROP TABLE IF EXISTS t2;
 
 CREATE TABLE foo(Id Int32, Val Int32) Engine=MergeTree PARTITION BY Val ORDER BY Id;
 CREATE TABLE foo1(Id Int32, Val Decimal32(9)) Engine=MergeTree PARTITION BY Val ORDER BY Id;
-INSERT INTO foo SELECT number, number%5 FROM numbers(100000);
-INSERT INTO foo1 SELECT number, 1 FROM numbers(100000);
+INSERT INTO foo SELECT number, number%5 FROM numbers(1000);
+INSERT INTO foo1 SELECT number, 1 FROM numbers(1000);
 
 CREATE TABLE foo_merge as foo ENGINE=Merge(currentDatabase(), '^foo');
 

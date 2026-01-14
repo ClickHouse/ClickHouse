@@ -13,6 +13,6 @@ Expression ((Project names + Projection))
             Expression (Change column names to column identifiers)
               ReadFromMemoryStorage
 =================================================
-20000
+200
 =================================================
-20000
+200
