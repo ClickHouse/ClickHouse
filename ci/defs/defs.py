@@ -416,17 +416,17 @@ class ArtifactNames:
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-LLVM_FT_NUM_BATCHES = 3
+LLVM_FT_NUM_BATCHES = 5
 LLVM_IT_NUM_BATCHES = 8
 LLVM_FT_ARTIFACTS_LIST = [
-        # defualt.profraw files for 3 batches from Stateless(Functional) tests
+        # defualt.profraw files for 5 batches from Stateless(Functional) tests
         ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
         for total_batches in (LLVM_FT_NUM_BATCHES,)
         for batch in range(1, total_batches + 1)
     ] 
 
 LLVM_IT_ARTIFACTS_LIST = [
-        # defualt.profraw files for 5 batches from Integration tests
+        # defualt.profraw files for 8 batches from Integration tests
         ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
         for total_batches in (LLVM_IT_NUM_BATCHES,)
         for batch in range(1, total_batches + 1)
