@@ -335,6 +335,8 @@ void AccessRightsElement::replaceDeprecated()
         case AccessType::KAFKA:
         case AccessType::NATS:
         case AccessType::RABBITMQ:
+        case AccessType::YTSAURUS:
+        case AccessType::ARROW_FLIGHT:
             if (!anyDatabase())
                 /// This will leave statements like `REVOKE S3 ON system.*` untouched
                 /// These statements will be deleted afterwards with `eraseNotGrantable()`
