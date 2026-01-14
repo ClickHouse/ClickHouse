@@ -142,6 +142,40 @@ const std::vector<ManifestFileEntryPtr> & ManifestFileContent::getFilesWithoutDe
 
 using namespace DB;
 
+    ManifestFileEntry::ManifestFileEntry(
+        const String & file_path_key_,
+        const String & file_path_,
+        Int64 row_number_,
+        ManifestEntryStatus status_,
+        Int64 added_sequence_number_,
+        Int64 snapshot_id_,
+        Int64 schema_id_,
+        DB::Row & partition_key_value_,
+        PartitionSpecification & common_partition_specification_,
+        std::unordered_map<Int32, ColumnInfo> & columns_infos_,
+        const String & file_format_,
+        std::optional<String> lower_reference_data_file_path_,
+        std::optional<String> upper_reference_data_file_path_,
+        std::optional<std::vector<Int32>> equality_ids_,
+        std::optional<Int32> sort_order_id_)
+        : file_path_key(file_path_key_)
+        , file_path(file_path_)
+        , row_number(row_number_)
+        , status(status_)
+        , added_sequence_number(added_sequence_number_)
+        , snapshot_id(snapshot_id_)
+        , schema_id(schema_id_)
+        , partition_key_value(std::move(partition_key_value_))
+        , common_partition_specification(common_partition_specification_)
+        , columns_infos(std::move(columns_infos_))
+        , file_format(file_format_)
+        , lower_reference_data_file_path(lower_reference_data_file_path_)
+        , upper_reference_data_file_path(upper_reference_data_file_path_)
+        , equality_ids(std::move(equality_ids_))
+        , sort_order_id(sort_order_id_)
+    {
+    }
+
 ManifestFileContent::ManifestFileContent(
     const AvroForIcebergDeserializer & manifest_file_deserializer,
     const String & manifest_file_name,
@@ -442,29 +476,30 @@ ManifestFileContent::ManifestFileContent(
                         common_partition_specification,
                         columns_infos,
                         file_format,
-                        /*reference_data_file_path_ = */ std::nullopt,
+                        /*lower_reference_data_file_path_ = */ std::nullopt,
+                        /*upper_reference_data_file_path_ = */ std::nullopt,
                         /*equality_ids*/ std::nullopt,
                         sort_order_id));
                 break;
             case FileContentType::POSITION_DELETE:
             {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
-                std::optional<String> reference_data_file_path = std::nullopt;
+                std::optional<String> lower_reference_data_file_path = std::nullopt;
+                std::optional<String> upper_reference_data_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
                     Field reference_file_path_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file);
                     if (!reference_file_path_field.isNull())
                     {
-                        reference_data_file_path = reference_file_path_field.safeGet<String>();
+                        lower_reference_data_file_path = reference_file_path_field.safeGet<String>();
+                        upper_reference_data_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
                 else if (auto it = value_for_bounds.find(data_file_column_id_in_position_delete_file); it != value_for_bounds.end())
                 {
                     auto & [lower, upper] = it->second;
-                    if (upper.safeGet<String>() == lower.safeGet<String>())
-                    {
-                        reference_data_file_path = upper.safeGet<String>();
-                    }
+                    lower_reference_data_file_path = lower.safeGet<String>();
+                    upper_reference_data_file_path = upper.safeGet<String>();
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
                     std::make_shared<ManifestFileEntry>(
@@ -479,7 +514,8 @@ ManifestFileContent::ManifestFileContent(
                         common_partition_specification,
                         columns_infos,
                         file_format,
-                        reference_data_file_path,
+                        lower_reference_data_file_path,
+                        upper_reference_data_file_path,
                         /*equality_ids*/ std::nullopt,
                         /*sort_order_id = */ std::nullopt));
                 break;
@@ -510,7 +546,8 @@ ManifestFileContent::ManifestFileContent(
                         common_partition_specification,
                         columns_infos,
                         file_format,
-                        /*reference_data_file_path_ = */ std::nullopt,
+                        /*lower_reference_data_file_path_ = */ std::nullopt,
+                        /*upper_reference_data_file_path_ = */ std::nullopt,
                         equality_ids,
                         /*sort_order_id = */ std::nullopt));
                 break;
