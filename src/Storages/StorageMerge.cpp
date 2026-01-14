@@ -513,25 +513,6 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             &filter.actions,
             filter.column_name,
             filter.do_remove_column));
-
-    if (child_plans)
-    {
-        /// Propagate new filter to all child plans if they are already present
-        for (auto & child : *child_plans)
-        {
-            auto filter_step = std::make_unique<FilterStep>(
-                child.plan.getCurrentHeader(),
-                filter.actions.clone(),
-                filter.column_name,
-                filter.do_remove_column);
-
-            child.plan.addStep(std::move(filter_step));
-
-            /// Push down this newly added filter if possible
-            child.plan.optimize(QueryPlanOptimizationSettings(context));
-        }
-    }
-
     pushed_down_filters.push_back(std::move(filter));
 }
 
@@ -1002,10 +983,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & column : required_column_names)
             {
-                /// Skip columns that don't exists in this table. It may happen when we use merge over tables with different schemas.
-                if (!storage_columns.has(column))
-                    continue;
-
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
 
@@ -1181,7 +1158,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return nullptr;
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    /// All optimizations will be done at plans creation
+    /// All optimisations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1535,6 +1512,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         for (const auto & alias : aliases)
         {
+            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
+
             ActionsDAG actions_dag(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
@@ -1654,7 +1633,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, {});
     };
 
     bool ok = true;
