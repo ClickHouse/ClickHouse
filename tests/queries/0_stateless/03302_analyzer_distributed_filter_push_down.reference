@@ -36,7 +36,7 @@ Union
           Parts: 1/1
           Granules: 1/123
           Search Algorithm: binary search
-        Ranges: 1
+          Ranges: 1
   Expression ((Project names + Projection))
   Actions: INPUT : 0 -> __table1.x UInt32 : 0
            INPUT : 1 -> __table1.y UInt32 : 1
@@ -85,7 +85,7 @@ Union
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-              Ranges: 1
+                Ranges: 1
 ============ lambdas
 41	41
 41	41
@@ -134,7 +134,7 @@ Positions: 1
               Parts: 1/1
               Granules: 1/123
               Search Algorithm: binary search
-            Ranges: 1
+              Ranges: 1
       Expression (Before GROUP BY)
       Actions: INPUT :: 0 -> __table1.y UInt32 : 0
       Positions: 0
@@ -179,7 +179,7 @@ Positions: 1
                     Parts: 1/1
                     Granules: 1/123
                     Search Algorithm: binary search
-                  Ranges: 1
+                    Ranges: 1
 Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
 Actions: INPUT : 0 -> sum(__table2.y) UInt64 : 0
          INPUT : 1 -> __table2.x UInt32 : 1
@@ -236,7 +236,7 @@ Positions: 1 0
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-              Ranges: 1
+                Ranges: 1
       Filter (( + Change remote column names to local column names))
       Filter column: equals(__table1.x, 42_UInt8) (removed)
       Actions: INPUT : 0 -> __table1.x UInt32 : 0
@@ -270,7 +270,7 @@ Positions: 1 0
                     Condition: true
                     Parts: 1/1
                     Granules: 123/123
-                  Ranges: 1
+                    Ranges: 1
 ============ in / global in
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -287,7 +287,7 @@ CreatingSets (Create sets before main query execution)
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-              Ranges: 1
+                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
@@ -303,7 +303,7 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                      Ranges: 1
+                        Ranges: 1
 42
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -319,11 +319,11 @@ CreatingSets (Create sets before main query execution)
                     PrimaryKey
                       Keys:
                         x
-                      Condition: (x in 0-element set)
-                      Parts: 0/1
-                      Granules: 0/123
-                      Search Algorithm: generic exclusion search
-                    Ranges: 0
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+                      Search Algorithm: binary search
+                      Ranges: 1
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
       ReadFromSystemNumbers
@@ -342,7 +342,7 @@ CreatingSets (Create sets before main query execution)
               Parts: 1/1
               Granules: 1/123
               Search Algorithm: binary search
-            Ranges: 1
+              Ranges: 1
 84
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -358,11 +358,11 @@ CreatingSets (Create sets before main query execution)
                     PrimaryKey
                       Keys:
                         x
-                      Condition: (x in 0-element set)
-                      Parts: 0/1
-                      Granules: 0/123
-                      Search Algorithm: generic exclusion search
-                    Ranges: 0
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+                      Search Algorithm: binary search
+                      Ranges: 1
             CreatingSets (Create sets before main query execution)
               Expression ((Project names + Projection))
                 Expression ((WHERE + Change column names to column identifiers))
@@ -371,11 +371,11 @@ CreatingSets (Create sets before main query execution)
                     PrimaryKey
                       Keys:
                         x
-                      Condition: (x in 0-element set)
-                      Parts: 0/1
-                      Granules: 0/123
-                      Search Algorithm: generic exclusion search
-                    Ranges: 0
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+                      Search Algorithm: binary search
+                      Ranges: 1
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
       ReadFromSystemNumbers
@@ -395,7 +395,7 @@ CreatingSets (Create sets before main query execution)
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-              Ranges: 1
+                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
@@ -411,7 +411,7 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                      Ranges: 1
+                        Ranges: 1
 126
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -428,7 +428,7 @@ CreatingSets (Create sets before main query execution)
                 Parts: 1/1
                 Granules: 1/123
                 Search Algorithm: binary search
-              Ranges: 1
+                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
@@ -444,7 +444,7 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                      Ranges: 1
+                        Ranges: 1
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
                   Expression ((WHERE + Change column names to column identifiers))
@@ -457,7 +457,7 @@ CreatingSets (Create sets before main query execution)
                         Parts: 1/1
                         Granules: 1/123
                         Search Algorithm: binary search
-                      Ranges: 1
+                        Ranges: 1
 126
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
@@ -471,7 +471,7 @@ CreatingSets (Create sets before main query execution)
                 Condition: true
                 Parts: 1/1
                 Granules: 123/123
-              Ranges: 1
+                Ranges: 1
         Expression (Before GROUP BY)
           Filter (( + Change column names to column identifiers))
             ReadFromRemote (Read from remote replica)
@@ -484,10 +484,10 @@ CreatingSets (Create sets before main query execution)
                         Condition: true
                         Parts: 1/1
                         Granules: 123/123
-                      Ranges: 1
+                        Ranges: 1
                 CreatingSet (Create set for subquery)
                   Expression ((Project names + (Projection + Change column names to column identifiers)))
-                    ReadFromMemoryStorage
+                    ReadFromSystemNumbers
               CreatingSets (Create sets before main query execution)
                 Expression ((Project names + Projection))
                   Expression ((WHERE + Change column names to column identifiers))
@@ -497,10 +497,10 @@ CreatingSets (Create sets before main query execution)
                         Condition: true
                         Parts: 1/1
                         Granules: 123/123
-                      Ranges: 1
+                        Ranges: 1
                 CreatingSet (Create set for subquery)
                   Expression ((Project names + (Projection + Change column names to column identifiers)))
-                    ReadFromMemoryStorage
+                    ReadFromSystemNumbers
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
       ReadFromSystemNumbers
@@ -518,7 +518,7 @@ CreatingSets (Create sets before main query execution)
             Parts: 0/1
             Granules: 0/1
             Search Algorithm: generic exclusion search
-          Ranges: 0
+            Ranges: 0
     Expression ((Project names + Projection))
       Filter (( + Change column names to column identifiers))
         ReadFromRemote (Read from remote replica)
@@ -534,7 +534,7 @@ CreatingSets (Create sets before main query execution)
                     Parts: 0/1
                     Granules: 0/1
                     Search Algorithm: generic exclusion search
-                  Ranges: 0
+                    Ranges: 0
 ============ #68030
 Union
   Expression ((Project names + Projection))
@@ -562,7 +562,7 @@ Union
           Parts: 1/1
           Granules: 1/62
           Search Algorithm: binary search
-        Ranges: 1
+          Ranges: 1
   Expression ((Project names + Projection))
   Actions: INPUT : 0 -> __table1.n UInt64 : 0
            ALIAS __table1.n :: 0 -> n UInt64 : 1
@@ -601,4 +601,4 @@ Union
                 Parts: 1/1
                 Granules: 1/62
                 Search Algorithm: binary search
-              Ranges: 1
+                Ranges: 1

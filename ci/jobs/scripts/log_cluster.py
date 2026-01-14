@@ -27,12 +27,12 @@ class LogCluster:
         if not self.url:
             url = Secret.Config(
                 name=self.URL_SECRET,
-                type=Secret.Type.AWS_SSM_PARAMETER,
+                type=Secret.Type.AWS_SSM_VAR,
             ).get_value()
             self.url = "https://" + url.removeprefix("https://")
         passwd = Secret.Config(
             name=self.PASSWD_SECRET,
-            type=Secret.Type.AWS_SSM_PARAMETER,
+            type=Secret.Type.AWS_SSM_VAR,
         ).get_value()
         if not self.url:
             print("ERROR: failed to retrive password for LogCluster")

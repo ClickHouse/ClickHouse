@@ -58,7 +58,17 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        commits.append(GitCommit(sha=sha, message=env.COMMIT_MESSAGE))
+        # TODO: fetch and store commit message in RunConfig (to be available from every job) and use it here
+        if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
+            commit_message = Shell.get_output(
+                f"git log -1 --pretty=%s {sha}", verbose=True
+            )
+        else:
+            commit_message = Shell.get_output(
+                f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'",
+                verbose=True,
+            )
+        commits.append(GitCommit(sha=sha, message=commit_message))
         commits = commits[
             -20:
         ]  # limit maximum number of commits from the past to show in the report
@@ -140,31 +150,14 @@ class HtmlRunnerHooks:
         summary_result.start_time = Utils.timestamp()
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
-        report_url_latest_sha = Info().get_report_url(latest=True)
-        report_url_current_sha = Info().get_report_url(latest=False)
+        summary_result.start_time = Utils.timestamp()
         info = Info()
         summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
             "git_branch", info.git_branch
-        ).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
-            "commit_sha", env.SHA
-        ).add_ext_key_value(
-            "commit_message", env.COMMIT_MESSAGE
-        ).add_ext_key_value(
-            "repo_name", env.REPOSITORY
-        ).add_ext_key_value(
-            "pr_number", env.PR_NUMBER
-        ).add_ext_key_value(
-            "run_url", env.RUN_URL
-        ).add_ext_key_value(
-            "change_url", env.CHANGE_URL
-        ).add_ext_key_value(
-            "workflow_name", env.WORKFLOW_NAME
-        ).add_ext_key_value(
-            "base_branch", env.BASE_BRANCH
-        )
-
-        summary_result.dump()
+        ).dump()
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
+        report_url_latest_sha = Info().get_report_url(latest=True)
+        report_url_current_sha = Info().get_report_url(latest=False)
         print(f"CI Status page url [{report_url_current_sha}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
@@ -197,7 +190,7 @@ class HtmlRunnerHooks:
             workflow_config = RunConfig.from_fs(_workflow.name)
             skipped_jobs = workflow_config.cache_success
             filtered_job_and_reason = workflow_config.filtered_jobs
-            job_cache_records = workflow_config.cache_jobs
+            job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
             results = []
             info = Info()
             for skipped_job in skipped_jobs:
@@ -273,7 +266,7 @@ class HtmlRunnerHooks:
             print("Update workflow results with new info")
             new_result_info = info_str
 
-        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
+        if not result.is_ok() and not result.skip_dependee_jobs_dropping():
             print(
                 "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
             )
@@ -296,7 +289,7 @@ class HtmlRunnerHooks:
 
             for dependee in dependees:
                 print(
-                    f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
+                    f"NOTE: Set job [{dependee}] status to [{Result.Status.SKIPPED}] due to current failure"
                 )
                 new_sub_results.append(
                     Result(
