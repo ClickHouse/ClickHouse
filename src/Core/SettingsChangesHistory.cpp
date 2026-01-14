@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
+            {"max_static_subcolumns", -1, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Negative value disables check."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
