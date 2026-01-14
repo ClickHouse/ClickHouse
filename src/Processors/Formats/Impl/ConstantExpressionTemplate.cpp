@@ -3,6 +3,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -564,11 +565,26 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
 
         DataTypes nested_types;
         if (type_info.is_array)
-            nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(collection_type.get());
+            if (!array_type)
+                return false;
+            nested_types = {array_type->getNestedType()};
+        }
         else if (type_info.is_tuple)
-            nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(collection_type.get());
+            if (!tuple_type)
+                return false;
+            nested_types = tuple_type->getElements();
+        }
         else
-            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getKeyValueTypes();
+        {
+            const auto * map_type = typeid_cast<const DataTypeMap *>(collection_type.get());
+            if (!map_type)
+                return false;
+            nested_types = map_type->getKeyValueTypes();
+        }
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
@@ -657,7 +673,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
         evaluated.insert({ColumnConst::create(ColumnUInt8::create(1, 0), rows_count), std::make_shared<DataTypeUInt8>(), "_dummy"});
     structure->actions_on_literals->execute(evaluated);
 
-    if (!evaluated || evaluated.rows() != rows_count)
+    if (evaluated.empty() || evaluated.rows() != rows_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of rows mismatch after evaluation of batch of constant expressions: "
                         "got {} rows for {} expressions", evaluated.rows(), rows_count);
 

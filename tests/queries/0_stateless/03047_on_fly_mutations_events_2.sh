@@ -69,7 +69,7 @@ SELECT * FROM t_mutation_events_1 ORDER BY id SETTINGS apply_mutations_on_fly = 
 SELECT * FROM t_mutation_events_2 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 SELECT * FROM t_mutation_events_2 ORDER BY id SETTINGS apply_mutations_on_fly = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     query,

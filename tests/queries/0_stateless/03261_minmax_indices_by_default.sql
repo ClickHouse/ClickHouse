@@ -11,11 +11,14 @@ CREATE TABLE tbl1
     key Int,
     x Int,
     y Int,
-    INDEX x_idx x TYPE minmax
+    INDEX x_idx x TYPE minmax GRANULARITY 1
 )
 ENGINE=MergeTree()
 ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns = true, add_minmax_index_for_string_columns = true;
+SETTINGS add_minmax_index_for_numeric_columns = true,
+         add_minmax_index_for_string_columns = true,
+         index_granularity = 8192,
+         index_granularity_bytes = 10485760;
 
 INSERT INTO tbl1 VALUES (1,1,1), (2,2,2), (3,3,3);
 

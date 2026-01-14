@@ -13,6 +13,7 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+#include <utility>
 
 
 // NOLINTBEGIN(*)
@@ -44,6 +45,7 @@ constexpr bool supportsBitInt256()
 }
 
 #if defined(__x86_64__)
+/// TODO C23 standardized _BitInt(N). Theoretically, it is not necessary to restrict the platform to x86.
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wbit-int-extension"
 using BitInt256 = signed _BitInt(256);
@@ -70,9 +72,8 @@ struct ConstructBitInt256<unsigned>
     using Type = BitUInt256;
 };
 
-/// Converts a wide integer to clang's built-in 256-bit integer representation.
-/// This function takes a wide integer of 256 bits and converts it to a 256-bit integer type.
-/// The source and target types have the same byte order regardless of endianness (big-endian or little-endian).
+/// Converts a 256-bit wide integer to Clang's built-in 256-bit integer representation.
+/// The source and target types have the same byte order.
 template <size_t Bits, typename Signed>
 requires(Bits == 256)
 constexpr const auto & toBitInt256(const wide::integer<Bits, Signed> & n)
@@ -81,8 +82,8 @@ constexpr const auto & toBitInt256(const wide::integer<Bits, Signed> & n)
     return *reinterpret_cast<const T *>(&n);
 }
 
-/// Converts a clang's built-in 256-bit integer representation to a wide integer.
-/// This function takes a wide integer of 256 bits and converts it to a 256-bit integer type.
+/// Converts a Clang's built-in 256-bit integer representation to a 256-bit wide integer.
+/// The source and target types have the same byte order.
 template <typename T>
 requires(std::is_same_v<T, BitInt256> || std::is_same_v<T, BitUInt256>)
 constexpr const auto & fromBitInt256(const T & n)
@@ -95,13 +96,13 @@ constexpr const auto & fromBitInt256(const T & n)
 template <typename T>
 struct IsWideInteger
 {
-    static const constexpr bool value = false;
+    static constexpr bool value = false;
 };
 
 template <size_t Bits, typename Signed>
 struct IsWideInteger<wide::integer<Bits, Signed>>
 {
-    static const constexpr bool value = true;
+    static constexpr bool value = true;
 };
 
 template <typename T>
@@ -246,8 +247,11 @@ struct integer<Bits, Signed>::_impl
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
 
-    /// Use clang's built-in 256-bit integer to improve performance if possible.
-    static constexpr const bool could_use_bitint256 = supportsBitInt256() && Bits == 256;
+    /// Use Clang's built-in 256-bit integer to improve performance if possible.
+    ///
+    /// Not implemented for 128 bit types because performance benefits are negligible as of 2025:
+    /// https://github.com/ClickHouse/ClickHouse/issues/70502
+    static constexpr bool use_BitInt256 = supportsBitInt256() && Bits == 256;
 
     static_assert(Bits % base_bits == 0);
 
@@ -645,7 +649,7 @@ private:
             HalfType a0 = lhs.items[little(0)];
             HalfType a1 = lhs.items[little(1)];
 
-            HalfType b01 = rhs;
+            HalfType b01 = static_cast<HalfType>(rhs);
             uint64_t b0 = b01;
             uint64_t b1 = 0;
             HalfType b23 = 0;
@@ -754,7 +758,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (could_use_bitint256)
+            if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -785,7 +789,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (could_use_bitint256)
+            if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -816,7 +820,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (could_use_bitint256)
+            if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -1035,7 +1039,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (could_use_bitint256)
+            if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, Signed>>)
                 {
@@ -1068,7 +1072,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (could_use_bitint256)
+            if constexpr (use_BitInt256)
             {
                 if constexpr (!std::same_as<T, integer<Bits, signed>>)
                 {
@@ -1216,7 +1220,7 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         {
             if (it < il.end())
             {
-                items[_impl::little(i)] = *it;
+                items[_impl::little(i)] = static_cast<base_type>(*it);
                 ++it;
             }
             else
@@ -1372,12 +1376,9 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T>
-requires(std::is_arithmetic_v<T>)
+template <std::integral T>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    static_assert(std::numeric_limits<T>::is_integer);
-
     /// NOTE: memcpy will suffice, but unfortunately, this function is constexpr.
 
     using UnsignedT = std::make_unsigned_t<T>;

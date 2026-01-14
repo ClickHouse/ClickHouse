@@ -1,4 +1,4 @@
-#include "ColumnVector.h"
+#include <Columns/ColumnVector.h>
 
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
@@ -22,6 +23,9 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
+#include <DataTypes/FieldToDataType.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
@@ -54,16 +58,17 @@ namespace ErrorCodes
 }
 
 template <typename T>
-const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    data.emplace_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T element;
+    readBinaryLittleEndian<T>(element, in);
+    data.emplace_back(std::move(element));
 }
 
 template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <typename T>
@@ -171,6 +176,36 @@ struct ColumnVector<T>::equals
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
+/// Radix sort treats all positive NaNs to be greater than all numbers.
+/// And all negative NaNs to be lower that all numbers.
+/// Standard is not specifying which sign NaN should have, so after sort NaNs can
+/// be grouped on any side of the array or on both.
+/// Move all NaNs to the requested part of result.
+template <typename T>
+void moveNanToRequestedSide(
+    typename ColumnVector<T>::Permutation::iterator begin,
+    typename ColumnVector<T>::Permutation::iterator end,
+    const typename ColumnVector<T>::Container & data,
+    size_t data_size,
+    bool reverse,
+    int nan_direction_hint
+)
+{
+    const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
+    size_t nans_to_move = 0;
+
+    for (size_t i = 0; i < data_size; ++i)
+    {
+        if (isNaN(data[begin[is_nulls_last ? i : data_size - 1 - i]]))
+            ++nans_to_move;
+        else
+            break;
+    }
+
+    if (nans_to_move)
+        std::rotate(begin, begin + (is_nulls_last ? nans_to_move : data_size - nans_to_move), end);
+}
+
 #if USE_EMBEDDED_COMPILER
 
 template <typename T>
@@ -208,6 +243,104 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 }
 
 #endif
+
+MULTITARGET_FUNCTION_AVX512BW_AVX2(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
+    const typename ColumnVector<T>::Container & data,
+    T value,
+    PaddedPODArray<Int8> & compare_results,
+    int direction,
+    int nan_direction_hint)
+{
+    auto * result_data = compare_results.data();
+    size_t num_rows = data.size();
+    /// 2 independent loops, otherwise the compiler does not vectorize it
+    if (direction < 0)
+    {
+        for (size_t row = 0; row < num_rows; row++)
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+    }
+    else
+    {
+        for (size_t row = 0; row < num_rows; row++)
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+    }
+})
+)
+
+template <typename T>
+void ColumnVector<T>::compareColumn(
+    const IColumn & rhs,
+    size_t rhs_row_num,
+    PaddedPODArray<UInt64> * row_indexes,
+    PaddedPODArray<Int8> & compare_results,
+    int direction,
+    int nan_direction_hint) const
+{
+    size_t num_rows = size();
+    if (compare_results.empty())
+        compare_results.resize(num_rows);
+    else if (compare_results.size() != num_rows)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}", compare_results.size(), num_rows);
+
+    const auto & rhs_derived = static_cast<const ColumnVector<T> &>(rhs);
+    T value = rhs_derived.data[rhs_row_num];
+
+    /// We don't push the row_indexes part into compareColumnImpl because the code is not vectorized as-is, as it needs to
+    /// jump over the different indices to compare them
+    /// It could be rewritten to allow vectorization by reading all memory and then discarding results not in row_indexes
+    /// but I did not expect it to be worth the risk
+    if (row_indexes)
+    {
+        auto * result_data = compare_results.data();
+        UInt64 * next_index = row_indexes->data();
+        if (direction < 0)
+        {
+            for (auto row : *row_indexes)
+            {
+                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+                if (result_data[row] == 0)
+                {
+                    *next_index = row;
+                    ++next_index;
+                }
+            }
+        }
+        else
+        {
+            for (auto row : *row_indexes)
+            {
+                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+                if (result_data[row] == 0)
+                {
+                    *next_index = row;
+                    ++next_index;
+                }
+            }
+        }
+
+        size_t equal_row_indexes_size = next_index - row_indexes->data();
+        row_indexes->resize(equal_row_indexes_size);
+        return;
+    }
+
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        compareColumnImplAVX512BW<T>(data, value, compare_results, direction, nan_direction_hint);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX2))
+    {
+        compareColumnImplAVX2<T>(data, value, compare_results, direction, nan_direction_hint);
+        return;
+    }
+#endif
+    compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
+}
 
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -280,26 +413,8 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                     pairs[i] = {data[i], i};
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
-
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (is_floating_point<T> && nan_direction_hint < 0)
-                {
-                    size_t nans_to_move = 0;
-
-                    for (size_t i = 0; i < data_size; ++i)
-                    {
-                        if (isNaN(data[res[reverse ? i : data_size - 1 - i]]))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
-
-                    if (nans_to_move)
-                    {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
-                    }
-                }
+                if constexpr (is_floating_point<T>)
+                    moveNanToRequestedSide<T>(res.begin(), res.end(), data, data_size, reverse, nan_direction_hint);
 
                 return;
             }
@@ -331,16 +446,16 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
         {
             /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
             bool use_radix_sort = (sort_is_stable && ascending && !is_floating_point<T>) || !sort_is_stable;
-            size_t size = end - begin;
+            size_t range_size = end - begin;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 bool try_sort = trySort(begin, end, pred);
                 if (try_sort)
                     return;
 
-                PaddedPODArray<ValueWithIndex<T>> pairs(size);
+                PaddedPODArray<ValueWithIndex<T>> pairs(range_size);
                 size_t index = 0;
 
                 for (auto * it = begin; it != end; ++it)
@@ -349,27 +464,9 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
                     ++index;
                 }
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), size, reverse, begin);
-
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (is_floating_point<T> && nan_direction_hint < 0)
-                {
-                    size_t nans_to_move = 0;
-
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (isNaN(data[begin[reverse ? i : size - 1 - i]]))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
-
-                    if (nans_to_move)
-                    {
-                        std::rotate(begin, begin + (reverse ? nans_to_move : size - nans_to_move), end);
-                    }
-                }
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), range_size, reverse, begin);
+                if constexpr (is_floating_point<T>)
+                    moveNanToRequestedSide<T>(begin, end, data, range_size, reverse, nan_direction_hint);
 
                 return;
             }
@@ -426,7 +523,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        std::string_view value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -450,6 +547,16 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     }
 
     return res;
+}
+
+template <typename T>
+DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+{
+    chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
+    const auto & val = castToNearestFieldType(data[n]);
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(val);
+    return FieldToDataType()(val);
 }
 
 template <typename T>
@@ -552,9 +659,55 @@ uint8_t suffixToCopy(UInt64 mask)
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
 }
 
+template <typename T>
+class ResultInserter
+{
+private:
+    PaddedPODArray<T> & container;
+
+public:
+    explicit ResultInserter(PaddedPODArray<T> & cont) : container(cont) {}
+
+    void insertSingle(T element)
+    {
+        container.push_back(element);
+    }
+
+    void insertRange(const T * begin, const T * end)
+    {
+        container.insert(begin, end);
+    }
+};
+
+template <typename T>
+class InPlaceResultInserter
+{
+private:
+    T * result_ptr;
+    size_t & container_size;
+
+public:
+    explicit InPlaceResultInserter(T * ptr, size_t & size) : result_ptr(ptr), container_size(size) {}
+
+    void insertSingle(T element)
+    {
+        *result_ptr = element;
+        ++result_ptr;
+        ++container_size;
+    }
+
+    void insertRange(const T * begin, const T * end)
+    {
+        size_t count = end - begin;
+        memmove(result_ptr, begin, count * sizeof(T));
+        result_ptr += count;
+        container_size += count;
+    }
+};
+
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
+inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter)
 {
     while (filt_pos < filt_end_aligned)
     {
@@ -563,21 +716,21 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xFF != prefix_to_copy)
         {
-            res_data.insert(data_pos, data_pos + prefix_to_copy);
+            inserter.insertRange(data_pos, data_pos + prefix_to_copy);
         }
         else
         {
             const uint8_t suffix_to_copy = suffixToCopy(mask);
             if (0xFF != suffix_to_copy)
             {
-                res_data.insert(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+                inserter.insertRange(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
             }
             else
             {
                 while (mask)
                 {
                     size_t index = std::countr_zero(mask);
-                    res_data.push_back(data_pos[index]);
+                    inserter.insertSingle(data_pos[index]);
                     mask = blsr(mask);
                 }
             }
@@ -705,7 +858,10 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
-        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    {
+        ResultInserter<T> inserter(res_data);
+        TargetSpecific::Default::doFilterAligned<T, ResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+    }
 
     while (filt_pos < filt_end)
     {
@@ -717,6 +873,44 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::filter(const IColumn::Filter & filt)
+{
+    const auto size = data.size();
+    const auto filter_size = filt.size();
+
+    if (size != filter_size)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
+    T * result_data = data.data();
+    size_t result_size = 0;
+
+    /** A slightly more optimized version.
+      * Based on the assumption that often pieces of consecutive values
+      *  completely pass or do not pass the filter.
+      * Therefore, we will optimistically check the parts of `SIMD_ELEMENTS` values.
+      */
+    static constexpr size_t SIMD_ELEMENTS = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
+
+    InPlaceResultInserter<T> inserter(result_data, result_size);
+    TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+            result_data[result_size++] = *data_pos;
+
+        ++filt_pos;
+        ++data_pos;
+    }
+
+    data.resize_assume_reserved(result_size);
 }
 
 template <typename T>
@@ -992,6 +1186,13 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     return res;
 }
 
+template <typename T>
+void ColumnVector<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
+}
+
 DECLARE_DEFAULT_CODE(
     template <typename Container, typename Type> void vectorIndexImpl(
     const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
@@ -1003,6 +1204,7 @@ DECLARE_DEFAULT_CODE(
 
 DECLARE_AVX512VBMI_SPECIFIC_CODE(
     template <typename Container, typename Type>
+    __attribute__((no_sanitize("memory"))) /// False positive on _mm512_permutex2var_epi8
     void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
     {
         static constexpr UInt64 MASK64 = 0xffffffffffffffff;
@@ -1136,6 +1338,14 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     TargetSpecific::Default::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
 
     return res;
+}
+
+template <typename T>
+std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

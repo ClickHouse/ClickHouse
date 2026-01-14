@@ -1,12 +1,15 @@
 ---
-slug: /sql-reference/data-types/tuple
+description: 'Documentation for the Tuple data type in ClickHouse'
+sidebar_label: 'Tuple(T1, T2, ...)'
 sidebar_position: 34
-sidebar_label: Tuple(T1, T2, ...)
+slug: /sql-reference/data-types/tuple
+title: 'Tuple(T1, T2, ...)'
+doc_type: 'reference'
 ---
 
 # Tuple(T1, T2, ...)
 
-A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
 
@@ -16,17 +19,17 @@ Tuples can be the result of a query. In this case, for text formats other than J
 
 You can use a function to create a tuple:
 
-``` sql
+```sql
 tuple(T1, T2, ...)
 ```
 
 Example of creating a tuple:
 
-``` sql
+```sql
 SELECT tuple(1, 'a') AS x, toTypeName(x)
 ```
 
-``` text
+```text
 ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
 │ (1,'a') │ Tuple(UInt8, String)      │
 └─────────┴───────────────────────────┘
@@ -36,11 +39,11 @@ A Tuple can contain a single element
 
 Example:
 
-``` sql
+```sql
 SELECT tuple('a') AS x;
 ```
 
-``` text
+```text
 ┌─x─────┐
 │ ('a') │
 └───────┘
@@ -50,11 +53,11 @@ Syntax `(tuple_element1, tuple_element2)` may be used to create a tuple of sever
 
 Example:
 
-``` sql
+```sql
 SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
 ```
 
-``` text
+```text
 ┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
 │ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
 └─────────┴────────────────────────────────────────┴─────────────┘
@@ -66,11 +69,11 @@ When creating tuples on the fly, ClickHouse interferes the type of the tuples ar
 
 Example of automatic data type detection:
 
-``` sql
+```sql
 SELECT tuple(1, NULL) AS x, toTypeName(x)
 ```
 
-``` text
+```text
 ┌─x─────────┬─toTypeName(tuple(1, NULL))──────┐
 │ (1, NULL) │ Tuple(UInt8, Nullable(Nothing)) │
 └───────────┴─────────────────────────────────┘
@@ -80,7 +83,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 
 Tuple elements can be referred to by name or by index:
 
-``` sql
+```sql
 CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
 INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
 
@@ -90,7 +93,7 @@ SELECT a.2 FROM named_tuples; -- by index
 
 Result:
 
-``` text
+```text
 ┌─a.s─┐
 │ y   │
 │ x   │
@@ -112,7 +115,7 @@ Example:
 SELECT (1, 'z') > (1, 'a') c1, (2022, 01, 02) > (2023, 04, 02) c2, (1,2,3) = (3,2,1) c3;
 ```
 
-``` text
+```text
 ┌─c1─┬─c2─┬─c3─┐
 │  1 │  0 │  0 │
 └────┴────┴────┘
@@ -145,8 +148,6 @@ WHERE (year, month, day) > (2010, 1, 1);
 ┌─year─┬─month─┬─day─┐
 │ 2022 │    12 │  31 │
 └──────┴───────┴─────┘
-
-
 CREATE TABLE test
 (
     `key` Int64,

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/DateLUT.h>
 #include <Common/LocalDateTime.h>
 #include <mysqlxx/Types.h>
 
@@ -39,14 +38,14 @@ class ResultBase;
 class Value
 {
 public:
-    /** Параметр res_ используется только для генерации подробной информации в исключениях.
-      * Можно передать NULL - тогда подробной информации в исключениях не будет.
+    /** Parameter res_ is used only for generating detailed information in exceptions.
+      * You can pass NULL - then there will be no detailed information in exceptions.
       */
     Value(const char * data_, size_t length_, const ResultBase * res_) : m_data(data_), m_length(length_), res(res_)
     {
     }
 
-    /// Получить значение bool.
+    /// Get bool value.
     bool getBool() const
     {
         if (unlikely(isNull()))
@@ -55,7 +54,7 @@ public:
         return m_length > 0 && m_data[0] != '0';
     }
 
-    /// Получить беззнаковое целое.
+    /// Get unsigned integer.
     UInt64 getUInt() const
     {
         if (unlikely(isNull()))
@@ -64,13 +63,13 @@ public:
         return readUIntText(m_data, m_length);
     }
 
-    /// Получить целое со знаком или дату или дату-время (в unix timestamp согласно текущей тайм-зоне).
+    /// Get signed integer or date or date-time (as unix timestamp according to current time zone).
     Int64 getInt() const
     {
         return getIntOrDateTime();
     }
 
-    /// Получить число с плавающей запятой.
+    /// Get floating point number.
     double getDouble() const
     {
         if (unlikely(isNull()))
@@ -79,19 +78,19 @@ public:
         return readFloatText(m_data, m_length);
     }
 
-    /// Получить дату-время (из значения вида '2011-01-01 00:00:00').
+    /// Get date-time (from value like '2011-01-01 00:00:00').
     LocalDateTime getDateTime() const
     {
         return LocalDateTime(data(), size());
     }
 
-    /// Получить дату (из значения вида '2011-01-01' или '2011-01-01 00:00:00').
+    /// Get date (from value like '2011-01-01' or '2011-01-01 00:00:00').
     LocalDate getDate() const
     {
         return LocalDate(data(), size());
     }
 
-    /// Получить строку.
+    /// Get string.
     std::string getString() const
     {
         if (unlikely(isNull()))
@@ -100,21 +99,21 @@ public:
         return std::string(m_data, m_length);
     }
 
-    /// Является ли NULL.
+    /// Is NULL.
     bool isNull() const
     {
         return m_data == nullptr;
     }
 
-    /// Для совместимости (используйте вместо этого метод isNull())
+    /// For compatibility (use isNull() method instead)
     bool is_null() const { return isNull(); } /// NOLINT
 
-    /** Получить любой поддерживаемый тип (для шаблонного кода).
-      * Поддерживаются основные типы, а также любые типы с конструктором от Value (для удобства расширения).
+    /** Get any supported type (for template code).
+      * Basic types are supported, as well as any types with constructor from Value (for convenient extension).
       */
     template <typename T> T get() const;
 
-    /// Для совместимости. Не рекомендуется к использованию, так как неудобен (часто возникают неоднозначности).
+    /// For compatibility. Not recommended for use as it's inconvenient (ambiguities often arise).
     template <typename T> operator T() const { return get<T>(); } /// NOLINT
 
     const char * data() const     { return m_data; }
@@ -134,46 +133,9 @@ private:
     }
 
 
-    time_t getDateTimeImpl() const
-    {
-        const auto & date_lut = DateLUT::instance();
+    time_t getDateTimeImpl() const;
 
-        if (m_length == 10)
-        {
-            return date_lut.makeDate(
-                (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
-                (m_data[5] - '0') * 10 + (m_data[6] - '0'),
-                (m_data[8] - '0') * 10 + (m_data[9] - '0'));
-        }
-        if (m_length == 19)
-        {
-            return date_lut.makeDateTime(
-                (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
-                (m_data[5] - '0') * 10 + (m_data[6] - '0'),
-                (m_data[8] - '0') * 10 + (m_data[9] - '0'),
-                (m_data[11] - '0') * 10 + (m_data[12] - '0'),
-                (m_data[14] - '0') * 10 + (m_data[15] - '0'),
-                (m_data[17] - '0') * 10 + (m_data[18] - '0'));
-        }
-        throwException("Cannot parse DateTime");
-    }
-
-
-    time_t getDateImpl() const
-    {
-        const auto & date_lut = DateLUT::instance();
-
-        if (m_length == 10 || m_length == 19)
-        {
-            return date_lut.makeDate(
-                (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
-                (m_data[5] - '0') * 10 + (m_data[6] - '0'),
-                (m_data[8] - '0') * 10 + (m_data[9] - '0'));
-        }
-        throwException("Cannot parse Date");
-
-        return 0;    /// avoid warning. /// NOLINT
-    }
+    time_t getDateImpl() const;
 
 
     Int64 getIntImpl() const
@@ -193,29 +155,19 @@ private:
     }
 
 
-    Int64 getIntOrDate() const
-    {
-        if (unlikely(isNull()))
-            throwException("Value is NULL");
-
-        if (checkDateTime())
-            return getDateImpl();
-
-        const auto & date_lut = DateLUT::instance();
-        return date_lut.toDate(getIntImpl());
-    }
+    Int64 getIntOrDate() const;
 
 
-    /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
+    /// Read unsigned integer in simple format from non-0-terminated string.
     UInt64 readUIntText(const char * buf, size_t length) const;
 
-    /// Прочитать знаковое целое в простом формате из не-0-terminated строки.
+    /// Read signed integer in simple format from non-0-terminated string.
     Int64 readIntText(const char * buf, size_t length) const;
 
-    /// Прочитать число с плавающей запятой в простом формате, с грубым округлением, из не-0-terminated строки.
+    /// Read floating point number in simple format, with rough rounding, from non-0-terminated string.
     double readFloatText(const char * buf, size_t length) const;
 
-    /// Выкинуть исключение с подробной информацией
+    /// Throw exception with detailed information
     [[noreturn]] void throwException(const char * text) const;
 };
 

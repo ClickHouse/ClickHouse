@@ -14,6 +14,9 @@ void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseLazy(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory);
+#if CLICKHOUSE_CLOUD
+void registerDatabaseShared(DatabaseFactory & factory);
+#endif
 
 #if USE_MYSQL
 void registerDatabaseMySQL(DatabaseFactory & factory);
@@ -37,8 +40,8 @@ void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
-#if USE_AVRO
-void registerDatabaseIceberg(DatabaseFactory & factory);
+#if USE_AVRO && USE_PARQUET
+void registerDatabaseDataLake(DatabaseFactory & factory);
 #endif
 
 void registerDatabaseBackup(DatabaseFactory & factory);
@@ -53,6 +56,9 @@ void registerDatabases()
     registerDatabaseLazy(factory);
     registerDatabaseFilesystem(factory);
     registerDatabaseReplicated(factory);
+#if CLICKHOUSE_CLOUD
+    registerDatabaseShared(factory);
+#endif
 
 #if USE_MYSQL
     registerDatabaseMySQL(factory);
@@ -75,8 +81,8 @@ void registerDatabases()
     registerDatabaseHDFS(factory);
 #endif
 
-#if USE_AVRO
-    registerDatabaseIceberg(factory);
+#if USE_AVRO && USE_PARQUET
+    registerDatabaseDataLake(factory);
 #endif
 
     registerDatabaseBackup(factory);

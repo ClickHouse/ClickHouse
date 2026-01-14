@@ -1,12 +1,14 @@
 ---
-slug: /engines/table-engines/special/url
+description: 'Queries data to/from a remote HTTP/HTTPS server. This engine is similar
+  to the File engine.'
+sidebar_label: 'URL'
 sidebar_position: 80
-sidebar_label:  URL
-title: "URL Table Engine"
-description: "Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the File engine."
+slug: /engines/table-engines/special/url
+title: 'URL table engine'
+doc_type: 'reference'
 ---
 
-# URL Table Engine
+# URL table engine
 
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
@@ -50,7 +52,7 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 **1.** Create a `url_engine_table` table on the server :
 
-``` sql
+```sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
@@ -58,7 +60,7 @@ ENGINE=URL('http://127.0.0.1:12345/', CSV)
 **2.** Create a basic HTTP server using the standard Python 3 tools and
 start it:
 
-``` python3
+```python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class CSVHTTPServer(BaseHTTPRequestHandler):
@@ -74,17 +76,17 @@ if __name__ == "__main__":
     HTTPServer(server_address, CSVHTTPServer).serve_forever()
 ```
 
-``` bash
+```bash
 $ python3 server.py
 ```
 
 **3.** Request data:
 
-``` sql
+```sql
 SELECT * FROM url_engine_table
 ```
 
-``` text
+```text
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │
@@ -95,11 +97,11 @@ SELECT * FROM url_engine_table
 
 - Reads and writes can be parallel
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - Replication.
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
 - `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
@@ -107,7 +109,7 @@ SELECT * FROM url_engine_table
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## Storage Settings {#storage-settings}
+## Storage settings {#storage-settings}
 
 - [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.

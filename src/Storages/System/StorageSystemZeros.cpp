@@ -71,9 +71,9 @@ private:
     ZerosStatePtr state;
     ColumnPtr column;
 
-    static Block createHeader()
+    static SharedHeader createHeader()
     {
-        return { ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "zero") };
+        return std::make_shared<const Block>(Block{ ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "zero") });
     }
 
     static ColumnPtr createColumn(size_t size)

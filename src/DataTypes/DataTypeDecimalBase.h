@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -94,7 +95,7 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
 
     bool isSummable() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
 
     /// Decimal specific
@@ -139,6 +140,12 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
+    void updateHashImpl(SipHash & hash) const override
+    {
+        hash.update(precision);
+        hash.update(scale);
+    }
+
 protected:
     const UInt32 precision;
     const UInt32 scale;
@@ -157,12 +164,14 @@ inline const DataTypeDecimalBase<T> * checkDecimalBase(const IDataType & data_ty
 template <> constexpr size_t DataTypeDecimalBase<Decimal32>::maxPrecision() { return 9; };
 template <> constexpr size_t DataTypeDecimalBase<Decimal64>::maxPrecision() { return 18; };
 template <> constexpr size_t DataTypeDecimalBase<DateTime64>::maxPrecision() { return 18; };
+template <> constexpr size_t DataTypeDecimalBase<Time64>::maxPrecision() { return 18; };
 template <> constexpr size_t DataTypeDecimalBase<Decimal128>::maxPrecision() { return 38; };
 template <> constexpr size_t DataTypeDecimalBase<Decimal256>::maxPrecision() { return 76; };
 
 extern template class DataTypeDecimalBase<Decimal32>;
 extern template class DataTypeDecimalBase<Decimal64>;
 extern template class DataTypeDecimalBase<DateTime64>;
+extern template class DataTypeDecimalBase<Time64>;
 extern template class DataTypeDecimalBase<Decimal128>;
 extern template class DataTypeDecimalBase<Decimal256>;
 

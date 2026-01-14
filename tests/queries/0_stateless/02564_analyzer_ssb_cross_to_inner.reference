@@ -150,7 +150,7 @@ ALL INNER JOIN default.lineorder AS __table5 ON __table5.LO_ORDERDATE = __table1
 ALL INNER JOIN default.customer AS __table2 ON __table5.LO_CUSTKEY = __table2.C_CUSTKEY
 ALL INNER JOIN default.supplier AS __table3 ON __table5.LO_SUPPKEY = __table3.S_SUPPKEY
 ALL INNER JOIN default.part AS __table4 ON __table5.LO_PARTKEY = __table4.P_PARTKEY
-WHERE (__table5.LO_QUANTITY >= 34) AND (__table5.LO_QUANTITY <= 44) AND (__table5.LO_ORDERDATE >= _CAST(9496, \'Date\')) AND (__table5.LO_ORDERDATE <= _CAST(9861, \'Date\')) AND (__table1.D_DATEKEY <= _CAST(9861, \'Date\')) AND (__table1.D_DATEKEY >= _CAST(9496, \'Date\')) AND (__table3.S_NATION = \'UNITED KINGDOM\') AND (__table4.P_CATEGORY = \'MFGR#21\')
+WHERE (__table5.LO_QUANTITY >= 34) AND (__table5.LO_QUANTITY <= 44) AND (__table5.LO_ORDERDATE >= _CAST(\'1996-01-01\', \'Date\')) AND (__table5.LO_ORDERDATE <= _CAST(\'1996-12-31\', \'Date\')) AND (__table1.D_DATEKEY <= _CAST(\'1996-12-31\', \'Date\')) AND (__table1.D_DATEKEY >= _CAST(\'1996-01-01\', \'Date\')) AND (__table3.S_NATION = \'UNITED KINGDOM\') AND (__table4.P_CATEGORY = \'MFGR#21\')
 GROUP BY
     __table1.D_YEARMONTHNUM,
     __table3.S_CITY,

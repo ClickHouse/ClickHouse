@@ -34,7 +34,9 @@ INITIAL_SUM=$($CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_alt
 function correct_alter_thread()
 {
     TYPES=(Float64 String UInt8 UInt32)
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 3 + 1))
         TYPE=${TYPES[$RANDOM % ${#TYPES[@]} ]}
         $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_detach_$REPLICA MODIFY COLUMN value1 $TYPE SETTINGS replication_alter_partitions_sync=0"; # additionaly we don't wait anything for more heavy concurrency
@@ -47,9 +49,10 @@ function correct_alter_thread()
 # insert queries will fail sometime because of wrong types.
 function insert_thread()
 {
-
     VALUES=(7.0 7 '7')
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 3 + 1))
         VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
         $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_detach_$REPLICA VALUES($RANDOM, $VALUE, $VALUE)"
@@ -59,7 +62,9 @@ function insert_thread()
 
 function detach_attach_thread()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 3 + 1))
         $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_alter_detach_$REPLICA"
         sleep 0.$RANDOM
@@ -68,22 +73,19 @@ function detach_attach_thread()
 }
 
 echo "Starting alters"
-export -f correct_alter_thread;
-export -f insert_thread;
-export -f detach_attach_thread;
 
 TIMEOUT=15
 
 # Sometimes we detach and attach tables
-timeout $TIMEOUT bash -c detach_attach_thread 2> /dev/null &
+detach_attach_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
+correct_alter_thread 2> /dev/null &
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
 
 wait
 

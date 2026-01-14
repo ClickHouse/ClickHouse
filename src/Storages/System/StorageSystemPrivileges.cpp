@@ -31,6 +31,8 @@ namespace
         NAMED_COLLECTION,
         USER_NAME,
         TABLE_ENGINE,
+        DEFINER,
+        SOURCE,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -45,6 +47,8 @@ namespace
         enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
         enum_values.emplace_back("USER_NAME", static_cast<Int8>(USER_NAME));
         enum_values.emplace_back("TABLE_ENGINE", static_cast<Int8>(TABLE_ENGINE));
+        enum_values.emplace_back("DEFINER", static_cast<Int8>(DEFINER));
+        enum_values.emplace_back("SOURCE", static_cast<Int8>(SOURCE));
         return enum_values;
     }
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-async-insert
+# no-async-insert: https://github.com/ClickHouse/ClickHouse/issues/80105
 
 set -e
 
@@ -15,15 +16,15 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t (x Int8) ENGINE = MergeTree ORDER B
 
 function thread_optimize()
 {
-    while true;
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t FINAL;" 2>&1 | tr -d '\n' | rg -v 'Cancelled merging parts' ||:
     done
 }
 
 TIMEOUT=15
-export -f thread_optimize
-timeout $TIMEOUT bash -c thread_optimize 2> /dev/null &
+thread_optimize 2> /dev/null &
 
 for i in {1..100};
 do

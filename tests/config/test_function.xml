@@ -10,7 +10,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+        <command>awk -F'\t' '{print $1 + $2}'</command>
         <execute_direct>0</execute_direct>
     </function>
 </functions>

@@ -1,12 +1,15 @@
 ---
-slug: /sql-reference/statements/alter/view
+description: 'Documentation for ALTER TABLE ... MODIFY QUERY Statement'
+sidebar_label: 'VIEW'
 sidebar_position: 50
-sidebar_label: VIEW
+slug: /sql-reference/statements/alter/view
+title: 'ALTER TABLE ... MODIFY QUERY Statement'
+doc_type: 'reference'
 ---
 
 # ALTER TABLE ... MODIFY QUERY Statement
 
-You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
+You can modify `SELECT` query that was specified when a [materialized view](/sql-reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
 This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underlying storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
 
@@ -25,7 +28,7 @@ FROM events
 GROUP BY ts, event_type;
 
 INSERT INTO events
-SELECT Date '2020-01-01' + interval number * 900 second,
+SELECT DATE '2020-01-01' + interval number * 900 second,
        ['imp', 'click'][number%2+1]
 FROM numbers(100);
 
@@ -132,7 +135,6 @@ CREATE TABLE test.events_by_day
 ENGINE = SummingMergeTree
 PRIMARY KEY (event_type, ts)
 ORDER BY (event_type, ts, browser)
-SETTINGS index_granularity = 8192
 
 -- !!! The columns' definition is unchanged but it does not matter, we are not querying
 -- MATERIALIZED VIEW, we are querying TO (storage) table.
@@ -190,10 +192,6 @@ SELECT * FROM mv;
 │ 2 │
 └───┘
 ```
-
-## ALTER LIVE VIEW Statement {#alter-live-view-statement}
-
-`ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](../create/view.md#live-view). See [Force Live View Refresh](../create/view.md#live-view-alter-refresh).
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 

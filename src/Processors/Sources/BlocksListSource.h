@@ -14,12 +14,12 @@ class BlocksListSource : public ISource
 public:
     /// Acquires the ownership of the block list.
     explicit BlocksListSource(BlocksList && list_)
-        : ISource(list_.empty() ? Block() : list_.front().cloneEmpty())
+        : ISource(std::make_shared<const Block>(list_.empty() ? Block() : list_.front().cloneEmpty()))
         , list(std::move(list_)), it(list.begin()), end(list.end()) {}
 
     /// Uses a list of blocks lying somewhere else.
     BlocksListSource(BlocksList::iterator & begin_, BlocksList::iterator & end_)
-        : ISource(begin_ == end_ ? Block() : begin_->cloneEmpty())
+        : ISource(std::make_shared<const Block>(begin_ == end_ ? Block() : begin_->cloneEmpty()))
         , it(begin_), end(end_) {}
 
     String getName() const override { return "BlocksListSource"; }

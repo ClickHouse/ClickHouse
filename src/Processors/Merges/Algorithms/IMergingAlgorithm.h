@@ -3,6 +3,10 @@
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
+#include <Core/SortDescription.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -59,6 +63,45 @@ public:
     {
         for (auto & input : inputs)
             removeConstAndSparse(input);
+    }
+
+    static void removeReplicatedFromSortingColumns(const SharedHeader & header, Input & input, const SortDescription & description)
+    {
+        if (!input.chunk)
+            return;
+
+        size_t num_rows = input.chunk.getNumRows();
+        auto columns = input.chunk.detachColumns();
+        for (const auto & column_desc : description)
+        {
+            size_t column_number = header->getPositionByName(column_desc.column_name);
+            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+        }
+        input.chunk.setColumns(std::move(columns), num_rows);
+    }
+
+    static void removeReplicatedFromSortingColumns(const SharedHeader & header, Inputs & inputs, const SortDescription & description)
+    {
+        for (auto & input : inputs)
+            removeReplicatedFromSortingColumns(header, input, description);
+    }
+
+    static void removeReplicatedFromSortingColumns(Input & input, const SortDescriptionWithPositions & description)
+    {
+        if (!input.chunk)
+            return;
+
+        size_t num_rows = input.chunk.getNumRows();
+        auto columns = input.chunk.detachColumns();
+        for (const auto & column_desc : description)
+            columns[column_desc.column_number] = columns[column_desc.column_number]->convertToFullColumnIfReplicated();
+        input.chunk.setColumns(std::move(columns), num_rows);
+    }
+
+    static void removeReplicatedFromSortingColumns(Inputs & inputs, const SortDescriptionWithPositions & description)
+    {
+        for (auto & input : inputs)
+            removeReplicatedFromSortingColumns(input, description);
     }
 
     virtual const char * getName() const = 0;

@@ -12,7 +12,7 @@ benchmark_args=(
     --log_queries_min_type QUERY_FINISH
 )
 $CLICKHOUSE_BENCHMARK "${benchmark_args[@]}" --query "SELECT * FROM remote('127.2', 'system.one')" >& /dev/null
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 # Number of queries:
 # - DESC TABLE system.one
 # - query on initiator

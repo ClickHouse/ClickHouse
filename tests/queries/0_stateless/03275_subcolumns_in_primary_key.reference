@@ -86,27 +86,31 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
+Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/2
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -115,26 +119,30 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+Ranges: 1
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/2
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 1
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
@@ -249,27 +257,31 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
+Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/1
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -278,26 +290,30 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+Ranges: 1
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/1
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 create table test (id UInt64, a Tuple(b Tuple(c UInt32, d String, e Array(UInt32))), data String) engine=MergeTree order by (a.b.c, a.b.d) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, vertical_merge_algorithm_min_rows_to_activate=10000000000, index_granularity = 1;
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
@@ -386,27 +402,31 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
+Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/2
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -415,26 +435,30 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+Ranges: 1
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/2
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 1
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
@@ -549,27 +573,31 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
+Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/1
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -578,26 +606,30 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+Ranges: 1
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/1
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 create table test (id UInt64, a Tuple(b Tuple(c UInt32, d String, e Array(UInt32))), data String) engine=MergeTree order by (a.b.c, a.b.d) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1, vertical_merge_algorithm_min_rows_to_activate=1, index_granularity = 1;
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
@@ -686,27 +718,31 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
+Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/2
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -715,26 +751,30 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/2
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+Ranges: 1
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/2
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 1
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
@@ -849,27 +889,31 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
+Search Algorithm: binary search
+Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/1
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1
 2
 Expression ((Project names + Projection))
 AggregatingProjection
@@ -878,23 +922,27 @@ Filter ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 Condition: (a.b.c in [0, 0])
 Parts: 1/1
 Granules: 2/8
-ReadFromPreparedSource (_minmax_count_projection)
+Search Algorithm: binary search
+Ranges: 1
+ReadFromPreparedSource (_exact_count_projection)
 1
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Filter ((WHERE + Change column names to column identifiers))
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
-Keys: 
+Keys:
 a.b.c
 a.b.d
 Condition: and((a.b.d in [\'str_0\', \'str_0\']), (a.b.c in [0, 0]))
 Parts: 1/1
 Granules: 1/8
+Search Algorithm: binary search
+Ranges: 1

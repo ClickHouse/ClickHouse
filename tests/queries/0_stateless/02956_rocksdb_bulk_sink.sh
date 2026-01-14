@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, use-rocksdb, no-random-settings
+# Tags: no-ordinary-database, use-rocksdb, no-random-settings, no-msan
+# msan: too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

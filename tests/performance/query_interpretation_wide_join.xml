@@ -1,0 +1,89 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>join_algorithm</name>
+            <values>
+                <value>grace_hash</value>
+                <value>hash</value>
+                <value>parallel_hash</value>
+                <value>partial_merge</value>
+<!--                <value>direct</value>-->
+                <value>auto</value>
+                <value>full_sorting_merge</value>
+                <value>prefer_partial_merge</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE my_table
+        (
+            `id` String,
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_1` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_2` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_3` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_4` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_5` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_6` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_7` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_8` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_9` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_10` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_11` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_12` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_13` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_14` Nullable(String),
+            `long_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_longlong_long_long_long_long_column_name_15` Nullable(String)
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+    <drop_query>DROP TABLE my_table</drop_query>
+
+    <query>
+        SELECT *
+        FROM my_table AS t1
+        INNER JOIN my_table AS t2 ON t1.id = t2.id
+        INNER JOIN my_table AS t3 ON t2.id = t3.id
+        INNER JOIN my_table AS t4 ON t3.id = t4.id
+        INNER JOIN my_table AS t5 ON t4.id = t5.id
+        INNER JOIN my_table AS t6 ON t5.id = t6.id
+        INNER JOIN my_table AS t7 ON t6.id = t7.id
+        INNER JOIN my_table AS t8 ON t7.id = t8.id
+        INNER JOIN my_table AS t9 ON t8.id = t9.id
+        INNER JOIN my_table AS t10 ON t9.id = t10.id
+        INNER JOIN my_table AS t11 ON t10.id = t11.id
+        INNER JOIN my_table AS t12 ON t11.id = t12.id
+        INNER JOIN my_table AS t13 ON t12.id = t13.id
+        INNER JOIN my_table AS t14 ON t13.id = t14.id
+        INNER JOIN my_table AS t15 ON t14.id = t15.id
+        INNER JOIN my_table AS t16 ON t15.id = t16.id
+        INNER JOIN my_table AS t17 ON t16.id = t17.id
+        INNER JOIN my_table AS t18 ON t17.id = t18.id
+        INNER JOIN my_table AS t19 ON t18.id = t19.id
+        INNER JOIN my_table AS t20 ON t19.id = t20.id
+        INNER JOIN my_table AS t21 ON t20.id = t21.id
+        INNER JOIN my_table AS t22 ON t21.id = t22.id
+        INNER JOIN my_table AS t23 ON t22.id = t23.id
+        INNER JOIN my_table AS t24 ON t23.id = t24.id
+        INNER JOIN my_table AS t25 ON t24.id = t25.id
+        INNER JOIN my_table AS t26 ON t25.id = t26.id
+        INNER JOIN my_table AS t27 ON t26.id = t27.id
+        INNER JOIN my_table AS t28 ON t27.id = t28.id
+        INNER JOIN my_table AS t29 ON t28.id = t29.id
+        INNER JOIN my_table AS t30 ON t29.id = t30.id
+        INNER JOIN my_table AS t31 ON t30.id = t31.id
+        INNER JOIN my_table AS t32 ON t31.id = t32.id
+        INNER JOIN my_table AS t33 ON t32.id = t33.id
+        INNER JOIN my_table AS t34 ON t33.id = t34.id
+        INNER JOIN my_table AS t35 ON t34.id = t35.id
+        INNER JOIN my_table AS t36 ON t35.id = t36.id
+        INNER JOIN my_table AS t37 ON t36.id = t37.id
+        INNER JOIN my_table AS t38 ON t37.id = t38.id
+        INNER JOIN my_table AS t39 ON t38.id = t39.id
+        INNER JOIN my_table AS t40 ON t39.id = t40.id
+        SETTINGS join_algorithm = '{join_algorithm}'
+               , query_plan_use_new_logical_join_step = 0 -- FIXME: improve join logical to physical conversion to make huge queries with small tables faster
+        FORMAT Null
+    </query>
+</test>

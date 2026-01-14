@@ -264,7 +264,7 @@ struct BloomFilterHash
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
                 ColumnString::Offset current_offset = offsets[index + pos - 1];
-                size_t length = offsets[index + pos] - current_offset - 1 /* terminating zero */;
+                size_t length = offsets[index + pos] - current_offset;
                 UInt64 city_hash = CityHash_v1_0_2::CityHash64(
                     reinterpret_cast<const char *>(&data[current_offset]), length);
 
@@ -293,7 +293,7 @@ struct BloomFilterHash
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type was passed to the bloom filter index.");
     }
 
-    static std::pair<size_t, size_t> calculationBestPractices(double max_conflict_probability)
+    static std::pair<size_t, size_t> calculationBestPractices(double false_positive_rate)
     {
         static const size_t MAX_BITS_PER_ROW = 20;
         static const size_t MAX_HASH_FUNCTION_COUNT = 15;
@@ -305,7 +305,7 @@ struct BloomFilterHash
         /// Otherwise, for those rates the loop won't find any possible values in the lookup table
         /// returning bits_per_row = 19 & size_of_hash_functions = 13. Which are the most restrictive values
         /// to be used with the smallest false positive rates.
-        if (max_conflict_probability >= 0.283)
+        if (false_positive_rate >= 0.283)
             return std::pair<size_t, size_t>(MIN_BITS_PER_ROW, MIN_HASH_FUNCTION_COUNT);
 
         /// For the smallest index per level in probability_lookup_table
@@ -338,11 +338,11 @@ struct BloomFilterHash
 
         for (size_t bits_per_row = 1; bits_per_row < MAX_BITS_PER_ROW; ++bits_per_row)
         {
-            if (probability_lookup_table[bits_per_row][min_probability_index_each_bits[bits_per_row]] <= max_conflict_probability)
+            if (probability_lookup_table[bits_per_row][min_probability_index_each_bits[bits_per_row]] <= false_positive_rate)
             {
                 size_t max_size_of_hash_functions = min_probability_index_each_bits[bits_per_row];
                 for (size_t size_of_hash_functions = max_size_of_hash_functions; size_of_hash_functions > 0; --size_of_hash_functions)
-                    if (probability_lookup_table[bits_per_row][size_of_hash_functions] > max_conflict_probability)
+                    if (probability_lookup_table[bits_per_row][size_of_hash_functions] > false_positive_rate)
                         return std::pair<size_t, size_t>(bits_per_row, size_of_hash_functions + 1);
             }
         }

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_global_context.h>
+#include <Core/Field.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskEncrypted.h>
@@ -8,9 +9,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Poco/TemporaryFile.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <boost/algorithm/string/join.hpp>
@@ -37,7 +38,7 @@ protected:
         local_disk.reset();
     }
 
-    void makeEncryptedDisk(FileEncryption::Algorithm algorithm, const String & key, DiskPtr non_encrypted_disk, const String & path = "")
+    DiskPtr makeEncryptedDisk(FileEncryption::Algorithm algorithm, const String & key, DiskPtr non_encrypted_disk, const String & path = "")
     {
         auto settings = std::make_unique<DiskEncryptedSettings>();
         settings->wrapped_disk = non_encrypted_disk;
@@ -48,6 +49,7 @@ protected:
         settings->current_key_fingerprint = fingerprint;
         settings->disk_path = path;
         encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
+        return encrypted_disk;
     }
 
     String getFileNames()
@@ -62,9 +64,9 @@ protected:
         return temp_dir->path() + "/";
     }
 
-    String getFileContents(const String & file_name, std::optional<size_t> file_size = {})
+    String getFileContents(const String & file_name)
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, file_size);
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -98,7 +100,7 @@ protected:
         return contents;
     }
 
-    void testSeekAndReadUntilPosition(DiskPtr disk, const ReadSettings & read_settings);
+    void testSeekAndReadUntilPosition(DiskPtr disk, const String & filename, const ReadSettings & read_settings);
 
     std::unique_ptr<Poco::TemporaryFile> temp_dir;
     std::shared_ptr<DiskLocal> local_disk;
@@ -126,10 +128,6 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
     /// Read the file.
     EXPECT_EQ(getFileContents("a.txt"), "Some text");
-    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
-
-    /// Read the file with specified file size.
-    EXPECT_EQ(getFileContents("a.txt", 9), "Some text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
     /// Remove the file.
@@ -324,23 +322,23 @@ TEST_F(DiskEncryptedTest, RemoveFileDuringWriting)
 }
 #endif
 
-void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSettings & read_settings)
+void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String & filename, const ReadSettings & read_settings)
 {
     /// Write a file.
     {
-        auto buf = disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = disk->writeFile(filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
         writeString(getAlphabetWithDigits(), *buf);
         buf->finalize();
     }
 
     {
         /// Read the whole file.
-        EXPECT_EQ(getFileContents("a.txt"), getAlphabetWithDigits());
+        EXPECT_EQ(getFileContents(filename), getAlphabetWithDigits());
     }
 
     {
         /// Read the whole file in two portions.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
 
         String str;
         readString(str, *buf, 5);
@@ -352,7 +350,8 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Read until specified position (setReadUntilPosition).
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
+
         buf->setReadUntilPosition(10);
 
         String str;
@@ -362,7 +361,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position forward.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -387,7 +386,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -401,7 +400,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward and seek.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile("a.txt", read_settings, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -416,7 +415,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Seek and then read until a specified position.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
 
         String str;
         buf->seek(0, SEEK_SET);
@@ -424,43 +423,52 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
         readStringUntilEOF(str, *buf);
         EXPECT_EQ(str, "abcdef");
 
-        /*buf->seek(3, SEEK_SET);
+        buf->seek(3, SEEK_SET);
         buf->setReadUntilPosition(5);
         readStringUntilEOF(str, *buf);
-        EXPECT_EQ(str, "");*/
+        EXPECT_EQ(str, "de");
 
-        buf->seek(10, SEEK_SET);
         buf->setReadUntilPosition(15);
+        buf->seek(10, SEEK_SET);
         readStringUntilEOF(str, *buf);
         EXPECT_EQ(str, "klmno");
 
-        /* buf->seek(0, SEEK_SET);
+        buf->seek(0, SEEK_SET);
         buf->setReadUntilPosition(5);
         readStringUntilEOF(str, *buf);
-        EXPECT_EQ(str, ""); */
+        EXPECT_EQ(str, "abcde");
 
         buf->seek(-1, SEEK_CUR);
         buf->setReadUntilEnd();
         readStringUntilEOF(str, *buf);
-        EXPECT_EQ(str, "opqrstuvwxyz0123456789");
+        EXPECT_EQ(str, "efghijklmnopqrstuvwxyz0123456789");
     }
 }
 
 TEST_F(DiskEncryptedTest, LocalBlobs)
 {
-    getContext().context->setServerSetting("storage_metadata_write_full_object_key", true);
-
-    auto object_storage = std::make_shared<LocalObjectStorage>(fs::path{getDirectory()} / "local_blobs");
+    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
     auto metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
-    auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/");
+    auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
 
-    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", "/", metadata_storage, object_storage, *config, "");
+    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", metadata_storage, object_storage, *config, "");
 
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 
-    ReadSettings read_settings;
-    read_settings.local_fs_buffer_size = 1;
+    testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
 
-    testSeekAndReadUntilPosition(encrypted_disk, read_settings);
+    {
+        ReadSettings read_settings;
+        read_settings.local_fs_buffer_size = 1;
+        testSeekAndReadUntilPosition(encrypted_disk, "b.txt", read_settings);
+    }
+}
+
+TEST_F(DiskEncryptedTest, DoubleEncrypted)
+{
+    auto single_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    auto double_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", single_encrypted_disk);
+
+    testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
 }

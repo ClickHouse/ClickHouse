@@ -1,10 +1,12 @@
 ---
-title: Native
-slug: /interfaces/formats/Native
-keywords: [Native]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the Native format'
+input_format: true
+keywords: ['Native']
+output_format: true
+slug: /interfaces/formats/Native
+title: 'Native'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -26,6 +28,6 @@ You can use this format to quickly generate dumps that can only be read by the C
 It might not be practical to work with this format yourself.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

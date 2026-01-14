@@ -1,4 +1,4 @@
-#include "StackTrace.h"
+#include <Common/StackTrace.h>
 
 #include <base/FnTraits.h>
 #include <base/constexpr_helpers.h>
@@ -30,7 +30,7 @@
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
 /// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
-#include "execinfo.h"
+#include <execinfo.h>
 #endif
 
 namespace
@@ -54,6 +54,11 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
+}
+
+StackTrace::StackTrace()
+{
+    tryCapture();
 }
 
 void StackTrace::setShowAddresses(bool show)
@@ -221,13 +226,15 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #elif defined(__loongarch64)
     return reinterpret_cast<void *>(context.uc_mcontext.__pc);
+#elif defined(__e2k__)
+    return reinterpret_cast<void *>(context.uc_mcontext.cr0_hi);
 #else
     return nullptr;
 #endif
 }
 
 void StackTrace::forEachFrame(
-    const StackTrace::FramePointers & frame_pointers,
+    const FramePointers & frame_pointers,
     size_t offset,
     size_t size,
     std::function<void(const Frame &)> callback,
@@ -289,7 +296,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
             current_frame.symbol = demangle(symbol->name);
 
         for (const auto & frame : inline_frames)
@@ -299,7 +306,7 @@ void StackTrace::forEachFrame(
 
             current_inline_frame.file = "inlined from " + file_for_inline_frame;
             current_inline_frame.line = frame.location.line;
-            current_inline_frame.symbol = frame.name;
+            current_inline_frame.symbol = demangle(frame.name);
 
             callback(current_inline_frame);
         }
@@ -364,7 +371,10 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         /// Skip excessive stack frames that we have created while finding stack trace.
         for (size_t i = 0; i < size; ++i)
         {
-            if (frame_pointers[i] == caller_address)
+            if (frame_pointers[i] == caller_address ||
+                /// This compensates for a hack in libunwind, see the "+ 1" in
+                /// UnwindCursor<A, R>::stepThroughSigReturn.
+                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
             {
                 offset = i;
                 break;
@@ -373,12 +383,18 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
 }
 
+StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
+    : size(size_)
+    , offset(offset_)
+    , frame_pointers(std::move(frame_pointers_))
+{}
+
 void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)
-    size = backtrace(frame_pointers.data(), capacity);
+    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
-    size = unw_backtrace(frame_pointers.data(), capacity);
+    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
@@ -390,9 +406,9 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::optional<std::string_view> file, const char * const symbol_name)
+String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
-    if (!symbol_name)
+    if (symbol_name.empty())
         return "?";
 
     if (file.has_value())
@@ -404,32 +420,30 @@ String demangleAndCollapseNames(std::optional<std::string_view> file, const char
             return "?";
     }
 
-    String haystack = demangle(symbol_name);
-
     // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
     {
         size_t pos = 0;
-        while ((pos = haystack.find(needle, pos)) != std::string::npos)
+        while ((pos = symbol_name.find(needle, pos)) != std::string::npos)
         {
-            haystack.replace(pos, needle.length(), to);
+            symbol_name.replace(pos, needle.length(), to);
             pos += to.length();
         }
     }
 
-    return haystack;
+    return symbol_name;
 }
 
 struct StackTraceRefTriple
 {
-    const StackTrace::FramePointers & pointers;
+    const FramePointers & pointers;
     size_t offset;
     size_t size;
 };
 
 struct StackTraceTriple
 {
-    StackTrace::FramePointers pointers;
+    FramePointers pointers;
     size_t offset;
     size_t size;
 };
@@ -470,7 +484,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             out << *frame.file << ':' << *frame.line << ": ";
 
         if (frame.symbol.has_value())
-            out << demangleAndCollapseNames(frame.file, frame.symbol->data());
+            out << collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
@@ -507,7 +521,7 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers{};
+    FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
@@ -543,7 +557,7 @@ static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+static String toStringCached(const FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
 
@@ -599,7 +613,7 @@ std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offse
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers{};
+    FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     return toStringCached(frame_pointers, offset, size);

@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
-
-#include <Parsers/queryToString.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ std::string astToString(ASTPtr ast_ptr)
     if (!ast_ptr)
         return "";
 
-    return queryToString(ast_ptr);
+    return ast_ptr->formatWithSecretsOneLine();
 }
 
 std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)
@@ -68,6 +67,7 @@ std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & 
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
     time_t current_time)
 {
     return PartProperties{
@@ -75,8 +75,10 @@ PartProperties buildPartProperties(
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
+        .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),
         .age = current_time - part->modification_time,
+        .rows = part->rows_count,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
     };

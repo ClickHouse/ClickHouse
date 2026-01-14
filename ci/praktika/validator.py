@@ -22,6 +22,14 @@ class Validator:
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
+        if Settings.ENABLED_WORKFLOWS:
+            for file in Settings.ENABLED_WORKFLOWS:
+                cls.evaluate_check_simple(
+                    Path(file).is_file()
+                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
+                    f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
+                )
+
         if Settings.USE_CUSTOM_GH_AUTH:
             cls.evaluate_check_simple(
                 Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
@@ -31,7 +39,7 @@ class Validator:
         workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH:
+            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
                 secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
                 cls.evaluate_check(
                     bool(secret),
@@ -48,7 +56,19 @@ class Validator:
             for job in workflow.jobs:
                 cls.evaluate_check(
                     isinstance(job, Job.Config),
-                    f"Invalid job type [{job}]",
+                    f"Invalid job type [{job}]: type [{type(job)}]",
+                    workflow.name,
+                )
+                cls.evaluate_check(
+                    job.runs_on
+                    and isinstance(job.runs_on, list)
+                    or isinstance(job.runs_on, tuple),
+                    f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
+                    workflow.name,
+                )
+                cls.evaluate_check(
+                    "PARAMETER" not in job.command,
+                    f"Job parametrization config issue: job name [{job.name}], job command: [{job.command}]",
                     workflow.name,
                 )
 
@@ -64,25 +84,47 @@ class Validator:
                     f".crone_schedules str must be non-empty list of cron strings .event===SCHEDULE, provided value [{workflow.cron_schedules}]",
                     workflow.name,
                 )
+
+                def is_valid_cron_field(field: str) -> bool:
+                    """Check if a cron field is valid (supports *, digits, ranges, steps, and lists)"""
+                    if field == "*":
+                        return True
+                    # Check for step values like */5 or 1-10/2
+                    if "/" in field:
+                        base, step = field.split("/", 1)
+                        if not step.isdigit():
+                            return False
+                        if base != "*":
+                            field = base  # Continue validating the base part
+                        else:
+                            return True  # */N is valid
+                    # Check for lists like 1,3,5 or ranges like 1-5
+                    for part in field.split(","):
+                        if "-" in part:
+                            # Range like 1-5
+                            parts = part.split("-")
+                            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                                return False
+                        elif not part.isdigit():
+                            return False
+                    return True
+
                 for cron_schedule in workflow.cron_schedules:
                     cls.evaluate_check(
                         len(cron_schedule.split(" ")) == 5,
                         f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * *', provided value [{cron_schedule}]",
                         workflow.name,
                     )
-                    for cron_token in cron_schedule.split(" ")[:-1]:
+                    tokens = cron_schedule.split(" ")
+                    for i, cron_token in enumerate(tokens):
+                        field_name = ["minute", "hour", "day", "month", "day_of_week"][
+                            i
+                        ]
                         cls.evaluate_check(
-                            cron_token == "*" or str.isdigit(cron_token),
-                            f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{cron_token}]",
+                            is_valid_cron_field(cron_token),
+                            f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1-5', provided value [{cron_schedule}], invalid {field_name} field [{cron_token}]",
                             workflow.name,
                         )
-                    days_of_weak = cron_schedule.split(" ")[-1]
-                    cls.evaluate_check(
-                        days_of_weak == "*"
-                        or any([str.isdigit(v) for v in days_of_weak.split(",")]),
-                        f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{days_of_weak}]",
-                        workflow.name,
-                    )
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
@@ -117,9 +159,33 @@ class Validator:
                 ), f"CACHE_S3_PATH Setting must be defined if enable_cache=True, workflow [{workflow.name}]"
 
             if workflow.dockers:
+                if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB == False:
+                    cls.evaluate_check_simple(
+                        Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        and Settings.DOCKER_MERGE_RUNS_ON
+                        and Settings.DOCKER_BUILD_AMD_RUNS_ON
+                        and Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        != Settings.DOCKER_BUILD_AMD_RUNS_ON,
+                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
+                    )
+                else:
+                    cls.evaluate_check(
+                        Settings.DOCKER_MERGE_RUNS_ON,
+                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        workflow_name=workflow.name,
+                    )
+
+            if workflow.set_latest_for_docker_merged_manifest:
                 cls.evaluate_check(
-                    Settings.DOCKER_BUILD_RUNS_ON,
-                    f"DOCKER_BUILD_RUNS_ON settings must be defined if workflow has dockers",
+                    workflow.enable_dockers_manifest_merge,
+                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
+                    workflow_name=workflow.name,
+                )
+
+            if workflow.enable_open_issues_check:
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    f".enable_open_issues_check workflow setting is applicable with .enable_report=True",
                     workflow_name=workflow.name,
                 )
 
@@ -141,7 +207,7 @@ class Validator:
                         artifact.is_s3_artifact()
                     ), f"All artifacts must be of S3 type if enable_cache|enable_html=True, artifact [{artifact.name}], type [{artifact.type}], workflow [{workflow.name}]"
 
-            if workflow.dockers:
+            if workflow.dockers and not workflow.disable_dockers_build:
                 assert (
                     Settings.DOCKERHUB_USERNAME
                 ), f"Settings.DOCKERHUB_USERNAME must be provided if workflow has dockers, workflow [{workflow.name}]"
@@ -151,6 +217,13 @@ class Validator:
                 assert workflow.get_secret(
                     Settings.DOCKERHUB_SECRET
                 ), f"Secret [{Settings.DOCKERHUB_SECRET}] must have configuration in workflow.secrets, workflow [{workflow.name}]"
+
+            if workflow.enable_open_issues_check:
+                cls.evaluate_check(
+                    workflow.enable_merge_ready_status,
+                    f".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
+                    workflow_name=workflow.name,
+                )
 
             if (
                 workflow.enable_cache
@@ -189,6 +262,18 @@ class Validator:
                     workflow,
                 )
 
+            if workflow.enable_gh_summary_comment:
+                cls.evaluate_check(
+                    workflow.event == Workflow.Event.PULL_REQUEST,
+                    ".enable_gh_summary_comment=True applicable for pull_request workflow only",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    ".enable_gh_summary_comment=True requires .enable_report==True",
+                    workflow,
+                )
+
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
         if not Settings.VALIDATE_FILE_PATHS:
@@ -222,7 +307,7 @@ class Validator:
                 else:
                     assert (
                         Path(include_path).is_file() or Path(include_path).is_dir()
-                    ), f"Apparently file path [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                    ), f"Invalid file path [{include_path}] in job [{job.name}] digest_config, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
     def validate_requirements_txt_files(cls, workflow: Workflow.Config) -> None:
@@ -232,7 +317,7 @@ class Validator:
                     path = Path(job.job_requirements.python_requirements_txt)
                     message = f"File with py requirement [{path}] does not exist"
                     if job.name in (
-                        Settings.DOCKER_BUILD_JOB_NAME,
+                        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                         Settings.CI_CONFIG_JOB_NAME,
                         Settings.FINISH_WORKFLOW_JOB_NAME,
                     ):
@@ -240,7 +325,7 @@ class Validator:
                         message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
                         message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
                         message += (
-                            "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
+                            "\n      echo requests==2.32.4 >> ./ci/requirements.txt"
                         )
                         message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
                     cls.evaluate_check(path.is_file(), message, job.name, workflow.name)

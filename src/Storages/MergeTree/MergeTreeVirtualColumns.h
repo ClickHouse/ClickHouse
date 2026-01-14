@@ -28,6 +28,12 @@ struct BlockOffsetColumn
     static const ASTPtr codec;
 };
 
-Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part);
+struct PartDataVersionColumn
+{
+    static const String name;
+    static const DataTypePtr type;
+};
+
+Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
 
 }

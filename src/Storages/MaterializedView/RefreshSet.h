@@ -1,9 +1,8 @@
 #pragma once
 
-#include <IO/Progress.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
+
 #include <list>
 
 namespace DB
@@ -69,7 +68,8 @@ public:
     bool refreshesStopped() const;
 
     /// Called during shutdown, after setRefreshesStopped(true).
-    void joinBackgroundTasks(std::chrono::steady_clock::time_point deadline);
+    /// Returns false if some tasks are still running after deadline.
+    bool joinBackgroundTasks(std::chrono::steady_clock::time_point deadline);
 
 private:
     using TaskMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;

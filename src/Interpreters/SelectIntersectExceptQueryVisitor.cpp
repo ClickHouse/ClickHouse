@@ -32,12 +32,12 @@ void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 
 void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data & data)
 {
-    auto union_modes = std::move(ast.list_of_modes);
+    auto union_modes = ast.list_of_modes;
 
     if (union_modes.empty())
         return;
 
-    auto selects = std::move(ast.list_of_selects->children);
+    auto selects = ast.list_of_selects->children;
 
     if (union_modes.size() + 1 != selects.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect ASTSelectWithUnionQuery (modes: {}, selects: {})",
@@ -59,7 +59,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
             else if (data.except_default_mode == SetOperationMode::DISTINCT)
                 mode = SelectUnionMode::EXCEPT_DISTINCT;
             else
-                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                throw Exception(ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
                     "Expected ALL or DISTINCT in EXCEPT query, because setting (except_default_mode) is empty");
         }
         else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
@@ -69,7 +69,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
             else if (data.intersect_default_mode == SetOperationMode::DISTINCT)
                 mode = SelectUnionMode::INTERSECT_DISTINCT;
             else
-                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                throw Exception(ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
                     "Expected ALL or DISTINCT in INTERSECT query, because setting (intersect_default_mode) is empty");
         }
 

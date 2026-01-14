@@ -198,3 +198,12 @@ def wait_condition(func, condition, max_attempts=10, delay=0.1):
     raise Exception(
         f"Function did not satisfy condition after {max_attempts} attempts. Last result:\n{result}"
     )
+
+
+def get_retry_number(request, fallback=1):
+    retry_number = getattr(request.node, "callspec", None)
+    if retry_number is not None:
+        retry_number = retry_number.params.get("__pytest_repeat_step_number", fallback)
+    else:
+        retry_number = fallback
+    return retry_number

@@ -5,7 +5,6 @@ WITH it AS
         FROM numbers(1)
     )
 SELECT
-    number,
-    number
-FROM
-it AS i
+    it.number,
+    i.number
+FROM it AS i

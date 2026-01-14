@@ -8,7 +8,7 @@ class ExtremesTransform : public ISimpleTransform
 {
 
 public:
-    explicit ExtremesTransform(const Block & header);
+    explicit ExtremesTransform(SharedHeader header);
 
     String getName() const override { return "ExtremesTransform"; }
 

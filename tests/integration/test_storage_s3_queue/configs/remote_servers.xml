@@ -3,11 +3,11 @@
         <cluster>
             <shard>
                 <replica>
-                    <host>node1</host>
+                    <host>instance</host>
                     <port>9000</port>
                 </replica>
                 <replica>
-                    <host>node2</host>
+                    <host>instance2</host>
                     <port>9000</port>
                 </replica>
             </shard>

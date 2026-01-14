@@ -34,8 +34,8 @@ private:
 
     void nextImpl() override;
 
-    void finalizeBefore() override;
-    void finalizeAfter() override;
+    void finalFlushBefore() override;
+    void finalFlushAfter() override;
 
     lzma_stream lstr;
 

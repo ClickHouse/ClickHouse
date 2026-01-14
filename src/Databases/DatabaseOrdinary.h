@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Common/ThreadPool.h>
 
@@ -14,10 +15,18 @@ namespace DB
 class DatabaseOrdinary : public DatabaseOnDisk
 {
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
     DatabaseOrdinary(
-        const String & name_, const String & metadata_path_, const String & data_path_,
-        const String & logger, ContextPtr context_);
+        const String & name_,
+        const String & metadata_path_,
+        ContextPtr context,
+        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
+    DatabaseOrdinary(
+        const String & name_,
+        const String & metadata_path_,
+        const String & data_path_,
+        const String & logger,
+        ContextPtr context_,
+        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
 
     String getEngineName() const override { return "Ordinary"; }
 
@@ -65,13 +74,16 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata) override;
+        const StorageInMemoryMetadata & metadata,
+        bool validate_new_create_query) override;
 
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
         std::lock_guard lock(mutex);
         return permanently_detached_tables;
     }
+
+    DiskPtr getDisk() const override { return metadata_disk_ptr; }
 
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
@@ -91,6 +103,9 @@ protected:
     std::atomic<size_t> total_tables_to_startup{0};
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;
+
+    DatabaseMetadataDiskSettings database_metadata_disk_settings;
+    DiskPtr metadata_disk_ptr;
 
 private:
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
