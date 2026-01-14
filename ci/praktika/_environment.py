@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Type
 
 from . import Job, Workflow
 from .settings import Settings
-from .utils import MetaClasses, Shell, T
+from .utils import MetaClasses, Shell, T, Utils
 
 
 @dataclasses.dataclass
@@ -70,6 +70,7 @@ class _Environment(MetaClasses.Serializable):
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
+        COMMIT_MESSAGE = ""
 
         assert Path(
             Settings.WORKFLOW_JOB_FILE
@@ -170,10 +171,6 @@ class _Environment(MetaClasses.Serializable):
             else:
                 assert False, "TODO: not supported"
 
-            COMMIT_MESSAGE = Shell.get_output(
-                f"git log -1 --pretty=%s {SHA}", verbose=True
-            )
-
             INSTANCE_TYPE = (
                 os.getenv("INSTANCE_TYPE", None)
                 or Shell.get_output("ec2metadata --instance-type")
@@ -253,7 +250,10 @@ class _Environment(MetaClasses.Serializable):
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
-        return cls(**obj)
+        # Filter out unexpected arguments - only keep fields defined in the dataclass
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_obj = {k: v for k, v in obj.items() if k in valid_fields}
+        return cls(**filtered_obj)
 
     @classmethod
     def from_workflow_data(cls) -> "_Environment":
@@ -263,7 +263,9 @@ class _Environment(MetaClasses.Serializable):
         with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
             workflow_status_data = json.load(f)
         # Access the config job data and parse the JSON string in "data" field
-        config_job_data = workflow_status_data.get(Settings.CI_CONFIG_JOB_NAME, {})
+        # Job names are normalized in the workflow status file
+        normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)
+        config_job_data = workflow_status_data.get(normalized_job_name, {})
         data_str = config_job_data.get("outputs", {}).get("data", "{}")
         env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
         return cls.from_dict(env_dict)

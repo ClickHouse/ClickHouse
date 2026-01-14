@@ -282,12 +282,25 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # Some Praktika features require complete git metadata, such as:
     # - all authors who contributed to the PR
     # - the original commit messages before GitHub's ephemeral merge commit
+    commands = [
+        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+    ]
+    if env.BASE_BRANCH and env.PR_NUMBER:
+        commands.append(
+            f"git fetch --prune --no-recurse-submodules --filter=tree:0 origin {env.BASE_BRANCH} ||:"
+        )
     results = [
         Result.from_commands_run(
             name="repo unshallow",
-            command=f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
-        )
+            command=commands,
+        ),
     ]
+
+    if not env.COMMIT_MESSAGE:
+        env.COMMIT_MESSAGE = Shell.get_output(
+            f"git log -1 --pretty=%s {env.SHA}", verbose=True
+        )
+        env.dump()
 
     if workflow.enable_report:
         print("Push pending CI report")
@@ -515,11 +528,58 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         if env.PR_NUMBER:
             commit_authors = set()
             try:
-                # Get commit author emails from git log (repo is unshallowed)
-                commits_emails = Shell.get_output(
-                    f"git log --format='%ae' origin/{env.BASE_BRANCH}..{env.SHA}",
+                # Find the first merge commit (going backwards from SHA) that has no parent from BASE_BRANCH
+                # This indicates a merge from outside the base branch, where we should stop (support complex git scenarious with forks syncronization)
+                stop_commit = ""
+                merge_commits = Shell.get_output(
+                    f"git rev-list --merges origin/{env.BASE_BRANCH}..{env.SHA}",
                     verbose=True,
                 ).strip()
+
+                if merge_commits:
+                    for merge_commit in reversed(merge_commits.split("\n")):
+                        if not merge_commit:
+                            continue
+                        # Get parents of this merge commit
+                        parents = Shell.get_output(
+                            f"git rev-parse {merge_commit}^@", verbose=False
+                        ).strip()
+
+                        # Check if any parent is reachable from BASE_BRANCH
+                        has_base_parent = False
+                        for parent in parents.split("\n"):
+                            if not parent:
+                                continue
+                            # Check if parent is ancestor of BASE_BRANCH or BASE_BRANCH is ancestor of parent
+                            try:
+                                Shell.check(
+                                    f"git merge-base --is-ancestor {parent} origin/{env.BASE_BRANCH}",
+                                    verbose=False,
+                                )
+                                has_base_parent = True
+                                break
+                            except:
+                                pass
+
+                        if not has_base_parent:
+                            # Found a merge with no parent from BASE_BRANCH - stop here
+                            stop_commit = merge_commit
+                            print(
+                                f"Found merge commit without BASE_BRANCH parent: {merge_commit[:8]}"
+                            )
+                            break
+
+                # Get commit author emails, excluding merge commits, up to stop point
+                if stop_commit:
+                    end_ref = f"{stop_commit}^"
+                else:
+                    end_ref = env.SHA
+
+                commits_emails = Shell.get_output(
+                    f"git log --format='%ae' --no-merges origin/{env.BASE_BRANCH}..{end_ref}",
+                    verbose=True,
+                ).strip()
+
                 if commits_emails:
                     # Validate emails contain @ symbol
                     commit_authors = set(
