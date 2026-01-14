@@ -285,25 +285,31 @@ namespace
         size_t num_rows = out_ids.size();
 
         /// Identifier can be UInt64.
-        if (checkColumn<ColumnUInt64>(&column))
+        if constexpr (std::is_convertible_v<UInt64, IDType>)
         {
-            std::string_view data = column.getRawData();
-            chassert(data.size() == num_rows * sizeof(UInt64));
-            const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
-            out_ids.assign(begin, begin + num_rows);
-            return;
+            if (checkColumn<ColumnUInt64>(&column))
+            {
+                std::string_view data = column.getRawData();
+                chassert(data.size() == num_rows * sizeof(UInt64));
+                const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
+                out_ids.assign(begin, begin + num_rows);
+                return;
+            }
         }
 
         /// Identifier can be UInt128 or UUID or FixedString(16).
-        const auto * fixed_string_column = checkAndGetColumn<ColumnFixedString>(&column);
-        if (checkColumn<ColumnUInt128>(&column) || checkColumn<ColumnUUID>(&column) || (fixed_string_column && (fixed_string_column->getN() == 16)))
+        if constexpr (std::is_convertible_v<UInt128, IDType>)
         {
-            /// We can handle UUID and FixedString(16) as UInt128 as they have the same size.
-            std::string_view data = column.getRawData();
-            chassert(data.size() == num_rows * sizeof(UInt128));
-            const UInt128 * begin = reinterpret_cast<const UInt128 *>(data.data());
-            out_ids.assign(begin, begin + num_rows);
-            return;
+            const auto * fixed_string_column = checkAndGetColumn<ColumnFixedString>(&column);
+            if (checkColumn<ColumnUInt128>(&column) || checkColumn<ColumnUUID>(&column) || (fixed_string_column && (fixed_string_column->getN() == 16)))
+            {
+                /// We can handle UUID and FixedString(16) as UInt128 as they have the same size.
+                std::string_view data = column.getRawData();
+                chassert(data.size() == num_rows * sizeof(UInt128));
+                const UInt128 * begin = reinterpret_cast<const UInt128 *>(data.data());
+                out_ids.assign(begin, begin + num_rows);
+                return;
+            }
         }
 
         /// The argument can be nullable.
