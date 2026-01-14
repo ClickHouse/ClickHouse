@@ -810,7 +810,7 @@ bool StatementGenerator::joinedTableOrFunction(
             }
             else
             {
-                //2 args
+                /// 2 args
                 if (rg.nextBool())
                 {
                     gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
@@ -822,7 +822,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 limit = gsf->mutable_expr2();
                 if (noption >= 6)
                 {
-                    //3 args
+                    /// 3 args
                     if (rg.nextBool())
                     {
                         gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
