@@ -1,8 +1,8 @@
 -- Tags: no-parallel-replicas, long
 
 SET enable_analyzer = 1;
+SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
-SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 

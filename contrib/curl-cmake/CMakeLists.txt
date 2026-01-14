@@ -206,7 +206,7 @@ target_link_libraries (_curl PRIVATE OpenSSL::SSL ch_contrib::c-ares)
 
 # The library is large - avoid bloat (XXX: is it?)
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_curl PRIVATE -g0)
+    target_compile_options (_curl PRIVATE -g1)
 endif()
 
 add_library (ch_contrib::curl ALIAS _curl)

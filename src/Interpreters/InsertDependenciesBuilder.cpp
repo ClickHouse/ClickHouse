@@ -21,7 +21,9 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
@@ -73,6 +75,7 @@
 #include <cassert>
 #include <exception>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 #include <iterator>
 
@@ -86,26 +89,6 @@ namespace ProfileEvents
     extern const Event InsertedBytes;
 }
 
-namespace fmt
-{
-    template <>
-    struct formatter<DB::InsertDependenciesBuilder::StorageIDPrivate>
-    {
-        static constexpr auto parse(format_parse_context & ctx)
-        {
-            return ctx.begin();
-        }
-
-        template <typename FormatContext>
-        auto format(const DB::StorageID & storage_id, FormatContext & ctx) const
-        {
-            if (storage_id)
-                return fmt::format_to(ctx.out(), "{}", storage_id.getFullTableName());
-            return fmt::format_to(ctx.out(), "{}", "<empty>");
-        }
-    };
-}
-
 
 namespace DB
 {
@@ -114,8 +97,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsBool insert_deduplicate;
+    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -203,28 +186,28 @@ public:
     };
 
 private:
-    using MapIdViewExceptions = std::map<InsertDependenciesBuilder::StorageIDPrivate, ViewErrors>;
+    using MapIdViewExceptions = std::unordered_map<StorageIDMaybeEmpty, ViewErrors, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     MapIdViewExceptions view_errors;
 
 public:
     SetOnce<std::exception_ptr> global_exception;
 
-    void init(const InsertDependenciesBuilder::StorageIDPrivate & view_id)
+    void init(const StorageIDMaybeEmpty & view_id)
     {
         view_errors.try_emplace(view_id);
     }
 
-    const ViewErrors & getErrors(const InsertDependenciesBuilder::StorageIDPrivate & view_id) const
+    const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
     {
         return view_errors.at(view_id);
     }
 
-    ViewErrors & getErrors(const InsertDependenciesBuilder::StorageIDPrivate & view_id)
+    ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id)
     {
         return view_errors.at(view_id);
     }
 
-    std::exception_ptr getFinalError(const InsertDependenciesBuilder::StorageIDPrivate & view_id, bool ignore_global) const
+    std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
     {
         const auto & errors = getErrors(view_id);
         if (auto e = errors.current_exception.get())
@@ -711,16 +694,9 @@ private:
 
         pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
 
-        if (context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views])
-        {
-            String materialize_view_id = view_id.hasUUID() ? toString(view_id.uuid) : view_id.getFullNameNotQuoted();
-            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewIDTransform>(std::move(materialize_view_id), pipeline.getSharedHeader()));
-            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(pipeline.getSharedHeader()));
-        }
-        else
-        {
-            pipeline.addTransform(std::make_shared<DeduplicationToken::ResetTokenTransform>(pipeline.getSharedHeader()));
-        }
+        pipeline.addTransform(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(pipeline.getSharedHeader()));
+
+        pipeline.addTransform(std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(view_id, pipeline.getSharedHeader()));
 
         return QueryPipelineBuilder::getPipeline(std::move(pipeline));
     }
@@ -748,10 +724,12 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
 
-    deduplicate_blocks_in_dependent_materialized_views = settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
+    deduplicate_blocks = async_insert ? settings[Setting::async_insert_deduplicate] : settings[Setting::insert_deduplicate];
+    deduplicate_blocks_in_dependent_materialized_views = deduplicate_blocks && settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
     /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
     /// if deduplication for MVs is enabled
+    /// TODO: for sync insert we could squash at the first level
     squash_parallel_inserts = !deduplicate_blocks_in_dependent_materialized_views && settings[Setting::materialized_views_squash_parallel_inserts];
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
@@ -781,10 +759,15 @@ struct SquashingTransformContext
 
 std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
+    LOG_DEBUG(
+        logger,
+        "createChainWithDependenciesForAllStreams called, sink_stream_size={}, squash_parallel_inserts={} deduplicate_blocks={} deduplicate_blocks_in_dependent_materialized_views={}",
+        sink_stream_size, squash_parallel_inserts, deduplicate_blocks, deduplicate_blocks_in_dependent_materialized_views);
+
     std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
-        StorageIDPrivate,
+        StorageIDMaybeEmpty,
         SquashingTransformContext,
         StorageID::DatabaseAndTableNameHash,
         StorageID::DatabaseAndTableNameEqual>
@@ -831,7 +814,7 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
     for (auto && [chain, squashing_processors_for_chain] : std::views::zip(insert_chains, squashing_processor_maps))
     {
         auto resources = chain.detachResources();
-        auto processor_list = Chain::getProcessors(std::move(chain));
+        auto processor_list = std::move(chain.getProcessors());
 
         for (const auto & [view_id, apply_squashing_processors] : squashing_processors_for_chain)
         {
@@ -966,12 +949,13 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     return {select_context, insert_context};
 }
 
+
 String InsertDependenciesBuilder::debugTree() const
 {
     WriteBufferFromOwnString output_buffer;
 
     DependencyPath path;
-    std::function<void(StorageIDPrivate)> visit = [&](StorageIDPrivate id)
+    std::function<void(StorageIDMaybeEmpty)> visit = [&](StorageIDMaybeEmpty id)
     {
         path.pushBack(id);
         SCOPE_EXIT({
@@ -997,6 +981,7 @@ String InsertDependenciesBuilder::debugTree() const
     visit(root_view);
     return output_buffer.str();
 }
+
 
 String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
 {
@@ -1037,6 +1022,7 @@ String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
     output_buffer << "}\n";
     return output_buffer.str();
 }
+
 
 bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 {
@@ -1083,7 +1069,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     metadata_snapshots[current] = metadata;
     storage_locks[current] = std::move(lock);
 
-    auto set_defaults_for_root_view = [&] (const StorageIDPrivate & root_view_, const StorageIDPrivate & inner_table_)
+    auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
@@ -1112,7 +1098,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
             return true;
         }
 
-        StorageIDPrivate select_table_id = metadata->getSelectQuery().select_table_id;
+        StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
         if (select_table_id != parent)
         {
             /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
@@ -1215,7 +1201,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 {
     DependencyPath path;
 
-    std::function<void(StorageIDPrivate)> expand = [&] (StorageIDPrivate id)
+    std::function<void(StorageIDMaybeEmpty)> expand = [&] (StorageIDMaybeEmpty id)
     {
         path.pushBack(id);
         SCOPE_EXIT({
@@ -1279,7 +1265,7 @@ void InsertDependenciesBuilder::collectAllDependencies()
 }
 
 
-Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
+Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
 {
     chassert(view_id != init_table_id);
 
@@ -1292,31 +1278,12 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
     auto inner_storage = storages.at(inner_table_id);
     auto output_header = output_headers.at(view_id);
 
-    bool no_squash = false;
-    bool should_add_squashing = InterpreterInsertQuery::shouldAddSquashingForStorage(inner_storage, insert_context) && !no_squash && !async_insert;
-    if (should_add_squashing)
+    if (squash_parallel_inserts)
     {
         result.addSource(std::make_shared<ApplySquashingTransform>(output_header));
-
-        if (!squash_parallel_inserts)
-        {
-            bool table_prefers_large_blocks = inner_storage->prefersLargeBlocks();
-            const auto & settings = insert_context->getSettingsRef();
-            result.addSource(
-                std::make_shared<PlanSquashingTransform>(
-                    output_header,
-                    table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
-        }
-        else
-        {
-            squashing_processors[view_id].push_back(result.getProcessors().begin());
-        }
+        squashing_processors[view_id].push_back(result.getProcessors().begin());
     }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", output_header));
-#endif
 
     auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
@@ -1356,15 +1323,11 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
         result.addSource(std::move(executing_inner_query));
     }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
-#endif
-
     return result;
 }
 
 
-Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
+Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) const
 {
     chassert(!skip_destination_table);
     chassert(view_id == root_view);
@@ -1400,7 +1363,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
 }
 
 
-Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
+Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
 {
     const auto & inner_table_id = inner_tables.at(view_id);
     const auto & inner_storage = storages.at(inner_table_id);
@@ -1446,16 +1409,11 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
         result.addSink(std::move(sink));
     }
 
-    const auto & settings = insert_context->getSettingsRef();
-
-    if (isViewsInvolved() && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
-        result.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result.getOutputSharedHeader()));
-
     return result;
 }
 
 
-Chain InsertDependenciesBuilder::createPostSink(StorageIDPrivate view_id) const
+Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) const
 {
     const auto & dependent_views_ids = dependent_views.at(view_id);
     if (dependent_views_ids.empty())
@@ -1496,8 +1454,9 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDPrivate view_id) const
         connect(chain.getOutputPort(), *in);
         ++in;
         ++out;
-        processors.splice(processors.end(), Chain::getProcessors(std::move(chain)));
+        processors.splice(processors.end(), std::move(chain.getProcessors()));
     }
+    view_chains.clear();
 
     processors.emplace_front(std::move(copying_data));
     processors.emplace_back(std::move(finalizing_views));
@@ -1599,7 +1558,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
 }
 
 
-void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDPrivate id)
+void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDMaybeEmpty id)
 {
     if (visited.contains(id))
         throw Exception(
@@ -1635,43 +1594,13 @@ QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(s
 }
 
 
-InsertDependenciesBuilder::StorageIDPrivate::StorageIDPrivate()
-    : StorageIDPrivate(StorageID::createEmpty())
-{
-}
-
-
-InsertDependenciesBuilder::StorageIDPrivate::StorageIDPrivate(const StorageID & other) // NOLINT this is an implicit c-tor
-    : StorageID(other)
-{
-}
-
-
-bool InsertDependenciesBuilder::StorageIDPrivate::operator<(const StorageIDPrivate & other) const
-{
-    return std::tie(uuid, database_name, table_name) < std::tie(other.uuid, other.database_name, other.table_name);
-}
-
-
-bool InsertDependenciesBuilder::StorageIDPrivate::operator==(const StorageIDPrivate & other) const
-{
-    if (empty() && other.empty())
-        return true;
-    if (empty())
-        return false;
-    if (other.empty())
-        return false;
-    return StorageID::operator==(other);
-}
-
-
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
     return isView(init_table_id) || !dependent_views.at(root_view).empty();
 }
 
 
-InsertDependenciesBuilder::StorageIDPrivate InsertDependenciesBuilder::DependencyPath::parent(size_t inheritance) const
+StorageIDMaybeEmpty InsertDependenciesBuilder::DependencyPath::parent(size_t inheritance) const
 {
     if (path.size() > inheritance)
     {
@@ -1679,12 +1608,67 @@ InsertDependenciesBuilder::StorageIDPrivate InsertDependenciesBuilder::Dependenc
         std::advance(it, inheritance);
         return *it;
     }
-    return InsertDependenciesBuilder::StorageIDPrivate{};
+    return StorageIDMaybeEmpty{};
 }
 
 
-bool InsertDependenciesBuilder::isView(StorageIDPrivate id) const
+bool InsertDependenciesBuilder::isView(StorageIDMaybeEmpty id) const
 {
     return inner_tables.contains(id);
 }
+
+
+Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const
+{
+    chassert(!path.empty());
+
+    LOG_DEBUG(logger, "Creating retry chain for path {}, partition <{}> starting from {}", fmt::join(path, "/"), partition, start_from);
+
+    Chain result;
+
+    auto it = std::find(path.begin(), path.end(), start_from);
+    chassert(it != path.end());
+
+    if (!skip_destination_table && it == path.begin())
+    {
+        const auto & view_id = path.front();
+        chassert(isView(view_id));
+
+        result = Chain::concat(std::move(result), createPreSink(view_id));
+        ++it;
+    }
+
+    for (; it != path.end(); ++it)
+    {
+        // build nodes only for views in path
+        if (!isView(*it))
+            continue;
+
+        const auto & view_id = *it;
+        chassert(isView(view_id));
+
+        result = Chain::concat(std::move(result), createSelect(view_id));
+    }
+
+    const auto & view_id = path.back();
+
+    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
+    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(output_headers.at(view_id)));
+
+    result.addSink(
+        std::make_shared<SelectPartitionTransform>(
+        partition,
+        metadata_snapshots.at(inner_tables.at(view_id)),
+        insert_contexts.at(view_id),
+        output_headers.at(view_id)));
+
+    return result;
+}
+
+
+Chain InsertDependenciesBuilder::createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const
+{
+    return createRetry(info.visited_views, info.original_block_view_id, partition_id);
+}
+
 }

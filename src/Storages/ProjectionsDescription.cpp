@@ -87,6 +87,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
+    other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
 
@@ -251,17 +252,31 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
 
-    if (!projection_definition->query)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "QUERY is required for projection");
-
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
     result.name = projection_definition->name;
 
+    if (projection_definition->index)
+    {
+        chassert(projection_definition->type);
+        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, query_context);
+        if (projection_definition->with_settings)
+            result.loadSettings(projection_definition->with_settings->changes);
+        return result;
+    }
+
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
+    return result;
+}
+
+void ProjectionDescription::fillProjectionDescriptionByQuery(
+    ProjectionDescription & result, const ASTProjectionSelectQuery & query, const ColumnsDescription & columns, ContextPtr query_context)
+{
+    auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
 
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
@@ -304,7 +319,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         /// Aggregate projections cannot hold parent part offset.
         can_hold_parent_part_offset = false;
 
-        if (query.orderBy())
+        if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
 
         result.type = ProjectionDescription::Type::Aggregate;
@@ -343,8 +358,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -356,6 +371,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.sample_block.erase("_part_offset");
         result.sample_block.insert(std::move(new_column));
         result.with_parent_part_offset = true;
+        std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
 
     auto block = result.sample_block;
@@ -384,7 +400,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
-    return result;
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
@@ -495,7 +510,16 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
 
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
+Block ProjectionDescription::calculate(
+    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
+{
+    if (index)
+        return index->calculate(*this, block, starting_offset, context, perm_ptr);
+    return calculateByQuery(block, starting_offset, context, perm_ptr);
+}
+
+Block ProjectionDescription::calculateByQuery(
+    const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr) const
 {
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
@@ -526,31 +550,34 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
             makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
-    /// Create "_part_offset" column when needed for projection with parent part offsets
+    /// Only keep required columns
     Block source_block = block;
+    for (const auto & column : required_columns)
+        source_block.insert(block.getByName(column));
+
+    /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
     {
         chassert(sample_block.has("_parent_part_offset"));
-
-        /// Add "_part_offset" column if not present (needed for insertions but not mutations - materialize projections)
-        if (!source_block.has("_part_offset"))
+        chassert(!source_block.has("_part_offset"));
+        auto uint64 = std::make_shared<DataTypeUInt64>();
+        auto column = uint64->createColumn();
+        auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
+        offset.resize_exact(block.rows());
+        if (perm_ptr)
         {
-            auto uint64 = std::make_shared<DataTypeUInt64>();
-            auto column = uint64->createColumn();
-            auto & offset = assert_cast<ColumnUInt64 &>(*column).getData();
-            offset.resize_exact(block.rows());
-            if (perm_ptr)
-            {
-                for (size_t i = 0; i < block.rows(); ++i)
-                    offset[(*perm_ptr)[i]] = i;
-            }
-            else
-            {
-                iota(offset.data(), offset.size(), UInt64(0));
-            }
-
-            source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
+            /// Insertion path
+            chassert(starting_offset == 0);
+            for (size_t i = 0; i < block.rows(); ++i)
+                offset[(*perm_ptr)[i]] = i;
         }
+        else
+        {
+            /// Rebuilding path
+            iota(offset.data(), offset.size(), starting_offset);
+        }
+
+        source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
     auto builder = InterpreterSelectQuery(

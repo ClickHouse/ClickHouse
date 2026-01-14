@@ -33,6 +33,7 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
@@ -239,6 +240,27 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
+void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+{
+    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
+    NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
+
+    auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
+    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
+    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
+
+    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
+    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
+    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
+
+    auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
+    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
+
+    node = std::move(function_array_sort_node);
+}
+
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
@@ -370,9 +392,18 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
     {
+        {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
+    },
+    {
         {TypeIndex::Object, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeObject>,
     },
 };
+
+bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
+{
+    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
+    return function_name != "distinctJSONPaths";
+}
 
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -460,6 +491,7 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
+            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
             return;
         }
     }
@@ -512,6 +544,7 @@ private:
 
     NameSet processed_tables;
     bool can_wrap_result_columns_with_nullable = false;
+    bool has_where_prewhere_or_group_by = false;
 
     void enterImpl(const TableNode & table_node)
     {
@@ -571,6 +604,9 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
+
+        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
+            return;
 
         if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
             ++optimized_identifiers_count[qualified_name];
