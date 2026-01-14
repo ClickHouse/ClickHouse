@@ -271,7 +271,7 @@ void EvictionCandidates::finalize(
         if (query_context)
         {
             const auto & entry = iterator->getEntry();
-            query_context->remove(entry->key, entry->offset, lock);
+            query_context->tryRemove(entry->key, entry->offset, lock);
         }
         /// Remove entry from main priority queue.
         iterator->remove(lock);

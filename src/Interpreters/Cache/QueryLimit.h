@@ -47,7 +47,7 @@ public:
             const FileCacheUserInfo & user,
             const CachePriorityGuard::Lock &);
 
-        void remove(
+        void tryRemove(
             const Key & key,
             size_t offset,
             const CachePriorityGuard::Lock &);
