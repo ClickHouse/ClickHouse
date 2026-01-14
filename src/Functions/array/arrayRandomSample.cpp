@@ -7,17 +7,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Poco/Logger.h>
+#include <numeric>
 #include <pcg_random.hpp>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool array_random_sample_const_column_materialize;
-}
 
 namespace ErrorCodes
 {
@@ -30,24 +24,15 @@ class FunctionArrayRandomSample : public IFunction
 public:
     static constexpr auto name = "arrayRandomSample";
 
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayRandomSample>(); }
+
     String getName() const override { return name; }
+
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool useDefaultImplementationForConstants() const override { return !convert_const_column_to_full_column; }
+    bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionArrayRandomSample>(context->getSettingsRef()[Setting::array_random_sample_const_column_materialize]);
-    }
-
-    explicit FunctionArrayRandomSample(bool convert_const_column_to_full_column_)
-        : IFunction(), convert_const_column_to_full_column(convert_const_column_to_full_column_) {}
-
-private:
-    bool convert_const_column_to_full_column;
-
-public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
@@ -65,7 +50,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        ColumnPtr col = convert_const_column_to_full_column ? arguments[0].column->convertToFullColumnIfConst() : arguments[0].column;
+        ColumnPtr col = arguments[0].column->convertToFullColumnIfConst();
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(col.get());
         if (!col_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be an array", getName());

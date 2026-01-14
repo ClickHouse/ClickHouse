@@ -65,12 +65,6 @@ SELECT arrayPartialShuffle([tuple(1, -1), tuple(99999999, -99999999), tuple(3, -
 SELECT arrayPartialShuffle([tuple(1, NULL), tuple(2, 'a'), tuple(3, 'A')], 2, 0xbad_cafe);
 SELECT arrayShuffle([1, 2, 3], 42) FROM numbers(10);
 SELECT arrayShuffle(materialize([1, 2, 3]), 42) FROM numbers(10);
-SELECT 'array_shuffle_const_column_materialize = 0';
-SET array_shuffle_const_column_materialize = 0;
-SELECT arrayShuffle([1, 2, 3], 42) FROM numbers(10); -- for constant array we do not materialize it and each row gets the same permutation
-SELECT arrayShuffle(materialize([1, 2, 3]), 42) FROM numbers(10);
-SET array_shuffle_const_column_materialize = 1;
-SELECT 'array_shuffle_const_column_materialize = 1';
 SELECT arrayShuffle(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayShuffle([1], 'a'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayShuffle([1], 1.1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

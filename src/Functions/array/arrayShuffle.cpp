@@ -8,18 +8,14 @@
 #include <Common/randomSeed.h>
 #include <Common/shuffle.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 #include <pcg_random.hpp>
 
+#include <numeric>
+
+
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool array_shuffle_const_column_materialize;
-}
 
 namespace ErrorCodes
 {
@@ -65,16 +61,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
-    bool useDefaultImplementationForConstants() const override { return !convert_const_column_to_full_column; }
+    bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionArrayShuffleImpl<Traits>>(context->getSettingsRef()[Setting::array_shuffle_const_column_materialize]);
-    }
-
-    explicit FunctionArrayShuffleImpl(bool convert_const_column_to_full_column_)
-        : IFunction(), convert_const_column_to_full_column(convert_const_column_to_full_column_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -112,15 +102,13 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override;
 
 private:
-    bool convert_const_column_to_full_column;
-
     static ColumnPtr executeGeneric(const ColumnArray & array, pcg64_fast & rng, size_t limit);
 };
 
 template <typename Traits>
 ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    auto col = convert_const_column_to_full_column ? arguments[0].column->convertToFullColumnIfConst() : arguments[0].column;
+    auto col = arguments[0].column->convertToFullColumnIfConst();
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(col.get());
     if (!array)
         throw Exception(
