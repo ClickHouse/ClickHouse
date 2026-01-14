@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -nmq "
 # Wait until the distributed table will be flushed via background task
 function wait_distributed_background_flush()
 {
-  for _ in {1..100}; do
+  for _ in {1..1000}; do
     # after distributed flush from background in case of async_insert is enabled it is possible that data will not be flushed to the local table
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE ${CLICKHOUSE_DATABASE}.test_local_03745"
     if [ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM test_local_03745") -eq "10000000" ]; then
