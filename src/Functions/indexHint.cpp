@@ -13,9 +13,42 @@ This function is intended for debugging and introspection.
 It ignores its argument and always returns 1.
 The arguments are not evaluated.
 
-But during index analysis, the argument of this function is assumed to be not wrapped in `indexHint`.
-This allows to select data in index ranges by the corresponding condition but without further filtering by this condition.
+During index analysis, the argument of this function is assumed to not be wrapped in `indexHint`.
+This allows you to select data in index ranges by the corresponding condition but without further filtering by this condition.
 The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
+
+<details>
+<summary>Explanation</summary>
+
+When you run:
+
+```sql
+SELECT * FROM test WHERE key = 123;
+```
+
+ClickHouse does two things:
+
+1. Uses the index to find which granules (blocks of ~8192 rows) might contain `key = 123`
+2. Reads those granules and filters them row-by-row to return only rows where `key = 123`
+
+So even if it reads 8,192 rows from disk, it only returns the 1 row that actually matches.
+
+With `indexHint`, when you run:
+
+```sql
+SELECT * FROM test WHERE indexHint(key = 123);
+```
+
+ClickHouse does only one thing:
+
+1. Uses the index to find which granules might contain key = 123 and returns all rows from those granules **without** filtering.
+
+It returns all 8,192 rows, including rows where `key = 456`, `key = 789`, etc. (Everything that happened to be stored in the same granule.)
+`indexHint()` is not for performance. It's for debugging and understanding how ClickHouse's index works:
+- Which granules does my condition select?
+- How many rows are in those granules?
+- Is my index being used effectively?
+</details>
 
 Note: It is not possible to optimize a query with the `indexHint` function. The `indexHint` function does not optimize the query, as it does not provide any additional information for the query analysis. Having an expression inside the `indexHint` function is not anyhow better than without the `indexHint` function. The `indexHint` function can be used only for introspection and debugging purposes and it does not improve performance. If you see the usage of `indexHint` by anyone other than ClickHouse contributors, it is likely a mistake and you should remove it.
     )";

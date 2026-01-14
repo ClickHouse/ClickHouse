@@ -999,7 +999,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
-            for (size_t i = 0; i < res.field_infos.size(); i++) \
+            for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \

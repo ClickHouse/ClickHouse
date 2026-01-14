@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,9 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -127,6 +124,8 @@ public:
         {
             const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
+
+            validateH3Cell(origin_hindex);
 
             H3Error err = gridRingUnsafe(origin_hindex, k, ptr + current_offset);
 

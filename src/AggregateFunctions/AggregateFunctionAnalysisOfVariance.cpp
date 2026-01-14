@@ -117,8 +117,41 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
 
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory)
 {
+        FunctionDocumentation::Description description_analysisOfVariance = R"(
+Provides a statistical test for one-way analysis of variance (ANOVA test). It is a test over several groups of normally distributed observations to find out whether all groups have the same mean or not.
+
+:::note
+Groups are enumerated starting from 0 and there should be at least two groups to perform a test.
+There should be at least one group with the number of observations greater than one.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_analysisOfVariance = R"(
+analysisOfVariance(val, group_no)
+    )";
+    FunctionDocumentation::Arguments arguments_analysisOfVariance = {
+        {"val", "Value.", {"(U)Int*", "Float*", "Decimal"}},
+        {"group_no", "Group number that `val` belongs to.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_analysisOfVariance = {"Returns a tuple with the F-statistic and p-value.", {"Tuple(Float64, Float64)"}};
+    FunctionDocumentation::Examples examples_analysisOfVariance = {
+    {
+        "Basic usage",
+        R"(
+SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
+        )",
+        R"(
+┌─analysisOfVariance(number, modulo(number, 2))─┐
+│ (0,1)                                         │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_analysisOfVariance = {22, 10};
+    FunctionDocumentation::Category category_analysisOfVariance = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_analysisOfVariance = {description_analysisOfVariance, syntax_analysisOfVariance, arguments_analysisOfVariance, {}, returned_value_analysisOfVariance, examples_analysisOfVariance, introduced_in_analysisOfVariance, category_analysisOfVariance};
+
     AggregateFunctionProperties properties = { .is_order_dependent = false };
-    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, properties, documentation_analysisOfVariance}, AggregateFunctionFactory::Case::Insensitive);
 
     /// This is widely used term
     factory.registerAlias("anova", "analysisOfVariance", AggregateFunctionFactory::Case::Insensitive);

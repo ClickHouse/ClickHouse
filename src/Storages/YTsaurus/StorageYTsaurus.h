@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -18,6 +19,7 @@ struct YTsaurusStorageConfiguration
     std::vector<String> http_proxy_urls{};
     String cypress_path{};
     String oauth_token{};
+    std::optional<String> ytsaurus_columns_description{};
 };
 
 /**
