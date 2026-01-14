@@ -483,12 +483,13 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -985,9 +986,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
 
@@ -997,6 +995,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (true)
             {
