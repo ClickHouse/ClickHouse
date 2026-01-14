@@ -171,11 +171,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
               entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString(true));
 
-    chassert(!mutation_ids.empty());
+    /// mutation_ids can be empty here.
     if (mutation_ids.size() == 1)
         mutation_ids_for_log = mutation_ids.front();
-    else
-        mutation_ids_for_log = mutation_ids.front() + ".." + mutation_ids.back();
+    else if (mutation_ids.size() > 1)
+        mutation_ids_for_log = fmt::format("{}..{}", mutation_ids.front(), mutation_ids.back());
 
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
