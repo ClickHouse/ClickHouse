@@ -4454,11 +4454,11 @@ class ClickHouseInstance:
         return "NDEBUG" not in build_opts
     
     def is_built_with_llvm_coverage(self):
-        build_opts = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
+        with_coverage = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
         )
-        print("in is_built_with_llvm_coverage: ", build_opts)
-        return "WITH_COVERAGE=ON" in build_opts.upper()
+        print("in is_built_with_llvm_coverage: ", with_coverage)
+        return "ON" == with_coverage.upper()
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
