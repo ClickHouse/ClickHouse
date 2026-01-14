@@ -324,7 +324,7 @@ static void splitAndModifyMutationCommands(
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
                     {
-                        /// We need to keep the clear command to also know to clear dependent indices
+                        /// We need to keep the clear command so we also clear dependent indices
                         if (command.clear)
                             for_interpreter.push_back(command);
                         else

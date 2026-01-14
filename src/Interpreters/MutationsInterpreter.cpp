@@ -1086,7 +1086,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
                         const auto & index_cols = index.expression->getRequiredColumns();
-                        if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
+                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                         {
                             switch (index_mode)
                             {
@@ -1117,7 +1117,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
                 const auto & index_cols = index.expression->getRequiredColumns();
-                if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
+                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                     dropped_indices.insert(index.name);
             }
         }
