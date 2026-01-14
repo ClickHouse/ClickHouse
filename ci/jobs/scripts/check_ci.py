@@ -628,7 +628,9 @@ def main():
             not issue_catalog
             or issue_catalog.updated_at < datetime.now().timestamp() - 10 * 60
         ):
-            issue_catalog = TestCaseIssueCatalog.from_gh(verbose=False)
+            issue_catalog = TestCaseIssueCatalog.from_gh(
+                verbose=False, repo="ClickHouse/ClickHouse"
+            )
             issue_catalog.dump()
         print(f"Loaded {len(issue_catalog.active_test_issues)} active issues from gh\n")
         print("Checking failures against open issues...\n")
