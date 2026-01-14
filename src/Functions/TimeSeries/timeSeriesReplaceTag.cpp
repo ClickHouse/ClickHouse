@@ -83,6 +83,8 @@ REGISTER_FUNCTION(TimeSeriesReplaceTag)
 Matches the regular expression `regex` against the value of the tag `src_tag`.
 If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
 together with the original tags in the input.
+This function mimics the logic of the prometheus function
+[label_replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesReplaceTag(group, dest_tag, replacement, src_tag, regex)";
     FunctionDocumentation::Arguments arguments = {
@@ -110,7 +112,7 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('servi
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

@@ -79,6 +79,8 @@ REGISTER_FUNCTION(TimeSeriesJoinTags)
 Joins the values of specified tags extracted from a group of tags.
 The function inserts a separator between joined values and returns a new group of tags
 with the tag `dest_tag` set to the joined value.
+This function mimics the logic of the prometheus function
+[label_join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join).
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesJoinTags(group, dest_tag, separator, src_tags)";
     FunctionDocumentation::Arguments arguments = {
@@ -104,7 +106,7 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

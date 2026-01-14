@@ -88,6 +88,8 @@ REGISTER_FUNCTION(TimeSeriesCopyTags)
 Copies specified tags from one group of tags (`src_group`) to another (`dest_group`).
 The function replaces any previous values of the copied tags in `dest_group`.
 If some of the copied tags don't present in `src_group` then the function will remove them in `dest_group` as well.
+The function mimics the copying logic of the prometheus
+[group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) modifiers.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesCopyTags(dest_group, src_group, tags_to_copy)";
     FunctionDocumentation::Arguments arguments = {
@@ -114,7 +116,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

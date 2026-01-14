@@ -670,8 +670,8 @@ ContextTimeSeriesTagsCollector::ContextTimeSeriesTagsCollector()
 {
     /// Group #0 is reserved for an empty set of tags.
     auto no_tags = std::make_shared<TagNamesAndValues>();
-    groups.push_back(no_tags);
-    groups_for_tags.try_emplace(no_tags, 0);
+    auto group = tryAddGroupUnlocked(no_tags);
+    chassert(group == getGroupForNoTags());
 }
 
 
@@ -689,10 +689,7 @@ Group ContextTimeSeriesTagsCollector::getGroupForTags(const TagNamesAndValuesPtr
 
     {
         std::lock_guard lock{mutex};
-        auto [it, inserted] = groups_for_tags.try_emplace(tags, groups.size());
-        if (inserted)
-            groups.push_back(tags);
-        return it->second;
+        return tryAddGroupUnlocked(tags);
     }
 }
 
@@ -725,16 +722,22 @@ std::vector<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const std::ve
             if (res[i] != INVALID_GROUP)
                 continue;
             const auto & tags = tags_vector[i];
-            auto [it, inserted] = groups_for_tags.try_emplace(tags, groups.size());
-            if (inserted)
-                groups.push_back(tags);
-            res[i] = it->second;
+            res[i] = tryAddGroupUnlocked(tags);
             if (++num_found == tags_vector.size())
                 break;
         }
     }
 
     return res;
+}
+
+
+Group ContextTimeSeriesTagsCollector::tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags)
+{
+    auto [it, inserted] = groups_for_tags.try_emplace(tags, groups.size());
+    if (inserted)
+        groups.push_back(tags);
+    return it->second;
 }
 
 
@@ -844,16 +847,13 @@ void ContextTimeSeriesTagsCollector::storeTags(const IDType & id, const TagNames
 
     {
         std::lock_guard lock{mutex};
-        auto [it, inserted] = groups_for_tags.try_emplace(tags, groups.size());
 
-        if (inserted)
-            groups.push_back(tags);
+        Group group = tryAddGroupUnlocked(tags);
 
-        Group group = it->second;
-        auto it2 = groups_by_id.try_emplace(id, group).first;
+        auto it = groups_by_id.try_emplace(id, group).first;
 
-        if (group != it2->second)
-            throwIDWasAddedWithOtherTags(id, tags, groups.at(it2->second));
+        if (it->second != group)
+            throwIDWasAddedWithOtherTags(id, tags, groups.at(it->second));
     }
 }
 
@@ -890,7 +890,7 @@ void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, 
         return;
 
     {
-        std::unique_lock lock{mutex};
+        std::lock_guard lock{mutex};
         for (size_t i = 0; i != tags_vector.size(); ++i)
         {
             if (found_groups[i] != INVALID_GROUP)
@@ -898,16 +898,11 @@ void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, 
             const auto & id = ids[i];
             const auto & tags = tags_vector[i];
 
-            auto [it, inserted] = groups_for_tags.try_emplace(tags, groups.size());
+            Group group = tryAddGroupUnlocked(tags);
+            auto it = groups_by_id.try_emplace(id, group).first;
 
-            if (inserted)
-                groups.push_back(tags);
-
-            Group group = it->second;
-            auto it2 = groups_by_id.try_emplace(id, group).first;
-
-            if (group != it2->second)
-                throwIDWasAddedWithOtherTags(id, tags, groups.at(it2->second));
+            if (it->second != group)
+                throwIDWasAddedWithOtherTags(id, tags, groups.at(it->second));
 
             found_groups[i] = group;
             if (++num_found_groups == tags_vector.size())

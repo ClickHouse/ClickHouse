@@ -154,6 +154,10 @@ private:
     template <typename TransformFunc2>
     std::vector<Group> transformTags2(const std::vector<Group> & groups1, const std::vector<Group> & groups2, TransformFunc2 && transform_func);
 
+    /// Adds a group associated with a specified set of tags.
+    /// If there is such a group already the function returns it.
+    Group tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags);
+
     mutable SharedMutex mutex;
 
     std::vector<TagNamesAndValuesPtr> groups;

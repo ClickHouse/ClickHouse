@@ -107,7 +107,7 @@ SELECT 8374283493092 AS id,
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
