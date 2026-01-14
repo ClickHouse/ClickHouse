@@ -62,6 +62,10 @@ def test_simple_table_recreation(started_cluster_iceberg_with_spark, storage_typ
     drop_iceberg_table(instance, TABLE_NAME, if_exists=True)
 
     spark.sql(
+        f"DROP TABLE IF EXISTS {TABLE_NAME}"
+    )
+
+    spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id bigint, name string, value double) USING iceberg TBLPROPERTIES ('format-version' = '2')"
     )
 
@@ -77,6 +81,7 @@ def test_simple_table_recreation(started_cluster_iceberg_with_spark, storage_typ
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     # Query the second data
     initial_count = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
     initial_sum = float(instance.query(f"SELECT sum(value) FROM {TABLE_NAME}"))
