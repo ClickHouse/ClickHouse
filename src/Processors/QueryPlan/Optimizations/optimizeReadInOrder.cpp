@@ -622,8 +622,20 @@ SortingInputOrder buildInputOrderFromSortDescription(
             break;
     }
 
-    if (read_direction == 0 || order_key_prefix_descr.empty())
+    if (order_key_prefix_descr.empty())
         return {};
+
+    /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
+    /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
+    /// But only if we actually matched some key columns (next_sort_key > 0).
+    /// If next_sort_key == 0, the ORDER BY doesn't match the key prefix at all.
+    if (read_direction == 0)
+    {
+        if (next_sort_key > 0)
+            read_direction = 1;
+        else
+            return {};
+    }
 
     /// If the prefix description is used, we can't restore the full description from PK value.
     /// TODO: partial sort description can be used as well. Implement support later.

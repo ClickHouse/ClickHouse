@@ -227,11 +227,13 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
         auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
 
         /// If the ORDER BY column matches a fixed (constant) key column,
-        /// skip both without affecting read_direction - this column doesn't affect ordering.
+        /// add it to the sort description but don't let it set read_direction.
         /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
-        /// The 'tenant' column is constant, so effective ORDER BY is just 'event_time DESC'.
+        /// The 'tenant' column is constant, so read direction should come from event_time DESC.
         if (match.direction && fixed_sorting_columns.contains(sorting_key_columns[key_pos]))
         {
+            /// Still add to sort description - the column matches, it's just constant
+            sort_description_for_merging.push_back(description[desc_pos]);
             ++desc_pos;
             ++key_pos;
             continue;
@@ -266,6 +268,18 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
 
     if (sort_description_for_merging.empty())
         return {};
+
+    /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
+    /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
+    /// But only if we actually matched some key columns (key_pos > 0).
+    /// If key_pos == 0, the ORDER BY doesn't match the key prefix at all.
+    if (read_direction == 0)
+    {
+        if (key_pos > 0)
+            read_direction = 1;
+        else
+            return {};
+    }
 
     return std::make_shared<InputOrderInfo>(std::move(sort_description_for_merging), key_pos, read_direction, limit);
 }
