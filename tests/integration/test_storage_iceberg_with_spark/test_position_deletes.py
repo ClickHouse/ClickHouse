@@ -188,7 +188,7 @@ class ManifestEntry:
         self.upper_bound = upper_bound
 
 
-def parse_log_entry(log_line: str) -> Optional[LogEntry]:
+def parse_log_entry(log_line: str) -> LogEntry:
     """
     Parse a log line to extract data_file, position_delete_file, lower_bound, upper_bound.
     """
@@ -280,7 +280,7 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_position_deletes_bounds_logging_" + get_uuid_str()
 
-    # Part 1: Create unpartitioned Iceberg table with position deletes mode.
+    #  Create unpartitioned Iceberg table with position deletes mode.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg
@@ -293,17 +293,16 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
         """
     )
 
-    # Part 2: Insert data in 3 separate batches to create different data files.
+    #  Insert data in 3 separate batches to create different data files.
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(0, 100)")
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 200)")
     spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(200, 300)")
 
-    # Part 3: Delete rows from each data file to create position delete files with bounds.
+    #  Delete rows from each data file to create position delete files with bounds.
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 50 AND id < 60")
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150 AND id < 160")
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 250 AND id < 260")
 
-    # Part 4: Upload data to storage and create ClickHouse table.
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
@@ -312,33 +311,22 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     )
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
-    # Part 5: Query table and verify correct data is returned after applying deletes.
     expected_ids = list(range(0, 50)) + list(range(60, 150)) + list(range(160, 250)) + list(range(260, 300))
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'")) == expected_ids
 
-    # Part 6: Parse position delete logs to extract bounds info.
+    #  Parse position delete logs to extract bounds info.
     skipping_logs = instance.grep_in_log("Skipping position delete file")
     processing_logs = instance.grep_in_log("Processing position delete file")
 
     parsed_log_entries: list[LogEntry] = []
-    has_skipping_logs: bool = False
-    has_processing_logs: bool = False
-    for log_line in (skipping_logs or '').splitlines():
-        entry = parse_log_entry(log_line)
-        if entry:
-            parsed_log_entries.append(entry)
-            has_skipping_logs = True
-    for log_line in (processing_logs or '').splitlines():
-        entry = parse_log_entry(log_line)
-        if entry:
-            parsed_log_entries.append(entry)
-            has_processing_logs = True
+    assert skipping_logs, "No skipping logs found"
+    assert processing_logs, "No processing logs found"
+    for log_line in skipping_logs.splitlines():
+        parsed_log_entries.append(parse_log_entry(log_line))
+    for log_line in processing_logs.splitlines():
+        parsed_log_entries.append(parse_log_entry(log_line))
 
-    # Verify we have both skipping and processing logs (bounds filtering is working).
-    assert has_skipping_logs
-    assert has_processing_logs
-
-    # Part 7: Parse manifest file entries from system.iceberg_metadata_log.
+    #  Parse manifest file entries from system.iceberg_metadata_log.
     instance.query("SYSTEM FLUSH LOGS")
     metadata_log_query = """
         SELECT DISTINCT content
@@ -351,19 +339,17 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     data_files_from_manifest: set[str] = set()
     for line in metadata_log_result.strip().split('\n'):
         if line:
-            try:
-                content_json = json.loads(line)
-                entry = parse_manifest_entry(content_json)
-                if entry.is_delete:
-                    file_name = entry.file_path.split('/')[-1]
-                    delete_files_from_manifest[file_name] = entry
-                elif entry.is_data:
-                    file_name = entry.file_path.split('/')[-1]
-                    data_files_from_manifest.add(file_name)
-            except json.JSONDecodeError:
-                pass
+            content_json = json.loads(line)
+            entry = parse_manifest_entry(content_json)
+            if entry.is_delete:
+                file_name = entry.file_path.split('/')[-1]
+                delete_files_from_manifest[file_name] = entry
+            elif entry.is_data:
+                file_name = entry.file_path.split('/')[-1]
+                data_files_from_manifest.add(file_name)
+                
 
-    # Part 8: Verify that bounds from logs match bounds from manifest entries.
+    #  Verify that bounds from logs match bounds from manifest entries.
     for log_entry in parsed_log_entries:
         delete_file_name = log_entry.position_delete_file.split('/')[-1]
         
@@ -377,7 +363,7 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
         assert log_entry.upper_bound == manifest_entry.upper_bound, \
             f"Upper bound mismatch for {delete_file_name}: log={log_entry.upper_bound}, manifest={manifest_entry.upper_bound}"
 
-        # Part 9: Verify skip/process decision matches bounds check logic.
+        #  Verify skip/process decision matches bounds check logic.
         data_file_path = log_entry.data_file
         lower = manifest_entry.lower_bound
         upper = manifest_entry.upper_bound
