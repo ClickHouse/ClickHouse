@@ -369,7 +369,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     const size_t num_elements = lhs_unpacked_types.size();
 
-    auto buildFromArray = [&](const Field & rhs_value, const DataTypePtr & type)
+    auto build_from_array = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
         const auto & rhs_array = rhs_value.safeGet<Array>();
@@ -377,7 +377,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         return createBlockFromCollection(rhs_array, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
     };
 
-    auto buildFromTuple = [&](const Field & rhs_value, const DataTypePtr & type)
+    auto build_from_tuple = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
         const auto & rhs_tuple = rhs_value.safeGet<Tuple>();
@@ -385,13 +385,13 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         return createBlockFromCollection(rhs_tuple, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
     };
 
-    auto buildFromSingleValue = [&](const Field & rhs_value, const DataTypePtr & type)
+    auto build_from_single_value = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         /// Maybe we can inline without this lambda? But this way it's more readable.
         return createBlockFromCollection(Array{rhs_value}, DataTypes{type}, lhs_unpacked_types, lhs_is_nullable, params);
     };
 
-    auto appendSetElements = [](ColumnsWithTypeAndName & destination, const ColumnsWithTypeAndName & source)
+    auto append_set_elements = [](ColumnsWithTypeAndName & destination, const ColumnsWithTypeAndName & source)
     {
         chassert(destination.size() == source.size());
 
@@ -425,7 +425,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     if (lhs_type_depth == rhs_type_depth + 1)
     {
         if (rhs.isNull())
-            return buildFromSingleValue(rhs, rhs_type);
+            return build_from_single_value(rhs, rhs_type);
     }
     else if (lhs_type_depth == rhs_type_depth)
     {
@@ -438,7 +438,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         {
             /// CAST(NULL, `Nullable(Tuple(...))`) IN [NULL, NULL, (...)]
             /// Tuple(...) IN [NULL, NULL, (...)]
-            return buildFromArray(rhs, rhs_type);
+            return build_from_array(rhs, rhs_type);
         }
 
         if (lhs_is_tuple && rhs_which_type.isTuple() && is_null_in_rhs && (lhs_is_nullable || has_tuple_in_rhs))
@@ -476,7 +476,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             /// - CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, (1, 2), ...)
             if (!rhs_tuple_has_non_null_non_tuple)
             {
-                auto res = buildFromTuple(rhs, rhs_type);
+                auto res = build_from_tuple(rhs, rhs_type);
 
                 /// Additionally, for `Nullable(Tuple(...)) IN (NULL, NULL)` also treat RHS as a tuple literal `(NULL, NULL)`
                 /// when it can be cast to the LHS tuple type (so both interpretations are supported)
@@ -501,7 +501,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                     /// If tuple literal `(NULL, NULL)` is representable for the LHS type, also add it:
                     /// {NULL, NULL, (NULL, NULL)}
                     if (all_tuple_elements_nullable)
-                        appendSetElements(res, buildFromSingleValue(rhs, rhs_type));
+                        append_set_elements(res, build_from_single_value(rhs, rhs_type));
                 }
 
                 return res;
@@ -509,7 +509,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         }
 
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-        return buildFromSingleValue(rhs, rhs_type);
+        return build_from_single_value(rhs, rhs_type);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
@@ -517,10 +517,10 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         WhichDataType rhs_which_type(rhs_type);
 
         if (rhs_which_type.isArray())
-            return buildFromArray(rhs, rhs_type);
+            return build_from_array(rhs, rhs_type);
 
         if (rhs_which_type.isTuple())
-            return buildFromTuple(rhs, rhs_type);
+            return build_from_tuple(rhs, rhs_type);
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
