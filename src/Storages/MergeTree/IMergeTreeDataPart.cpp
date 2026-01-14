@@ -2024,6 +2024,11 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (state == MergeTreeDataPartState::Temporary)
         return true;
 
+    /// Rolled back parts are in a known invalid state - they were never committed.
+    /// Their version metadata might be missing or inconsistent, so skip validation.
+    if (version.creation_csn == Tx::RolledBackCSN)
+        return true;
+
     String content;
     String version_file_name = TXN_VERSION_METADATA_FILE_NAME;
     try
