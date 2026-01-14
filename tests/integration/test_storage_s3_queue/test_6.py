@@ -91,11 +91,16 @@ def started_cluster():
 
 @pytest.mark.parametrize("hosts", [1, 2])
 @pytest.mark.parametrize("processing_threads_num", [1, 16])
-@pytest.mark.parametrize("buckets", [1, 4])
+@pytest.mark.parametrize("buckets", [0, 4])
 @pytest.mark.parametrize("engine_name", ["S3Queue",
                                          "AzureQueue",
                                          ])
 def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads_num, buckets, hosts):
+
+    is_single_thread = (buckets==0 and processing_threads_num==1)
+    if is_single_thread and hosts > 1:
+        pytest.skip("Single thread with multiple hosts is not supported")
+
     instances = [started_cluster.instances["instance"]]
     if hosts == 2:
         instances.append(started_cluster.instances["instance2"])
@@ -136,14 +141,14 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         create_mv(node, table_name, dst_table_name, virtual_columns="date Date, city String")
         time.sleep(5)
 
-    def compare_data(data, expected_data, buckets):
+    def compare_data(data, expected_data):
         data = data.strip().split("\n")
         data.sort()
-        if buckets == 1:
+        if is_single_thread == 1:
             assert data == expected_data, f"Expected: {expected_data}, got: {data}"
         else:
             for expected_line in expected_data:
-                assert expected_line in data, f"Expected: {expected_data} as subset, got: {data}"
+                assert data.count(expected_line) == 1, f"Expected exacly one element '{expected_line}', got: {data}"
 
     def wait_for_data(dst_table_name, expected_count):
         for i in range(10):
@@ -168,7 +173,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     data = ""
     for node in instances:
         data += node.query(f"SELECT column1, column2, column3, date, city FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+    compare_data(data, expected_data)
 
     # Add new files to same partitions
     # One in the middle and one in the end
@@ -196,13 +201,13 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     # With buckets we can get some files from the middle, if those files are last in bucket, but not global last.
     # It depends of hashes of file paths.
     # This sleep is for additional time for processing.
-    if buckets > 1:
+    if not is_single_thread:
         time.sleep(10)
 
     data = ""
     for node in instances:
         data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+    compare_data(data, expected_data)
 
     # Add new city and new date
     # All should be visible
@@ -217,21 +222,20 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     ]
     expected_data.sort()
     wait_for_data(dst_table_name, len(expected_data))
-
-    if buckets > 1:
+    if not is_single_thread:
         time.sleep(10)
 
     data = ""
     for node in instances:
         data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+    compare_data(data, expected_data)
 
     instances[0].restart_clickhouse()
 
     data = ""
     for node in instances:
         data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+    compare_data(data, expected_data)
 
     # Add some records
     # Only few should be visible
@@ -248,20 +252,20 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     expected_data.sort()
     wait_for_data(dst_table_name, len(expected_data))
 
-    if buckets > 1:
+    if not is_single_thread:
         time.sleep(10)
 
     data = ""
     for node in instances:
         data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3 FORMAT CSV")
-    compare_data(data, expected_data, buckets)
+    compare_data(data, expected_data)
 
     zk = started_cluster.get_kazoo_client("zoo1")
     processed_nodes = []
-    if (buckets == 1):
+    if is_single_thread:
         processed_nodes = zk.get_children(f"{keeper_path}/processed")
     else:
-        for i in range(buckets):
+        for i in range(buckets if buckets > 0 else processing_threads_num):
             # Files are linked to buckets by hash of file path.
             # Path contains random table name, so distributing files to buckets is not predictable.
             # In rare case bucket can have zero processed files.
