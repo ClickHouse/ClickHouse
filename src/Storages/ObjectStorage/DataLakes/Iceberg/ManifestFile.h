@@ -98,7 +98,7 @@ struct ManifestFileEntry : public boost::noncopyable
         std::optional<String> lower_reference_data_file_path_,
         std::optional<String> upper_reference_data_file_path_,
         std::optional<std::vector<Int32>> equality_ids_,
-        std::optional<Int32> sort_order_id_)
+        std::optional<Int32> sort_order_id_);
 };
 
 using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
