@@ -10,33 +10,38 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mt";
-$CLICKHOUSE_CLIENT --query "CREATE TABLE mt (n Int8, m Int8) ENGINE=MergeTree ORDER BY n PARTITION BY 0 < n SETTINGS old_parts_lifetime=0";
+TIMEOUT=30
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mt"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE mt (n Int8, m Int8) ENGINE=MergeTree ORDER BY n PARTITION BY 0 < n SETTINGS old_parts_lifetime=0"
 
 function thread_insert_commit()
 {
     for i in {1..50}; do
+        [[ $SECONDS -ge $TIMEOUT ]] && break
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO mt VALUES /* ($i, $1) */ ($i, $1);
         INSERT INTO mt VALUES /* (-$i, $1) */ (-$i, $1);
-        COMMIT;";
+        COMMIT;"
     done
 }
 
 function thread_insert_rollback()
 {
     for _ in {1..50}; do
+        [[ $SECONDS -ge $TIMEOUT ]] && break
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO mt VALUES /* (42, $1) */ (42, $1);
-        ROLLBACK;";
+        ROLLBACK;"
     done
 }
 
 function thread_select()
 {
     while true; do
+        [[ $SECONDS -ge $TIMEOUT ]] && break
         # The first and the last queries must get the same result
         $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
@@ -49,19 +54,15 @@ function thread_select()
     done
 }
 
-thread_insert_commit 1 & PID_1=$!
-thread_insert_commit 2 & PID_2=$!
-thread_insert_rollback 3 & PID_3=$!
-thread_select & PID_4=$!
-wait $PID_1 && wait $PID_2 && wait $PID_3
-kill -TERM $PID_4
+thread_insert_commit 1 &
+thread_insert_commit 2 &
+thread_insert_rollback 3 &
+thread_select &
 wait
-wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT --query "
 BEGIN TRANSACTION;
-SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM mt;";
+SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM mt;"
 
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(n), sum(m=1), sum(m=2), sum(m=3) FROM mt;"
-
-$CLICKHOUSE_CLIENT --query "DROP TABLE mt";
+$CLICKHOUSE_CLIENT --query "DROP TABLE mt"
