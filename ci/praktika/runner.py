@@ -482,14 +482,6 @@ class Runner:
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
-
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
             results_ = []
@@ -501,6 +493,15 @@ class Runner:
                 results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(job_outputs)}",
+                file=f,
             )
 
         if run_exit_code == 0 or "amd_llvm_coverage" in job.name:
@@ -521,11 +522,11 @@ class Runner:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
                             Utils.raise_with_error(
-                                "TODO: list of paths is not supported with comress = True"
+                                "TODO: list of paths is not supported with compress = True"
                             )
                         if "*" in artifact.path:
                             Utils.raise_with_error(
-                                "TODO: globe is not supported with comress = True"
+                                "TODO: globe is not supported with compress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
                         artifact.path = Utils.compress_zst(artifact.path)
@@ -671,7 +672,8 @@ class Runner:
                     )
                     ci_db.insert_compute_usage(workflow_compute_usage)
 
-        report_url = Info().get_job_report_url(latest=False)
+        info = Info()
+        report_url = info.get_job_report_url(latest=False)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
@@ -742,23 +744,30 @@ class Runner:
             )
 
         # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
-        # Updates are sent on initial job and final job
-        if (
-            workflow.enable_slack_feed
-            and env.COMMIT_AUTHORS
-            and (is_final_job or is_initial_job or not result.is_ok())
+        if workflow.enable_slack_feed and (
+            is_final_job or is_initial_job or not result.is_ok()
         ):
-            for commit_author in env.COMMIT_AUTHORS:
+            updated_emails = []
+            commit_authors = info.get_kv_data("commit_authors")
+            for commit_author in commit_authors:
                 try:
                     EventFeed.update(
                         commit_author,
-                        workflow_result.to_event(),
-                        s3_path=Settings.EVENTS_S3_PATH,
-                        notify_slack=True,
+                        workflow_result.to_event(info=info),
+                        s3_path=Settings.EVENT_FEED_S3_PATH,
                     )
+                    updated_emails.append(commit_author)
                 except Exception as e:
                     traceback.print_exc()
                     print(f"ERROR: failed to update events for {commit_author}: {e}")
+
+            # Invoke Lambda once with all successfully updated emails
+            if updated_emails:
+                try:
+                    EventFeed.notify_slack_users(updated_emails)
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to notify Slack users: {e}")
 
         return is_ok
 
