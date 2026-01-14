@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <fmt/format.h>
 #include <base/types.h>
@@ -30,7 +31,7 @@ struct MarkRange
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public std::deque<MarkRange>
+struct MarkRanges : public std::deque<MarkRange, AllocatorWithMemoryTracking<MarkRange>>
 {
     enum class SearchAlgorithm : uint8_t
     {
@@ -39,7 +40,7 @@ struct MarkRanges : public std::deque<MarkRange>
         GenericExclusionSearch,
     };
 
-    using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
+    using std::deque<MarkRange, AllocatorWithMemoryTracking<MarkRange>>::deque; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
     bool isOneRangeForWholePart(size_t num_marks_in_part) const;
