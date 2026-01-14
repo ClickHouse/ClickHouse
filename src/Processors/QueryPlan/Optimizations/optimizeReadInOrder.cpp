@@ -315,6 +315,24 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 /// Functions result is fixed if all arguments are fixed or constants.
 void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
+    /// First, collect names of all fixed INPUT nodes.
+    /// This is needed because after DAG merging, there can be multiple INPUT nodes
+    /// with the same column name (e.g., one from filter expression and one from SELECT).
+    /// If any INPUT node with a given name is fixed, all INPUT nodes with that name should be fixed.
+    std::unordered_set<std::string_view> fixed_input_names;
+    for (const auto * node : fixed_columns)
+    {
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            fixed_input_names.insert(node->result_name);
+    }
+
+    /// Add all INPUT nodes with matching names to fixed_columns.
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT && fixed_input_names.contains(node.result_name))
+            fixed_columns.insert(&node);
+    }
+
     struct Frame
     {
         const ActionsDAG::Node * node;
