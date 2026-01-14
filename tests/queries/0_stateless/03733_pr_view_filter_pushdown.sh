@@ -65,5 +65,5 @@ where explain ilike '%Prewhere%' limit 1;"
 # check filter pushdown can be disabled by setting
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
-SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0, parallel_replicas_ast_based_filter_pushdown_for_views=0;
+SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0, allow_push_predicate_ast_for_distributed_subqueries=0;
 " |& grep 'executeQuery' | grep 'HAVING' | wc -l;
