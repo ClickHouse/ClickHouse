@@ -148,7 +148,7 @@ void ParquetV3BlockInputFormat::onCancel() noexcept
 void ParquetV3BlockInputFormat::resetParser()
 {
     {
-        std::unique_lock lock(reader_mutex);
+        std::lock_guard lock(reader_mutex);
         reader.reset();
     }
     previous_block_missing_values.clear();
