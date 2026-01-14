@@ -448,13 +448,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
-    if (settings[DatabaseDataLakeSetting::require_metadata_access].value)
-        catalog->getTableMetadata(namespace_name, table_name, table_metadata);
-    else
-    {
-        if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
-            return nullptr;
-    }
+    if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
+        return nullptr;
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
@@ -761,7 +756,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
+                        if (settings[DatabaseDataLakeSetting::require_metadata_access].value)
+                        {
+                            promise->set_exception(std::current_exception());
+                            return;
+                        }
+                        else
+                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
                     promise->set_value(storage);
                 });
