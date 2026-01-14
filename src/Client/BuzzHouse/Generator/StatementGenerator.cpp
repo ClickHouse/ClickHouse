@@ -112,33 +112,33 @@ StatementGenerator::StatementGenerator(
     , deterministic_aggrs_limit(
           static_cast<size_t>(
               std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
-    , sqlgen(ProbabilityGenerator(ProbabilityConfig(
+    , sqlGen(ProbabilityGenerator(ProbabilityConfig(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
-              {0.01, 0.03}, /// CreateTable
-              {0.01, 0.03}, /// CreateView
+              {0.05, 0.20}, /// CreateTable
+              {0.05, 0.10}, /// CreateView
               {0.01, 0.02}, /// Drop
-              {0.15, 0.30}, /// Insert
-              {0.01, 0.08}, /// LightDelete
-              {0.01, 0.05}, /// Truncate
+              {0.10, 0.25}, /// Insert
+              {0.01, 0.04}, /// LightDelete
+              {0.01, 0.02}, /// Truncate
               {0.01, 0.03}, /// OptimizeTable
               {0.01, 0.02}, /// CheckTable
               {0.01, 0.01}, /// DescTable
               {0.01, 0.01}, /// Exchange
-              {0.03, 0.15}, /// Alter
-              {0.06, 0.20}, /// SetValues
+              {0.03, 0.29}, /// Alter
+              {0.06, 0.25}, /// SetValues
               {0.03, 0.08}, /// Attach
               {0.01, 0.05}, /// Detach
-              {0.01, 0.02}, /// CreateDatabase
-              {0.01, 0.02}, /// CreateFunction
-              {0.05, 0.18}, /// SystemStmt
+              {0.02, 0.06}, /// CreateDatabase
+              {0.02, 0.05}, /// CreateFunction
+              {0.05, 0.20}, /// SystemStmt
               {0.01, 0.01}, /// BackupOrRestore
-              {0.01, 0.03}, /// CreateDictionary
+              {0.05, 0.10}, /// CreateDictionary
               {0.01, 0.01}, /// Rename
-              {0.01, 0.08}, /// LightUpdate
-              {0.30, 0.80}, /// SelectQuery
-              {0.01, 0.04}, /// Kill
+              {0.01, 0.06}, /// LightUpdate
+              {0.30, 0.90}, /// SelectQuery
+              {0.01, 0.03}, /// Kill
               {0.01, 0.01} /// ShowStatement
           }})))
     , litGen(ProbabilityGenerator(ProbabilityConfig(
@@ -212,7 +212,7 @@ StatementGenerator::StatementGenerator(
               {0.15, 0.80}, /// Table
               {0.10, 0.40}, /// View
               {0.05, 0.15}, /// RemoteUDF
-              {0.04, 0.20}, /// GenerateSeriesUDF
+              {0.02, 0.20}, /// GenerateSeriesUDF
               {0.02, 0.05}, /// SystemTable
               {0.01, 0.05}, /// MergeUDF
               {0.05, 0.15}, /// ClusterUDF
@@ -4701,7 +4701,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     sqlMask[static_cast<size_t>(SqlOp::Truncate)] = has_databases || has_tables;
     sqlMask[static_cast<size_t>(SqlOp::OptimizeTable)] = has_tables;
     sqlMask[static_cast<size_t>(SqlOp::CheckTable)] = has_tables;
-    /// sqlMask[static_cast<size_t>(SqlOp::DescTable)] = true;
+    sqlMask[static_cast<size_t>(SqlOp::DescTable)] = !in_parallel;
     sqlMask[static_cast<size_t>(SqlOp::Exchange)] = !in_parallel
         && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
             || collectionCount<SQLDictionary>(attached_dictionaries) > 1);
@@ -4724,10 +4724,10 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     sqlMask[static_cast<size_t>(SqlOp::LightUpdate)] = has_mergeable_mt;
     sqlMask[static_cast<size_t>(SqlOp::SelectQuery)] = !in_parallel;
     /// sqlMask[static_cast<size_t>(SqlOp::Kill)] = true;
-    /// sqlMask[static_cast<size_t>(SqlOp::ShowStatement)] = true;
-    sqlgen.setEnabled(sqlMask);
+    sqlMask[static_cast<size_t>(SqlOp::ShowStatement)] = !in_parallel;
+    sqlGen.setEnabled(sqlMask);
 
-    switch (static_cast<SqlOp>(sqlgen.nextOp())) /// drifts over time
+    switch (static_cast<SqlOp>(sqlGen.nextOp())) /// drifts over time
     {
         case SqlOp::CreateTable:
             generateNextCreateTable(rg, in_parallel, sq->mutable_create_table());

@@ -302,7 +302,7 @@ private:
         MergeIndexAnalyzeUDF
     };
 
-    ProbabilityGenerator sqlgen, litGen, expGen, predGen, queryGen;
+    ProbabilityGenerator sqlGen, litGen, expGen, predGen, queryGen;
     std::vector<bool> sqlMask, litMask, expMask, predMask, queryMask;
 
     template <typename T>

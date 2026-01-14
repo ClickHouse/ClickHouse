@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 
@@ -665,7 +666,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
 
-    queryMask[static_cast<size_t>(QueryOp::DerivatedTable)] = can_recurse;
+    /// queryMask[static_cast<size_t>(QueryOp::DerivatedTable)] = true;
     queryMask[static_cast<size_t>(QueryOp::CTE)] = !under_remote && !this->ctes.empty();
     queryMask[static_cast<size_t>(QueryOp::Table)] = has_table;
     queryMask[static_cast<size_t>(QueryOp::View)] = this->peer_query != PeerQuery::ClickHouseOnly && has_view;
@@ -676,7 +677,7 @@ bool StatementGenerator::joinedTableOrFunction(
     queryMask[static_cast<size_t>(QueryOp::ClusterUDF)] = this->allow_engine_udf && !fc.clusters.empty() && can_recurse;
     queryMask[static_cast<size_t>(QueryOp::MergeIndexUDF)] = has_mergetree_table && this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::LoopUDF)] = fc.allow_infinite_tables && this->allow_engine_udf && can_recurse;
-    queryMask[static_cast<size_t>(QueryOp::ValuesUDF)] = can_recurse;
+    /// queryMask[static_cast<size_t>(QueryOp::ValuesUDF)] = true;
     queryMask[static_cast<size_t>(QueryOp::RandomDataUDF)] = this->allow_engine_udf;
     queryMask[static_cast<size_t>(QueryOp::Dictionary)] = this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary;
     queryMask[static_cast<size_t>(QueryOp::URLEncodedTable)] = this->allow_engine_udf && has_table;
@@ -692,7 +693,7 @@ bool StatementGenerator::joinedTableOrFunction(
             /// A derived query
             SQLRelation rel(rel_name);
             ExplainQuery * eq = tof->mutable_select();
-            const uint32_t ncols = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5));
+            const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
 
             if (ncols == 1 && rg.nextMediumNumber() < 6)
             {
@@ -955,11 +956,10 @@ bool StatementGenerator::joinedTableOrFunction(
             SQLRelation rel(rel_name);
             std::unordered_map<uint32_t, QueryLevel> levels_backup;
             std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
-            const uint32_t ncols = std::min<uint32_t>(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3));
+            const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4)), UINT32_C(1));
             const uint32_t nrows = rg.randomInt<uint32_t>(1, 3);
             ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
 
-            chassert(ncols);
             for (const auto & [key, val] : this->levels)
             {
                 levels_backup[key] = val;
