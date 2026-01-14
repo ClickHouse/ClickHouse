@@ -1728,37 +1728,67 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
-        {
-            if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
-            {
-                auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
+        return getMonotonicityForRangeImpl(type, left, right);
+    }
 
-                const IDataType * type_ptr = &type;
-                if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
-                    type_ptr = low_cardinality_type->getDictionaryType().get();
-
-                if (type_ptr->isNullable())
-                    type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
-
-                DataTypePtr type_with_time_zone;
-                if (typeid_cast<const DataTypeDateTime *>(type_ptr))
-                    type_with_time_zone = std::make_shared<DataTypeDateTime>(time_zone);
-                else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
-                    type_with_time_zone = std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
-                else
-                    return {}; /// In case we will have other types with time zone
-
-                return func->getMonotonicityForRange(*type_with_time_zone, left, right);
-            }
-        }
-        return func->getMonotonicityForRange(type, left, right);
+    IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const override
+    {
+        return getMonotonicityForRangeImpl(type, left, right);
     }
 
     Kind getKind() const { return kind; }
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
 
 private:
+    struct MonotonicityTypeInfo
+    {
+        const IDataType * type = nullptr;
+        DataTypePtr owned_type;
+        bool supported = true;
+    };
+
+    MonotonicityTypeInfo getMonotonicityTypeInfo(const IDataType & type) const
+    {
+        if (kind != Kind::RIGHT_CONST)
+            return {&type, nullptr, true};
+
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get());
+        if (!adaptor)
+            return {&type, nullptr, true};
+
+        if (!dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
+            return {&type, nullptr, true};
+
+        auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
+
+        const IDataType * type_ptr = &type;
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+            type_ptr = low_cardinality_type->getDictionaryType().get();
+
+        if (type_ptr->isNullable())
+            type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
+        DataTypePtr type_with_time_zone;
+        if (typeid_cast<const DataTypeDateTime *>(type_ptr))
+            type_with_time_zone = std::make_shared<DataTypeDateTime>(time_zone);
+        else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
+            type_with_time_zone = std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
+        else
+            return {nullptr, nullptr, false}; /// In case we will have other types with time zone
+
+        return {type_with_time_zone.get(), type_with_time_zone, true};
+    }
+
+    template <typename ValueRef>
+    IFunctionBase::Monotonicity getMonotonicityForRangeImpl(const IDataType & type, const ValueRef & left, const ValueRef & right) const
+    {
+        auto type_info = getMonotonicityTypeInfo(type);
+        if (!type_info.supported)
+            return {};
+
+        return func->getMonotonicityForRange(*type_info.type, left, right);
+    }
+
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
@@ -3100,27 +3130,6 @@ void KeyCondition::rebuildPreparedRangeForRefs()
     }
 }
 
-/// TODO: Remove it. There should be no Field
-static Field materializeFieldForMonotonicity(
-    const ColumnsWithTypeAndName & key_columns,
-    size_t column_idx,
-    const ColumnValueRef & ref)
-{
-    if (ref.isNegativeInfinity())
-        return NEGATIVE_INFINITY;
-    if (ref.isPositiveInfinity())
-        return POSITIVE_INFINITY;
-
-    if (column_idx >= key_columns.size() || !key_columns[column_idx].column)
-        return POSITIVE_INFINITY;
-
-    Field out;
-    key_columns[column_idx].column->get(ref.row, out);
-    if (out.isNull())
-        out = POSITIVE_INFINITY;
-    return out;
-}
-
 static std::optional<size_t> getOrCreateFunctionResultColumnIndex(
     ColumnsWithTypeAndName & key_columns,
     size_t input_column_idx,
@@ -3174,14 +3183,8 @@ static std::optional<RangeRef> applyMonotonicFunctionsChainToRangeForRefs(
         if (!func)
             return {};
 
-        const Field left_field = key_columns ? materializeFieldForMonotonicity(*key_columns, current_column_idx, key_range.left)
-                                             : (key_range.left.isNegativeInfinity() ? Field(NEGATIVE_INFINITY) : Field(POSITIVE_INFINITY));
-        const Field right_field = key_columns
-            ? materializeFieldForMonotonicity(*key_columns, current_column_idx, key_range.right)
-            : (key_range.right.isNegativeInfinity() ? Field(NEGATIVE_INFINITY) : Field(POSITIVE_INFINITY));
-
         IFunction::Monotonicity monotonicity
-            = single_point ? IFunction::Monotonicity{true} : func->getMonotonicityForRange(*current_type.get(), left_field, right_field);
+            = single_point ? IFunction::Monotonicity{true} : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
 
         if (!monotonicity.is_monotonic)
             return {};

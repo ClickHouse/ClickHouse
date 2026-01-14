@@ -97,6 +97,11 @@ public:
         return function->getMonotonicityForRange(type, left, right);
     }
 
+    Monotonicity getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const override
+    {
+        return function->getMonotonicityForRange(type, left, right);
+    }
+
     FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
     {
         return function->getPreimage(type, point);

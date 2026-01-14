@@ -212,7 +212,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                         const auto & child_match = matches[monotonic_child];
                         if (child_match.node)
                         {
-                            auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
+                            auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, Field(), Field());
                             if (info.is_monotonic)
                             {
                                 MatchedTrees::Monotonicity monotonicity;
