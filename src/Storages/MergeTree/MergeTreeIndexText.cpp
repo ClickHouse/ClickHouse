@@ -1115,7 +1115,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                const StringRef ref = column_data.getDataAt(element_idx);
+                const std::string_view ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
 
