@@ -22,7 +22,6 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-from ci.praktika import result
 
 _GH_authenticated = False
 
