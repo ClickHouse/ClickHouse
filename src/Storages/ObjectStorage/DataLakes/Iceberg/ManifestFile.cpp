@@ -142,40 +142,6 @@ const std::vector<ManifestFileEntryPtr> & ManifestFileContent::getFilesWithoutDe
 
 using namespace DB;
 
-    ManifestFileEntry::ManifestFileEntry(
-        const String & file_path_key_,
-        const String & file_path_,
-        Int64 row_number_,
-        ManifestEntryStatus status_,
-        Int64 added_sequence_number_,
-        Int64 snapshot_id_,
-        Int64 schema_id_,
-        DB::Row & partition_key_value_,
-        PartitionSpecification & common_partition_specification_,
-        std::unordered_map<Int32, ColumnInfo> & columns_infos_,
-        const String & file_format_,
-        std::optional<String> lower_reference_data_file_path_,
-        std::optional<String> upper_reference_data_file_path_,
-        std::optional<std::vector<Int32>> equality_ids_,
-        std::optional<Int32> sort_order_id_)
-        : file_path_key(file_path_key_)
-        , file_path(file_path_)
-        , row_number(row_number_)
-        , status(status_)
-        , added_sequence_number(added_sequence_number_)
-        , snapshot_id(snapshot_id_)
-        , schema_id(schema_id_)
-        , partition_key_value(std::move(partition_key_value_))
-        , common_partition_specification(common_partition_specification_)
-        , columns_infos(std::move(columns_infos_))
-        , file_format(file_format_)
-        , lower_reference_data_file_path(lower_reference_data_file_path_)
-        , upper_reference_data_file_path(upper_reference_data_file_path_)
-        , equality_ids(std::move(equality_ids_))
-        , sort_order_id(sort_order_id_)
-    {
-    }
-
 ManifestFileContent::ManifestFileContent(
     const AvroForIcebergDeserializer & manifest_file_deserializer,
     const String & manifest_file_name,
