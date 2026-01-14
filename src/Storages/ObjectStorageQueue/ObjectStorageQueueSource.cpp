@@ -453,7 +453,8 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             paths,
             metadata->getPath(),
             metadata->getBucketsNum(),
-            metadata->isPathWithHivePartitioning(),
+            metadata->getPartitioningMode(),
+            metadata->getFilenameParser(),
             log);
 
     std::unordered_set<std::string> paths_set;
@@ -1274,7 +1275,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
-    const bool is_path_with_hive_partitioning = files_metadata->isPathWithHivePartitioning();
+    const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
@@ -1330,7 +1331,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         {
                             file_metadata->prepareResetProcessingRequests(requests);
                         }
-                        if (is_path_with_hive_partitioning)
+                        if (has_partitioning)
                             file_metadata->prepareHiveProcessedMap(file_map);
                     }
                     else
