@@ -289,6 +289,8 @@ public:
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
+    void validateDynamicPathsSizes() const;
+
 private:
     class SortedPathsIterator;
 
