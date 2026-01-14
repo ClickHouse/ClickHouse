@@ -29,6 +29,7 @@
 #include <base/range.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
+#include <roaring/roaring.hh>
 
 namespace ProfileEvents
 {
@@ -350,6 +351,8 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & h
         return condition_text.dictionaryBlockCache()->getOrSet(block_hash, load_dictionary_block);
     };
 
+    RowsRange intersection(0, state.part.rows_count);
+
     for (const auto block_idx : blocks_to_read)
     {
         const auto & tokens = block_to_tokens.at(block_idx);
@@ -359,18 +362,39 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & h
         {
             auto * token_info = dictionary_block->getTokenInfo(token);
 
-            if (token_info)
+            if (global_search_mode == TextSearchMode::All)
+            {
+                auto finish_search_all_tokens = [&]
+                {
+                    token_infos_cache.updateCardinalities(*remaining_tokens, state.part.rows_count);
+                    remaining_tokens->clear();
+                    token_infos_cache.set(state.part.name, remaining_tokens);
+                };
+
+                if (!token_info)
+                {
+                    remaining_tokens->emplace(token, TokenPostingsInfo{});
+                    finish_search_all_tokens();
+                    return;
+                }
+
+                remaining_tokens->emplace(token, *token_info);
+
+                chassert(!token_info->ranges.empty());
+                RowsRange token_range(token_info->ranges.front().begin, token_info->ranges.back().end);
+                auto new_intersection = intersection.intersectWith(token_range);
+
+                if (!new_intersection)
+                {
+                    finish_search_all_tokens();
+                    return;
+                }
+
+                intersection = std::move(*new_intersection);
+            }
+            else if (token_info)
             {
                 remaining_tokens->emplace(token, *token_info);
-            }
-            else if (global_search_mode == TextSearchMode::All)
-            {
-                remaining_tokens->emplace(token, TokenPostingsInfo{});
-                token_infos_cache.updateCardinalities(*remaining_tokens, state.part.rows_count);
-
-                remaining_tokens->clear();
-                token_infos_cache.set(state.part.name, remaining_tokens);
-                return;
             }
         }
     }
@@ -408,19 +432,56 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 {
     using enum PostingsSerialization::Flags;
 
+    std::vector<std::pair<std::string_view, TokenPostingsInfo>> ordered_tokens;
+    ordered_tokens.reserve(remaining_tokens->size());
+
     for (const auto & [token, token_info] : *remaining_tokens)
+        ordered_tokens.emplace_back(token, token_info);
+
+    std::ranges::sort(ordered_tokens, [](const auto & lhs, const auto & rhs)
     {
+        return lhs.second.cardinality < rhs.second.cardinality;
+    });
+
+    PostingList intersection;
+    auto global_search_mode = assert_cast<const MergeTreeIndexConditionText &>(*state.condition).getGlobalSearchMode();
+
+    for (const auto & [token, token_info] : ordered_tokens)
+    {
+        PostingListPtr token_postings;
+
         if (token_info.header & EmbeddedPostings)
         {
             chassert(token_info.embedded_postings);
-            rare_tokens_postings.emplace(token, token_info.embedded_postings);
+            token_postings = token_info.embedded_postings;
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
         }
         else if (token_info.header & SingleBlock)
         {
             chassert(token_info.offsets.size() == 1);
-            rare_tokens_postings.emplace(token, readPostingsBlock(stream, state, token_info, 0));
+            token_postings = readPostingsBlock(stream, state, token_info, 0);
         }
+        else
+        {
+            continue;
+        }
+
+        if (global_search_mode == TextSearchMode::All)
+        {
+            if (intersection.isEmpty())
+                intersection = *token_postings;
+            else
+                intersection &= *token_postings;
+
+            if (intersection.isEmpty())
+            {
+                remaining_tokens->clear();
+                rare_tokens_postings.clear();
+                return;
+            }
+        }
+
+        rare_tokens_postings.emplace(token, token_postings);
     }
 }
 

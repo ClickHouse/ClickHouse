@@ -29,6 +29,7 @@ struct RowsRange
     RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
 
     bool intersects(const RowsRange & other) const;
+    std::optional<RowsRange> intersectWith(const RowsRange & other) const;
 };
 
 /// Stores information about posting list for a token.

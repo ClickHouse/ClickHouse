@@ -14,6 +14,14 @@ bool RowsRange::intersects(const RowsRange & other) const
     return (begin <= other.begin && other.begin <= end) || (other.begin <= begin && begin <= other.end);
 }
 
+std::optional<RowsRange> RowsRange::intersectWith(const RowsRange & other) const
+{
+    if (!intersects(other))
+        return std::nullopt;
+
+    return RowsRange(std::max(begin, other.begin), std::min(end, other.end));
+}
+
 TokenInfosCache::TokenInfosCache(std::vector<String> all_search_tokens_, TextSearchMode global_search_mode_)
     : all_search_tokens(std::move(all_search_tokens_))
     , global_search_mode(global_search_mode_)
