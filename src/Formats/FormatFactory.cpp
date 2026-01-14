@@ -512,20 +512,7 @@ InputFormatPtr FormatFactory::getInput(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
-        /// for passing object store metadata to parquet metadata cache
-        if (metadata.has_value())
-        {
-            format = creators.random_access_input_creator_with_metadata(
-                buf,
-                sample,
-                format_settings,
-                context->getReadSettings(),
-                is_remote_fs,
-                parser_shared_resources,
-                format_filter_info,
-                metadata);
-        }
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, metadata);
     }
     else
     {
@@ -713,14 +700,16 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    const std::optional<RelativePathWithMetadata> & metadata) const
 {
-    const auto & schema_reader_creator = getCreators(name).schema_reader_creator;
+    const FormatFactory::Creators & creators = getCreators(name);
+    const SchemaReaderCreator & schema_reader_creator = creators.schema_reader_creator;
     if (!schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    auto schema_reader = schema_reader_creator(buf, format_settings);
+    auto schema_reader = schema_reader_creator(buf, format_settings, metadata);
     if (schema_reader->needContext())
         schema_reader->setContext(context);
     return schema_reader;
@@ -772,17 +761,6 @@ void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomA
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
-    registerFileExtension(name, name);
-    KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
-}
-
-void FormatFactory::registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator)
-{
-    chassert(input_creator);
-    auto & creators = getOrCreateCreators(name);
-    if (creators.input_creator || creators.random_access_input_creator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
-    creators.random_access_input_creator_with_metadata = std::move(input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
@@ -907,14 +885,6 @@ void FormatFactory::registerFileSegmentationEngineCreator(const String & name, F
 void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator)
 {
     auto & target = getOrCreateCreators(name).schema_reader_creator;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
-    target = std::move(schema_reader_creator);
-}
-
-void FormatFactory::registerSchemaReaderWithMetadata(const String & name, SchemaReaderCreatorWithMetadata schema_reader_creator)
-{
-    auto & target = getOrCreateCreators(name).schema_reader_creator_with_metadata;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
     target = std::move(schema_reader_creator);

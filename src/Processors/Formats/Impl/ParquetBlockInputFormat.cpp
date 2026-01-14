@@ -1413,7 +1413,7 @@ void registerInputFormatParquet(FormatFactory & factory)
         }
     );
     LOG_DEBUG(log, "beginning registerRandomAccessInputFormat");
-    factory.registerRandomAccessInputFormatWithMetadata(
+    factory.registerRandomAccessInputFormat(
         "Parquet",
         [](ReadBuffer & buf,
            const Block & sample,
@@ -1469,7 +1469,7 @@ void registerParquetSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<ParquetBucketSplitter>();
         });
-    factory.registerSchemaReaderWithMetadata(
+    factory.registerSchemaReader(
         "Parquet",
         [](
             ReadBuffer & buf,
