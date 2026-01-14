@@ -273,6 +273,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+    /// Run SubcolumnPushdownPass again after FunctionToSubcolumnsPass to handle
+    /// newly created subcolumn accesses (e.g., .null from isNull() conversion).
+    manager.addPass(std::make_unique<SubcolumnPushdownPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
