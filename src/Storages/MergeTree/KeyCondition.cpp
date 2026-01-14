@@ -2858,6 +2858,11 @@ KeyCondition::Description KeyCondition::getDescription() const
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
   *  over at least one hyperrectangle from which this range consists.
   */
+
+  /** For the range between tuples, determined by left_keys, left_bounded, right_keys, right_bounded,
+  * invoke the callback on every hyperrectangle composing this range (see the description above),
+  * and returns the OR of the callback results (meaning if callback returned true on any part of the range).
+  */
 template <typename F>
 static BoolMask forAnyHyperrectangle(
     size_t key_size,
