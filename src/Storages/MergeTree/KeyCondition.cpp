@@ -2857,8 +2857,115 @@ KeyCondition::Description KeyCondition::getDescription() const
   * This is important because it is easy for us to check the feasibility of the condition over the hyperrectangle,
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
   *  over at least one hyperrectangle from which this range consists.
+  */
+template <typename F>
+static BoolMask forAnyHyperrectangle(
+    size_t key_size,
+    const FieldRef * left_keys,
+    const FieldRef * right_keys,
+    bool left_bounded,
+    bool right_bounded,
+    Hyperrectangle & hyperrectangle, /// This argument is modified in-place for the callback
+    const DataTypes & data_types,
+    size_t prefix_size,
+    BoolMask initial_mask,
+    F && callback)
+{
+    if (!left_bounded && !right_bounded)
+        return callback(hyperrectangle);
+
+    if (left_bounded && right_bounded)
+    {
+        /// Let's go through the matching elements of the key.
+        while (prefix_size < key_size)
+        {
+            if (left_keys[prefix_size] == right_keys[prefix_size])
+            {
+                /// Point ranges.
+                hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
+                ++prefix_size;
+            }
+            else
+                break;
+        }
+    }
+
+    if (prefix_size == key_size)
+        return callback(hyperrectangle);
+
+    if (prefix_size + 1 == key_size)
+    {
+        if (left_bounded && right_bounded)
+            hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
+        else if (left_bounded)
+            hyperrectangle[prefix_size]
+                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        else if (right_bounded)
+            hyperrectangle[prefix_size]
+                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+
+        return callback(hyperrectangle);
+    }
+
+    /// (x1 .. x2) × (-inf .. +inf)
+
+    if (left_bounded && right_bounded)
+        hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
+    else if (left_bounded)
+        hyperrectangle[prefix_size]
+            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+    else if (right_bounded)
+        hyperrectangle[prefix_size]
+            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+
+    for (size_t i = prefix_size + 1; i < key_size; ++i)
+    {
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
+            hyperrectangle[i] = Range::createWholeUniverse();
+        else
+            hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
+    }
+
+    auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
+
+    /// There are several early-exit conditions (like the one below) hereinafter.
+    /// They provide significant speedup, which may be observed on merge_tree_huge_pk performance test.
+    if (result.isComplete())
+        return result;
+
+    /// [x1]       × [y1 .. +inf)
+
+    if (left_bounded)
+    {
+        hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangle(
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+
+        if (result.isComplete())
+            return result;
+    }
+
+    /// [x2]       × (-inf .. y2]
+
+    if (right_bounded)
+    {
+        hyperrectangle[prefix_size] = Range(right_keys[prefix_size]);
+        result = BoolMask::combine(
+            result,
+            forAnyHyperrectangle(
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+    }
+
+    return result;
+}
+
+/** For the range between tuples, determined by sparse_left_keys, left_bounded, sparse_right_keys, right_bounded,
+  * invoke the callback on every hyperrectangle composing this range (see the description above),
+  * and returns the OR of the callback results (meaning if callback returned true on any part of the range).
   *
-  * In the implementation, notice that we will need to create `Range` objects many many times, especially for suffix of the
+  * In the above implementation, notice that we will need to create `Range` objects many many times, especially for suffix of the
   * hyperrectangle. However, this is a problem if PK is very long but filter only uses few key columns only because creating
   * and doing operations with `Range` object is very slow.
   * That's why we use sparse representation of hyperrectangle by only storing and processing
@@ -2875,13 +2982,8 @@ KeyCondition::Description KeyCondition::getDescription() const
   * other information about intermediate columns and different approach. It is not possible to guarantee correctness by only using
   * sparse key column information.
   */
-
-/** For the range between tuples, determined by sparse_left_keys, left_bounded, sparse_right_keys, right_bounded,
-  * invoke the callback on every hyperrectangle composing this range (see the description above),
-  * and returns the OR of the callback results (meaning if callback returned true on any part of the range).
-  */
 template <typename F>
-static BoolMask forAnyHyperrectangle(
+static BoolMask forAnySparseHyperrectangle(
     const std::vector<size_t> & sparse_key_indices,
     const std::vector<int> & key_col_to_sparse_pos,
     const FieldRef * sparse_left_keys,
@@ -3010,7 +3112,7 @@ static BoolMask forAnyHyperrectangle(
 
         result = BoolMask::combine(
             result,
-            forAnyHyperrectangle(
+            forAnySparseHyperrectangle(
                 sparse_key_indices,
                 key_col_to_sparse_pos,
                 sparse_left_keys,
@@ -3039,7 +3141,7 @@ static BoolMask forAnyHyperrectangle(
 
         result = BoolMask::combine(
             result,
-            forAnyHyperrectangle(
+            forAnySparseHyperrectangle(
                 sparse_key_indices,
                 key_col_to_sparse_pos,
                 sparse_left_keys,
@@ -3057,37 +3159,29 @@ static BoolMask forAnyHyperrectangle(
     return result;
 }
 
-/// Compatibility overload. Assume all key columns are used, no sparse columns
 BoolMask KeyCondition::checkInRange(
-    size_t key_size,
+    size_t used_key_size,
     const FieldRef * left_keys,
     const FieldRef * right_keys,
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    chassert(key_size <= data_types.size());
-    std::vector<size_t> identity_index_map(key_size);
-    std::iota(identity_index_map.begin(), identity_index_map.end(), 0);
+    Hyperrectangle key_ranges;
 
-    std::vector<UInt8> equal_boundaries_mask(key_size);
-    for (size_t i = 0; i < key_size; ++i)
-        equal_boundaries_mask[i] = (left_keys[i] == right_keys[i]);
+    key_ranges.reserve(used_key_size);
+    for (size_t i = 0; i < used_key_size; ++i)
+    {
+        if (isNullableOrLowCardinalityNullable(data_types[i]))
+            key_ranges.push_back(Range::createWholeUniverse());
+        else
+            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
+    }
 
-    /// `data_types` size might be larger than `key_size`. We can resize here to create a new
-    /// `data_types` that is shrunk to `key_size` to make it more intuitive for the optimized version.
-    /// However, optimized overload `checkInRange`, `forAnyHyperrectangle`, and `checkInHyperrectangle`
-    /// make no assumption that `data_types` size must be same as the `key_size`.
-    /// The following assumption always works:
-    ///     - sparse key size is derived from sparse_key_indices/identity_index_map.size()
-    ///     - key size is derived from equal_boundaries_mask.size()
-
-    return checkInRange(
-        identity_index_map,
-        left_keys,
-        right_keys,
-        data_types,
-        equal_boundaries_mask,
-        initial_mask);
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
+        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
+    {
+        return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
+    });
 }
 
 /// Optimized overload for sparse key columns
@@ -3133,7 +3227,7 @@ BoolMask KeyCondition::checkInRange(
         key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
     }
 
-    return forAnyHyperrectangle(
+    return forAnySparseHyperrectangle(
         sparse_key_indices,
         key_col_to_sparse_pos,
         sparse_left_keys,
@@ -3195,28 +3289,355 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-/// Compatibility overload. Assume all key columns are used, no sparse columns
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
-    const size_t key_size = hyperrectangle.size();
+    std::vector<BoolMask> rpn_stack;
 
-    /// Equality does not hold in all cases but it's not necessary
-    chassert(data_types.size() >= key_size);
+    auto curve_type = [&](size_t key_column_pos)
+    {
+        for (const auto & curve : key_space_filling_curves)
+            if (curve.key_column_pos == key_column_pos)
+                return curve.type;
+        return SpaceFillingCurveType::Unknown;
+    };
 
-    /// Identity mapping: full key index -> sparse key index
-    std::vector<int> identity_index_map(key_size);
-    std::iota(identity_index_map.begin(), identity_index_map.end(), 0);
+    size_t element_idx = 0;
+    for (const auto & element : rpn)
+    {
+        if (element.argument_num_of_space_filling_curve.has_value())
+        {
+            /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// we cannot process it.
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_IN_RANGE
+                 || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+        {
+            size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Hyperrectangle size is {}, but requested element at position {} ({})",
+                                hyperrectangle.size(), key_column, element.toString());
+            }
 
-    return checkInHyperrectangle(
-        identity_index_map,
-        hyperrectangle,
-        data_types,
-        column_index_to_column_bf,
-        update_partial_disjunction_result_fn);
+            Range key_range = hyperrectangle[key_column];
+
+            /// The case when the column is wrapped in a chain of possibly monotonic functions.
+            if (!element.monotonic_functions_chain.empty())
+            {
+                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                    key_range,
+                    element.monotonic_functions_chain,
+                    data_types[key_column],
+                    single_point
+                );
+
+                if (!new_range)
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+                key_range = *new_range;
+            }
+
+            bool intersects = element.range.intersectsRange(key_range);
+            bool contains = element.range.containsRange(key_range);
+
+            rpn_stack.emplace_back(intersects, !contains);
+
+            // we don't create bloom_filter_data if monotonic_functions_chain is present
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
+            {
+                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
+            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
+            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
+            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
+            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
+            /// Therefore, we must set `can_be_false = true` to be safe.
+            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+        {
+            /** The case of space-filling curves.
+              * We unpack the range of a space filling curve into hyperrectangles of their arguments,
+              * and then check the intersection of them with the given hyperrectangle from the key condition.
+              *
+              * Note: you might find this code hard to understand,
+              * because there are three different hyperrectangles involved:
+              *
+              * 1. A hyperrectangle derived from the range of the table's sparse index (marks granule): `hyperrectangle`
+              *    We analyze its dimension `key_range`, corresponding to the `key_column`.
+              *    For example, the table's key is a single column `mortonEncode(x, y)`,
+              *    the current granule is [500, 600], and it means that
+              *    mortonEncode(x, y) in [500, 600]
+              *
+              * 2. A hyperrectangle derived from the key condition, e.g.
+              *    `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30` defines: (x, y) in [10, 20] × [20, 30]
+              *
+              * 3. A set of hyperrectangles that we obtain by inverting the space-filling curve on the range:
+              *    From mortonEncode(x, y) in [500, 600]
+              *    We get (x, y) in [30, 31] × [12, 13]
+              *        or (x, y) in [28, 31] × [14, 15];
+              *        or (x, y) in [0, 7] × [16, 23];
+              *        or (x, y) in [8, 11] × [16, 19];
+              *        or (x, y) in [12, 15] × [16, 17];
+              *        or (x, y) in [12, 12] × [18, 18];
+              *
+              *  And we analyze the intersection of (2) and (3).
+              */
+
+            size_t key_column = element.getKeyColumn();
+            Range key_range = hyperrectangle[key_column];
+
+            /// The only possible result type of a space filling curve is UInt64.
+            /// We also only check bounded ranges.
+            if (key_range.left.getType() == Field::Types::UInt64
+                && key_range.right.getType() == Field::Types::UInt64)
+            {
+                key_range.shrinkToIncludedIfPossible();
+
+                size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
+
+                /// Let's support only the case of 2d, because I'm not confident in other cases.
+                if (num_dimensions == 2)
+                {
+                    UInt64 left = key_range.left.safeGet<UInt64>();
+                    UInt64 right = key_range.right.safeGet<UInt64>();
+
+                    BoolMask mask(false, true);
+                    auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+                    {
+                        BoolMask current_intersection(true, false);
+                        for (size_t dim = 0; dim < num_dimensions; ++dim)
+                        {
+                            const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+
+                            const Range curve_arg_range(
+                                curve_hyperrectangle[dim].first, true,
+                                curve_hyperrectangle[dim].second, true);
+
+                            bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
+                            bool contains = condition_arg_range.containsRange(curve_arg_range);
+
+                            current_intersection = current_intersection & BoolMask(intersects, !contains);
+                        }
+
+                        mask = mask | current_intersection;
+                    };
+
+                    switch (curve_type(key_column))
+                    {
+                        case SpaceFillingCurveType::Hilbert:
+                        {
+                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Morton:
+                        {
+                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Unknown:
+                        {
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                        }
+                    }
+
+                    rpn_stack.emplace_back(mask);
+                }
+                else
+                    rpn_stack.emplace_back(true, true);
+            }
+            else
+                rpn_stack.emplace_back(true, true);
+
+            /** Note: we can consider implementing a simpler solution, based on "hidden keys".
+              * It means, when we have a table's key like (a, b, mortonCurve(x, y))
+              * we extract the arguments from the curves, and append them to the key,
+              * imagining that we have the key (a, b, mortonCurve(x, y), x, y)
+              *
+              * Then while we analyze the granule's range between (a, b, mortonCurve(x, y))
+              * and decompose it to the series of hyperrectangles,
+              * we can construct a series of hyperrectangles of the extended key (a, b, mortonCurve(x, y), x, y),
+              * and then do everything as usual.
+              *
+              * This approach is generalizable to any functions, that have preimage of interval
+              * represented by a set of hyperrectangles.
+              */
+        }
+        else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+        {
+            /** There are 2 kinds of polygons:
+              *   1. Polygon by minmax index
+              *   2. Polygons which is provided by user
+              *
+              * Polygon by minmax index:
+              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *
+              * Algorithm:
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
+              */
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
+
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point>;
+            Polygon  polygon_by_minmax_index;
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+
+            /// Close ring
+            boost::geometry::correct(polygon_by_minmax_index);
+
+            /// Because the polygon may have a hole so the "can_be_false" should always be true.
+            rpn_stack.emplace_back(
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
+        }
+        else if (
+            element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            const Range * key_range = &hyperrectangle[element.getKeyColumn()];
+
+            /// No need to apply monotonic functions as nulls are kept.
+            bool intersects = element.range.intersectsRange(*key_range);
+            bool contains = element.range.containsRange(*key_range);
+
+            rpn_stack.emplace_back(intersects, !contains);
+            if (element.function == RPNElement::FUNCTION_IS_NULL)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (
+            element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (!element.set_index)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
+
+            /// We call set_index->checkInRange.
+            /// In theory this should be a checkInHyperrectangle rather than checkInRange.
+            /// checkInRange may produce false positives if some set element is in range but not in
+            /// hyperrectangle. But for MergeTreeSetIndex, range lookup is more efficient than
+            /// hyperrectangle lookup: range lookup is a binary search in O(log n) time, while
+            /// hyperrectangle lookup requires an O(n) scan in the worst case.
+            /// So we use checkInRange as an approximation of checkInHyperrectangle. This doesn't
+            /// break correctness because it can't produce false negatives, because the range is
+            /// a superset of the hyperrectangle.
+            ///
+            /// Moreover, when this KeyCondition::checkInHyperrectangle is called from
+            /// forAnyHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
+            /// no false positives.
+            /// Proof: Recall how forAnyHyperrectangle produces its hyperrectangles:
+            ///  > For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of
+            ///  > the following three hyperrectangles:
+            ///  > [x1]       × [y1 .. +inf)
+            ///  > (x1 .. x2) × (-inf .. +inf)
+            ///  > [x2]       × (-inf .. y2]
+            /// (The above is applied recursively, i.e. y1 and y2 are tails of the tuple,
+            ///  not necessarily individual tuple elements.)
+            /// Suppose the MergeTreeSetIndex contains a set element that's inside the range but not
+            /// inside the hyperrectangle. It's a tuple (..., x, ..., y, ...), where y is outside
+            /// the corresponding hyperrectangle range, and x corresponds to a hyperrectangle range
+            /// that is not a single element. So x must come from the `(x1 .. x2) × (-inf .. +inf)`
+            /// case. But then y's range is (-inf, +inf), so y can't be outside its range. Contradiction.
+            ///
+            /// It may make sense to implement proper MergeTreeSetIndex::checkInHyperrectangle too,
+            /// for cases when KeyCondition::checkInHyperrectangle is called directly, e.g. based on
+            /// min/max index in MergeTree or Parquet file metadata.
+
+            /// But if set_index->checkInRange exists, can't KeyCondition::checkInRange call it
+            /// once for the initial key range instead of going through forAnyHyperrectangle?
+            /// No, that would be incorrect if the set's tuple doesn't include all key columns.
+            /// For example,
+            ///   (x, y, z) BETWEEN (10, 100, 1000) AND (20, 200, 2000)
+            /// is neither necessary nor sufficient for
+            ///   (x, z) BETWEEN (10, 1000) AND (20, 2000)
+            /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
+            /// but  (20, 150, 3000) satisfies the first condition but not the second.
+
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
+            {
+                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            assert(!rpn_stack.empty());
+
+            rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 & arg2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 | arg2;
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.emplace_back(false, true);
+        }
+        else if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.emplace_back(true, false);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+
+        if (update_partial_disjunction_result_fn)
+        {
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            ++element_idx;
+        }
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
+
+    return rpn_stack[0];
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
@@ -3538,9 +3959,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// a superset of the hyperrectangle.
             ///
             /// Moreover, when this KeyCondition::checkInHyperrectangle is called from
-            /// forAnyHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
+            /// forAnySparseHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
             /// no false positives.
-            /// Proof: Recall how forAnyHyperrectangle produces its hyperrectangles:
+            /// Proof: Recall how forAnySparseHyperrectangle produces its hyperrectangles:
             ///  > For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of
             ///  > the following three hyperrectangles:
             ///  > [x1]       × [y1 .. +inf)
@@ -3559,7 +3980,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// min/max index in MergeTree or Parquet file metadata.
 
             /// But if set_index->checkInRange exists, can't KeyCondition::checkInRange call it
-            /// once for the initial key range instead of going through forAnyHyperrectangle?
+            /// once for the initial key range instead of going through forAnySparseHyperrectangle?
             /// No, that would be incorrect if the set's tuple doesn't include all key columns.
             /// For example,
             ///   (x, y, z) BETWEEN (10, 100, 1000) AND (20, 200, 2000)
