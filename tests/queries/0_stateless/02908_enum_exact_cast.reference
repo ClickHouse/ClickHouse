@@ -1,0 +1,50 @@
+Table insertion
+Non-nullable Enum
+Null value
+-- treat NULL as default value
+first
+-- treat NULL as non-default value
+Non-null values
+Nullable Enum
+Null value
+-- store NULL instead of default value for Nullable column
+\N
+\N
+Non-null values
+CAST
+-- current behaviour
+1
+2
+3
+9
+9
+101
+101
+4
+4
+4
+4
+4
+4
+4
+4
+4
+4
+-- new behaviour
+1
+2
+3
+10
+10
+100
+100
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2

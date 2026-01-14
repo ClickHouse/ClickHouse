@@ -63,11 +63,12 @@ public:
         std::string file_path;
     };
 
-    /// An auxiliary structure to properly create or rewrite node in keeper.
-    /// Instead, a more current value replaces the previously saved one in the `request` list.
-    /// Needed when queue processed in several threads, some threads can process different files
-    /// with the same hive partition.
-    /// Key is a path in keeper.
+    /// Used only in Ordered mode.
+    /// Key: <processed_node_path>/<hive_part>
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via prepareHiveProcessedRequests
+    ///    to set values for each <processed_node_path>/<hive_part>.
     using HiveLastProcessedFileInfoMap = std::unordered_map<std::string, HiveLastProcessedFileInfo>;
 
     struct LastProcessedFileInfo
@@ -80,9 +81,12 @@ public:
         size_t index;
     };
 
-    /// An auxiliary structure to avoid rewriting the same node in Keeper several times with different values.
-    /// Instead, a more current value replaces the previously saved one in the `request` list.
-    /// Key is a path in keeper.
+    /// Used only in Ordered mode.
+    /// Key: <processed_node_path> (without <hive_part>)
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via prepareProcessedRequests
+    ///    to set values for each <processed_node_path>.
     using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
     using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
 

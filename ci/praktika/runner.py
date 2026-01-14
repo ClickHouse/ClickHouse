@@ -11,6 +11,7 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .event import EventFeed
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -481,14 +482,6 @@ class Runner:
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
-
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
             results_ = []
@@ -500,6 +493,15 @@ class Runner:
                 results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(job_outputs)}",
+                file=f,
             )
 
         if run_exit_code == 0:
@@ -520,11 +522,11 @@ class Runner:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
                             Utils.raise_with_error(
-                                "TODO: list of paths is not supported with comress = True"
+                                "TODO: list of paths is not supported with compress = True"
                             )
                         if "*" in artifact.path:
                             Utils.raise_with_error(
-                                "TODO: globe is not supported with comress = True"
+                                "TODO: globe is not supported with compress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
                         artifact.path = Utils.compress_zst(artifact.path)
@@ -599,9 +601,15 @@ class Runner:
                                 "cidb",
                                 ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
+                                    failure_patterns=Settings.TEST_FAILURE_PATTERNS,
+                                    test_output=test_case_result.info,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
+                                    pr_base_branches=[
+                                        env.BASE_BRANCH,
+                                        Settings.MAIN_BRANCH,
+                                    ],
                                 ),
                             )
                     result.dump()
@@ -623,6 +631,7 @@ class Runner:
                 CacheRunnerHooks.post_run(workflow, job)
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
         if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3
@@ -639,7 +648,7 @@ class Runner:
                 if is_final_job:
                     env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
 
-        # always in the end
+        # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
@@ -663,7 +672,8 @@ class Runner:
                     )
                     ci_db.insert_compute_usage(workflow_compute_usage)
 
-        report_url = Info().get_job_report_url(latest=False)
+        info = Info()
+        report_url = info.get_job_report_url(latest=False)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
@@ -702,7 +712,7 @@ class Runner:
 
         if (
             workflow.enable_automerge
-            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and is_final_job
             and workflow.is_event_pull_request()
         ):
             try:
@@ -732,6 +742,32 @@ class Runner:
                 f"pipeline_status={pipeline_status}",
                 file=f,
             )
+
+        # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
+        if workflow.enable_slack_feed and (
+            is_final_job or is_initial_job or not result.is_ok()
+        ):
+            updated_emails = []
+            commit_authors = info.get_kv_data("commit_authors")
+            for commit_author in commit_authors:
+                try:
+                    EventFeed.update(
+                        commit_author,
+                        workflow_result.to_event(info=info),
+                        s3_path=Settings.EVENT_FEED_S3_PATH,
+                    )
+                    updated_emails.append(commit_author)
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to update events for {commit_author}: {e}")
+
+            # Invoke Lambda once with all successfully updated emails
+            if updated_emails:
+                try:
+                    EventFeed.notify_slack_users(updated_emails)
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to notify Slack users: {e}")
 
         return is_ok
 
