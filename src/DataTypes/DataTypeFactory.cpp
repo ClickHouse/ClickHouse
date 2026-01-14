@@ -127,23 +127,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
     /// Handle specialized ASTEnumDataType directly
     if (const auto * enum_type = ast->as<ASTEnumDataType>())
-    {
-        if constexpr (nullptr_on_error)
-        {
-            try
-            {
-                return createEnumFromValues(enum_type->name, enum_type->values);
-            }
-            catch (...)
-            {
-                return nullptr;
-            }
-        }
-        else
-        {
-            return createEnumFromValues(enum_type->name, enum_type->values);
-        }
-    }
+        return createEnumFromValues(enum_type->name, enum_type->values);
 
     if (const auto * type = ast->as<ASTDataType>())
     {

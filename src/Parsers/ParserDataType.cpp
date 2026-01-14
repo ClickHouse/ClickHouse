@@ -59,16 +59,7 @@ bool parseEnumValues(
 
         String elem_name;
         ReadBufferFromMemory in(pos->begin, pos->size());
-        try
-        {
-            readQuotedStringWithSQLStyle(elem_name, in);
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
-
-        if (in.count() != pos->size())
+        if (!tryReadQuotedStringWithSQLStyle(elem_name, in) || in.count() != pos->size())
             return false;
         ++pos;
 
