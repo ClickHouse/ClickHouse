@@ -193,7 +193,7 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    static void complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size);
+    void complete(bool allow_background_download);
 
     void completePartAndResetDownloader();
 
@@ -230,8 +230,6 @@ public:
 
     void setDownloadFailed();
 
-    bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
-
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -246,7 +244,7 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
-    void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &, bool force_shrink_to_downloaded_size);
+    void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &);
 
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
@@ -256,8 +254,6 @@ private:
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
 
     String tryGetPath() const;
-
-    void complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size);
 
     const Key file_key;
     Range segment_range;
@@ -311,7 +307,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     String toString(bool with_state = false) const;
 
-    void completeAndPopFront(bool allow_background_download, bool force_shrink_to_downloaded_size) { completeAndPopFrontImpl(allow_background_download, force_shrink_to_downloaded_size); }
+    void completeAndPopFront(bool allow_background_download) { completeAndPopFrontImpl(allow_background_download); }
 
     FileSegment & front() { return *file_segments.front(); }
     const FileSegment & front() const { return *file_segments.front(); }
@@ -333,7 +329,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 private:
     FileSegments file_segments{};
 
-    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size);
+    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download);
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;

@@ -35,7 +35,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/Jemalloc.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -101,18 +100,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
-    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
-    extern const ServerSettingsString text_index_header_cache_policy;
-    extern const ServerSettingsUInt64 text_index_header_cache_size;
-    extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
-    extern const ServerSettingsDouble text_index_header_cache_size_ratio;
-    extern const ServerSettingsString text_index_postings_cache_policy;
-    extern const ServerSettingsUInt64 text_index_postings_cache_size;
-    extern const ServerSettingsUInt64 text_index_postings_cache_max_entries;
-    extern const ServerSettingsDouble text_index_postings_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -146,11 +133,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsString allowed_disks_for_table_engines;
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 namespace ErrorCodes
@@ -232,14 +214,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 
     server_settings.loadSettingsFromConfig(config());
-
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        server_settings[ServerSetting::jemalloc_enable_global_profiler],
-        server_settings[ServerSetting::jemalloc_enable_background_threads],
-        server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
-#endif
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],
@@ -324,18 +298,12 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
 
     fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
     if (FS::isSymlinkNoThrow(existing_path_symlink))
-    {
-        auto symlink_path = FS::readSymlink(existing_path_symlink);
-        /// If symlink ends with '/':
-        if (!symlink_path.has_filename() && symlink_path.has_parent_path())
-            symlink_path = symlink_path.parent_path();
-        default_database_uuid = parse<UUID>(symlink_path.filename());
-    }
+        default_database_uuid = parse<UUID>(FS::readSymlink(existing_path_symlink).filename());
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
-    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
-        DatabaseCatalog::getStoreDirPath(default_database_uuid);
+    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) / "store"
+        / DatabaseCatalog::getPathForUUID(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
@@ -693,15 +661,7 @@ try
     connect();
 
     if (!table_name.empty())
-    {
-        // Set option to false for hidden query to prevent double-printing time
-        bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
-        getClientConfiguration().setBool("print-time-to-stderr", false);
-
         processQueryText(initial_query);
-
-        getClientConfiguration().setBool("print-time-to-stderr", orig_print_time_to_stderr);
-    }
 
 #if USE_FUZZING_MODE
     runLibFuzzer();
@@ -902,39 +862,6 @@ void LocalServer::processConfig()
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_count, vector_similarity_index_cache_size_ratio);
 
-    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
-    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
-    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
-    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
-    if (text_index_dictionary_block_cache_size > max_cache_size)
-    {
-        text_index_dictionary_block_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
-    }
-    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
-
-    String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
-    size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
-    size_t text_index_header_cache_max_count = server_settings[ServerSetting::text_index_header_cache_max_entries];
-    double text_index_header_cache_size_ratio = server_settings[ServerSetting::text_index_header_cache_size_ratio];
-    if (text_index_header_cache_size > max_cache_size)
-    {
-        text_index_header_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_header_cache_size));
-    }
-    global_context->setTextIndexHeaderCache(text_index_header_cache_policy, text_index_header_cache_size, text_index_header_cache_max_count, text_index_header_cache_size_ratio);
-
-    String text_index_postings_cache_policy = server_settings[ServerSetting::text_index_postings_cache_policy];
-    size_t text_index_postings_cache_size = server_settings[ServerSetting::text_index_postings_cache_size];
-    size_t text_index_postings_cache_max_count = server_settings[ServerSetting::text_index_postings_cache_max_entries];
-    double text_index_postings_cache_size_ratio = server_settings[ServerSetting::text_index_postings_cache_size_ratio];
-    if (text_index_postings_cache_size > max_cache_size)
-    {
-        text_index_postings_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_postings_cache_size));
-    }
-    global_context->setTextIndexPostingsCache(text_index_postings_cache_policy, text_index_postings_cache_size, text_index_postings_cache_max_count, text_index_postings_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -955,10 +882,6 @@ void LocalServer::processConfig()
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
-
-    Names allowed_disks_table_engines;
-    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
-    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
@@ -1161,35 +1084,35 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
-    if (options.contains("path"))
+    if (options.count("path"))
         getClientConfiguration().setString("path", options["path"].as<std::string>());
-    if (options.contains("table"))
+    if (options.count("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
-    if (options.contains("file"))
+    if (options.count("file"))
         getClientConfiguration().setString("table-file", options["file"].as<std::string>());
-    if (options.contains("structure"))
+    if (options.count("structure"))
         getClientConfiguration().setString("table-structure", options["structure"].as<std::string>());
-    if (options.contains("no-system-tables"))
+    if (options.count("no-system-tables"))
         getClientConfiguration().setBool("no-system-tables", true);
-    if (options.contains("only-system-tables"))
+    if (options.count("only-system-tables"))
         getClientConfiguration().setBool("only-system-tables", true);
 
-    if (options.contains("input-format"))
+    if (options.count("input-format"))
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
-    if (options.contains("output-format"))
+    if (options.count("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.contains("logger.console"))
+    if (options.count("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
-    if (options.contains("logger.log"))
+    if (options.count("logger.log"))
         getClientConfiguration().setString("logger.log", options["logger.log"].as<std::string>());
-    if (options.contains("logger.level"))
+    if (options.count("logger.level"))
         getClientConfiguration().setString("logger.level", options["logger.level"].as<std::string>());
-    if (options.contains("send_logs_level"))
+    if (options.count("send_logs_level"))
         getClientConfiguration().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-    if (options.contains("wait_for_suggestions_to_load"))
+    if (options.count("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.contains("copy"))
+    if (options.count("copy"))
     {
         if (!queries.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");

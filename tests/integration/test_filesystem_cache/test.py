@@ -135,7 +135,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         SYSTEM DROP FILESYSTEM CACHE;
-        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
         SELECT * FROM test FORMAT Null;
         """
     )
@@ -461,7 +461,8 @@ def test_force_filesystem_cache_on_merges(cluster):
         node.query(
             """
             SYSTEM DROP FILESYSTEM CACHE;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
             """
         )
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
@@ -829,9 +830,6 @@ SETTINGS disk = disk(type = cache,
         min_bytes_for_wide_part = 10485760;
     """
     )
-
-    wait_for_cache_initialized(node, "test_filesystem_cache_log")
-    
 
     node.query(
         """

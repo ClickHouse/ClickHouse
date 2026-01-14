@@ -35,6 +35,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
+#include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -52,7 +53,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -82,14 +82,14 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
-static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
+static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
     auto match_mode = use_positions_to_match ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
 
-    auto get_converting_dag = [mode = match_mode, context](const Block & block_, const Block & header_)
+    auto get_converting_dag = [mode = match_mode](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -98,7 +98,6 @@ static void addConvertingActions(Pipe & pipe, const Block & header, const Contex
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
             mode,
-            context,
             true);
     };
 
@@ -236,7 +235,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context)
+    const ContextPtr & context)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -405,12 +404,9 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
                         external_table = external_storage_holder.getTable();
                         set_from_subquery->setExternalTable(external_table);
-
-                        context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
                     node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
-                    arguments[1] = node_to_ast[second_arg];
                 }
             }
         }
@@ -424,7 +420,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
 static void addFilters(
     Tables * external_tables,
-    ContextMutablePtr & context,
+    const ContextMutablePtr & context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
@@ -577,7 +573,7 @@ void ReadFromRemote::addLazyPipe(
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
                 auto plan = createLocalPlan(
-                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
+                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
@@ -616,7 +612,7 @@ void ReadFromRemote::addLazyPipe(
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), *out_header, context);
+    addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
 }
 
 void ReadFromRemote::addPipe(
@@ -703,7 +699,7 @@ void ReadFromRemote::addPipe(
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-            addConvertingActions(pipes.back(), *output_header, context);
+            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
         }
     }
     else
@@ -738,7 +734,7 @@ void ReadFromRemote::addPipe(
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-        addConvertingActions(pipes.back(), *out_header, context);
+        addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
     }
 }
 
@@ -802,7 +798,7 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
             size_t num_rows = col->size();
 
             for (size_t row = 0; row < num_rows; ++row)
-                settings.out << prefix << col->getDataAt(row) << '\n';
+                settings.out << prefix << col->getDataAt(row).toView() << '\n';
         }
     }
 }
@@ -885,7 +881,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     }
 
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
-    setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
+    setStepDescription(std::move(description));
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
@@ -1009,7 +1005,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
-    addConvertingActions(pipe, *out_header, context);
+    addConvertingActions(pipe, *out_header);
     return pipe;
 }
 
