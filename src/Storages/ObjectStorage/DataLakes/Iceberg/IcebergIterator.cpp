@@ -380,9 +380,9 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             {
                 LOG_DEBUG(
                     logger,
-                    "Skipping position delete file {} for data file {} because position delete has out of bounds reference data file "
+                    "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
                     "bounds: "
-                    "(lower bound: {}, upper bound: {})",
+                    "(lower bound: `{}`, upper bound: `{}`)",
                     position_delete->file_path,
                     data_file_path,
                     lower.value_or("[no lower bound]"),
@@ -392,8 +392,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             {
                 LOG_DEBUG(
                     logger,
-                    "Processing position delete file {} for data file {} with reference data file bounds: "
-                    "(lower bound: {}, upper bound: {})",
+                    "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
+                    "(lower bound: `{}`, upper bound: `{}`)",
                     position_delete->file_path,
                     data_file_path,
                     lower.value_or("[no lower bound]"),
