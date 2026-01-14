@@ -144,10 +144,13 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
         ColumnsDescription{},
+        ConstraintsDescription{},
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
+        std::nullopt,
+        false,
         context);
 
     res->startup();

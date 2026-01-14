@@ -12,6 +12,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageMerge.h>
 
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -36,7 +37,6 @@
 #include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Chunk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -47,7 +47,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/Chain.h>
-#include <QueryPipeline/Pipe.h>
 
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
@@ -67,7 +66,6 @@
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 
-#include <base/UUID.h>
 #include <base/scope_guard.h>
 #include <base/defines.h>
 
@@ -221,7 +219,7 @@ public:
 };
 
 
-static std::exception_ptr addStorageToException(std::exception_ptr ptr, const StorageID & storage)
+static std::exception_ptr addStorageToException(std::exception_ptr ptr, const StorageID & storage, const char * storage_type = "view")
 {
     try
     {
@@ -233,7 +231,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         // because the original exception is multiplied by CopyTransform
         // it should not be modified anywhere to avoid concurrant modification
         auto patch = DB::Exception(exception);
-        patch.addMessage("while pushing to view {}", storage.getNameForLogs());
+        patch.addMessage("while pushing to {} {}", storage_type, storage.getNameForLogs());
         return std::make_exception_ptr(std::move(patch));
     }
     catch (...)
@@ -476,6 +474,68 @@ private:
     std::vector<ViewStatus> statuses;
 };
 
+class FinalizingMergeTransform final : public IProcessor
+{
+public:
+    FinalizingMergeTransform(Block merge_header, Block inner_header)
+        : IProcessor({inner_header, merge_header}, {merge_header})
+        , inner_source(getInputs().front())
+        , data_source(getInputs().back())
+        , output(getOutputs().front())
+    {
+    }
+
+    String getName() const override { return "FinalizingMergeTransform"; }
+
+    Status prepare() override
+    {
+        if (output.isFinished())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize merge because output port is finished");
+        if (!output.canPush())
+            return Status::PortFull;
+
+        if (inner_source.isFinished() && data_source.isFinished())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        // Drain inner source
+        if (!inner_source.isFinished())
+        {
+            inner_source.setNeeded();
+            if (inner_source.hasData())
+            {
+                auto data = inner_source.pullData();
+                if (data.exception)
+                {
+                    output.pushException(data.exception);
+                    return Status::PortFull;
+                }
+            }
+        }
+
+        if (!data_source.isFinished())
+        {
+            data_source.setNeeded();
+            if (!data_source.hasData())
+                return Status::NeedData;
+
+            auto data = data_source.pullData();
+            output.pushData(std::move(data));
+            return Status::PortFull;
+        }
+
+        std::unreachable();
+    }
+
+    void work() override { /* no op */ }
+
+private:
+    InputPort & inner_source;
+    InputPort & data_source;
+    OutputPort & output;
+};
 
 DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
@@ -992,7 +1052,26 @@ String InsertDependenciesBuilder::debugPath(const DependencyPath & path) const
 
     const auto & current = path.current();
 
-    if (isView(current))
+    if (isMerge((current)))
+    {
+        output_buffer << tab << "it is a merge table\n";
+
+        if (metadata_snapshots.contains(current))
+        {
+            auto view_metadata = metadata_snapshots.at(current);
+            output_buffer << tab << "merge table header: " << view_metadata->getSampleBlock().dumpStructure() << "\n";
+        }
+
+        auto inner_id = merge_tables.at(current);
+        output_buffer << tab << "table to write: " << inner_id.getTableName() << "\n";
+        auto inner_metadata = metadata_snapshots.at(inner_id);
+        output_buffer << tab << "table to write header: " << inner_metadata->getSampleBlock().dumpStructure() << "\n";
+
+
+        output_buffer << tab << "input header: " << input_headers.at(current)->dumpStructure() << "\n";
+        output_buffer << tab << "output header: " << output_headers.at(current)->dumpStructure() << "\n";
+    }
+    else if (isView(current))
     {
         output_buffer << tab << "it is a view\n";
         output_buffer << tab << "source table: " << (source_tables.contains(current) ? source_tables.at(current).getTableName() : "<not set>") << "\n";
@@ -1115,7 +1194,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         views_error_registry->init(current);
 
         select_queries[current] = metadata->getSelectQuery().inner_query;
-        input_headers[current] = output_headers.at(path.parent(2));
+        input_headers[current] = output_headers.at(parent);
         // output_headers is filled at next call observePath(inner_table)
 
         std::tie(select_contexts[current], insert_contexts[current]) = createSelectInsertContext(path);
@@ -1127,7 +1206,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         return true;
     }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(init_storage.get()))
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
         if (current == init_table_id)
         {
@@ -1138,7 +1217,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         inner_tables[current] = current;
         select_queries[current] = window_view->getMergeableQuery();
-        input_headers[current] = output_headers.at(path.parent(2));
+        input_headers[current] = output_headers.at(parent);
         thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
         view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
         views_error_registry->init(current);
@@ -1159,12 +1238,8 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         return true;
     }
-    else
+    else if (auto * merge_table = dynamic_cast<StorageMerge *>(storage.get()))
     {
-        /// the last case is a regular table
-        /// at the first iteration it is the init_table_id most likely
-        /// the following iterations will be for inner tables of materialized views
-
         if (init_context->hasQueryContext())
             init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
@@ -1174,23 +1249,73 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
             set_defaults_for_root_view({}, init_table_id);
             output_headers[{}] = std::make_shared<const Block>(metadata->getSampleBlock());
             view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
+        }
+        else
+        {
+            insert_contexts.at(parent)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlockInsertable().getNames());
+        }
+
+        // For a chains of Merge tables these resources are not changed
+        select_contexts[current] = select_contexts.at(parent);
+        insert_contexts[current] = insert_contexts.at(parent);
+        select_queries[current] = select_queries.at(parent);
+        thread_groups[current] = thread_groups.at(parent);
+
+        dependent_views[current] = {};
+        output_headers[current] = std::make_shared<const Block>(metadata->getSampleBlock());
+        if (!parent.empty() && isView(parent) && !isMerge(parent))
+        {
+            output_headers[parent] = output_headers[current];
+            dependent_views[path.parent(3)].push_back(parent);
+        }
+        input_headers[current] = output_headers.at(parent);
+
+
+        auto table_to_write = merge_table->getTableToWrite(insert_contexts[current]);
+        merge_tables[current] = table_to_write;
+        inner_tables[current] = table_to_write;
+        views_error_registry->init(current);
+        return true;
+    }
+    else
+    {
+        /// the last case is a regular table
+        /// at the first iteration it is the init_table_id most likely
+        /// the following iterations will be for inner tables of materialized views or merge table internals
+
+        if (init_context->hasQueryContext())
+            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+
+        if (current == init_table_id)
+        {
+            /// set root_view to `{}`/`StorageID::createEmpty()` and dependent_views[{}] to the init_table_id
+            set_defaults_for_root_view({}, init_table_id);
+            output_headers[{}] = std::make_shared<const Block>(metadata->getSampleBlock());
+            output_headers[current] =  output_headers[{}];
+            view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
             return true;
         }
 
         const auto & view_id = parent;
 
-        chassert(inner_tables.at(view_id) == current);
-        output_headers[view_id] = std::make_shared<const Block>(metadata->getSampleBlock());
-
         // TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
         auto view_storage = storages.at(view_id);
-        auto * m_view = dynamic_cast<StorageMaterializedView *>(view_storage.get());
-        chassert(m_view);
-        bool check_access = !m_view->hasInnerTable() && metadata_snapshots.at(view_id)->sql_security_type;
-        if (check_access)
-            insert_contexts.at(view_id)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlockInsertable().getNames());
-
-        dependent_views[path.parent(3)].push_back(view_id);
+        if (auto * m_view = dynamic_cast<StorageMaterializedView *>(view_storage.get()))
+        {
+            chassert(inner_tables.at(view_id) == current);
+            bool check_access = !m_view->hasInnerTable() && metadata_snapshots.at(view_id)->sql_security_type;
+            if (check_access)
+                insert_contexts.at(view_id)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlockInsertable().getNames());
+            output_headers[view_id] = std::make_shared<const Block>(metadata->getSampleBlock());
+            output_headers[current] =  output_headers[view_id];
+            dependent_views[path.parent(3)].push_back(view_id);
+        }
+        else if (isMerge(parent))
+        {
+            insert_contexts.at(parent)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlockInsertable().getNames());
+            input_headers[current] = output_headers[parent];
+            output_headers[current] = std::make_shared<const Block>(metadata->getSampleBlock());
+        }
 
         return true;
     }
@@ -1221,12 +1346,20 @@ void InsertDependenciesBuilder::collectAllDependencies()
             if (id == init_table_id)
                 throw;
 
-            auto view_id = isView(id) ? id : path.parent(1);
+            auto exception = std::current_exception();
+            auto view_id = id;
+            // Unwind Merge table chain up to the first view. isMerge check is not actual if it failed to get table to write.
+            while (dynamic_cast<StorageMerge *>(storages.at(view_id).get()))
+            {
+                exception = addStorageToException(exception, view_id, "merge table");
+                view_id = path.parent(1);
+            }
+            view_id = isView(view_id) ? view_id : path.parent(1);
 
             if (view_id == init_table_id)
                 throw;
 
-            auto exception = addStorageToException(std::current_exception(), view_id);
+            exception = addStorageToException(exception, view_id);
             tryLogException(
                 exception,
                 logger,
@@ -1236,7 +1369,11 @@ void InsertDependenciesBuilder::collectAllDependencies()
             return;
         }
 
-        if (isView(id))
+        auto is_merge = isMerge(id);
+        if (is_merge)
+            expand(merge_tables.at(id));
+
+        if (!is_merge && isView(id))
         {
             auto inner_table = inner_tables.at(id);
             if (!inner_table.empty() && inner_table != id)
@@ -1362,6 +1499,46 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     return result;
 }
 
+Chain InsertDependenciesBuilder::createMergePreSink(StorageIDMaybeEmpty merge_id) const
+{
+    chassert(isMerge(merge_id));
+    Chain result;
+
+    auto inner_table_id = merge_tables.at(merge_id);
+    auto inner_metadata = metadata_snapshots.at(inner_table_id);
+    const auto & inner_storage = storages.at(inner_table_id);
+    auto output_header = output_headers.at(merge_id);
+    auto insert_context = insert_contexts.at(merge_id);
+
+    IInterpreter::checkStorageSupportsTransactionsIfNeeded(inner_storage, insert_context);
+
+    auto adding_missing_defaults_dag = addMissingDefaults(
+        *output_header,
+        inner_metadata->getSampleBlock().getNamesAndTypesList(),
+        inner_metadata->getColumns(),
+        insert_context,
+        insert_null_as_default);
+
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+        *output_header,
+        adding_missing_defaults_dag.getRequiredColumnsNames(),
+        insert_context);
+
+    auto merged_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag));
+
+    // Merge table schema may differ with table_to_write
+    auto converting_types_dag = ActionsDAG::makeConvertingActions(
+        merged_dag.getResultColumns(),
+        inner_metadata->getSampleBlock().getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        insert_context);
+    merged_dag = ActionsDAG::merge(std::move(merged_dag), std::move(converting_types_dag));
+
+    result.addSink(std::make_shared<ConvertingTransform>(output_header, std::make_shared<ExpressionActions>(std::move(merged_dag))));
+    inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
+
+    return result;
+}
 
 Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
 {
@@ -1369,7 +1546,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     const auto & inner_storage = storages.at(inner_table_id);
     const auto & inner_metadata = metadata_snapshots.at(inner_table_id);
     const auto & insert_context = insert_contexts.at(view_id);
-    const auto & header = output_headers.at(view_id);
+    const auto & header = isMerge(view_id) ? output_headers.at(inner_table_id) : output_headers.at(view_id);
 
     IInterpreter::checkStorageSupportsTransactionsIfNeeded(inner_storage, insert_context);
 
@@ -1402,6 +1579,27 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
         // Data is never inserted to the StorageMaterializedView, it is inserted to its inner table
         UNREACHABLE();
     }
+    else if (dynamic_cast<StorageMerge *>(inner_storage.get()))
+    {
+        auto chain = createMergePreSink(inner_table_id);
+        chain = Chain::concat(std::move(chain), createSink(inner_table_id));
+        chain = Chain::concat(std::move(chain),  createPostSink(inner_table_id));
+
+        if (!dependent_views.at(view_id).empty())
+        {
+            auto copying_data = std::make_shared<CopyTransform>(output_headers.at(inner_table_id), 2);
+            auto finalize = std::make_shared<FinalizingMergeTransform>(*output_headers.at(inner_table_id), chain.getOutputHeader());
+            connect(copying_data->getOutputs().front(), chain.getInputPort());
+            connect(copying_data->getOutputs().back(), finalize->getInputs().back());
+            connect(chain.getOutputPort(), finalize->getInputs().front());
+
+            auto & processors = chain.getProcessors();
+            processors.push_front(std::move(copying_data));
+            processors.push_back(std::move(finalize));
+        }
+
+        result = Chain::concat(std::move(result), std::move(chain));
+    }
     else
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
@@ -1419,6 +1617,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     if (dependent_views_ids.empty())
         return {};
 
+    const auto & inner_table_id = inner_tables.at(view_id);
     std::vector<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
@@ -1440,7 +1639,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
         view_chains.push_back(std::move(chain));
     }
 
-    auto copying_data = std::make_shared<CopyTransform>(output_headers.at(view_id), dependent_views_ids.size());
+    auto copying_data = std::make_shared<CopyTransform>(output_headers.at(inner_table_id), dependent_views_ids.size());
     auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(output_view_chains_headers), dependent_views_ids, shared_from_this(), views_error_registry);
     auto out = copying_data->getOutputs().begin();
     auto in = finalizing_views->getInputs().begin();
@@ -1617,6 +1816,10 @@ bool InsertDependenciesBuilder::isView(StorageIDMaybeEmpty id) const
     return inner_tables.contains(id);
 }
 
+bool InsertDependenciesBuilder::isMerge(StorageIDMaybeEmpty id) const
+{
+    return merge_tables.contains(id);
+}
 
 Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const
 {

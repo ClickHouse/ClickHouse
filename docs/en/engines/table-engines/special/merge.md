@@ -17,7 +17,7 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 ## Creating a table {#creating-a-table}
 
 ```sql
-CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp[, table_to_write])
 ```
 
 ## Engine parameters {#engine-parameters}
@@ -35,6 +35,14 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
+
+### `table_to_write` {#table_to_write}
+
+`table_to_write` - Table name to write during inserts into `Merge` table.
+Possible values:
+- `'db_name.table_name'` - insert into the specific table in the specific database. Should match tables to read.
+- `'table_name'` - insert into table `db_name.table_name`. Allowed only when the first parameter `db_name` is not a regular expression. Should match tables to read.
+- `auto` - insert into the last table matching `tables_regexp` in lexicographical order.
 
 ## Usage {#usage}
 
@@ -96,6 +104,47 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
+**Example 3**
+
+Let's say you have a table `WatchLog_1` and expect that partitioning key may change in the future, and you want to avoid rewriting queries to read/write data to another table.
+
+```sql
+CREATE TABLE WatchLog_1(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+CREATE TABLE WatchLog AS WatchLog_1 ENGINE=Merge(currentDatabase(), '^WatchLog_', auto);
+
+INSERT INTO WatchLog VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_2(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
+INSERT INTO WatchLog VALUES ('2018-01-02', 2, 'hit', 3);
+
+SELECT _table, * FROM WatchLog;
+```
+
+```text
+   ┌─_table─────┬───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+1. │ WatchLog_1 │ 2018-01-01 │      1 │ hit       │   3 │
+2. │ WatchLog_2 │ 2018-01-02 │      2 │ hit       │   3 │
+   └────────────┴────────────┴────────┴───────────┴─────┘
+```
+
 ## Virtual columns {#virtual-columns}
 
 - `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
@@ -103,6 +152,10 @@ SELECT * FROM WatchLog;
     If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
 
 - `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+
+## Usage with Materialized Views {#usage-with-materialized-views}
+Inserts in the Merge table triggers Materialized Views for both Merge and target table.
+But inserts to the underlying tables are not propagated up to the Merge table Views.
 
 **See Also**
 

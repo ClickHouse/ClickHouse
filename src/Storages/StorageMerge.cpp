@@ -1,8 +1,9 @@
 #include <functional>
 #include <iterator>
+
 #include <Access/ContextAccess.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -10,24 +11,26 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/addMissingDefaults.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -36,16 +39,15 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/narrowPipe.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
@@ -58,9 +60,8 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Core/NamesAndTypes.h>
-#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -84,7 +85,9 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int TABLE_IS_READ_ONLY;
 extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_TABLE;
 }
 
 namespace
@@ -141,10 +144,13 @@ StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const DBToTableSetMap & source_databases_and_tables_,
+    const std::optional<String> & table_to_write_,
+    bool table_to_write_auto_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -158,18 +164,23 @@ StorageMerge::StorageMerge(
     storage_metadata.setColumns(columns_.empty()
         ? getColumnsDescriptionFromSourceTables(context_)
         : columns_);
+    storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
+    setTableToWrite(table_to_write_, table_to_write_auto_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const String & source_table_regexp_,
+    const std::optional<String> & table_to_write_,
+    bool table_to_write_auto_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -183,9 +194,11 @@ StorageMerge::StorageMerge(
     storage_metadata.setColumns(columns_.empty()
         ? getColumnsDescriptionFromSourceTables(context_)
         : columns_);
+    storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
+    setTableToWrite(table_to_write_, table_to_write_auto_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -258,6 +271,34 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     });
 
     return res;
+}
+
+StorageID StorageMerge::getTableToWrite(ContextPtr query_context) const
+{
+    if (table_to_write)
+        return table_to_write.value();
+
+    if (table_to_write_auto)
+    {
+        const auto access = query_context->getAccess();
+        std::optional<StorageID> chosen_table;
+        traverseTablesUntil([&](const StoragePtr & table)
+        {
+            auto tableID = table->getStorageID();
+            if (!chosen_table || tableID.getFullTableName() > chosen_table->getFullTableName())
+                if (access->isGranted(AccessType::SHOW_TABLES, tableID.database_name, tableID.table_name))
+                    chosen_table = tableID;
+
+            return false;
+        });
+
+        if (chosen_table)
+            return *chosen_table;
+
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getStorageID().getNameForLogs());
+    }
+
+    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Inserts are not configured for Merge table {}", getStorageID().getNameForLogs());
 }
 
 template <typename F>
@@ -1753,6 +1794,60 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+void StorageMerge::setTableToWrite(
+    const std::optional<String> & table_to_write_,
+    bool table_to_write_auto_,
+    const String & source_database_name_or_regexp_,
+    bool database_is_regexp_)
+{
+    if (table_to_write_auto_)
+    {
+        table_to_write_auto = true;
+        return;
+    }
+    if (!table_to_write_)
+        return;
+
+    auto qualified_name = QualifiedTableName::parseFromString(*table_to_write_);
+
+    if (qualified_name.database.empty())
+    {
+        if (database_is_regexp_)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_to_write' must contain database if 'db_name' is regular expression");
+
+        qualified_name.database = source_database_name_or_regexp_;
+    }
+
+    if (database_name_or_regexp.source_databases_and_tables)
+    {
+        auto tables = database_name_or_regexp.source_databases_and_tables->find(qualified_name.database);
+        if (tables == database_name_or_regexp.source_databases_and_tables->end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write database is not matching regexp");
+        if (!tables->second.contains(qualified_name.table))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write table is not matching regexp");
+    }
+    else
+    {
+        if (database_name_or_regexp.database_is_regexp)
+        {
+            if  (!database_name_or_regexp.source_database_regexp->match(qualified_name.database))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write database is not matching regexp");
+        }
+        else
+        {
+            if  (database_name_or_regexp.source_database_name_or_regexp != qualified_name.database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write database is not matching");
+        }
+
+        chassert(database_name_or_regexp.source_table_regexp.has_value());
+        if (!database_name_or_regexp.source_table_regexp->match(qualified_name.table))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write is not matching table regexp");
+    }
+
+    source_table_to_write = qualified_name;
+    table_to_write = StorageID(source_table_to_write->database, source_table_to_write->table);
+}
+
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
@@ -1763,11 +1858,11 @@ void registerStorageMerge(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 2)
+        size_t size = engine_args.size();
+        if (size < 2 || size > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Merge requires exactly 2 parameters - name "
-                            "of source database and regexp for table names.");
-
+                            "Storage Merge requires 2 or 3 parameters - name "
+                            "of source database, regexp for table names, and optional table name for writing");
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
         if (!is_regexp)
@@ -1778,8 +1873,25 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
 
+        std::optional<String> table_to_write = std::nullopt;
+        bool table_to_write_auto = false;
+        if (size == 3)
+        {
+            if (auto *identifier = engine_args[2]->as<ASTIdentifier>(); identifier && identifier->full_name == "auto")
+            {
+                table_to_write = identifier->full_name;
+                table_to_write_auto = true;
+            }
+            else
+            {
+                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
+                table_to_write = checkAndGetLiteralArgument<String>(engine_args[2], "table_to_write");
+            }
+        }
+
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
+            args.table_id, args.columns, args.constraints, args.comment, source_database_name_or_regexp, is_regexp,
+            table_name_regexp, table_to_write, table_to_write_auto, args.getLocalContext());
     },
     {
         .supports_schema_inference = true
