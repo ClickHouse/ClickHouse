@@ -1,5 +1,7 @@
 #pragma once
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
+#include <Core/SettingsEnums.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
@@ -33,7 +35,8 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
-        bool is_path_with_hive_partitioning,
+        ObjectStorageQueuePartitioningMode partitioning_mode_,
+        const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -59,7 +62,8 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
-        bool is_path_with_hive_partitioning,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
@@ -68,8 +72,8 @@ private:
     const size_t buckets_num;
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
-
-    const bool is_path_with_hive_partitioning = false;
+    const ObjectStorageQueuePartitioningMode partitioning_mode;
+    const ObjectStorageQueueFilenameParser * parser;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -118,7 +122,13 @@ private:
 
     void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition) override;
 
-    /// Return hive part of path
+    /// Extract partition key from file path based on partitioning mode
+    /// For HIVE mode: extracts hive partition from path structure (e.g., date=2025-01-01/city=NY)
+    /// For REGEX mode: uses parser to extract partition from filename
+    /// For NONE mode: returns empty string
+    std::string getPartitionKey(const std::string & file_path) const;
+
+    /// Helper for HIVE mode: return hive part of path
     /// For path `/table/path/date=2025-01-01/city=New_Orlean/data.parquet` returns `date=2025-01-01/city=New_Orlean`
     static std::string getHivePart(const std::string & file_path);
     /// Normalize hive part to use as node in zookeeper path

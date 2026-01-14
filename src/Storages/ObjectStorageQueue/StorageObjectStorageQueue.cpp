@@ -359,7 +359,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         configuration_->format,
         context_,
         is_attach,
-        is_path_with_hive_partitioning,
         log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
@@ -372,8 +371,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
-        is_path_with_hive_partitioning);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -980,7 +978,9 @@ void StorageObjectStorageQueue::commit(
             last_processed_file_per_hive_partition, created_nodes, exception_message, error_code);
     }
 
-    if (use_hive_partitioning)
+    // Use partition-based processing for both HIVE and REGEX modes
+    bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
+    if (has_partitioning)
         ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
     else
         chassert(last_processed_file_per_hive_partition.empty());

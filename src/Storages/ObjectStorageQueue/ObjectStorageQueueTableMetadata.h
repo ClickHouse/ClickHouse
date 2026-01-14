@@ -24,6 +24,9 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
+    const String partitioning_mode;
+    const String partition_by_regex;
+    const String ordering_components_regex;
     /// Changeable settings.
     std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
@@ -45,6 +48,9 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
+        , partitioning_mode(other.partitioning_mode)
+        , partition_by_regex(other.partition_by_regex)
+        , ordering_components_regex(other.ordering_components_regex)
         , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
@@ -74,6 +80,7 @@ struct ObjectStorageQueueTableMetadata
     String toString() const;
 
     ObjectStorageQueueMode getMode() const;
+    ObjectStorageQueuePartitioningMode getPartitioningMode() const;
 
     void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
 
@@ -88,6 +95,9 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
+            "partitioning_mode",
+            "partition_by_regex",
+            "ordering_components_regex",
             "after_processing",
             "loading_retries",
             "processing_threads_num",
